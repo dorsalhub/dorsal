@@ -2,7 +2,7 @@
 
 **A local-first metadata generation and management toolkit.**
 
-[![PyPI version](https://badge.fury.io/py/dorsal.svg)](https://badge.fury.io/py/dorsal)
+[![PyPI version](https://badge.fury.io/py/dorsalhub.svg)](https://pypi.org/project/dorsalhub/)
 [![Tests](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg)](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
