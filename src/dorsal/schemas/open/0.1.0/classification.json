@@ -1,0 +1,155 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/classification",
+    "title": "File Classification",
+    "version": "0.1.0",
+    "description": "Represent the result of a classification. Supports predicted labels, confidence scores, and vocabulary.",
+    "type": "object",
+    "properties": {
+        "target": {
+            "type": "string",
+            "description": "The name of the variable being classified (e.g., 'sentiment', 'topic').",
+            "maxLength": 128
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this classification.",
+            "maxLength": 1024
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "A brief explanation of what the score represents (e.g., 'Model confidence probability [0, 1]', 'Sentiment score [-1, 1]').",
+            "maxLength": 256
+        },
+        "vocabulary": {
+            "type": "array",
+            "description": "A list of the possible labels in this classification scheme.",
+            "maxItems": 100,
+            "items": {
+                "type": "string",
+                "description": "A single valid label from the vocabulary.",
+                "maxLength": 128
+            }
+        },
+        "vocabulary_url": {
+            "type": "string",
+            "description": "A URL pointing to a more detailed external vocabulary or ontology.",
+            "format": "uri",
+            "maxLength": 2048
+        },
+        "labels": {
+            "type": "array",
+            "description": "An array of labels applied to the file. Can be empty if no labels match.",
+            "maxItems": 10000,
+            "minItems": 0,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "description": "The predicted label.",
+                        "maxLength": 128
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "A normalized score for this label (-1.0 to 1.0). Depending on the use case, this may represent a probability (0 to 1) or a bipolar metric like sentiment (-1 to 1).",
+                        "minimum": -1,
+                        "maximum": 1
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "The specific time this label applies to. Used for discrete time-series or state logging."
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Additional metadata about this specific label.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "label"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this classification.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "labels"
+    ],
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "labels": {
+                        "maxItems": 0
+                    }
+                }
+            },
+            "then": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "vocabulary"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "vocabulary_url"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "producer"
+                        ]
+                    }
+                ]
+            }
+        }
+    ],
+    "additionalProperties": false
+}

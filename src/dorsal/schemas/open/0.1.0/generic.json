@@ -1,0 +1,51 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/generic",
+    "title": "Generic",
+    "version": "0.1.0",
+    "description": "A flexible schema for storing arbitrary key-value data.",
+    "type": "object",
+    "properties": {
+        "description": {
+            "type": "string",
+            "description": "Describe the data.",
+            "maxLength": 1024
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this record.",
+            "maxLength": 1024
+        },
+        "data": {
+            "type": "object",
+            "description": "An object containing custom key-value data. Nesting is disallowed.",
+            "maxProperties": 128,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "data"
+    ],
+    "additionalProperties": false
+}

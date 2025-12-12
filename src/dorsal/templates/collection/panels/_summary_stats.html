@@ -1,0 +1,27 @@
+{# templates/collection/panels/_summary_stats.html #}
+
+<div class="section">
+    <h2 class="section-title">{{ panel.title }}</h2>
+    <div class="grid">
+        <div class="grid-item">
+            <span class="label">Total Files</span>
+            <span class="value">{{ panel.data.overall.total_files | int }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Total Size</span>
+            <span class="value">{{ human_filesize(panel.data.overall.total_size) }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Newest File (Modified)</span>
+            <span class="value" data-tooltip="{{ panel.data.overall.newest_file.path | e if panel.data.overall.newest_file.path else 'N/A' }}">
+                {{ panel.data.overall.newest_file.date.strftime('%Y-%m-%d %H:%M:%S') if panel.data.overall.newest_file.date else 'N/A' }}
+            </span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Oldest File (Modified)</span>
+            <span class="value" data-tooltip="{{ panel.data.overall.oldest_file.path | e if panel.data.overall.oldest_file.path else 'N/A' }}">
+                {{ panel.data.overall.oldest_file.date.strftime('%Y-%m-%d %H:%M:%S') if panel.data.overall.oldest_file.date else 'N/A' }}
+            </span>
+        </div>
+    </div>
+</div>

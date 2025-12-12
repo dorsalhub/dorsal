@@ -1,0 +1,434 @@
+{
+  "en": {
+    "name": "English",
+    "alpha_3": "eng"
+  },
+  "en-us": {
+    "name": "English",
+    "alpha_3": "eng"
+  },
+  "en-gb": {
+    "name": "English",
+    "alpha_3": "eng"
+  },
+  "eng": {
+    "name": "English",
+    "alpha_3": "eng"
+  },
+  "english": {
+    "name": "English",
+    "alpha_3": "eng"
+  },
+  "fr": {
+    "name": "French",
+    "alpha_3": "fra"
+  },
+  "fra": {
+    "name": "French",
+    "alpha_3": "fra"
+  },
+  "fre": {
+    "name": "French",
+    "alpha_3": "fra"
+  },
+  "french": {
+    "name": "French",
+    "alpha_3": "fra"
+  },
+  "fr-fr": {
+    "name": "French",
+    "alpha_3": "fra"
+  },
+  "de": {
+    "name": "German",
+    "alpha_3": "deu"
+  },
+  "deu": {
+    "name": "German",
+    "alpha_3": "deu"
+  },
+  "ger": {
+    "name": "German",
+    "alpha_3": "deu"
+  },
+  "german": {
+    "name": "German",
+    "alpha_3": "deu"
+  },
+  "es": {
+    "name": "Spanish",
+    "alpha_3": "spa"
+  },
+  "spa": {
+    "name": "Spanish",
+    "alpha_3": "spa"
+  },
+  "spanish": {
+    "name": "Spanish",
+    "alpha_3": "spa"
+  },
+  "ja": {
+    "name": "Japanese",
+    "alpha_3": "jpn"
+  },
+  "jpn": {
+    "name": "Japanese",
+    "alpha_3": "jpn"
+  },
+  "japanese": {
+    "name": "Japanese",
+    "alpha_3": "jpn"
+  },
+  "zh": {
+    "name": "Chinese",
+    "alpha_3": "zho"
+  },
+  "zho": {
+    "name": "Chinese",
+    "alpha_3": "zho"
+  },
+  "chi": {
+    "name": "Chinese",
+    "alpha_3": "zho"
+  },
+  "chinese": {
+    "name": "Chinese",
+    "alpha_3": "zho"
+  },
+  "ru": {
+    "name": "Russian",
+    "alpha_3": "rus"
+  },
+  "rus": {
+    "name": "Russian",
+    "alpha_3": "rus"
+  },
+  "russian": {
+    "name": "Russian",
+    "alpha_3": "rus"
+  },
+  "it": {
+    "name": "Italian",
+    "alpha_3": "ita"
+  },
+  "ita": {
+    "name": "Italian",
+    "alpha_3": "ita"
+  },
+  "italian": {
+    "name": "Italian",
+    "alpha_3": "ita"
+  },
+  "ar": {
+    "name": "Arabic",
+    "alpha_3": "ara"
+  },
+  "ara": {
+    "name": "Arabic",
+    "alpha_3": "ara"
+  },
+  "arabic": {
+    "name": "Arabic",
+    "alpha_3": "ara"
+  },
+  "pt": {
+    "name": "Portuguese",
+    "alpha_3": "por"
+  },
+  "por": {
+    "name": "Portuguese",
+    "alpha_3": "por"
+  },
+  "portuguese": {
+    "name": "Portuguese",
+    "alpha_3": "por"
+  },
+  "hi": {
+    "name": "Hindi",
+    "alpha_3": "hin"
+  },
+  "hin": {
+    "name": "Hindi",
+    "alpha_3": "hin"
+  },
+  "hindi": {
+    "name": "Hindi",
+    "alpha_3": "hin"
+  },
+  "bn": {
+    "name": "Bengali",
+    "alpha_3": "ben"
+  },
+  "ben": {
+    "name": "Bengali",
+    "alpha_3": "ben"
+  },
+  "bengali": {
+    "name": "Bengali",
+    "alpha_3": "ben"
+  },
+  "ur": {
+    "name": "Urdu",
+    "alpha_3": "urd"
+  },
+  "urd": {
+    "name": "Urdu",
+    "alpha_3": "urd"
+  },
+  "urdu": {
+    "name": "Urdu",
+    "alpha_3": "urd"
+  },
+  "id": {
+    "name": "Indonesian",
+    "alpha_3": "ind"
+  },
+  "ind": {
+    "name": "Indonesian",
+    "alpha_3": "ind"
+  },
+  "indonesian": {
+    "name": "Indonesian",
+    "alpha_3": "ind"
+  },
+  "nl": {
+    "name": "Dutch",
+    "alpha_3": "nld"
+  },
+  "nld": {
+    "name": "Dutch",
+    "alpha_3": "nld"
+  },
+  "dut": {
+    "name": "Dutch",
+    "alpha_3": "nld"
+  },
+  "dutch": {
+    "name": "Dutch",
+    "alpha_3": "nld"
+  },
+  "ko": {
+    "name": "Korean",
+    "alpha_3": "kor"
+  },
+  "kor": {
+    "name": "Korean",
+    "alpha_3": "kor"
+  },
+  "korean": {
+    "name": "Korean",
+    "alpha_3": "kor"
+  },
+  "tr": {
+    "name": "Turkish",
+    "alpha_3": "tur"
+  },
+  "tur": {
+    "name": "Turkish",
+    "alpha_3": "tur"
+  },
+  "turkish": {
+    "name": "Turkish",
+    "alpha_3": "tur"
+  },
+  "pl": {
+    "name": "Polish",
+    "alpha_3": "pol"
+  },
+  "pol": {
+    "name": "Polish",
+    "alpha_3": "pol"
+  },
+  "polish": {
+    "name": "Polish",
+    "alpha_3": "pol"
+  },
+  "vi": {
+    "name": "Vietnamese",
+    "alpha_3": "vie"
+  },
+  "vie": {
+    "name": "Vietnamese",
+    "alpha_3": "vie"
+  },
+  "vietnamese": {
+    "name": "Vietnamese",
+    "alpha_3": "vie"
+  },
+  "sv": {
+    "name": "Swedish",
+    "alpha_3": "swe"
+  },
+  "swe": {
+    "name": "Swedish",
+    "alpha_3": "swe"
+  },
+  "swedish": {
+    "name": "Swedish",
+    "alpha_3": "swe"
+  },
+  "da": {
+    "name": "Danish",
+    "alpha_3": "dan"
+  },
+  "dan": {
+    "name": "Danish",
+    "alpha_3": "dan"
+  },
+  "danish": {
+    "name": "Danish",
+    "alpha_3": "dan"
+  },
+  "no": {
+    "name": "Norwegian",
+    "alpha_3": "nor"
+  },
+  "nor": {
+    "name": "Norwegian",
+    "alpha_3": "nor"
+  },
+  "norwegian": {
+    "name": "Norwegian",
+    "alpha_3": "nor"
+  },
+  "nb": {
+    "name": "Norwegian",
+    "alpha_3": "nor"
+  },
+  "nn": {
+    "name": "Norwegian",
+    "alpha_3": "nor"
+  },
+  "fi": {
+    "name": "Finnish",
+    "alpha_3": "fin"
+  },
+  "fin": {
+    "name": "Finnish",
+    "alpha_3": "fin"
+  },
+  "finnish": {
+    "name": "Finnish",
+    "alpha_3": "fin"
+  },
+  "el": {
+    "name": "Greek",
+    "alpha_3": "ell"
+  },
+  "ell": {
+    "name": "Greek",
+    "alpha_3": "ell"
+  },
+  "gre": {
+    "name": "Greek",
+    "alpha_3": "ell"
+  },
+  "greek": {
+    "name": "Greek",
+    "alpha_3": "ell"
+  },
+  "he": {
+    "name": "Hebrew",
+    "alpha_3": "heb"
+  },
+  "heb": {
+    "name": "Hebrew",
+    "alpha_3": "heb"
+  },
+  "hebrew": {
+    "name": "Hebrew",
+    "alpha_3": "heb"
+  },
+  "th": {
+    "name": "Thai",
+    "alpha_3": "tha"
+  },
+  "tha": {
+    "name": "Thai",
+    "alpha_3": "tha"
+  },
+  "thai": {
+    "name": "Thai",
+    "alpha_3": "tha"
+  },
+  "cs": {
+    "name": "Czech",
+    "alpha_3": "ces"
+  },
+  "ces": {
+    "name": "Czech",
+    "alpha_3": "ces"
+  },
+  "cze": {
+    "name": "Czech",
+    "alpha_3": "ces"
+  },
+  "czech": {
+    "name": "Czech",
+    "alpha_3": "ces"
+  },
+  "hu": {
+    "name": "Hungarian",
+    "alpha_3": "hun"
+  },
+  "hun": {
+    "name": "Hungarian",
+    "alpha_3": "hun"
+  },
+  "hungarian": {
+    "name": "Hungarian",
+    "alpha_3": "hun"
+  },
+  "ro": {
+    "name": "Romanian",
+    "alpha_3": "ron"
+  },
+  "ron": {
+    "name": "Romanian",
+    "alpha_3": "ron"
+  },
+  "rum": {
+    "name": "Romanian",
+    "alpha_3": "ron"
+  },
+  "romanian": {
+    "name": "Romanian",
+    "alpha_3": "ron"
+  },
+  "sw": {
+    "name": "Swahili",
+    "alpha_3": "swa"
+  },
+  "swa": {
+    "name": "Swahili",
+    "alpha_3": "swa"
+  },
+  "swahili": {
+    "name": "Swahili",
+    "alpha_3": "swa"
+  },
+  "ms": {
+    "name": "Malay",
+    "alpha_3": "msa"
+  },
+  "msa": {
+    "name": "Malay",
+    "alpha_3": "msa"
+  },
+  "may": {
+    "name": "Malay",
+    "alpha_3": "msa"
+  },
+  "malay": {
+    "name": "Malay",
+    "alpha_3": "msa"
+  },
+  "und": {
+    "name": null,
+    "alpha_3": null
+  },
+  "undetermined": {
+    "name": null,
+    "alpha_3": null
+  }
+}

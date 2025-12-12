@@ -1,0 +1,418 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/entity-extraction",
+    "title": "Entity Extraction",
+    "version": "0.1.0",
+    "description": "Represent named entities, structural slots, or visual concepts extracted from unstructured data. Links raw evidence (text spans or geometric regions) to normalized values and business concepts.",
+    "type": "object",
+    "properties": {
+        "unit": {
+            "type": "string",
+            "description": "The unit for all coordinate values if geometric data is present.",
+            "enum": [
+                "px",
+                "pt",
+                "normalized",
+                "per_mille"
+            ]
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this extraction.",
+            "maxLength": 1024
+        },
+        "vocabulary_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the definition of the entity labels.",
+            "maxLength": 2048
+        },
+        "vocabulary": {
+            "type": "array",
+            "description": "Allowed values for the 'label' field.",
+            "maxItems": 100,
+            "items": {
+                "type": "string",
+                "maxLength": 128
+            }
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "Defines the meaning of the 'score' field.",
+            "maxLength": 256
+        },
+        "entities": {
+            "type": "array",
+            "description": "An array of extracted entities.",
+            "maxItems": 100000,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "A unique identifier for this entity instance (e.g. UUID).",
+                        "maxLength": 128
+                    },
+                    "concept": {
+                        "type": "string",
+                        "description": "The business role or slot this entity fills (e.g. 'InvoiceDate', 'Plaintiff'). Optional.",
+                        "maxLength": 128
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "The entity category (e.g. 'PER', 'DATE', 'MONEY').",
+                        "maxLength": 128
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The raw text span as it appears in the source. Optional for visual entities (e.g. logos, signatures).",
+                        "maxLength": 4096
+                    },
+                    "value": {
+                        "description": "The machine-readable value (e.g. '2025-11-21', 3500.00, true).",
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 4096
+                            },
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "definition": {
+                        "type": "string",
+                        "description": "Definition of the concept.",
+                        "maxLength": 1024
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "The confidence score for this extraction, ranging from 0.0 (uncertain) to 1.0 (certain).",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "location": {
+                        "type": "array",
+                        "description": "The physical location(s) of the entity.",
+                        "maxItems": 10,
+                        "items": {
+                            "oneOf": [
+                                {
+                                    "title": "Block Reference",
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "const": "block_ref"
+                                        },
+                                        "block_id": {
+                                            "type": "string",
+                                            "maxLength": 128
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "block_id"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "title": "Geometric Location",
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "const": "block"
+                                        },
+                                        "block_type": {
+                                            "enum": [
+                                                "box",
+                                                "polygon"
+                                            ]
+                                        },
+                                        "page_number": {
+                                            "type": "integer",
+                                            "minimum": 1
+                                        },
+                                        "box": {
+                                            "type": "object",
+                                            "properties": {
+                                                "x": {
+                                                    "type": "number"
+                                                },
+                                                "y": {
+                                                    "type": "number"
+                                                },
+                                                "width": {
+                                                    "type": "number"
+                                                },
+                                                "height": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "required": [
+                                                "x",
+                                                "y",
+                                                "width",
+                                                "height"
+                                            ],
+                                            "additionalProperties": false
+                                        },
+                                        "polygon": {
+                                            "type": "array",
+                                            "minItems": 3,
+                                            "maxItems": 100,
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "x": {
+                                                        "type": "number"
+                                                    },
+                                                    "y": {
+                                                        "type": "number"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "x",
+                                                    "y"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "block_type",
+                                        "page_number"
+                                    ],
+                                    "additionalProperties": false,
+                                    "allOf": [
+                                        {
+                                            "if": {
+                                                "properties": {
+                                                    "block_type": {
+                                                        "const": "box"
+                                                    }
+                                                }
+                                            },
+                                            "then": {
+                                                "required": [
+                                                    "box"
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "if": {
+                                                "properties": {
+                                                    "block_type": {
+                                                        "const": "polygon"
+                                                    }
+                                                }
+                                            },
+                                            "then": {
+                                                "required": [
+                                                    "polygon"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Arbitrary metadata (e.g. currency, gender). Flat key-value pairs.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "label"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this extraction.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "entities"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "entities": {
+                        "maxItems": 0
+                    }
+                }
+            },
+            "then": {
+                "anyOf": [
+                    {
+                        "required": [
+                            "vocabulary"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "vocabulary_url"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "normalized"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "entities": {
+                        "items": {
+                            "properties": {
+                                "location": {
+                                    "items": {
+                                        "properties": {
+                                            "box": {
+                                                "properties": {
+                                                    "x": {
+                                                        "maximum": 1
+                                                    },
+                                                    "y": {
+                                                        "maximum": 1
+                                                    },
+                                                    "width": {
+                                                        "maximum": 1
+                                                    },
+                                                    "height": {
+                                                        "maximum": 1
+                                                    }
+                                                }
+                                            },
+                                            "polygon": {
+                                                "items": {
+                                                    "properties": {
+                                                        "x": {
+                                                            "maximum": 1
+                                                        },
+                                                        "y": {
+                                                            "maximum": 1
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "per_mille"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "entities": {
+                        "items": {
+                            "properties": {
+                                "location": {
+                                    "items": {
+                                        "properties": {
+                                            "box": {
+                                                "properties": {
+                                                    "x": {
+                                                        "maximum": 1000
+                                                    },
+                                                    "y": {
+                                                        "maximum": 1000
+                                                    },
+                                                    "width": {
+                                                        "maximum": 1000
+                                                    },
+                                                    "height": {
+                                                        "maximum": 1000
+                                                    }
+                                                }
+                                            },
+                                            "polygon": {
+                                                "items": {
+                                                    "properties": {
+                                                        "x": {
+                                                            "maximum": 1000
+                                                        },
+                                                        "y": {
+                                                            "maximum": 1000
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

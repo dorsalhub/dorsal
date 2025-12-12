@@ -1,0 +1,181 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/audio-transcription",
+    "title": "Audio Transcription",
+    "version": "0.1.0",
+    "description": "Store text transcribed from an audio source. Supports timed segments, speaker identification, and non-verbal events.",
+    "type": "object",
+    "properties": {
+        "track_id": {
+            "type": [
+                "string",
+                "integer"
+            ],
+            "maxLength": 128,
+            "description": "(Optional) Identifier for the specific audio track or channel in the source file."
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this transcription (e.g., 'Whisper-v3', 'Manual Review').",
+            "maxLength": 1024
+        },
+        "language": {
+            "type": "string",
+            "description": "The 3-letter ISO-639-3 language code of the transcription (e.g., 'eng', 'fra').",
+            "pattern": "^[a-z]{3}$",
+            "maxLength": 3
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "Defines the meaning of the 'score' field.",
+            "maxLength": 256
+        },
+        "text": {
+            "type": "string",
+            "description": "The full, concatenated transcribed text. Optional if detailed segments are provided.",
+            "maxLength": 524288
+        },
+        "segments": {
+            "type": "array",
+            "description": "An array of timed text segments. Can be used for phrases, sentences, or individual words.",
+            "maxItems": 100000,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "The text for this segment.",
+                        "maxLength": 4096
+                    },
+                    "start_time": {
+                        "type": "number",
+                        "description": "Segment start time in seconds.",
+                        "minimum": 0
+                    },
+                    "end_time": {
+                        "type": "number",
+                        "description": "Segment end time in seconds.",
+                        "minimum": 0
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "The 3-letter ISO-639-3 language code of this particular segment (e.g., 'eng', 'fra').",
+                        "pattern": "^[a-z]{3}$",
+                        "maxLength": 3
+                    },
+                    "speaker": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": [
+                                    "string",
+                                    "integer"
+                                ],
+                                "maxLength": 128,
+                                "description": "Identifier for the speaker."
+                            },
+                            "name": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "description": "Name of the speaker."
+                            },
+                            "score": {
+                                "type": "number",
+                                "description": "Confidence that this segment belongs to this speaker (0 to 1).",
+                                "minimum": 0,
+                                "maximum": 1
+                            }
+                        },
+                        "required": [
+                            "id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "events": {
+                        "type": "array",
+                        "description": "Array of strings describing non-verbal sounds or events within the segment (e.g., '[music]', '(laughter)').",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "maxItems": 64
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "The confidence score for this segment's transcription, ranging from 0.0 (uncertain) to 1.0 (certain).",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Arbitrary metadata relevant to this segment.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "text",
+                    "start_time",
+                    "end_time"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this transcription.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "anyOf": [
+        {
+            "required": [
+                "text"
+            ]
+        },
+        {
+            "required": [
+                "segments"
+            ]
+        }
+    ],
+    "additionalProperties": false
+}

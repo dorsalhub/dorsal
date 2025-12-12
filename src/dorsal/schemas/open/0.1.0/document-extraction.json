@@ -1,0 +1,380 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/document-extraction",
+    "title": "Document Extraction",
+    "version": "0.1.0",
+    "description": "Represent the layout and content of a document, including text blocks, geometric coordinates, and page structure.",
+    "type": "object",
+    "properties": {
+        "extraction_type": {
+            "type": "string",
+            "description": "Optionally indicate the extraction type.",
+            "enum": [
+                "text",
+                "lines",
+                "boxes",
+                "polygons",
+                "mixed"
+            ]
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this extraction.",
+            "maxLength": 1024
+        },
+        "unit": {
+            "type": "string",
+            "description": "The unit for all coordinate values if geometric data is present.",
+            "enum": [
+                "px",
+                "pt",
+                "normalized",
+                "per_mille"
+            ]
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "Defines the meaning of the 'score' field.",
+            "maxLength": 256
+        },
+        "blocks": {
+            "type": "array",
+            "description": "An array of text blocks extracted from the document.",
+            "maxItems": 100000,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "block_type": {
+                        "type": "string",
+                        "description": "Defines the nature of this specific block (text, line, box, or polygon).",
+                        "enum": [
+                            "text",
+                            "line",
+                            "box",
+                            "polygon"
+                        ]
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "A unique identifier (e.g., UUID4) for this block, useful for referencing.",
+                        "maxLength": 128
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The text content of the block.",
+                        "maxLength": 4096
+                    },
+                    "line_number": {
+                        "type": "integer",
+                        "description": "The line number of the block within its page, if applicable.",
+                        "minimum": 1
+                    },
+                    "page_number": {
+                        "type": "integer",
+                        "description": "The page number (1-indexed) where this block is located.",
+                        "minimum": 1
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "The confidence score for this block's detection and transcription, ranging from 0.0 (uncertain) to 1.0 (certain).",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "box": {
+                        "type": "object",
+                        "description": "A rectangular bounding box defined by its top-left corner (x,y) and its dimensions.",
+                        "properties": {
+                            "x": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The x-coordinate of the top-left corner."
+                            },
+                            "y": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The y-coordinate of the top-left corner."
+                            },
+                            "width": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The width of the box."
+                            },
+                            "height": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The height of the box."
+                            }
+                        },
+                        "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "polygon": {
+                        "type": "array",
+                        "description": "An array of coordinate points defining the block's boundary for non-rectangular shapes.",
+                        "maxItems": 100,
+                        "minItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "x": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "The x-coordinate of a vertex point."
+                                },
+                                "y": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "The y-coordinate of a vertex point."
+                                }
+                            },
+                            "required": [
+                                "x",
+                                "y"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Arbitrary metadata relevant to this block.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "text",
+                    "block_type"
+                ],
+                "additionalProperties": false,
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "block_type": {
+                                    "const": "box"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "box"
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "block_type": {
+                                    "const": "polygon"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "polygon"
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "block_type": {
+                                    "const": "line"
+                                }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "box"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "polygon"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this extraction.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "extraction_type",
+        "blocks"
+    ],
+    "additionalProperties": false,
+    "oneOf": [
+        {
+            "properties": {
+                "extraction_type": {
+                    "enum": [
+                        "text",
+                        "lines"
+                    ]
+                }
+            }
+        },
+        {
+            "properties": {
+                "extraction_type": {
+                    "enum": [
+                        "boxes",
+                        "polygons",
+                        "mixed"
+                    ]
+                }
+            },
+            "required": [
+                "unit"
+            ]
+        }
+    ],
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "normalized"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "blocks": {
+                        "items": {
+                            "properties": {
+                                "box": {
+                                    "properties": {
+                                        "x": {
+                                            "maximum": 1
+                                        },
+                                        "y": {
+                                            "maximum": 1
+                                        },
+                                        "width": {
+                                            "maximum": 1
+                                        },
+                                        "height": {
+                                            "maximum": 1
+                                        }
+                                    }
+                                },
+                                "polygon": {
+                                    "items": {
+                                        "properties": {
+                                            "x": {
+                                                "maximum": 1
+                                            },
+                                            "y": {
+                                                "maximum": 1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "per_mille"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "blocks": {
+                        "items": {
+                            "properties": {
+                                "box": {
+                                    "properties": {
+                                        "x": {
+                                            "maximum": 1000
+                                        },
+                                        "y": {
+                                            "maximum": 1000
+                                        },
+                                        "width": {
+                                            "maximum": 1000
+                                        },
+                                        "height": {
+                                            "maximum": 1000
+                                        }
+                                    }
+                                },
+                                "polygon": {
+                                    "items": {
+                                        "properties": {
+                                            "x": {
+                                                "maximum": 1000
+                                            },
+                                            "y": {
+                                                "maximum": 1000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,190 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/geolocation",
+    "title": "Geolocation",
+    "version": "0.1.0",
+    "description": "Represent a geographic feature. Defines a subset of GeoJSON (RFC 7946) optimized for predictable parsing and indexing. It restricts the root to a single 'Feature', supports all fixed-depth geometries (Point, Polygon, Multi-types), and enforces flat properties to prevent recursion and nesting attacks.",
+    "type": "object",
+    "properties": {
+        "type": {
+            "const": "Feature"
+        },
+        "id": {
+            "description": "A unique identifier for the feature.",
+            "anyOf": [
+                { "type": "string", "maxLength": 128 },
+                { "type": "number" }
+            ]
+        },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "geometry": {
+            "description": "The geometry of the feature. Uses WGS 84 coordinate reference system.",
+            "anyOf": [
+                { "type": "null" },
+                {
+                    "title": "Point",
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Point" },
+                        "coordinates": { "$ref": "#/$defs/position" },
+                        "bbox": { "$ref": "#/$defs/bbox" }
+                    },
+                    "required": ["type", "coordinates"],
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                },
+                {
+                    "title": "LineString",
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "LineString" },
+                        "coordinates": {
+                            "type": "array",
+                            "items": { "$ref": "#/$defs/position" },
+                            "minItems": 2,
+                            "maxItems": 10000
+                        },
+                        "bbox": { "$ref": "#/$defs/bbox" }
+                    },
+                    "required": ["type", "coordinates"],
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                },
+                {
+                    "title": "Polygon",
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "Polygon" },
+                        "coordinates": { "$ref": "#/$defs/polygon-coords" },
+                        "bbox": { "$ref": "#/$defs/bbox" }
+                    },
+                    "required": ["type", "coordinates"],
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                },
+                {
+                    "title": "MultiPoint",
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "MultiPoint" },
+                        "coordinates": {
+                            "type": "array",
+                            "items": { "$ref": "#/$defs/position" },
+                            "maxItems": 10000
+                        },
+                        "bbox": { "$ref": "#/$defs/bbox" }
+                    },
+                    "required": ["type", "coordinates"],
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                },
+                {
+                    "title": "MultiPolygon",
+                    "type": "object",
+                    "properties": {
+                        "type": { "const": "MultiPolygon" },
+                        "coordinates": {
+                            "type": "array",
+                            "items": { "$ref": "#/$defs/polygon-coords" },
+                            "maxItems": 1000
+                        },
+                        "bbox": { "$ref": "#/$defs/bbox" }
+                    },
+                    "required": ["type", "coordinates"],
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                }
+            ]
+        },
+        "properties": {
+            "description": "An object containing additional properties of the feature. Can be null.",
+            "anyOf": [
+                { "type": "null" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                        },
+                        "camera_make": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "camera_model": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "maxProperties": 100,
+                    "additionalProperties": { "$ref": "#/$defs/foreign-member" }
+                }
+            ]
+        }
+    },
+    "required": [
+        "type",
+        "geometry",
+        "properties"
+    ],
+    "additionalProperties": { "$ref": "#/$defs/foreign-member" },
+    "$defs": {
+        "position": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 3,
+            "description": "A single position [longitude, latitude, optional altitude]."
+        },
+        "linear-ring": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/position" },
+            "minItems": 4,
+            "maxItems": 10000
+        },
+        "polygon-coords": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/linear-ring" },
+            "maxItems": 100
+        },
+        "bbox": {
+            "description": "A bounding box array (RFC 7946, Section 5).",
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 6
+        },
+       "foreign-member": {
+            "description": "Constrained definition of RFC 7946 Foreign Members.",
+            "anyOf": [
+                { "type": "string", "maxLength": 2048 },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" },
+                { 
+                    "type": "array", 
+                    "maxItems": 100,
+                    "items": { 
+                        "anyOf": [
+                             { "type": "string", "maxLength": 1024 },
+                             { "type": "number" },
+                             { "type": "boolean" }
+                        ]
+                    }
+                },
+                { 
+                    "type": "object", 
+                    "maxProperties": 20,
+                    "additionalProperties": {
+                        "anyOf": [
+                            { "type": "string", "maxLength": 2048 },
+                            { "type": "number" },
+                            { "type": "boolean" },
+                            { "type": "null" }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}

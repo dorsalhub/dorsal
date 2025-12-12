@@ -1,0 +1,158 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/regression",
+    "title": "Regression",
+    "version": "0.1.0",
+    "description": "Represent continuous numerical predictions. Supports point estimates, confidence intervals, and time-series forecasting.",
+    "type": "object",
+    "properties": {
+        "target": {
+            "type": "string",
+            "description": "The name of the variable being predicted (e.g., 'temperature', 'stock_price').",
+            "maxLength": 128
+        },
+        "unit": {
+            "type": "string",
+            "description": "The unit of measurement.",
+            "maxLength": 32
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this regression.",
+            "maxLength": 1024
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "Explanation of the quality score metric (e.g. 'R-squared' or 'Model Confidence').",
+            "maxLength": 256
+        },
+        "points": {
+            "type": "array",
+            "description": "The regression data points. A single item represents a point estimate; multiple items represent a time series or distribution.",
+            "maxItems": 10000,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "value": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "The predicted or sampled value."
+                    },
+                    "statistic": {
+                        "type": "string",
+                        "description": "The statistical nature of this value.",
+                        "enum": [
+                            "mean",
+                            "median",
+                            "mode",
+                            "min",
+                            "max",
+                            "quantile",
+                            "sample"
+                        ]
+                    },
+                    "quantile_level": {
+                        "type": "number",
+                        "description": "If statistic='quantile', this defines the level (e.g., 0.95).",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "The specific time this prediction applies to."
+                    },
+                    "interval_lower": {
+                        "type": "number",
+                        "description": "The lower bound of the confidence interval."
+                    },
+                    "interval_upper": {
+                        "type": "number",
+                        "description": "The upper bound of the confidence interval."
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "A quality score for this specific point.",
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Arbitrary metadata relevant to this point.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "value"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this regression.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "points"
+    ],
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "points": {
+                        "maxItems": 0
+                    }
+                }
+            },
+            "then": {
+                "required": [
+                    "producer"
+                ]
+            }
+        }
+    ],
+    "additionalProperties": false
+}

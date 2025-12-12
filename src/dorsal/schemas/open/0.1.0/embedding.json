@@ -1,0 +1,60 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/embedding",
+    "title": "Embedding",
+    "version": "0.1.0",
+    "description": "Store a vector and (optionally) the algorithm or embedding model which generated it.",
+    "type": "object",
+    "properties": {
+        "model": {
+            "type": "string",
+            "description": "The model, tool or algorithm used to create this embedding.",
+            "maxLength": 1024
+        },
+        "target": {
+            "type": "string",
+            "description": "The name of the variable or feature being embedded (e.g., 'description_text', 'query').",
+            "maxLength": 128
+        },
+        "vector": {
+            "type": "array",
+            "description": "Embedding vector. Its length represents its dimensionality.",
+            "items": {
+                "type": "number"
+            },
+            "minItems": 1,
+            "maxItems": 16384
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this embedding.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "vector"
+    ],
+    "additionalProperties": false
+}

@@ -1,0 +1,157 @@
+{%- macro render_annotation_fields(data, parent_key='') -%}
+    {%- for key, value in data.items() -%}
+        {%- set current_key = parent_key ~ key if parent_key else key -%}
+        {%- if value is mapping -%}
+            <div class="annotation-group">
+                <h3 class="sub-header">{{ current_key }}</h3>
+                <div class="nested-item">
+                    {{ render_annotation_fields(value, parent_key=current_key ~ ' -> ') }}
+                </div>
+            </div>
+        {%- elif value is iterable and value is not string -%}
+            <div class="annotation-group">
+                 <h3 class="sub-header">{{ current_key }}</h3>
+                 <div class="nested-item">
+                    {%- for item in value -%}
+                         {# Fix: Check if item is mapping before recursing #}
+                         {%- if item is mapping -%}
+                             {{ render_annotation_fields(item, parent_key=current_key ~ ' (' ~ loop.index ~ ') -> ') }}
+                         {%- else -%}
+                             <div class="grid-item">
+                                <span class="value">{{ item }}</span>
+                             </div>
+                         {%- endif -%}
+                         {% if not loop.last %}<hr style="border-color: var(--border-color); margin: 0.5rem 0;">{% endif %}
+                    {%- endfor -%}
+                </div>
+            </div>
+        {%- else -%}
+            <div class="grid-item">
+                <span class="label">{{ current_key }}</span>
+                <span class="value">{{ value }}</span>
+            </div>
+        {%- endif -%}
+    {%- endfor -%}
+{%- endmacro -%}
+
+<main>
+    <div class="tabs">
+        <span class="tab-link active" data-target="#tab-info">File Information</span>
+        <span class="tab-link" data-target="#tab-json">Raw JSON</span>
+    </div>
+
+    <div id="tab-info" class="tab-content active">
+        <div class="section">
+            <div class="grid">
+                 <div class="grid-item">
+                    <div class="label">Name</div>
+                    <div class="value">{{ file['annotations']['file/base']['record']['name'] }}</div>
+                </div>
+                 <div class="grid-item">
+                    <div class="label">Extension</div>
+                    <div class="value {% if not file['annotations']['file/base']['record']['extension'] %}subdued{% endif %}">{{ file['annotations']['file/base']['record']['extension'] or 'None' }}</div>
+                </div>
+                <div class="grid-item">
+                    <div class="label">Size</div>
+                    <div class="value" data-toggle="value" data-human="{{ file_size['human'] }}" data-raw="{{ file_size['raw'] }}">{{ file_size['human'] }}</div>
+                </div>
+                <div class="grid-item">
+                    <div class="label">Media Type</div>
+                    <div class="value mono">{{ file['annotations']['file/base']['record']['media_type'] }}</div>
+                </div>
+                <div class="grid-item">
+                    <div class="label">Date Modified (Local)</div>
+                    <div class="value" data-toggle="value" data-human="{{ local_filesystem_info['date_modified']['human'] }}" data-raw="{{ local_filesystem_info['date_modified']['raw'] }}">{{ local_filesystem_info['date_modified']['human'] }}</div>
+                </div>
+                <div class="grid-item">
+                    <div class="label">Date Created (Local)</div>
+                    <div class="value" data-toggle="value" data-human="{{ local_filesystem_info['date_created']['human'] }}" data-raw="{{ local_filesystem_info['date_created']['raw'] }}">{{ local_filesystem_info['date_created']['human'] }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Content Hashes</h2>
+            <div class="grid-single-col">
+                <div class="grid-item">
+                    <span class="label" data-tooltip="Cryptographic hash for verifying file integrity." data-tooltip-placement="top">
+                        <a href="https://en.wikipedia.org/wiki/SHA-2" target="_blank" rel="noopener noreferrer">SHA-256</a>
+                    </span>
+                    <div class="hash-container">
+                        <span class="hash-value">{{ file['hash'] }}</span>
+                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                    </div>
+                </div>
+                <div class="grid-item">
+                    <span class="label" data-tooltip="A modern, high-speed cryptographic hash." data-tooltip-placement="top">
+                        <a href="https://en.wikipedia.org/wiki/BLAKE_(hash_function)" target="_blank" rel="noopener noreferrer">BLAKE3</a>
+                    </span>
+                     <div class="hash-container">
+                        <span class="hash-value">{{ file['validation_hash'] }}</span>
+                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                    </div>
+                </div>
+                {% if file['similarity_hash'] %}
+                <div class="grid-item">
+                    <span class="label" data-tooltip="A locality-sensitive hash used to detect similar (but not identical) files." data-tooltip-placement="top">
+                       <a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing" target="_blank" rel="noopener noreferrer">TLSH</a>
+                    </span>
+                     <div class="hash-container">
+                        <span class="hash-value">{{ file['similarity_hash'] }}</span>
+                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                    </div>
+                </div>
+                {% endif %}
+                {% if file.get('quick_hash') %}
+                <div class="grid-item">
+                    <span class="label" data-tooltip="A fast, sample-based hash for quick identification of large files." data-tooltip-placement="top">
+                        <a href="http://docs.dorsalhub.com/quick" target="_blank" rel="noopener noreferrer">Quick Hash</a>
+                    </span>
+                     <div class="hash-container">
+                        <span class="hash-value">{{ file['quick_hash'] }}</span>
+                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if file['annotations'] and file['annotations']|length > 1 %}
+        <div class="section">
+            <h2 class="section-title">Annotations</h2>
+            <div class="accordion">
+                {% for key, annotation in file['annotations'].items() %}
+                    {% if annotation and key != 'file/base' %}
+                    <div class="accordion-item">
+                        <div class="accordion-header">
+                            <span>{{ key }}</span>
+                            <span class="accordion-icon">&#9660;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <div class="grid-single-col">
+                                {{ render_annotation_fields(annotation['record']) }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if file['tags'] %}
+        <div class="section">
+            <h2 class="section-title">Tags</h2>
+            <div>
+            {% for tag in file['tags'] %}
+                <span class="tag">{{ tag['name'] }}: {{ tag['value'] }}</span>
+            {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="tab-json" class="tab-content">
+        <pre><code>{{ raw_data_json }}</code></pre>
+    </div>
+</main>

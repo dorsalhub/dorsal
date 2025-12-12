@@ -1,0 +1,32 @@
+{# templates/collection/panels/_mini_file_view.html #}
+{% set base_record = context.file.annotations['file/base'].record %}
+{% set local_attrs = context.file.local_attributes %}
+
+<div class="mini-section">
+    <div class="grid-single-col" style="gap: 0.75rem;">
+        <div class="grid-item">
+            <span class="label">Name</span>
+            <div class="value" data-tooltip="{{ base_record.name | e }}" data-tooltip-placement="top">{{ base_record.name }}</div>
+        </div>
+        <div class="grid-item">
+            <span class="label">Extension</span>
+            <span class="value {% if not base_record.extension %}subdued{% endif %}">{{ base_record.extension or 'None' }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Size</span>
+            <span class="value">{{ human_filesize(base_record.size) }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Media Type</span>
+            <span class="value mono">{{ base_record.media_type }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Modified</span>
+            <span class="value">{{ local_attrs.date_modified.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Created</span>
+            <span class="value">{{ local_attrs.date_created.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+    </div>
+</div>

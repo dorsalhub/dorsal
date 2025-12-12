@@ -1,0 +1,109 @@
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Run Static Analysis
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy src/dorsal
+
+  build-and-test:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv (Unix)
+        if: runner.os != 'Windows'
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install uv (Windows)
+        if: runner.os == 'Windows'
+        run: irm https://astral.sh/uv/install.ps1 | iex
+        shell: pwsh
+
+      - name: Add uv to PATH (Unix)
+        if: runner.os != 'Windows'
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add uv to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+        
+      - name: Get uv cache directory
+        id: get-uv-cache-dir
+        run: echo "dir=$(uv cache dir)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Set up uv cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.get-uv-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-uv-
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install System Dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          for i in 1 2 3; do
+            brew install libmagic mediainfo && break
+            echo "brew install failed, retrying..."
+            sleep 15
+          done
+
+      - name: Configure dynamic linker path for macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          if [[ "${{ runner.arch }}" == "ARM64" ]]; then
+            echo "DYLD_LIBRARY_PATH=/opt/homebrew/lib" >> $GITHUB_ENV
+          else
+            echo "DYLD_LIBRARY_PATH=/usr/local/lib" >> $GITHUB_ENV
+          fi
+
+      - name: Run tests
+        run: uv run pytest

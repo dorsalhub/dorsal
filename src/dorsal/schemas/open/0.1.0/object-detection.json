@@ -1,0 +1,302 @@
+{
+    "_license": {
+        "id": "Apache-2.0",
+        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://dorsalhub.com/schemas/open/object-detection",
+    "title": "Object Detection",
+    "version": "0.1.0",
+    "description": "Represent objects detected within a source. Supports bounding boxes, polygons, hierarchical relationships, and confidence scores.",
+    "type": "object",
+    "properties": {
+        "unit": {
+            "type": "string",
+            "description": "The unit for all coordinate values. 'px' for pixels, 'normalized' for values from 0.0 to 1.0.",
+            "enum": [
+                "px",
+                "pt",
+                "normalized",
+                "per_mille"
+            ]
+        },
+        "producer": {
+            "type": "string",
+            "description": "The creator (model, tool or author) of this record.",
+            "maxLength": 1024
+        },
+        "vocabulary_url": {
+            "type": "string",
+            "description": "A URL pointing to a more detailed external vocabulary or ontology.",
+            "format": "uri",
+            "maxLength": 2048
+        },
+        "vocabulary": {
+            "type": "array",
+            "description": "A list of the possible labels for detected objects.",
+            "maxItems": 100,
+            "items": {
+                "type": "string",
+                "description": "A single valid label from the vocabulary.",
+                "maxLength": 128
+            }
+        },
+        "score_explanation": {
+            "type": "string",
+            "description": "Defines the meaning and range of the 'score' field.",
+            "maxLength": 256
+        },
+        "objects": {
+            "type": "array",
+            "description": "An array of objects detected within the file.",
+            "maxItems": 100000,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "A unique identifier for this object within the annotation (e.g., UUID4). Required for establishing hierarchies.",
+                        "maxLength": 128
+                    },
+                    "parent_id": {
+                        "type": "string",
+                        "description": "The id of the parent object, if this object is nested within another.",
+                        "maxLength": 128
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "The label of the detected object (e.g., 'car', 'face', 'logo').",
+                        "maxLength": 128
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "A normalized score for this detection (-1.0 to 1.0). Positive values [0, 1] represent confidence in the object's presence. Negative values [-1, 0) are reserved for 'hard negatives' (e.g., explicitly annotating that an object is not present in this region).",
+                        "minimum": -1,
+                        "maximum": 1
+                    },
+                    "box": {
+                        "type": "object",
+                        "description": "A rectangular bounding box defined by its top-left corner (x,y) and its dimensions.",
+                        "properties": {
+                            "x": {
+                                "type": "number",
+                                "description": "The x-coordinate of the top-left corner.",
+                                "minimum": 0
+                            },
+                            "y": {
+                                "type": "number",
+                                "description": "The y-coordinate of the top-left corner.",
+                                "minimum": 0
+                            },
+                            "width": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The width of the box."
+                            },
+                            "height": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": "The height of the box."
+                            }
+                        },
+                        "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "polygon": {
+                        "type": "array",
+                        "description": "An array of coordinate points defining the object's boundary for non-rectangular shapes.",
+                        "maxItems": 1000,
+                        "minItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "x": {
+                                    "type": "number",
+                                    "description": "The x-coordinate of a vertex point.",
+                                    "minimum": 0
+                                },
+                                "y": {
+                                    "type": "number",
+                                    "description": "The y-coordinate of a vertex point.",
+                                    "minimum": 0
+                                }
+                            },
+                            "required": [
+                                "x",
+                                "y"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Arbitrary metadata relevant to this item.",
+                        "maxProperties": 16,
+                        "additionalProperties": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "boolean"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "label"
+                ],
+                "additionalProperties": false,
+                "oneOf": [
+                    {
+                        "required": [
+                            "box"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "polygon"
+                        ]
+                    }
+                ]
+            }
+        },
+        "attributes": {
+            "type": "object",
+            "description": "Arbitrary metadata relevant to this record.",
+            "maxProperties": 16,
+            "additionalProperties": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "maxLength": 1024
+                    },
+                    {
+                        "type": "number"
+                    },
+                    {
+                        "type": "boolean"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "unit",
+        "objects"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "normalized"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "objects": {
+                        "items": {
+                            "properties": {
+                                "box": {
+                                    "properties": {
+                                        "x": {
+                                            "maximum": 1
+                                        },
+                                        "y": {
+                                            "maximum": 1
+                                        },
+                                        "width": {
+                                            "maximum": 1
+                                        },
+                                        "height": {
+                                            "maximum": 1
+                                        }
+                                    }
+                                },
+                                "polygon": {
+                                    "items": {
+                                        "properties": {
+                                            "x": {
+                                                "maximum": 1
+                                            },
+                                            "y": {
+                                                "maximum": 1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "unit": {
+                        "const": "per_mille"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "objects": {
+                        "items": {
+                            "properties": {
+                                "box": {
+                                    "properties": {
+                                        "x": {
+                                            "maximum": 1000
+                                        },
+                                        "y": {
+                                            "maximum": 1000
+                                        },
+                                        "width": {
+                                            "maximum": 1000
+                                        },
+                                        "height": {
+                                            "maximum": 1000
+                                        }
+                                    }
+                                },
+                                "polygon": {
+                                    "items": {
+                                        "properties": {
+                                            "x": {
+                                                "maximum": 1000
+                                            },
+                                            "y": {
+                                                "maximum": 1000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
