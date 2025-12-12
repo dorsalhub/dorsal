@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dorsal"
+name = "dorsalhub"
 version = "0.1.0"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
