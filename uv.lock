@@ -336,7 +336,7 @@ toml = [
 ]
 
 [[package]]
-name = "dorsal"
+name = "dorsalhub"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -389,8 +389,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
-    { name = "dorsal", extras = ["pandas"], marker = "extra == 'all'" },
-    { name = "dorsal", extras = ["tlsh"], marker = "extra == 'all'" },
+    { name = "dorsalhub", extras = ["pandas"], marker = "extra == 'all'" },
+    { name = "dorsalhub", extras = ["tlsh"], marker = "extra == 'all'" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },

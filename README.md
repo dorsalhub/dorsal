@@ -20,8 +20,10 @@ For metadata generation, Dorsal uses a fully configurable local metadata extract
 
 ## Installation
 
+Dorsal is available on pypi as `dorsalhub`.
+
 ```bash
-pip install dorsal
+pip install dorsalhub
 ```
 
 ## Authentication

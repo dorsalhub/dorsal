@@ -14,4 +14,4 @@
 
 import importlib.metadata
 
-__version__ = importlib.metadata.version("dorsal")
+__version__ = importlib.metadata.version("dorsalhub")
