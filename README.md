@@ -6,16 +6,16 @@
 [![Tests](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg)](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Dorsal** is a Python library and command line tool for generating, validating, and managing structured metadata for your files.
+**Dorsal** is a Python library and command line tool for generating, validating, and managing structured file metadata.
 
-For metadata generation, Dorsal uses a fully configurable local metadata extraction pipeline. Metadata records can be exported to file or synced to **[DorsalHub](https://dorsalhub.com)** - a private-by-default platform for searching and tagging your file metadata.
+Dorsal has a fully configurable local metadata extraction pipeline. Metadata records can be exported to file or synced to **[DorsalHub](https://dorsalhub.com)** - a private-by-default platform for searching and tagging file metadata.
 
 ### Core Concepts
 
-* **Local First:** Metadata extraction happens on your machine, not in the cloud. Use the CLI or python API to run the built-in extraction models or incorporate your own.
+* **Local First:** Metadata extraction happens locally, not in the cloud. Use the CLI or python API to run the built-in extraction models or incorporate your own.
 * **Strictly Validated:** All annotations are automatically checked against strict JSON Schemas and Pydantic models, ensuring predictability and easy downstream integration.
-* **Annotate Any File:** No file-type restrictions, and good out-of-the-box support for many common file types including PDFs, Office documents, Media files and more.
-* **Extensible:** Add support for your own file types or annotation generation needs. Integrate your own models with arbitrary code.
+* **Annotate Any File:** No file-type restrictions, and out-of-the-box support for many common file types including PDFs, Office documents, Media files and more.
+* **Extensible:** Support your own file types or annotation generation needs. Integrate your own models with arbitrary code.
 -----
 
 ## Installation
@@ -28,19 +28,17 @@ pip install dorsalhub
 
 ## Authentication
 
-To sync metadata records with DorsalHub, you must authenticate with an API Key (generate one on your DorsalHub settings page).
+To sync metadata records with DorsalHub, authenticate with an API Key (generate one on your DorsalHub settings page).
 
 ```bash
 dorsal auth login
 ```
 
-Run this command to store your API key in a local config file. Alternatively, set the `DORSAL_API_KEY` environment variable for CI/CD workflows.
+Alternatively, set the `DORSAL_API_KEY` environment variable.
 
 -----
 
 ## CLI Usage
-
-The CLI is the fastest way to inspect files and push records.
 
 ### 1. Scan a File
 
@@ -105,8 +103,6 @@ The `LocalFile` class runs the extraction pipeline on a specific file path.
 
 ### 1. Access Extracted Data
 
-Dorsal exposes extracted metadata as typed Pydantic models.
-
 ```python
 from dorsal import LocalFile
 
@@ -125,8 +121,6 @@ if lf.pdf:
 
 
 ### 2. Add Tags & Annotations
-
-You can enrich the record with your own data before syncing.
 
 ```python
 # Add a simple key-value tag
@@ -211,7 +205,7 @@ register_model(
 
 -----
 
-Now, whenever you run `dorsal file scan` or `LocalFile()`, this model will execute automatically!
+Now, each time you run `dorsal file scan` or `LocalFile()`, this model will execute automatically.
 
 -----
 
