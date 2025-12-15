@@ -2841,7 +2841,7 @@ class DorsalClient:
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
 
-            with self.session.get(url=download_url, stream=True) as r:
+            with requests.get(url=download_url, stream=True) as r:
                 r.raise_for_status()
                 with open(output_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
