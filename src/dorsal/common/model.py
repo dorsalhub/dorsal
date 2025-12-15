@@ -33,7 +33,7 @@ class AnnotationModel:
     """
     The base class for all Annotation Models.
 
-    See: [AnnotationModel docs]({DOCS_URL}/reference/annotation-model/)
+    See: [AnnotationModel docs](http://docs.dorsalhub.com/reference/annotation-model/)
 
     Subclasses must implement the `main` method.
     """
