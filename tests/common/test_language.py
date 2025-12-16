@@ -15,7 +15,6 @@
 import pytest
 import json
 from dorsal.common.language import (
-    _get_language_map,
     get_language_set,
     get_alpha_3_set,
     normalize_language_name,
@@ -35,7 +34,6 @@ def mock_mapping_file(tmp_path, mocker):
     f.write_text(json.dumps(data))
 
     mocker.patch("dorsal.common.language._MAPPING_FILE", str(f))
-    _get_language_map.cache_clear()
     get_language_set.cache_clear()
     get_alpha_3_set.cache_clear()
     return f
@@ -69,17 +67,6 @@ def mock_langcodes(mocker):
 
 
 # --- Tests ---
-
-
-def test_load_mapping_success(mock_mapping_file):
-    mapping = _get_language_map()
-    assert "custom_lang" in mapping
-
-
-def test_load_mapping_missing(mocker):
-    mocker.patch("dorsal.common.language._MAPPING_FILE", "nonexistent.json")
-    _get_language_map.cache_clear()
-    assert _get_language_map() == {}
 
 
 def test_public_sets(mock_mapping_file):
