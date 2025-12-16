@@ -27,7 +27,12 @@ from dorsal.file.helpers import (
 from dorsal.file.validators.open_schema import get_open_schema_validator
 import dorsal.file.validators.open_schema as open_schema_module
 from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER, ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR
-from dorsal.file.schemas import OPEN_SCHEMA_NAME_MAP, get_open_schema, _load_schema_from_package
+from dorsal.file.schemas import (
+    OPEN_SCHEMA_NAME_MAP,
+    get_open_schema,
+    _load_schema_from_package,
+    OPEN_VALIDATION_SCHEMAS_VER,
+)
 
 
 def test_build_classification_record():
@@ -92,11 +97,12 @@ def test_build_generic_record():
 @patch("dorsal.file.schemas.importlib.resources.files")
 def test_get_open_schema(mock_files):
     mock_file = MagicMock()
-    mock_file.read_text.return_value = '{"type": "object", "version": "0.1.0"}'
+    expected_schema = {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
+    mock_file.read_text.return_value = json.dumps(expected_schema)
     mock_files.return_value.joinpath.return_value = mock_file
 
     schema = get_open_schema("generic")
-    assert schema == {"type": "object", "version": "0.1.0"}
+    assert schema == {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
 
     with pytest.raises(ValueError):
         get_open_schema("invalid_name")  # type: ignore
@@ -152,7 +158,7 @@ def test_bundled_schemas_integrity():
 
 def test_get_open_schema_with_override(tmp_path):
     custom_schema = {
-        "version": "0.1.0",
+        "version": OPEN_VALIDATION_SCHEMAS_VER,
         "title": "Overridden Generic Schema",
         "type": "object",
         "properties": {"custom_field": {"type": "string"}},

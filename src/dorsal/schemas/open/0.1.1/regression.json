@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/regression",
     "title": "Regression",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Represent continuous numerical predictions. Supports point estimates, confidence intervals, and time-series forecasting.",
     "type": "object",
     "properties": {
@@ -67,6 +67,7 @@
                     "timestamp": {
                         "type": "string",
                         "format": "date-time",
+                        "maxLength": 128,
                         "description": "The specific time this prediction applies to."
                     },
                     "interval_lower": {

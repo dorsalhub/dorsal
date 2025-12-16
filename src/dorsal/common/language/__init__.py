@@ -26,7 +26,6 @@ Requires: pip install langcodes[data]
 import json
 import logging
 import os
-import re
 from typing import Dict, Optional, Set, cast
 from functools import lru_cache
 
@@ -128,14 +127,15 @@ def normalize_language_name(lang_str: str | None) -> str | None:
     """
     Cleans a messy language string and converts it to its standard
     English language name (e.g., "English", "Chinese (Simplified)").
-
-    Relies on 'langcodes[data]' library.
     """
     lang_obj = _get_lang_obj(lang_str)
     if not lang_obj:
         return None
 
     try:
+        if lang_obj.to_alpha3() == "und":
+            return None
+
         return lang_obj.language_name(DEFAULT_LANGUAGE)
     except Exception:
         return None
@@ -153,7 +153,10 @@ def normalize_language_alpha3(lang_str: str | None) -> str | None:
         return None
 
     try:
-        return lang_obj.to_alpha3()
+        code = lang_obj.to_alpha3()
+        if code == "und":
+            return None
+        return code
     except LookupError:
         logger.debug(f"Language '{lang_str}' has no alpha-3 code.")
         return None
@@ -181,6 +184,12 @@ def extract_locale_code(lang_str: str | None) -> str | None:
     clean_str = lang_str.strip().replace("_", "-")
 
     if tag_is_valid(clean_str):
+        try:
+            if Language.get(clean_str).to_alpha3() == "und":
+                return None
+        except Exception:
+            pass
+
         return clean_str
 
     logger.debug(f"Could not extract a valid locale code from: '{lang_str}'")

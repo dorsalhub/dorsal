@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/entity-extraction",
     "title": "Entity Extraction",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Represent named entities, structural slots, or visual concepts extracted from unstructured data. Links raw evidence (text spans or geometric regions) to normalized values and business concepts.",
     "type": "object",
     "properties": {

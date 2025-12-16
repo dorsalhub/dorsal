@@ -70,11 +70,3 @@ class HydratedSingleCollectionResponse(BaseModel):
     collection: FileCollection
     files: list[FileRecordDateTime]
     pagination: Pagination
-
-
-class BulkDetailsRequest(BaseModel):
-    hash_strings: list[str] = Field(..., min_length=1)
-    private: bool = Field(
-        False,
-        description="Specifies whether to look for the hashes in public (False) or private (True) file records.",
-    )

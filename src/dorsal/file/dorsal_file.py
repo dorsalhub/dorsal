@@ -1368,6 +1368,12 @@ class LocalFile(_DorsalFile):
         """
         from dorsal.file.validators.file_record import NewFileTag
 
+        if len(self.tags) >= 128:
+            raise ValueError(
+                "Cannot add tag: The limit of 128 tags per file has been reached. "
+                "Please delete existing tags before adding new ones."
+            )
+
         if not self.validation_hash:
             error_msg = "Cannot add tag: File is missing a 'validation_hash'. "
             logger.error(

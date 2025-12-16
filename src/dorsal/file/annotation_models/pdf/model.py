@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import re
 from typing import Any
 
 from dorsal.common.model import AnnotationModel
@@ -23,12 +24,14 @@ from dorsal.file.utils.dates import PDF_DATETIME
 
 logger = logging.getLogger(__name__)
 
+KEYWORD_SPLIT_RX = re.compile(r"[;,]")
+
 
 class PDFAnnotationModel(AnnotationModel):
     """Extract metadata from PDF files using pypdfium2."""
 
     id: str = "dorsal/pdf"
-    version: str = "1.0.0"
+    version: str = "1.0.1"
     variant: str = "pypdfium2"
 
     def _normalize_pdf_metadata(self, raw_metadata: dict[str, Any]) -> dict[str, Any]:
@@ -49,6 +52,15 @@ class PDFAnnotationModel(AnnotationModel):
 
         for pdfium_key, target_key in PDFIUM_METADATA_FIELD_MAPPING.items():
             raw_value = raw_metadata.get(pdfium_key)
+            if target_key == "keywords":
+                if raw_value and isinstance(raw_value, str):
+                    normalized_metadata[target_key] = [
+                        k.strip() for k in KEYWORD_SPLIT_RX.split(raw_value) if k.strip()
+                    ]
+                else:
+                    normalized_metadata[target_key] = []
+                continue
+
             if raw_value is not None and raw_value != "":
                 normalized_metadata[target_key] = raw_value
             else:

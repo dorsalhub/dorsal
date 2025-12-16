@@ -16,6 +16,7 @@ import datetime
 from typing import Any, Literal
 import requests
 from pydantic import BaseModel, Field, NonNegativeInt, computed_field
+
 from dorsal.file.validators.file_record import AnnotationGroup, FileRecordDateTime
 from dorsal.file.validators.collection import (
     FileCollection,
@@ -23,6 +24,7 @@ from dorsal.file.validators.collection import (
     HydratedSingleCollectionResponse,
 )
 from dorsal.common.validators import Pagination
+from dorsal.file.validators.common import SHA256Hash
 
 
 class TagResult(BaseModel):
@@ -118,7 +120,7 @@ class CollectionCreateRequest(BaseModel):
 class AddFilesRequest(BaseModel):
     """For adding files to a collection."""
 
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="A list of file SHA-256 hashes to add to the collection.",
         max_length=10_000,
     )
@@ -168,7 +170,7 @@ class ExportJobRequest(BaseModel):
 
 
 class RemoveFilesRequest(BaseModel):
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="A list of file SHA-256 hashes to remove from the collection.",
         max_length=10_000,
     )
@@ -180,7 +182,7 @@ class RemoveFilesResponse(BaseModel):
 
 
 class CollectionSyncRequest(BaseModel):
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="The complete list of file SHA-256 hashes the collection should contain.",
         max_length=1_000_000,
     )
