@@ -17,7 +17,7 @@
 import datetime
 from typing import Any
 from pydantic import BaseModel, Field
-from dorsal.common.validators import TString4096
+from dorsal.common.validators import TStringList256, TString4096
 
 
 class WordProperties(BaseModel):
@@ -27,11 +27,11 @@ class WordProperties(BaseModel):
     word_count: int | None = Field(default=None, description="Number of words in the document.")
     char_count: int | None = Field(default=None, description="Number of characters in the document.")
     paragraph_count: int | None = Field(default=None, description="Number of paragraphs in the document.")
-    hyperlinks: list[TString4096] = Field(
-        default_factory=list, description="A list of external hyperlinks found in the document.", max_length=256
+    hyperlinks: TStringList256 = Field(
+        default_factory=list, description="A list of external hyperlinks found in the document."
     )
-    embedded_images: list[TString4096] = Field(
-        default_factory=list, description="A list of paths to embedded images within the OOXML package.", max_length=256
+    embedded_images: TStringList256 = Field(
+        default_factory=list, description="A list of paths to embedded images within the OOXML package."
     )
     has_track_changes: bool | None = Field(default=None, description="Indicates if 'Track Changes' is or was enabled.")
 
@@ -47,7 +47,7 @@ class ExcelSheet(BaseModel):
     column_count: int | None = Field(
         default=None, description="The number of columns with data, based on the <dimension> tag."
     )
-    column_names: list[TString4096] = Field(
+    column_names: TStringList256 = Field(
         default_factory=list,
         description="A list of values found in the first row (Row '1') of the sheet.",
         max_length=256,
@@ -60,8 +60,8 @@ class ExcelProperties(BaseModel):
     active_sheet_name: TString4096 | None = Field(
         default=None, description="The name of the sheet that was active when saved."
     )
-    sheet_names: list[TString4096] = Field(
-        default_factory=list, description="An ordered list of all sheet names in the workbook.", max_length=256
+    sheet_names: TStringList256 = Field(
+        default_factory=list, description="An ordered list of all sheet names in the workbook."
     )
     has_macros: bool | None = Field(default=None, description="True if the workbook contains macros.")
     sheets: list[ExcelSheet] = Field(
@@ -73,8 +73,8 @@ class PowerPointProperties(BaseModel):
     """Validation model for PowerPoint-specific properties (.pptx)."""
 
     slide_count: int | None = Field(default=None, description="The total number of slides in the presentation.")
-    slide_master_names: list[TString4096] = Field(
-        default_factory=list, description="A list of names of the slide masters.", max_length=256
+    slide_master_names: TStringList256 = Field(
+        default_factory=list, description="A list of names of the slide masters."
     )
 
 
@@ -93,7 +93,7 @@ class OfficeDocumentValidationModel(BaseModel):
     )
     title: TString4096 | None = Field(default=None, description="The document title.")
     subject: TString4096 | None = Field(default=None, description="The document subject.")
-    keywords: list[TString4096] = Field(default_factory=list, description="A list of keywords.")
+    keywords: TStringList256 = Field(default_factory=list, description="A list of keywords.")
     revision: int | None = Field(default=None, description="The document revision number.")
     creation_date: datetime.datetime | None = Field(default=None, description="The document creation timestamp.")
     modified_date: datetime.datetime | None = Field(default=None, description="The document modification timestamp.")
@@ -107,8 +107,8 @@ class OfficeDocumentValidationModel(BaseModel):
         default=None, description="The name of the template file (e.g., 'Normal.dotm')."
     )
 
-    structural_parts: list[TString4096] = Field(
-        default_factory=list, description="A list of all content types defined in the package.", max_length=256
+    structural_parts: TStringList256 = Field(
+        default_factory=list, description="A list of all content types defined in the package."
     )
     has_comments: bool | None = Field(
         default=None, description="True if the document package contains a comments part."
@@ -132,8 +132,8 @@ class OfficeDocumentValidationModel(BaseModel):
     default_font: TString4096 | None = Field(
         default=None, description="The default font defined in the document styles."
     )
-    all_fonts: list[TString4096] = Field(
-        default_factory=list, description="A list of all fonts declared in the font table.", max_length=256
+    all_fonts: TStringList256 = Field(
+        default_factory=list, description="A list of all fonts declared in the font table."
     )
 
     is_password_protected: bool = Field(

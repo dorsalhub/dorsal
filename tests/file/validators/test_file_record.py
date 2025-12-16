@@ -18,7 +18,14 @@ import uuid
 import datetime
 from pydantic import ValidationError
 
-from dorsal.file.validators.file_record import FileRecord, Annotations, AnnotationStub, Annotation, AnnotationSource
+from dorsal.file.validators.file_record import (
+    FileRecord,
+    Annotations,
+    AnnotationStub,
+    Annotation,
+    AnnotationsStrict,
+    AnnotationSource,
+)
 from dorsal.common.model import AnnotationModelSource
 
 
@@ -112,3 +119,131 @@ class TestAnnotationsExtras:
             Annotations(**{"file/base": valid_base_dict, "bad_list": [12345]})
 
         assert "List item is not a valid Annotation type" in str(exc.value)
+
+
+class TestAnnotationsStrict:
+    """
+    Validates the strict policies enforced on FileRecordStrict.annotations.
+    These rules protect the API from DoS and ensuring data integrity on writes.
+    """
+
+    def test_strict_rejects_stubs(self, mock_source, valid_stub):
+        """
+        Target: AnnotationsStrict._validate_no_stubs
+        Scenario: User tries to push a record containing an AnnotationStub.
+        Outcome: ValidationError (Stubs are read-only; writes must be fully hydrated).
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        payload = {"file/base": valid_base_dict, "open/classification": [valid_stub]}
+
+        with pytest.raises(ValidationError, match=r"FileRecordStrict.*cannot contain.*AnnotationStub"):
+            AnnotationsStrict.model_validate(payload)
+
+    def test_strict_width_limit(self, mock_source):
+        """
+        Target: AnnotationsStrict._validate_submission_limits
+        Scenario: User tries to push a record with > 64 distinct dataset keys.
+        Outcome: ValidationError (Too many datasets).
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        payload = {"file/base": valid_base_dict}
+
+        for i in range(65):
+            payload[f"user/dataset-{i}"] = {"source": mock_source.model_dump(), "record": {"label": "test"}}
+
+        with pytest.raises(ValidationError, match=r"Too many annotation schemas"):
+            AnnotationsStrict.model_validate(payload)
+
+    def test_strict_depth_limit(self, mock_source):
+        """
+        Target: AnnotationsStrict._validate_submission_limits
+        Scenario: User tries to push a single dataset with > 64 entries.
+        Outcome: ValidationError (Too many entries per dataset).
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        excessive_list = []
+        for _ in range(65):
+            excessive_list.append({"source": mock_source.model_dump(), "record": {"label": "test"}, "private": True})
+
+        payload = {"file/base": valid_base_dict, "open/classification": excessive_list}
+
+        with pytest.raises(ValidationError, match=r"exceeds the limit \(64\)"):
+            AnnotationsStrict.model_validate(payload)
+
+    def test_strict_valid_payload(self, mock_source):
+        """
+        Target: AnnotationsStrict
+        Scenario: User pushes a valid, hydrated record within limits.
+        Outcome: Success.
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        payload = {
+            "file/base": valid_base_dict,
+            "open/classification": [
+                {"source": mock_source.model_dump(), "record": {"label": "test-1"}, "private": True},
+                {"source": mock_source.model_dump(), "record": {"label": "test-2"}, "private": True},
+            ],
+        }
+
+        model = AnnotationsStrict.model_validate(payload)
+        extras = model.__pydantic_extra__
+        assert len(extras["open/classification"]) == 2
+
+
+class TestAnnotationsPermissive:
+    """
+    Validates that the standard Annotations model remains permissive.
+    This ensures LocalFile can hold large collaborative records (Stubs) without crashing.
+    """
+
+    def test_permissive_accepts_stubs(self, mock_source, valid_stub):
+        """
+        Target: Annotations (Base)
+        Scenario: Loading a record containing Stubs (common in Read operations).
+        Outcome: Success.
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        payload = {"file/base": valid_base_dict, "open/classification": [valid_stub]}
+
+        model = Annotations.model_validate(payload)
+        extras = model.__pydantic_extra__
+        assert isinstance(extras["open/classification"][0], AnnotationStub)
+
+    def test_permissive_allows_large_stub_lists(self, mock_source, valid_stub):
+        """
+        Target: Annotations (Base)
+        Scenario: Loading a "Tesla Report" style record with > 64 stubs.
+        Outcome: Success (Limits apply to Strict/Write models only).
+        """
+        valid_base_dict = {
+            "source": mock_source.model_dump(),
+            "record": {"hash": "a" * 64, "size": 1024, "media_type": "text/plain", "name": "base.txt"},
+        }
+
+        large_stub_list = [valid_stub for _ in range(100)]
+
+        payload = {"file/base": valid_base_dict, "open/classification": large_stub_list}
+
+        model = Annotations.model_validate(payload)
+        extras = model.__pydantic_extra__
+        assert len(extras["open/classification"]) == 100

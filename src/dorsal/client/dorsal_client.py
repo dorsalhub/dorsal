@@ -78,11 +78,9 @@ if TYPE_CHECKING:
         FileSearchResponse,
         FileTag,
         NewFileTag,
-        UserFileSearchQuery,
         ValidateTagsResult,
     )  # pragma: no cover
     from dorsal.file.validators.collection import (
-        BulkDetailsRequest,
         SingleCollectionResponse,
         HydratedSingleCollectionResponse,
     )  # pragma: no cover

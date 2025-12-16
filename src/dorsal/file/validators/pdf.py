@@ -14,7 +14,7 @@
 
 import datetime
 from pydantic import BaseModel, Field
-from dorsal.common.validators import TString4096
+from dorsal.common.validators import TString4096, TString256, TStringList256
 
 
 class PDFValidationModel(BaseModel):
@@ -40,12 +40,11 @@ class PDFValidationModel(BaseModel):
     subject: TString4096 | None = Field(
         default=None, description="The subject or topic of the document, from the 'Subject' field."
     )
-    keywords: TString4096 | None = Field(
-        default=None, description="A string of keywords associated with the document, from the 'Keywords' field."
+    keywords: TStringList256 = Field(
+        default_factory=list, description="A list of keywords associated with the document."
     )
-    version: str | None = Field(
+    version: TString256 | None = Field(
         default=None,
-        pattern=r"^[1,2]\.\d$",
         description="The PDF version (e.g., '1.7', '2.0') as reported by the parser.",
     )
     page_count: int | None = Field(default=None, ge=0, description="The total number of pages in the document.")

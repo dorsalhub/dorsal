@@ -21,6 +21,7 @@ BASE_URL = os.getenv("DORSAL_API_URL", "https://api.dorsalhub.com")
 
 API_MAX_BATCH_SIZE = 1000
 ANNOTATION_MAX_SIZE_BYTES = 1024 * 1024
+ANNOTATION_SCHEMA_LIMIT_STRICT = 64  # Limit on the number of annotations *per schema* on a `FileRecordStrict`
 
 # == Auth & Config ==
 ENV_DORSAL_API_KEY_STR = "DORSAL_API_KEY"

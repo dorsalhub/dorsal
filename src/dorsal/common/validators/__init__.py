@@ -45,6 +45,8 @@ from dorsal.common.validators.strings import (
     TString4096,
 )
 
+from dorsal.common.validators.lists import TStringList256, truncate_list
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ __all__ = [
     "TString256",
     "TString1024",
     "TString4096",
+    "TStringList256",
     "StringNotEmpty",
     "JsonSchemaValidator",
     "JsonSchemaValidatorType",
@@ -78,6 +81,7 @@ __all__ = [
     "is_valid_dataset_id_or_schema_id",
     "DatasetID",
     "get_language_set",
+    "truncate_list",
 ]
 
 

@@ -77,13 +77,7 @@ if TYPE_CHECKING:
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import DorsalFile, LocalFile
     from dorsal.file.metadata_reader import MetadataReader
-    from dorsal.file.validators.file_record import (
-        DeletionScope,
-        FileRecord,
-        FileRecordStrict,
-        FileSearchResponse,
-        UserFileSearchQuery,
-    )
+    from dorsal.file.validators.file_record import DeletionScope, FileRecord, FileRecordStrict, FileSearchResponse
 
 __all__ = [
     "identify_file",

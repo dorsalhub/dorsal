@@ -15,33 +15,32 @@
 import datetime
 from typing import Any
 from pydantic import BaseModel, Field, ConfigDict
-from dorsal.common.validators import LanguageName, TString4096
+from dorsal.common.validators import LanguageName, TString4096, TStringList256
 
 
 class EbookValidationModel(BaseModel):
     """Validation model for common ebook metadata."""
 
     title: TString4096 | None = Field(default=None, description="The primary title of the ebook.")
-    authors: list[TString4096] = Field(
-        default_factory=list, description="A list of the primary authors or creators of the work.", max_length=256
+    authors: TStringList256 = Field(
+        default_factory=list, description="A list of the primary authors or creators of the work."
     )
-    contributors: list[TString4096] = Field(
-        default_factory=list, description="A list of other contributors (e.g., editors, illustrators).", max_length=256
+    contributors: TStringList256 = Field(
+        default_factory=list, description="A list of other contributors (e.g., editors, illustrators)."
     )
     publisher: TString4096 | None = Field(default=None, description="The publisher of the ebook.")
-    subjects: list[TString4096] = Field(
+    subjects: TStringList256 = Field(
         default_factory=list,
         description="A list of subjects, keywords, or tags associated with the ebook.",
-        max_length=256,
     )
     description: TString4096 | None = Field(
         default=None, description="A synopsis or description of the ebook's content."
     )
     language: LanguageName | None = Field(default=None, description="The language of the ebook.")
-    language_code: str | None = Field(
+    language_code: TString4096 | None = Field(
         max_length=3, default=None, description="The ISO 639-3 alpha-3 language code (e.g., 'eng')."
     )
-    locale_code: str | None = Field(default=None, description="The locale of the ebook.")
+    locale_code: TString4096 | None = Field(default=None, description="The locale of the ebook.")
     rights: TString4096 | None = Field(
         default=None, description="Copyright or rights information associated with the ebook."
     )
@@ -50,15 +49,13 @@ class EbookValidationModel(BaseModel):
         pattern=r"^([0-9]{9}[0-9X]|[0-9]{13})$",
         description="The ISBN (10 or 13) of the ebook, if available.",
     )
-    other_identifiers: list[TString4096] = Field(
+    other_identifiers: TStringList256 = Field(
         default_factory=list,
         description="A list of other unique identifiers (e.g., UUIDs, ASINs, etc.).",
-        max_length=256,
     )
-    tools: list[TString4096] = Field(
+    tools: TStringList256 = Field(
         default_factory=list,
         description="A list of software tools or agents used to create or convert the ebook file.",
-        max_length=256,
     )
     cover_path: TString4096 | None = Field(
         default=None, description="An internal path to the cover image within the ebook's archive, if one exists."
