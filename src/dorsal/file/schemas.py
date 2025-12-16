@@ -101,7 +101,7 @@ def _load_schema_from_package(filename: str) -> dict:
     try:
         schema = json.loads(schema_text)
     except json.JSONDecodeError as err:
-        raise ValueError(f"Schema '{filename}' (from {source_desc}) contains invalid JSON.") from err
+        raise ValueError(f"Schema '{filename}' (from {source_desc}) contains invalid JSON. Full error: {err}") from err
 
     file_version = schema.get("version")
     if file_version != OPEN_VALIDATION_SCHEMAS_VER:

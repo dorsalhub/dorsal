@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/geolocation",
     "title": "Geolocation",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Represent a geographic feature. Defines a subset of GeoJSON (RFC 7946) optimized for predictable parsing and indexing. It restricts the root to a single 'Feature', supports all fixed-depth geometries (Point, Polygon, Multi-types), and enforces flat properties to prevent recursion and nesting attacks.",
     "type": "object",
     "properties": {
@@ -105,7 +105,8 @@
                     "properties": {
                         "timestamp": {
                             "type": "string",
-                            "format": "date-time"
+                            "format": "date-time",
+                            "maxLength": 128
                         },
                         "camera_make": {
                             "type": "string",
