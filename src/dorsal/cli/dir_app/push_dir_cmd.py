@@ -44,13 +44,13 @@ def push_directory(
             help="The directory path containing files to scan and push.",
         ),
     ],
-    private: Annotated[
+    public: Annotated[
         bool,
         typer.Option(
-            "--private/--public",
-            help="Index records as private or public.",
+            "--public/--private",
+            help="Index records as public or private.",
         ),
-    ] = True,
+    ] = False,
     recursive: Annotated[
         bool,
         typer.Option(
@@ -207,7 +207,7 @@ def push_directory(
                     message="Internal Error: Collection name was not set before creation.",
                 )
             remote_collection = collection.create_remote_collection(
-                name=collection_name, description=collection_desc, is_private=private
+                name=collection_name, description=collection_desc, public=public
             )
 
             if json_output:
@@ -223,7 +223,7 @@ def push_directory(
                 console.print(success_panel)
 
         if not create_collection:
-            summary = collection.push(private=private, console=progress_console, palette=palette)
+            summary = collection.push(public=public, console=progress_console, palette=palette)
 
             is_duplicate_error = False
             if summary.get("failed_api_batches", 0) > 0:
@@ -261,7 +261,7 @@ def push_directory(
             else:
                 _display_summary_panel(
                     summary=summary,
-                    private=private,
+                    public=public,
                     palette=palette,
                     use_cache=use_cache_value,
                     collection=collection,
@@ -316,7 +316,7 @@ def _display_dry_run_panel(collection: "LocalFileCollection", use_cache: bool, p
 
 def _display_summary_panel(
     summary: dict,
-    private: bool,
+    public: bool,
     palette: dict,
     use_cache: bool,
     collection: "LocalFileCollection",
@@ -327,10 +327,8 @@ def _display_summary_panel(
     console = get_rich_console()
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
-    access_level_str = "Private" if private else "Public"
-    access_level_style = (
-        palette.get("access_private", "default") if private else palette.get("access_public", "default")
-    )
+    access_level_str = "Public" if public else "Private"
+    access_level_style = palette.get("access_public", "default") if public else palette.get("access_private", "default")
 
     summary_table = Table.grid(expand=True)
     summary_table.add_column(justify="right", style=palette["key"], width=25)

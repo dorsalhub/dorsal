@@ -35,10 +35,10 @@ def push_file(
             help="The path to the single file to push to DorsalHub.",
         ),
     ],
-    private: Annotated[
+    public: Annotated[
         bool,
-        typer.Option("--private/--public", help="Index the file record as private or public."),
-    ] = True,
+        typer.Option("--public/--private", help="Index the file record as public or private."),
+    ] = False,
     use_cache: Annotated[
         bool,
         typer.Option(
@@ -96,7 +96,7 @@ def push_file(
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
     palette: dict[str, str] = ctx.obj["palette"]
-    access_level_str = "private" if private else "public"
+    access_level_str = "public" if public else "private"
 
     if not json_output:
         console.print(
@@ -109,7 +109,7 @@ def push_file(
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
         with console.status("Pushing to DorsalHub..."):
-            api_response = local_file.push(private=private)
+            api_response = local_file.push(public=public)
 
         if json_output:
             console.print(json.dumps(api_response.model_dump(mode="json"), indent=2, ensure_ascii=False))

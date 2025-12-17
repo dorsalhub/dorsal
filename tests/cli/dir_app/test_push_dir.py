@@ -73,7 +73,7 @@ def test_push_dir_success_default(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=True, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(public=False, console=ANY, palette=ANY)
     mock_push_dir_cmd["display_summary"].assert_called_once()
     mock_push_dir_cmd["display_dry_run"].assert_not_called()
 
@@ -83,7 +83,7 @@ def test_push_dir_public(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR, "--public"])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=False, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(public=True, console=ANY, palette=ANY)
 
 
 def test_push_dir_dry_run(mock_push_dir_cmd):
@@ -134,7 +134,7 @@ def test_push_dir_create_collection_success(mock_rich_console, mock_push_dir_cmd
 
     assert result.exit_code == 0
     mock_push_dir_cmd["collection_instance"].create_remote_collection.assert_called_once_with(
-        name="MyNewCollection", description=None, is_private=True
+        name="MyNewCollection", description=None, public=False
     )
     # Verify no standard push was attempted
     mock_push_dir_cmd["collection_instance"].push.assert_not_called()

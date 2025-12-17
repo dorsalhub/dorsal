@@ -320,7 +320,7 @@ class LocalFileCollection(_BaseFileCollection):
 
     def push(
         self,
-        private: bool = True,
+        public: bool = False,
         api_key: str | None = None,
         console: "Console | None" = None,
         palette: dict | None = None,
@@ -396,10 +396,10 @@ class LocalFileCollection(_BaseFileCollection):
                     "records_in_batch": len(batch),
                 }
                 try:
-                    if private:
-                        response = self._client.index_private_file_records(file_records=batch)
-                    else:
+                    if public:
                         response = self._client.index_public_file_records(file_records=batch)
+                    else:
+                        response = self._client.index_private_file_records(file_records=batch)
 
                     summary["successful_api_batches"] = cast(int, summary["successful_api_batches"]) + 1
                     summary["total_records_accepted_by_api"] = (
@@ -435,7 +435,6 @@ class LocalFileCollection(_BaseFileCollection):
     ) -> dict:
         """
         Synchronizes the linked remote collection to exactly match this local collection.
-        ...
         """
         if not self.remote_collection_id:
             raise DorsalError(
@@ -466,7 +465,8 @@ class LocalFileCollection(_BaseFileCollection):
 
         logger.info("Step 2/3: Pushing local file records to ensure they exist on the server...")
         is_remote_private = remote_state.collection.is_private
-        push_summary = self.push(private=is_remote_private, api_key=api_key)
+        public = not is_remote_private
+        push_summary = self.push(public=public, api_key=api_key)
 
         num_to_push = cast(int, push_summary.get("total_records_to_push", 0))
         num_accepted = cast(int, push_summary.get("total_records_accepted_by_api", 0))
@@ -499,15 +499,12 @@ class LocalFileCollection(_BaseFileCollection):
         self,
         name: str,
         description: str | None = None,
-        is_private: bool = True,
+        public: bool = False,
         api_key: str | None = None,
     ) -> "DorsalFileCollection":
         """
         Creates a new remote collection on DorsalHub, populates it with the
         files from this local collection, and links the two.
-
-        Note: `is_private` here refers to the the local collection, and most importantly the *files* within the collection.
-              The collection itself cannot be created as `public` - but it can be made public after.
         """
         from dorsal.file.collection.remote import DorsalFileCollection
 
@@ -515,7 +512,7 @@ class LocalFileCollection(_BaseFileCollection):
             self._client = get_shared_dorsal_client(api_key=api_key)
 
         logger.info("Step 1/3: Pushing file records to DorsalHub...")
-        push_summary = self.push(private=is_private, api_key=api_key)
+        push_summary = self.push(public=public, api_key=api_key)
         if cast(int, push_summary["total_records_accepted_by_api"]) == 0:
             raise DorsalClientError("No files were successfully indexed. Cannot create collection.")
         logger.info("File records pushed successfully.")
@@ -529,6 +526,7 @@ class LocalFileCollection(_BaseFileCollection):
             "comment": "Created via the Dorsal Python library.",
         }
 
+        is_private = not public
         remote_collection_meta = self._client.create_collection(
             name=name,
             description=description,

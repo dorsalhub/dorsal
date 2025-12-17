@@ -205,7 +205,7 @@ def test_push(mock_get_client):
     collection = LocalFileCollection(source=[file1])
     collection._client = mock_client
 
-    summary = collection.push(private=True)
+    summary = collection.push(public=False)
 
     mock_client.index_private_file_records.assert_called_once_with(file_records=[file1.model])
     assert summary["total_records_accepted_by_api"] == 1
@@ -235,7 +235,7 @@ def test_create_remote_collection(mock_get_client, mock_remote_class):
         collection.create_remote_collection(name="New Test Collection")
 
         # Assert
-        mock_push.assert_called_once_with(private=True, api_key=None)
+        mock_push.assert_called_once_with(public=False, api_key=None)
         mock_client.create_collection.assert_called_once()
         assert collection.remote_collection_id == "new_col_123"
 

@@ -14,42 +14,64 @@
 
 import re
 
-MEDIA_TYPE_HEAD_PERMITTED = {
-    "text",
+MEDIA_TYPE_HEAD_PERMITTED: set[str] = {
     "audio",
     "image",
     "video",
+    "font",
 }
 
-MEDIA_TYPE_PERMITTED = {
-    "application/x-shockwave-flash",
+
+MEDIA_TYPE_PERMITTED: set[str] = {
+    "text/plain",
+    "text/markdown",
+    "text/x-rst",
+    "text/vtt",
+    "text/x-bibtex",
+    "application/zip",
+    "application/x-tar",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed",
+    "application/gzip",
+    "application/x-bzip2",
+    "application/x-iso9660-image",
+    "application/x-bittorrent",
     "application/pdf",
+    "application/epub+zip",
+    "application/vnd.amazon.ebook",
+    "application/x-mobipocket-ebook",
+    "application/geo+json",
+    "application/ld+json",
+    "application/rdf+xml",
+    "application/rss+xml",
+    "application/atom+xml",
+    "application/postscript",
+    "application/x-shockwave-flash",
 }
 
-PUBLIC_MEDIA_TYPES_PROHIBITED = {
-
-}
+PUBLIC_MEDIA_TYPES_PROHIBITED: set[str] = set()
 
 RX_MEDIA_TYPE = re.compile(r"^\w+\/[-+.\w]+$")
 
-def is_permitted_public_media_type(media_type: str) -> bool:
+
+def is_permitted_public_media_type(media_type: str | None) -> bool:
     """Returns True if the media type permits public indexing."""
     if not isinstance(media_type, str):
         return False
 
     if not RX_MEDIA_TYPE.match(media_type):
         return False
-    
+
     media_type_lower = media_type.lower()
-    
+
     if media_type_lower in PUBLIC_MEDIA_TYPES_PROHIBITED:
         return False
 
     if media_type_lower in MEDIA_TYPE_PERMITTED:
         return True
 
-    head = media_type.split("/")[0]
+    head = media_type_lower.split("/")[0]
     if head in MEDIA_TYPE_HEAD_PERMITTED:
         return True
-        
+
     return False
