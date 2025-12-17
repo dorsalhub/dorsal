@@ -55,6 +55,8 @@ __all__ = [
     "import_callable",
     "check_local_file_exists",
     "get_truthy_envvar",
+    "get_int_envvar",
+    "get_float_envvar",
     "Pagination",
     "LanguageName",
     "validate_language_name",

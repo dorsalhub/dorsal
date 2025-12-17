@@ -15,9 +15,40 @@
 import os
 import pathlib
 
-WEB_URL = os.getenv("DORSAL_WEB_URL", "https://dorsalhub.com")
-DOCS_URL = os.getenv("DORSAL_DOCS_URL", "https://docs.dorsalhub.com")
-BASE_URL = os.getenv("DORSAL_API_URL", "https://api.dorsalhub.com")
+
+def get_int_envvar(envvar: str, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
+    value_str = os.getenv(envvar)
+    if value_str is None:
+        return default
+    try:
+        value = int(value_str)
+        if min_val is not None and value < min_val:
+            return min_val
+        if max_val is not None and value > max_val:
+            return max_val
+        return value
+    except (ValueError, TypeError):
+        return default
+
+
+def get_float_envvar(envvar: str, default: float, min_val: float | None = None, max_val: float | None = None) -> float:
+    value_str = os.getenv(envvar)
+    if value_str is None:
+        return default
+    try:
+        value = float(value_str)
+        if min_val is not None and value < min_val:
+            return min_val
+        if max_val is not None and value > max_val:
+            return max_val
+        return value
+    except (ValueError, TypeError):
+        return default
+
+
+WEB_URL: str = os.getenv("DORSAL_WEB_URL", "https://dorsalhub.com")
+DOCS_URL: str = os.getenv("DORSAL_DOCS_URL", "https://docs.dorsalhub.com")
+BASE_URL: str = os.getenv("DORSAL_API_URL", "https://api.dorsalhub.com")
 
 API_MAX_BATCH_SIZE = 1000
 ANNOTATION_MAX_SIZE_BYTES = 1024 * 1024
@@ -25,8 +56,24 @@ ANNOTATION_SCHEMA_LIMIT_STRICT = 64  # Limit on the number of annotations *per s
 
 # == Auth & Config ==
 ENV_DORSAL_API_KEY_STR = "DORSAL_API_KEY"
+ENV_DORSAL_API_TIMEOUT = "DORSAL_API_TIMEOUT"
 ENV_DORSAL_CACHE_ENABLED = "DORSAL_CACHE_ENABLED"
 ENV_DORSAL_CACHE_COMPRESSION = "DORSAL_CACHE_COMPRESSION"
+
+# == Timeout Configuration ==
+ENV_DORSAL_API_TIMEOUT = "DORSAL_API_TIMEOUT"
+_DEFAULT_TIMEOUT = 10.0
+API_TIMEOUT = get_float_envvar(ENV_DORSAL_API_TIMEOUT, default=_DEFAULT_TIMEOUT)
+
+# == Batch Size Configuration ==
+ENV_DORSAL_BATCH_SIZE = "DORSAL_BATCH_SIZE"
+API_MAX_BATCH_SIZE = 1000
+API_BATCH_SIZE = get_int_envvar(ENV_DORSAL_BATCH_SIZE, default=API_MAX_BATCH_SIZE, max_val=API_MAX_BATCH_SIZE)
+
+# == DorsalClient Retries ==
+ENV_DORSAL_API_MAX_RETRIES = "DORSAL_API_MAX_RETRIES"
+_DEFAULT_MAX_RETRIES = 3
+API_MAX_RETRIES = get_int_envvar(ENV_DORSAL_API_MAX_RETRIES, default=_DEFAULT_MAX_RETRIES)
 
 LOCAL_DORSAL_DIR = pathlib.Path.home() / ".dorsal"
 
@@ -58,12 +105,12 @@ CLI_DEFAULT_EXPORT_FORMAT = "json"
 
 
 # == Docs ==
-DOCS_URL_API_TROUBLESHOOTING = f"{WEB_URL}/reference/exceptions/"
-DOCS_URL_API_ERRORS = f"{WEB_URL}/reference/exceptions/"
-DOCS_URL_API_AUTH = f"{DOCS_URL}/cli/auth/#dorsal-auth-login"
-DOCS_URL_API_ERRORS_NETWORK = f"{WEB_URL}/reference/exceptions/"
-DOCS_URL_API_ERRORS_VALIDATION = f"{WEB_URL}/reference/exceptions/"
-DOCS_URL_DORSAL_FILE_TAGS = f"{WEB_URL}/reference/tags"
+DOCS_URL_API_TROUBLESHOOTING: str = f"{WEB_URL}/reference/exceptions/"
+DOCS_URL_API_ERRORS: str = f"{WEB_URL}/reference/exceptions/"
+DOCS_URL_API_AUTH: str = f"{DOCS_URL}/cli/auth/#dorsal-auth-login"
+DOCS_URL_API_ERRORS_NETWORK: str = f"{WEB_URL}/reference/exceptions/"
+DOCS_URL_API_ERRORS_VALIDATION: str = f"{WEB_URL}/reference/exceptions/"
+DOCS_URL_DORSAL_FILE_TAGS: str = f"{WEB_URL}/reference/tags"
 
 # == API ==
 API_ENDPOINT_COLLECTIONS = "v1/collections"
