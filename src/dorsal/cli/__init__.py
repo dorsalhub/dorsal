@@ -54,7 +54,7 @@ def version_callback(value: bool):
 
 app = typer.Typer(
     name="dorsal",
-    help="A powerful tool for local file metadata generation and management.",
+    help="File metadata extraction and management.",
     add_completion=False,
     pretty_exceptions_enable=True,
     no_args_is_help=True,

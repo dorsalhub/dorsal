@@ -441,7 +441,7 @@ class MetadataReader:
         dir_path: str,
         *,
         recursive: bool = False,
-        private: bool = True,
+        public: bool = False,
         skip_cache: bool = False,
     ) -> FileIndexResponse:
         """Scans, processes, and indexes all files in a directory to DorsalHub.
@@ -480,8 +480,8 @@ class MetadataReader:
             dir_path (str): The path to the directory to scan and index.
             recursive (bool, optional): If True, scans all subdirectories
                 recursively. Defaults to False.
-            private (bool, optional): If True, all file records will be created
-                as private on DorsalHub. Defaults to True.
+            public (bool, optional): If True, all file records will be created
+                as public. Defaults to False.
 
         Returns:
             FileIndexResponse: A response object from the API detailing the outcome
@@ -498,10 +498,10 @@ class MetadataReader:
                 extraction or the subsequent API call.
         """
         logger.debug(
-            "MetadataReader.index_directory called: dir='%s', rec=%s, priv=%s",
+            "MetadataReader.index_directory called: dir='%s', rec=%s, public=%s",
             dir_path,
             recursive,
-            private,
+            public,
         )
         if self.offline:
             raise DorsalError("Cannot index directory: MetadataReader is in OFFLINE mode.")
@@ -532,17 +532,17 @@ class MetadataReader:
             raise BatchSizeError(error_msg)
 
         logger.debug(
-            "Attempting to index %d unique file records from '%s' (Private: %s) in a single batch...",
+            "Attempting to index %d unique file records from '%s' (Public: %s) in a single batch...",
             len(records_to_index_list),
             dir_path,
-            private,
+            public,
         )
         api_response: FileIndexResponse
         try:
-            if private:
-                api_response = self._client.index_private_file_records(file_records=records_to_index_list)
-            else:
+            if public:
                 api_response = self._client.index_public_file_records(file_records=records_to_index_list)
+            else:
+                api_response = self._client.index_private_file_records(file_records=records_to_index_list)
             logger.debug(
                 "MetadataReader.index_directory: Indexing complete for '%s'. API: Total=%d, Success=%d, Error=%d, Unauthorized=%d",
                 dir_path,
@@ -585,7 +585,7 @@ class MetadataReader:
         return api_response
 
     def index_file(
-        self, file_path: str, *, private: bool = True, skip_cache: bool = False, overwrite_cache: bool = False
+        self, file_path: str, *, public: bool = False, skip_cache: bool = False, overwrite_cache: bool = False
     ) -> FileIndexResponse:
         """Processes a single file and immediately indexes it to DorsalHub.
 
@@ -626,7 +626,7 @@ class MetadataReader:
         """
         if self.offline:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
-        logger.debug("Starting file indexing for: %s (Private: %s)", file_path, private)
+        logger.debug("Starting file indexing for: %s (Public: %s)", file_path, public)
         file_record = self._get_or_create_record(
             file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
         )
@@ -634,10 +634,10 @@ class MetadataReader:
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)
 
         api_response: FileIndexResponse
-        if private:
-            api_response = self._client.index_private_file_records(file_records=[file_record])
-        else:
+        if public:
             api_response = self._client.index_public_file_records(file_records=[file_record])
+        else:
+            api_response = self._client.index_private_file_records(file_records=[file_record])
 
         log_status_msg = "processed by API"
         if api_response.results:

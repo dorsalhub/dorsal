@@ -338,7 +338,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 201
 
-        response = reader.index_file(file_path=file_path, private=True)
+        response = reader.index_file(file_path=file_path, public=False)
 
         assert response is client_response_mock
         mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
@@ -366,7 +366,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 200
 
-        response = reader.index_file(file_path=file_path, private=False)
+        response = reader.index_file(file_path=file_path, public=True)
 
         assert response is client_response_mock
         mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
@@ -389,7 +389,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 401
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "unauthorized" in caplog.text
 
     def test_index_file_api_error_count_triggers_log(self, mock_get_record, metadata_reader_base, caplog):
@@ -412,7 +412,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 500
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "error during indexing attempt" in caplog.text
 
     def test_index_file_error_count_no_results_logs_error(self, mock_get_record, metadata_reader_base, caplog):
@@ -429,7 +429,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.unauthorized = 0
         client_response_mock.response.status_code = 200
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "Failed to index file" in caplog.text
 
     def test_index_file_run_models_fails(self, mock_get_record, metadata_reader_base):
@@ -474,7 +474,7 @@ class TestMetadataReaderIndexFile:
         if hasattr(client_response_mock, "errors"):
             del client_response_mock.errors
 
-        reader.index_file(file_path=file_path, private=False)
+        reader.index_file(file_path=file_path, public=True)
         assert "Unexpected response from server" in caplog.text
 
 
@@ -558,7 +558,7 @@ class TestMetadataReaderIndexDirectory:
         result_item2 = MagicMock(spec=ActualIndexResultItem, hash="hash2", url="url2", file_path=None)
         client_response_mock.results = [result_item1, result_item2]
 
-        response = reader.index_directory(dir_path=str(temp_dir_with_files), private=True)
+        response = reader.index_directory(dir_path=str(temp_dir_with_files), public=False)
 
         reader._test_mock_get_file_paths.assert_called_once_with(dir_path=str(temp_dir_with_files), recursive=False)
         assert reader._test_mock_runner.run.call_count == 2
@@ -595,7 +595,7 @@ class TestMetadataReaderIndexDirectory:
         )
         client_response_mock.results = [result_item_public]
 
-        response = reader.index_directory(dir_path=str(temp_dir_with_files), private=False)
+        response = reader.index_directory(dir_path=str(temp_dir_with_files), public=True)
 
         reader._test_mock_client.index_public_file_records.assert_called_once_with(file_records=[mock_record_public])
         reader._test_mock_client.index_private_file_records.assert_not_called()

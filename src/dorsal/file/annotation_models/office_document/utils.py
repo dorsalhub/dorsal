@@ -54,10 +54,6 @@ def _split_keywords(kw_str: str | None) -> list[str]:
 
 
 def _find_xml_element(xml_root: ET.Element | None, namespaced_path: str, ns_map: dict[str, str]) -> ET.Element | None:
-    """
-    Robust helper to find an XML element.
-    Tries the namespaced path first, then falls back to a non-namespaced path.
-    """
     if xml_root is None:
         return None
 
@@ -73,10 +69,6 @@ def _find_xml_element(xml_root: ET.Element | None, namespaced_path: str, ns_map:
 def _findall_xml_elements(
     xml_root: ET.Element | None, namespaced_path: str, ns_map: dict[str, str]
 ) -> list[ET.Element]:
-    """
-    Robust helper to find all XML elements.
-    Tries the namespaced path first, then falls back to a non-namespaced path.
-    """
     if xml_root is None:
         return []
 
@@ -90,10 +82,6 @@ def _findall_xml_elements(
 
 
 def _get_xml_text(xml_root: ET.Element | None, namespaced_path: str, ns_map: dict[str, str]) -> str | None:
-    """
-    Robust v6 helper to find text in an XML element.
-    Uses the robust _find_xml_element helper.
-    """
     el = _find_xml_element(xml_root, namespaced_path, ns_map)
     if el is not None and el.text:
         return el.text.strip()
@@ -127,7 +115,6 @@ def _find_relationship_target(rels_root: ET.Element | None, type_url: str) -> st
 
 
 def _read_xml_from_zip(z: zipfile.ZipFile, path: str) -> ET.Element | None:
-    """Robust helper to read and parse an XML file from a zip."""
     try:
         xml_data = z.read(path)
         return ET.fromstring(xml_data)

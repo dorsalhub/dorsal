@@ -206,7 +206,6 @@ def test_get_dorsal_file_record_success(mock_shared_client):
 
     result = file_api.get_dorsal_file_record(hash_str, mode="pydantic")
 
-    # Assert that the client was called with the correct agnostic parameters
     mock_shared_client.download_file_record.assert_called_once_with(hash_string=hash_str, private=None)
     assert result == expected_record
 
@@ -272,10 +271,10 @@ def test_index_file_success(mock_get_reader, tmp_path):
     mock_index_response = FileIndexResponse(total=1, success=1, error=0, unauthorized=0, results=[])
     mock_reader_instance.index_file.return_value = mock_index_response
 
-    result = file_api.index_file(str(file), private=True, use_cache=False)
+    result = file_api.index_file(str(file), public=False, use_cache=False)
 
     # Assert that the underlying reader method was called correctly
-    mock_reader_instance.index_file.assert_called_once_with(file_path=str(file), private=True, skip_cache=True)
+    mock_reader_instance.index_file.assert_called_once_with(file_path=str(file), public=False, skip_cache=True)
     assert result.success == 1
 
 
@@ -287,7 +286,7 @@ def test_add_tag_to_file_success(mock_shared_client):
     mock_response = FileTagResponse(success=True, hash=file_hash)
     mock_shared_client.add_tags_to_file.return_value = mock_response
 
-    result = file_api.add_tag_to_file(file_hash, tag_name, tag_value, private=True)
+    result = file_api.add_tag_to_file(file_hash, tag_name, tag_value, public=False)
 
     # Assert that the client method was called with a correctly constructed NewFileTag object
     mock_shared_client.add_tags_to_file.assert_called_once()
@@ -313,7 +312,7 @@ def test_add_label_to_file_delegation(mock_add_tag):
     result = file_api.add_label_to_file(hash_string=file_hash, label=label, api_key=api_key)
 
     mock_add_tag.assert_called_once_with(
-        hash_string=file_hash, name="label", value=label, private=True, api_key=api_key
+        hash_string=file_hash, name="label", value=label, public=False, api_key=api_key
     )
     assert result == mock_response
 
@@ -425,7 +424,7 @@ def test_index_directory_success(mock_get_reader):
     mock_client.index_private_file_records.return_value = mock_index_response
 
     # Call the function under test
-    summary = file_api.index_directory(dir_path, private=True)
+    summary = file_api.index_directory(dir_path, public=False)
 
     # Assertions
     mock_reader.generate_processed_records_from_directory.assert_called_once()
@@ -644,8 +643,6 @@ def test_find_duplicates_quick_internal_logic(fs):
         # - /cached.txt: handled by cache side_effect above.
         # - /quick.txt: get_quick_hash returns value.
         # - /fallback.txt: get_quick_hash returns None -> calls get_sha256_hash.
-
-        # NOTE: We use a more robust side_effect that handles PosixPath inputs
         def quick_side_effect(path, **kwargs):
             if "quick.txt" in str(path):
                 return "quick_hash_val"
@@ -656,8 +653,6 @@ def test_find_duplicates_quick_internal_logic(fs):
 
         # Call the public wrapper with mode='quick' to trigger the internal function
         result = file_api.find_duplicates("/", mode="quick", use_cache=True)
-
-    # Verify the calls happened, proving we hit the lines:
 
     # 1. Cache was queried (Line ~1813)
     assert mock_cache.get_hash.called

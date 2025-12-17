@@ -1961,11 +1961,6 @@ class DorsalClient:
     def make_schema_validator(self, dataset_id: str, api_key: str | None = None) -> JsonSchemaValidator:
         """Fetches a dataset's schema and returns a callable validator function.
 
-        This powerful utility method fetches a dataset's schema and compiles it
-        into a validator function on the fly. This allows for client-side
-        validation of records before they are sent to the API, preventing
-        unnecessary API calls with invalid data.
-
         Example:
             ```python
             from dorsal.client import DorsalClient

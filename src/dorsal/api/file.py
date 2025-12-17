@@ -89,6 +89,7 @@ __all__ = [
     "delete_private_dorsal_file_record",
     "delete_public_dorsal_file_record",
     "add_tag_to_file",
+    "add_label_to_file",
     "remove_tag_from_file",
     "search_user_files",
     "search_global_files",
@@ -308,7 +309,7 @@ def identify_file(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["pydantic"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> "FileRecord": ...
 
@@ -317,7 +318,7 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["dict"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]: ...
 
@@ -326,7 +327,7 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["json"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> str: ...
 
@@ -334,15 +335,15 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["pydantic", "dict", "json"] = "pydantic",
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> "FileRecord | dict[str, Any] | str":
     """
     Gets metadata for a file record from DorsalHub
 
-    - `private=None` (Default): check for a public record first, and if not found, check for a private one.
-    - `private=True`: get public record
-    - `private=False`: get private record
+    - `public=None` (Default): check for a private record first, and if not found, check for a public one.
+    - `public=True`: get public record
+    - `public=False`: get private record
 
     Example:
         ```python
@@ -352,23 +353,30 @@ def get_dorsal_file_record(
         agnostic_file = get_file_metadata("some_hash")
 
         # Public-only search
-        public_file = get_file_metadata("some_hash", private=False)
+        public_file = get_file_metadata("some_hash", public=True)
 
         # Private-only search as a dictionary
-        private_file_dict = get_file_metadata("some_hash", private=True, mode="dict")
+        private_file_dict = get_file_metadata("some_hash", public=False, mode="dict")
         ```
 
     Args:
         hash_string (str): The hash of the file to fetch (e.g., "sha256:...").
         mode (Literal["pydantic", "dict", "json"], optional): The desired return
             format. Defaults to "pydantic", returning a `DorsalFile` object.
-        private (Optional[bool], optional): Controls the search visibility.
+        public (Optional[bool], optional): Controls the search visibility.
             Defaults to None (agnostic search).
         api_key (str, optional): An API key to use for this request, overriding
             any globally configured key. Defaults to None.
 
     """
     from dorsal.session import get_shared_dorsal_client
+
+    if public is True:
+        private = False
+    elif public is False:
+        private = True
+    else:
+        private = None
 
     search_strategy = (
         "Agnostic (Private, then Public)" if private is None else ("Private-only" if private else "Public-only")
@@ -630,7 +638,7 @@ def delete_public_dorsal_file_record(
 def index_file(
     file_path: str,
     *,
-    private: bool = True,
+    public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
 ) -> FileIndexResponse:
@@ -644,7 +652,8 @@ def index_file(
         from dorsal.api import index_file
 
         try:
-            response = index_file("path/to/my_image.jpg", private=True)
+            # Index publicly
+            response = index_file("path/to/my_image.jpg", public=True)
             if response.success > 0:
                 print("File indexed successfully!")
                 print(f"View at: {response.results[0].url}")
@@ -654,8 +663,8 @@ def index_file(
 
     Args:
         file_path (str): The path to the local file to process and index.
-        private (bool, optional): If True, the record will be created as private.
-            Defaults to True.
+        public (bool, optional): If True, the record will be created as public.
+            Defaults to False (Private).
         api_key (str, optional): An API key to use for this specific request.
             Defaults to None.
 
@@ -687,14 +696,14 @@ def index_file(
         metadata_reader = get_metadata_reader()
 
     logger.debug(
-        "High-level index_file calling effective MetadataReader for file_path='%s' (%s), private=%s.",
+        "High-level index_file calling effective MetadataReader for file_path='%s' (%s), public=%s.",
         file_path,
         log_message_context,
-        private,
+        public,
     )
 
     try:
-        response = metadata_reader.index_file(file_path=file_path, private=private, skip_cache=not use_cache)
+        response = metadata_reader.index_file(file_path=file_path, public=public, skip_cache=not use_cache)
         logger.debug(
             "Effective MetadataReader.index_file completed for file_path='%s'. Response success: %s",
             file_path,
@@ -727,13 +736,12 @@ def index_directory(
     dir_path: str,
     recursive: bool = False,
     *,
-    private: bool = True,
+    public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
-    This is a powerful, one-shot function that performs a complete workflow:
     1. Scans the specified directory for files.
     2. Generates rich metadata for each file locally.
     3. Uploads all generated metadata records to DorsalHub in managed batches.
@@ -743,7 +751,7 @@ def index_directory(
         from dorsal.api import index_directory
 
         # Scan a directory and index all files to your private records
-        summary = index_directory("path/to/project_assets", recursive=True, private=True)
+        summary = index_directory("path/to/project_assets", recursive=True, public=False)
 
         print("--- Indexing Complete ---")
         print(f"Files processed locally: {summary['total_records_processed_locally']}")
@@ -754,8 +762,8 @@ def index_directory(
         dir_path (str): The path to the directory you want to scan and index.
         recursive (bool, optional): If True, scans all subdirectories
             recursively. Defaults to False.
-        private (bool, optional): If True, all file records will be created
-            as private on DorsalHub. Defaults to True.
+        public (bool, optional): If True, all file records will be created
+            as public on DorsalHub. Defaults to False.
         api_key (str | None, optional): An API key to use for this operation,
             overriding the client's default. Defaults to None.
 
@@ -784,11 +792,11 @@ def index_directory(
         effective_reader = get_metadata_reader()
 
     logger.debug(
-        "High-level index_directory: dir_path='%s' (%s), recursive=%s, private=%s.",
+        "High-level index_directory: dir_path='%s' (%s), recursive=%s, public=%s.",
         dir_path,
         log_message_context,
         recursive,
-        private,
+        public,
     )
 
     all_records_to_index: list[FileRecordStrict]
@@ -845,11 +853,11 @@ def index_directory(
     total_batches_created = len(batches)
 
     logger.debug(
-        "Submitting %d records in %d batches of up to %d each to DorsalHub (private=%s, context: %s).",
+        "Submitting %d records in %d batches of up to %d each to DorsalHub (public=%s, context: %s).",
         total_records_processed_locally,
         total_batches_created,
         constants.API_MAX_BATCH_SIZE,
-        private,
+        public,
         log_message_context,
     )
 
@@ -879,12 +887,12 @@ def index_directory(
         )
         try:
             batch_api_response: FileIndexResponse
-            if private:
-                batch_api_response = effective_reader._client.index_private_file_records(
+            if public:
+                batch_api_response = effective_reader._client.index_public_file_records(
                     file_records=current_batch_records
                 )
             else:
-                batch_api_response = effective_reader._client.index_public_file_records(
+                batch_api_response = effective_reader._client.index_private_file_records(
                     file_records=current_batch_records
                 )
 
@@ -1127,7 +1135,7 @@ def scan_file(
 
 
 def add_tag_to_file(
-    hash_string: str, name: str, value: Any, private: bool, api_key: str | None = None
+    hash_string: str, name: str, value: Any, public: bool = False, api_key: str | None = None
 ) -> FileTagResponse:
     """
     Adds a single tag to a file record on DorsalHub.
@@ -1136,7 +1144,7 @@ def add_tag_to_file(
         hash_string (str): The hash of the file record to tag.
         name (str): The name of the tag.
         value (Any): The value of the tag.
-        private (bool): The visibility of the tag itself.
+        public (bool): The visibility of the tag itself. Defaults to False (Private).
         api_key (str, optional): An API key for this request.
 
     Returns:
@@ -1152,7 +1160,7 @@ def add_tag_to_file(
         effective_client = DorsalClient(api_key=api_key)
 
     try:
-        new_tag = NewFileTag(name=name, value=value, private=private)
+        new_tag = NewFileTag(name=name, value=value, private=not public)
         tag_result = effective_client.add_tags_to_file(file_hash=hash_string, tags=[new_tag])
         return tag_result
     except (DorsalClientError, ValueError):
@@ -1200,7 +1208,7 @@ def add_label_to_file(hash_string: str, label: str, api_key: str | None = None) 
     Returns:
         FileTagResponse: The API response.
     """
-    return add_tag_to_file(hash_string=hash_string, name="label", value=label, private=True, api_key=api_key)
+    return add_tag_to_file(hash_string=hash_string, name="label", value=label, public=False, api_key=api_key)
 
 
 @overload
@@ -1270,8 +1278,7 @@ def search_user_files(
 ) -> "FileSearchResponse | dict | str":
     """Searches for file records indexed by the authenticated user.
 
-    This function provides a simple and powerful interface to search for files
-    you have indexed on DorsalHub. The query supports simple text matching as
+    The query supports simple text matching as
     well as advanced operators.
 
     Example:

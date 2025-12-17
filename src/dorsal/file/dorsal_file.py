@@ -795,6 +795,14 @@ class DorsalFile(_DorsalFile):
         """
         from dorsal.file.validators.file_record import NewFileTag
 
+        if not is_permitted_public_media_type(self.media_type):
+            logger.warning(
+                f"Media type '{self.media_type}' cannot be indexed privately. "
+                f"Creating tag '{name}={value}' as a PRIVATE tag."
+            )
+            # Redirect to the private method
+            return self.add_private_tag(name=name, value=value, api_key=api_key)
+
         try:
             new_tag = NewFileTag(
                 name=name,
@@ -1038,7 +1046,7 @@ class DorsalFile(_DorsalFile):
             # Intuitive default: deletes only the private record and metadata
             file.delete()
 
-            # Powerful override: performs a "full clean" from the private file object
+            # override: performs a "full clean" from the private file object
             file.delete(record="all", tags="all", annotations="all")
             ```
         """

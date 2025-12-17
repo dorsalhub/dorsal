@@ -82,16 +82,16 @@ def delete_file_record(
 
     fetch_scope: bool | None
     if record == DeletionScope.private:
-        fetch_scope = True
-    elif record == DeletionScope.public:
         fetch_scope = False
+    elif record == DeletionScope.public:
+        fetch_scope = True
     else:
         fetch_scope = None
 
     try:
         if not yes and not json_output:
             console.print("🔎 Finding record to delete...")
-            file_to_delete = get_dorsal_file_record(hash_string=hash_string, mode="pydantic", private=fetch_scope)
+            file_to_delete = get_dorsal_file_record(hash_string=hash_string, mode="pydantic", public=fetch_scope)
             record_dict = file_to_delete.model_dump(by_alias=True, exclude_none=True, mode="json")
 
             panel = create_file_info_panel(

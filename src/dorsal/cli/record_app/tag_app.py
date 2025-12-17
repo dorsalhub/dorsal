@@ -67,7 +67,7 @@ def add_tag(
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
-    is_private_tag = not public
+    is_public_tag = public
 
     if label:
         if public:
@@ -88,7 +88,7 @@ def add_tag(
 
         name = "label"
         value = label
-        is_private_tag = True
+        is_public_tag = True
 
     else:
         if not name or not value:
@@ -99,7 +99,7 @@ def add_tag(
 
     try:
         if not json_output:
-            tag_type_str = "private" if is_private_tag else "public"
+            tag_type_str = "public" if is_public_tag else "private"
             display_val = f"'{value}' (label)" if label else f"'{name}:{value}'"
 
             console.print(
@@ -109,12 +109,12 @@ def add_tag(
         if label:
             response = add_label_to_file(hash_string=hash_string, label=label)
         else:
-            response = add_tag_to_file(hash_string=hash_string, name=name, value=value, private=is_private_tag)
+            response = add_tag_to_file(hash_string=hash_string, name=name, value=value, public=is_public_tag)
 
         if json_output:
             console.print(response.model_dump_json(indent=2))
         else:
-            tag_style = palette.get("tag_private") if is_private_tag else palette.get("tag_public")
+            tag_style = palette.get("tag_public") if is_public_tag else palette.get("tag_private")
             success_message = Text.assemble(
                 ("✅ Successfully added tag '", palette.get("success", "green")),
                 (f"{name}:{value}", f"bold {tag_style}"),
