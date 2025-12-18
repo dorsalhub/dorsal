@@ -43,6 +43,7 @@ from dorsal.common.exceptions import (
 from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.file.dorsal_file import LocalFile, _DorsalFile
 from dorsal.file.metadata_reader import MetadataReader
+from dorsal.file.permissions import is_permitted_public_media_type
 from dorsal.session import get_shared_dorsal_client
 from dorsal.file.validators.file_record import FileRecordStrict
 
@@ -326,6 +327,23 @@ class LocalFileCollection(_BaseFileCollection):
         palette: dict | None = None,
     ) -> dict:
         """Pushes all file records in the collection to DorsalHub for indexing."""
+        if public:
+            prohibited_files = []
+            for file in self.files:
+                if not is_permitted_public_media_type(file.media_type):
+                    name_repr = file.name or file.hash or "Unknown File"
+                    prohibited_files.append(f"'{name_repr}' ({file.media_type})")
+
+            if prohibited_files:
+                limit = 5
+                details = ", ".join(prohibited_files[:limit])
+                if len(prohibited_files) > limit:
+                    details += f" and {len(prohibited_files) - limit} others"
+
+                raise ValueError(
+                    f"Operation aborted: The collection cannot be indexed publicly because it contains restricted media types: {details}."
+                )
+
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
