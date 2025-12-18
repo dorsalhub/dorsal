@@ -277,3 +277,27 @@ def test_to_dataframe_export():
     assert list(df.columns) == ["hash", "file_path", "source_path"]
     assert df.iloc[0]["hash"] == "h1"
     assert df.iloc[0]["file_path"] == "/fake/a.txt"
+
+
+@patch("dorsal.file.collection.local.is_permitted_public_media_type")
+def test_push_public_raises_error_for_restricted_types(mock_is_permitted):
+    """
+    Test that pushing with public=True raises a ValueError if the collection
+    contains files with restricted media types.
+    """
+    # Arrange: Force the permission check to fail
+    mock_is_permitted.return_value = False
+
+    file1 = MagicMock(spec=LocalFile, media_type="application/secret", hash="h1")
+    file1.name = "secret_plans.doc"
+
+    collection = LocalFileCollection(source=[file1])
+
+    # Act & Assert
+    with pytest.raises(ValueError) as exc_info:
+        collection.push(public=True)
+
+    error_msg = str(exc_info.value)
+    assert "Operation aborted" in error_msg
+    assert "restricted media types" in error_msg
+    assert "'secret_plans.doc' (application/secret)" in error_msg
