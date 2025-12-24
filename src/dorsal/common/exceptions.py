@@ -552,6 +552,15 @@ class DatasetExistsError(ConflictError):
     """Dataset exists."""
 
 
+class BatchIndexingError(DorsalError):
+    """Raised when a batch indexing operation fails."""
+
+    def __init__(self, message: str, summary: dict, original_error: Exception | None = None):
+        super().__init__(message)
+        self.summary = summary
+        self.original_error = original_error
+
+
 # == FileAnnotator ==
 
 

@@ -739,23 +739,40 @@ def index_directory(
     public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
+    fail_fast: bool = True,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
-    1. Scans the specified directory for files.
-    2. Generates rich metadata for each file locally.
-    3. Uploads all generated metadata records to DorsalHub in managed batches.
+    This function is a high-level wrapper around the `MetadataReader`. It performs
+    three main steps:
+    1. Scans the directory for files.
+    2. Generates rich metadata for each file locally (offline).
+    3. Uploads the records to DorsalHub in managed batches.
+
+    It supports a **Fail-Fast** mode (default) for debugging and a **Best-Effort**
+    mode for bulk operations.
 
     Example:
         ```python
         from dorsal.api import index_directory
+        from dorsal.common.exceptions import BatchIndexingError
 
-        # Scan a directory and index all files to your private records
-        summary = index_directory("path/to/project_assets", recursive=True, public=False)
+        # Scenario 1: Standard usage (Fail-Fast)
+        try:
+            summary = index_directory("path/to/project_assets", recursive=True)
+            print(f"Success! {summary['success']} files indexed.")
+        except BatchIndexingError as e:
+            print(f"Indexing failed at batch {e.summary['batches'][-1]['batch_index']}.")
+            print(f"Error: {e}")
 
-        print("--- Indexing Complete ---")
-        print(f"Files processed locally: {summary['total_records_processed_locally']}")
-        print(f"Successfully indexed to API: {summary['total_records_accepted_by_api']}")
+        # Scenario 2: Bulk Upload (Best-Effort)
+        # Continue processing even if individual batches fail.
+        summary = index_directory(
+            "path/to/massive_dataset",
+            recursive=True,
+            fail_fast=False
+        )
+        print(f"Completed. Success: {summary['success']}, Failed: {summary['failed']}")
         ```
 
     Args:
@@ -766,211 +783,44 @@ def index_directory(
             as public on DorsalHub. Defaults to False.
         api_key (str | None, optional): An API key to use for this operation,
             overriding the client's default. Defaults to None.
+        use_cache (bool, optional): If True, uses cached metadata for files
+            that haven't changed. Defaults to True.
+        fail_fast (bool, optional): If True, raises `BatchIndexingError` immediately
+            if a batch fails. If False, logs the error and continues. Defaults to True.
 
     Returns:
-        dict: A summary dictionary detailing the results of the entire batch
-            operation, including local processing and API indexing counts.
+        dict: A summary dictionary detailing the results of the operation.
+            Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
+
+    Raises:
+        FileNotFoundError: If the directory does not exist.
+        BatchIndexingError: If `fail_fast` is True and a batch fails.
+        DorsalClientError: For critical errors preventing the operation from starting.
     """
     from dorsal.file.metadata_reader import MetadataReader
 
     effective_reader: MetadataReader
-    log_message_context = ""
 
     if api_key is not None:
-        log_message_context = "using provided API key with temporary MetadataReader"
         logger.debug(
             "API key override for index_directory (dir: '%s'). Creating temporary MetadataReader.",
             dir_path,
         )
         effective_reader = MetadataReader(api_key=api_key)
     else:
-        log_message_context = "using shared METADATA_READER instance"
         logger.debug(
             "No API key override for index_directory (dir: '%s'). Using shared METADATA_READER.",
             dir_path,
         )
         effective_reader = get_metadata_reader()
 
-    logger.debug(
-        "High-level index_directory: dir_path='%s' (%s), recursive=%s, public=%s.",
-        dir_path,
-        log_message_context,
-        recursive,
-        public,
+    return effective_reader.index_directory(
+        dir_path=dir_path,
+        recursive=recursive,
+        public=public,
+        skip_cache=not use_cache,
+        fail_fast=fail_fast,
     )
-
-    all_records_to_index: list[FileRecordStrict]
-    file_hash_to_path_map: dict[str, str]
-
-    try:
-        logger.debug(
-            "Step 1: Generating file records from directory '%s' via MetadataReader.",
-            dir_path,
-        )
-        all_records_to_index, file_hash_to_path_map = effective_reader.generate_processed_records_from_directory(
-            dir_path=dir_path, recursive=recursive, skip_cache=not use_cache
-        )
-        total_records_processed_locally = len(all_records_to_index)
-        logger.debug(
-            "MetadataReader generated %d unique file records from directory '%s'.",
-            total_records_processed_locally,
-            dir_path,
-        )
-    except DorsalError as err:
-        logger.warning(
-            "Failed to generate file records from directory '%s' (%s): %s - %s",
-            dir_path,
-            log_message_context,
-            type(err).__name__,
-            err,
-        )
-        raise
-    except Exception as err:
-        logger.exception(
-            "Unexpected error generating file records from directory '%s' (%s).",
-            dir_path,
-            log_message_context,
-        )
-        if isinstance(err, DorsalError):
-            raise
-        raise DorsalError(f"Unexpected error processing directory '{dir_path}': {err}") from err
-
-    if not all_records_to_index:
-        logger.debug("No unique file records generated from directory '%s' to index.", dir_path)
-        return {
-            "total_records_processed_locally": 0,
-            "total_batches_created": 0,
-            "successful_api_batches": 0,
-            "failed_api_batches": 0,
-            "total_records_accepted_by_api": 0,
-            "batch_processing_details": [],
-        }
-
-    batches = [
-        all_records_to_index[i : i + constants.API_MAX_BATCH_SIZE]
-        for i in range(0, total_records_processed_locally, constants.API_MAX_BATCH_SIZE)
-    ]
-    total_batches_created = len(batches)
-
-    logger.debug(
-        "Submitting %d records in %d batches of up to %d each to DorsalHub (public=%s, context: %s).",
-        total_records_processed_locally,
-        total_batches_created,
-        constants.API_MAX_BATCH_SIZE,
-        public,
-        log_message_context,
-    )
-
-    successful_api_batches_count = 0
-    failed_api_batches_count = 0
-    total_records_accepted_by_api = 0
-    batch_processing_details_list = []
-
-    for i, current_batch_records in enumerate(batches):
-        batch_number = i + 1
-        records_in_this_batch = len(current_batch_records)
-        batch_detail_entry: dict = {
-            "batch_number": batch_number,
-            "records_in_batch": records_in_this_batch,
-            "status": "failure",
-            "api_response": None,
-            "error_message": None,
-            "error_type": None,
-        }
-
-        logger.debug(
-            "Submitting API batch %d of %d (%d records) for directory '%s'.",
-            batch_number,
-            total_batches_created,
-            records_in_this_batch,
-            dir_path,
-        )
-        try:
-            batch_api_response: FileIndexResponse
-            if public:
-                batch_api_response = effective_reader._client.index_public_file_records(
-                    file_records=current_batch_records
-                )
-            else:
-                batch_api_response = effective_reader._client.index_private_file_records(
-                    file_records=current_batch_records
-                )
-
-            if file_hash_to_path_map and batch_api_response.results:
-                for result_item in batch_api_response.results:
-                    if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
-                        path = file_hash_to_path_map.get(result_item.hash)
-                        if path:
-                            result_item.file_path = path
-
-            batch_detail_entry["status"] = "success"
-            batch_detail_entry["api_response"] = batch_api_response
-            successful_api_batches_count += 1
-            total_records_accepted_by_api += batch_api_response.success
-
-            logger.debug(
-                "API Batch %d of %d for directory '%s' submitted successfully. API Response: Total=%d, Success=%d.",
-                batch_number,
-                total_batches_created,
-                dir_path,
-                batch_api_response.total,
-                batch_api_response.success,
-            )
-        except DorsalError as err:
-            logger.warning(
-                "API Batch %d of %d for directory '%s' failed: %s - %s",
-                batch_number,
-                total_batches_created,
-                dir_path,
-                type(err).__name__,
-                err,
-            )
-            batch_detail_entry["error_message"] = str(err)
-            batch_detail_entry["error_type"] = type(err).__name__
-            failed_api_batches_count += 1
-        except Exception as err:
-            logger.exception(
-                "Unexpected error submitting API batch %d of %d for directory '%s'.",
-                batch_number,
-                total_batches_created,
-                dir_path,
-            )
-            batch_detail_entry["error_message"] = f"Unexpected error: {str(err)}"
-            batch_detail_entry["error_type"] = type(err).__name__
-            failed_api_batches_count += 1
-
-        batch_processing_details_list.append(batch_detail_entry)
-
-    overall_summary = {
-        "total_records_processed_locally": total_records_processed_locally,
-        "total_batches_created": total_batches_created,
-        "successful_api_batches": successful_api_batches_count,
-        "failed_api_batches": failed_api_batches_count,
-        "total_records_accepted_by_api": total_records_accepted_by_api,
-        "batch_processing_details": batch_processing_details_list,
-    }
-
-    if failed_api_batches_count > 0:
-        logger.warning(
-            "Batch indexing for directory '%s' (%s) completed with %d successful and %d failed API batches (out of %d). "
-            "Total records accepted by API in successful batches: %d.",
-            dir_path,
-            log_message_context,
-            successful_api_batches_count,
-            failed_api_batches_count,
-            total_batches_created,
-            total_records_accepted_by_api,
-        )
-    else:
-        logger.debug(
-            "Batch indexing for directory '%s' (%s) completed successfully. All %d API batches processed. "
-            "Total records accepted by API: %d.",
-            dir_path,
-            log_message_context,
-            total_batches_created,
-            total_records_accepted_by_api,
-        )
-    return overall_summary
 
 
 def scan_directory(

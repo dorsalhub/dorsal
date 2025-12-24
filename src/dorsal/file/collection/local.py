@@ -326,7 +326,15 @@ class LocalFileCollection(_BaseFileCollection):
         console: "Console | None" = None,
         palette: dict | None = None,
     ) -> dict:
-        """Pushes all file records in the collection to DorsalHub for indexing."""
+        """Pushes all file records in the collection to DorsalHub for indexing.
+
+        This method operates in a Fail-Fast manner. If any batch fails (due to
+        network issues, authentication, quota, or validation), the method will
+        raise the exception immediately.
+
+        The state of the operation is persisted to `self.push_results`, allowing
+        you to inspect successful batches even after a crash.
+        """
         if public:
             prohibited_files = []
             for file in self.files:
@@ -348,18 +356,19 @@ class LocalFileCollection(_BaseFileCollection):
             self._client = get_shared_dorsal_client(api_key=api_key)
 
         all_records = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
-        summary: dict[str, Any] = {
-            "total_records_in_collection": len(self.files),
-            "total_records_to_push": len(all_records),
-            "successful_api_batches": 0,
-            "failed_api_batches": 0,
-            "total_records_accepted_by_api": 0,
-            "batch_processing_details": [],
+
+        self.push_results: dict[str, Any] = {
+            "total_records": len(all_records),
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "batches": [],
+            "errors": [],
         }
 
         if not all_records:
             logger.info("No valid records in the collection to push.")
-            return summary
+            return self.push_results
 
         batches = [all_records[i : i + API_MAX_BATCH_SIZE] for i in range(0, len(all_records), API_MAX_BATCH_SIZE)]
 
@@ -407,42 +416,58 @@ class LocalFileCollection(_BaseFileCollection):
             iterator = batches
 
         start_time = time.perf_counter()
-        with rich_progress if rich_progress else open(os.devnull, "w"):
-            for i, batch in enumerate(iterator):
-                detail: dict[str, Any] = {
-                    "batch_number": i + 1,
-                    "records_in_batch": len(batch),
-                }
-                try:
-                    if public:
-                        response = self._client.index_public_file_records(file_records=batch)
-                    else:
-                        response = self._client.index_private_file_records(file_records=batch)
 
-                    summary["successful_api_batches"] = cast(int, summary["successful_api_batches"]) + 1
-                    summary["total_records_accepted_by_api"] = (
-                        cast(int, summary["total_records_accepted_by_api"]) + response.success
-                    )
-                    detail.update({"status": "success", "response": response.model_dump()})
-                except DorsalClientError as e:
-                    summary["failed_api_batches"] = cast(int, summary["failed_api_batches"]) + 1
-                    detail.update(
-                        {
+        try:
+            with rich_progress if rich_progress else open(os.devnull, "w"):
+                for i, batch in enumerate(iterator):
+                    batch_size = len(batch)
+
+                    try:
+                        if public:
+                            response = self._client.index_public_file_records(file_records=batch)
+                        else:
+                            response = self._client.index_private_file_records(file_records=batch)
+
+                        self.push_results["success"] += response.success
+                        self.push_results["processed"] += batch_size
+                        self.push_results["batches"].append(
+                            {
+                                "batch_index": i,
+                                "status": "success",
+                                "records_in_batch": batch_size,
+                                "records_accepted": response.success,
+                            }
+                        )
+
+                        logger.debug("Batch %d/%d succeeded: %d records pushed.", i + 1, len(batches), response.success)
+
+                    except Exception as e:
+                        self.push_results["failed"] += batch_size
+                        self.push_results["processed"] += batch_size
+
+                        error_entry = {
+                            "batch_index": i,
                             "status": "failure",
+                            "records_in_batch": batch_size,
                             "error_type": type(e).__name__,
                             "error_message": str(e),
                         }
-                    )
+                        self.push_results["batches"].append(error_entry)
+                        self.push_results["errors"].append(error_entry)
 
-                cast(list, summary["batch_processing_details"]).append(detail)
-                if rich_progress:
-                    rich_progress.update(task_id, advance=1)
+                        logger.error("Push failed at batch %d/%d: %s", i + 1, len(batches), str(e))
 
-        duration = time.perf_counter() - start_time
-        if not console:
-            logger.debug("Push finished in %.3fs.", duration)
+                        raise e
 
-        return summary
+                    if rich_progress:
+                        rich_progress.update(task_id, advance=1)
+
+        finally:
+            duration = time.perf_counter() - start_time
+            if not console:
+                logger.debug("Push operation ended in %.3fs.", duration)
+
+        return self.push_results
 
     def sync_with_remote(
         self,
@@ -487,7 +512,7 @@ class LocalFileCollection(_BaseFileCollection):
         push_summary = self.push(public=public, api_key=api_key)
 
         num_to_push = cast(int, push_summary.get("total_records_to_push", 0))
-        num_accepted = cast(int, push_summary.get("total_records_accepted_by_api", 0))
+        num_accepted = cast(int, push_summary.get("success", 0))
         if not is_remote_private and num_accepted != num_to_push:
             raise DorsalClientError(
                 f"Sync aborted: Not all local files could be indexed publicly ({num_accepted}/{num_to_push}). Cannot sync with a public collection."
@@ -531,7 +556,7 @@ class LocalFileCollection(_BaseFileCollection):
 
         logger.info("Step 1/3: Pushing file records to DorsalHub...")
         push_summary = self.push(public=public, api_key=api_key)
-        if cast(int, push_summary["total_records_accepted_by_api"]) == 0:
+        if cast(int, push_summary["success"]) == 0:
             raise DorsalClientError("No files were successfully indexed. Cannot create collection.")
         logger.info("File records pushed successfully.")
 

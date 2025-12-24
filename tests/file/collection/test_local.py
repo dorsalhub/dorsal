@@ -208,7 +208,7 @@ def test_push(mock_get_client):
     summary = collection.push(public=False)
 
     mock_client.index_private_file_records.assert_called_once_with(file_records=[file1.model])
-    assert summary["total_records_accepted_by_api"] == 1
+    assert summary["success"] == 1
 
 
 @patch("dorsal.file.collection.remote.DorsalFileCollection")
@@ -230,7 +230,7 @@ def test_create_remote_collection(mock_get_client, mock_remote_class):
     collection = LocalFileCollection(source=[file1])
     collection._client = mock_client
 
-    with patch.object(collection, "push", return_value={"total_records_accepted_by_api": 1}) as mock_push:
+    with patch.object(collection, "push", return_value={"success": 1}) as mock_push:
         # Act
         collection.create_remote_collection(name="New Test Collection")
 

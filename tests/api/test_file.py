@@ -405,34 +405,20 @@ def test_index_directory_success(mock_get_reader):
     """Test the orchestration logic of the index_directory function."""
     dir_path = "/tmp/assets"
 
-    # Mock the MetadataReader and its internal client
     mock_reader = MagicMock()
-    mock_client = MagicMock()
     mock_get_reader.return_value = mock_reader
-    mock_reader._client = mock_client
 
-    # 1. Mock the result of scanning the directory
-    mock_records = [{"hash": "a" * 64, "source": "disk"}]
-    mock_hash_map = {"a" * 64: "/tmp/assets/image.jpg"}
-    mock_reader.generate_processed_records_from_directory.return_value = (
-        mock_records,
-        mock_hash_map,
-    )
-
-    # 2. Mock the result of the client indexing the records
-    mock_index_response = FileIndexResponse(total=1, success=1, error=0, unauthorized=0, results=[])
-    mock_client.index_private_file_records.return_value = mock_index_response
-
-    # Call the function under test
+    mock_summary = {"total_records": 1, "success": 1, "failed": 0, "batches": [], "errors": []}
+    mock_reader.index_directory.return_value = mock_summary
     summary = file_api.index_directory(dir_path, public=False)
 
-    # Assertions
-    mock_reader.generate_processed_records_from_directory.assert_called_once()
-    mock_client.index_private_file_records.assert_called_once_with(file_records=mock_records)
+    mock_get_reader.assert_called_once()
 
-    assert summary["total_records_processed_locally"] == 1
-    assert summary["total_records_accepted_by_api"] == 1
-    assert summary["successful_api_batches"] == 1
+    mock_reader.index_directory.assert_called_once_with(
+        dir_path=dir_path, recursive=False, public=False, skip_cache=False, fail_fast=True
+    )
+
+    assert summary == mock_summary
 
 
 def test_find_duplicates_success(fs):
