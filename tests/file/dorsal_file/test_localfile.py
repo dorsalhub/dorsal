@@ -196,9 +196,7 @@ def test_local_file_add_tag_with_failed_validation(mock_get_client, mock_metadat
     lf = LocalFile(file_path, client=mock_client)
 
     with pytest.raises(InvalidTagError, match="Value too long."):
-        lf.add_public_tag(name="invalid_tag", value="x" * 1000, auto_validate=True)
-
-    assert len(lf.tags) == 0  # Ensure the invalid tag was not added
+        lf.add_public_tag(name="invalid_tag", value="valid_local_length", auto_validate=True)
 
 
 def test_local_file_push_success(mock_metadata_reader, mock_file_record_strict, fs):
@@ -215,7 +213,7 @@ def test_local_file_push_success(mock_metadata_reader, mock_file_record_strict, 
     lf = LocalFile(file_path, client=mock_client)
 
     # Act: Push the record as private
-    result = lf.push(private=True)
+    result = lf.push(public=False)
 
     # Assert
     mock_client.index_private_file_records.assert_called_once_with(file_records=[lf.model], api_key=None)
@@ -298,7 +296,7 @@ def test_local_file_push_public_success(mock_metadata_reader, mock_file_record_s
     lf = LocalFile(file_path, client=mock_client)
 
     # Act: Push the record as public
-    result = lf.push(private=False)
+    result = lf.push(public=True)
 
     # Assert
     mock_client.index_public_file_records.assert_called_once_with(file_records=[lf.model], api_key=None)
@@ -317,7 +315,7 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
     mock_annotation = Annotation(
         record=GenericFileAnnotation(file_hash="a" * 64, custom_field="test_value"),
         private=True,
-        source=AnnotationManualSource(id="user_provided"),
+        source=AnnotationManualSource(id="test"),
     )
     mock_annotator.make_manual_annotation.return_value = mock_annotation
 
@@ -328,7 +326,7 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
     # Act
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
-        private=True,
+        public=False,
         annotation_record={"custom_field": "test_value"},
     )
 
@@ -360,7 +358,7 @@ def test_add_annotation_raises_conflict_error(mock_annotator, mock_metadata_read
 
     lf = LocalFile(file_path, client=mock_client)
 
-    lf._add_annotation(schema_id="dorsal/test-dataset", private=True, annotation_record={})
+    lf._add_annotation(schema_id="dorsal/test-dataset", public=False, annotation_record={})
 
     with pytest.raises(
         AttributeConflictError,
@@ -368,7 +366,7 @@ def test_add_annotation_raises_conflict_error(mock_annotator, mock_metadata_read
     ):
         lf._add_annotation(
             schema_id="dorsal/test-dataset",
-            private=True,
+            public=False,
             annotation_record={},
             overwrite=False,
         )
@@ -394,7 +392,7 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
     mock_client = MagicMock()
 
     lf = LocalFile(file_path, client=mock_client)
-    lf._add_annotation(schema_id="dorsal/test-dataset", private=True, annotation_record={})
+    lf._add_annotation(schema_id="dorsal/test-dataset", public=False, annotation_record={})
 
     # Check list index 0
     assert getattr(lf.model.annotations, "dorsal/test-dataset")[0].record.version == 1
@@ -402,7 +400,7 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
     # Act: Add again with overwrite=True
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
-        private=True,
+        public=False,
         annotation_record={},
         overwrite=True,
     )

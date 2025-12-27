@@ -24,7 +24,7 @@ from dorsal.common.exceptions import (
     ApiDataValidationError,
     DorsalError,
     DorsalClientError,
-    JSONSchemaSchemaError,
+    JsonSchemaValidationError,
     DorsalOfflineError,
 )
 from dorsal.common.validators.datasets import Dataset
@@ -236,7 +236,7 @@ def make_schema_validator(
         ApiDataValidationError: If the API response for the dataset is malformed and
                                 cannot be parsed into a valid `Dataset` object
                                 (propagated from `get_dataset`).
-        JSONSchemaSchemaError: If the schema is invalid.
+        JsonSchemaValidationError: If the schema is invalid.
 
     """
     if dataset_id.startswith("open/"):
@@ -289,11 +289,11 @@ def validate_dataset_records(
                     non-empty dictionary.
         ApiDataValidationError: If a schema (fetched or provided) is invalid or
                                 cannot be used to prepare a validator (e.g., due
-                                to `JSONSchemaSchemaError` during preparation).
+                                to `JsonSchemaValidationError` during preparation).
         DorsalClientError: (And its subclasses like AuthError, NotFoundError,
                            NetworkError, APIError, etc.) Propagated if `get_dataset_schema`
                            is called and encounters an issue.
-        JSONSchemaSchemaError: Propagated from `validate_records_with_validator`
+        JsonSchemaValidationError: Propagated from `validate_records_with_validator`
                                if the validator's schema has issues found during
                                the record validation loop (should be rare if
                                `prepare_custom_validator` succeeds).
@@ -371,7 +371,7 @@ def validate_dataset_records(
             dataset_id,
         )
         return validation_summary
-    except (ValueError, JSONSchemaSchemaError) as err:
+    except (ValueError, JsonSchemaValidationError) as err:
         logger.warning(
             "Record validation failed for dataset_id '%s' due to issues within the validator or record structure: %s - %s",
             dataset_id,

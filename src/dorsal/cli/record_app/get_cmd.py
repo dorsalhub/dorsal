@@ -104,13 +104,13 @@ def get_file_record(
                     style="yellow",
                 )
 
-    private_scope = None
+    public_scope = None
     search_type_str = " "
     if private:
-        private_scope = True
+        public_scope = False
         search_type_str = " private "
     elif public:
-        private_scope = False
+        public_scope = True
         search_type_str = " public "
 
     if not json_output:
@@ -119,7 +119,7 @@ def get_file_record(
         )
 
     try:
-        file_record = get_dorsal_file_record(hash_string=hash_string, private=private_scope, mode="pydantic")
+        file_record = get_dorsal_file_record(hash_string=hash_string, public=public_scope, mode="pydantic")
 
         record_dict = file_record.model_dump(by_alias=True, exclude_none=True, mode="json")
         record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
@@ -136,7 +136,7 @@ def get_file_record(
         panel = create_file_info_panel(
             record_dict=record_dict,
             title=title,
-            private=private_scope,
+            private=not public_scope,
             palette=palette,
         )
         console.print(panel)

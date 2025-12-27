@@ -689,7 +689,7 @@ class TestModelRunnerAdvanced:
 
         # Mock get_json_schema_validator to return a dummy validator
         mock_validator = MagicMock(spec=JsonSchemaValidator)
-        mock_validator.schema = {"version": "0.1.0"}
+        mock_validator.schema = {"version": "0.1.1"}
         mocker.patch("dorsal.common.validators.json_schema.get_json_schema_validator", return_value=mock_validator)
 
         # We mock the module-level function used by the runner

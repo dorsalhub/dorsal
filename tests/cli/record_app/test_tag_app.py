@@ -57,7 +57,7 @@ def test_add_tag_success_private(mock_rich_console, mock_tag_app_cmds):
     result = runner.invoke(app, ["record", "tag", "add", HASH_STRING, "--name", "key", "--value", "val"])
 
     assert result.exit_code == 0
-    mock_tag_app_cmds["add_tag"].assert_called_once_with(hash_string=HASH_STRING, name="key", value="val", private=True)
+    mock_tag_app_cmds["add_tag"].assert_called_once_with(hash_string=HASH_STRING, name="key", value="val", public=False)
     assert "Successfully added tag" in mock_rich_console.print.call_args.args[0]
 
 
@@ -79,9 +79,7 @@ def test_add_tag_success_public(mock_rich_console, mock_tag_app_cmds):
     )
 
     assert result.exit_code == 0
-    mock_tag_app_cmds["add_tag"].assert_called_once_with(
-        hash_string=HASH_STRING, name="key", value="val", private=False
-    )
+    mock_tag_app_cmds["add_tag"].assert_called_once_with(hash_string=HASH_STRING, name="key", value="val", public=True)
 
 
 def test_add_label_success(mock_rich_console, mock_tag_app_cmds):

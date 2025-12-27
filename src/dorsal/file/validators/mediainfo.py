@@ -26,7 +26,7 @@ from pydantic import (
     model_validator,
 )
 
-from dorsal.common.validators import TString4096
+from dorsal.common.validators import TString4096, truncate_list
 
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,13 @@ def coerce_float(value: Any) -> float | None:
     return None
 
 
+def truncate_dict_256(v: Any) -> Any:
+    if isinstance(v, dict) and len(v) > 256:
+        logger.debug("Truncating 'extra' dictionary from %d to 256 items.", len(v))
+        return dict(list(v.items())[:256])
+    return v
+
+
 CoerceInteger = Annotated[int | None, BeforeValidator(coerce_integer)]
 CoerceFloat = Annotated[float | None, BeforeValidator(coerce_float)]
 
@@ -96,6 +103,7 @@ class MediaInfoTrackExtra(BaseModel):
 
         processed_extra: dict[str, str | None] = {}
         limited_extra_items = list(self.model_extra.items())[: self.MAX_EXTRA_FIELD_COUNT]
+
         if len(self.model_extra) > self.MAX_EXTRA_FIELD_COUNT:
             logger.debug(
                 "Reached MAX_EXTRA_FIELD_COUNT (%d). Only the first %d extra fields will be processed.",
@@ -921,7 +929,10 @@ class MediaInfoTrack(BaseModel):
     WrittenBy: TString4096 | None = Field(default=None, json_schema_extra={"pii_risk": True})
     Written_Date: TString4096 | datetime.datetime | None = None
     Written_Location: TString4096 | None = Field(default=None, json_schema_extra={"pii_risk": True})
-    extra: MediaInfoTrackExtra | None = Field(default=None, json_schema_extra={"pii_risk": True})
+
+    extra: Annotated[MediaInfoTrackExtra | None, BeforeValidator(truncate_dict_256)] = Field(
+        default=None, json_schema_extra={"pii_risk": True}
+    )
 
 
 class MediaInfoVersion(BaseModel):
@@ -933,10 +944,10 @@ class MediaInfoVersion(BaseModel):
 class MediaInfoValidationModel(MediaInfoTrack):
     """Validation model for MediaInfoAnnotationModel."""
 
-    Audio: list[MediaInfoTrack] | None = None
-    Image: list[MediaInfoTrack] | None = None
-    Menu: list[MediaInfoTrack] | None = None
-    Other: list[MediaInfoTrack] | None = None
-    Text: list[MediaInfoTrack] | None = None
-    Video: list[MediaInfoTrack] | None = None
+    Audio: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
+    Image: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
+    Menu: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
+    Other: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
+    Text: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
+    Video: Annotated[list[MediaInfoTrack] | None, BeforeValidator(truncate_list(256))] = None
     creatingLibrary: MediaInfoVersion | None = None

@@ -31,7 +31,7 @@ from pydantic import (
     model_validator,
 )
 
-from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES
+from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES, ANNOTATION_SCHEMA_LIMIT_STRICT
 from dorsal.common.exceptions import PydanticValidationError
 from dorsal.common.model import (
     AnnotationSource,
@@ -280,11 +280,53 @@ class Annotations(BaseModel):
         return validated_instance
 
 
+class AnnotationsStrict(Annotations):
+    """
+    Strict version of Annotations for write/submission operations.
+
+    Enforces:
+    1. Structure Limits: Max 64 datasets, Max 64 entries per dataset.
+    2. Data Completeness: No AnnotationStubs allowed. Must be full Annotation or Group.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_submission_limits(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        if len(value) > 64:  # Allows for every open validation schema with 54 to spare for custom schemas
+            raise ValueError(f"Too many annotation schemas. Received {len(value)}, limit is 64 schemas per file.")
+
+        for key, items in value.items():
+            if isinstance(items, list) and len(items) > ANNOTATION_SCHEMA_LIMIT_STRICT:
+                raise ValueError(
+                    f"Too many '{key}' annotations. {len(items)} exceeds the limit ({ANNOTATION_SCHEMA_LIMIT_STRICT})."
+                )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_no_stubs(self) -> Self:
+        if not self.__pydantic_extra__:
+            return self
+
+        for key, value in self.__pydantic_extra__.items():
+            items = value if isinstance(value, list) else [value]
+
+            for item in items:
+                if isinstance(item, AnnotationStub):
+                    raise ValueError(
+                        f"Invalid data for '{key}': Contains one or more `AnnotationStub` objects. "
+                        "`FileRecordStrict` cannot contain `AnnotationStub`."
+                    )
+        return self
+
+
 class FileTag(BaseModel):
     id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)  # bson.ObjectId string
     name: str = Field(pattern=r"^[a-zA-Z0-9\_]{3,64}$")
-    value: str | bool | datetime.datetime | int | float
-    value_code: str | None = None
+    value: String256 | bool | datetime.datetime | int | float
+    value_code: String256 | None = None
     private: bool
     hidden: bool
     upvotes: NonNegativeInt
@@ -431,8 +473,10 @@ class FileRecordStrict(FileRecord):
     """
 
     validation_hash: Blake3Hash
-    annotations: Annotations
+    annotations: AnnotationsStrict
     source: Literal["disk", "cache", "dorsalhub"]
+
+    tags: list[FileTag] = Field(default_factory=list, max_length=128)
 
 
 class FileRecordDateTime(FileRecord):
@@ -483,30 +527,6 @@ class AnnotationData(BaseModel):
     schema_id: DatasetID
     annotation: Annotation | None
     error: str | None = None
-
-
-class UserFileSearchQuery(BaseModel):
-    """
-    Query object for searching user files.
-    This model is designed to be used with FastAPI for request body validation.
-    """
-
-    text: str | None = None
-    field: dict[str, list[str]] | None = Field(
-        default=None,
-        description="Key-value pairs for field-based filtering. e.g. {'extension': ['.pdf', '.docx']}",
-    )
-    not_filters: dict[str, list[str]] | None = Field(
-        default=None,
-        alias="not",
-        description="Key-value pairs to exclude from results.",
-    )
-    from_date: datetime.datetime | None = None
-    to_date: datetime.datetime | None = None
-    date_field: str = Field(
-        default="date_modified",
-        description="The date field to use for range filtering.",
-    )
 
 
 class UserFileRead(BaseModel):

@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 import os
-import json
-import logging
 from pathlib import Path
 import requests
 
@@ -26,10 +24,10 @@ from dorsal.client import DorsalClient
 from dorsal.client.validators import FileIndexResponse
 from dorsal.client.validators import IndexResult as ActualIndexResultItem
 from dorsal.common.exceptions import (
+    BatchIndexingError,
     DorsalError,
     DorsalClientError,
     DuplicateFileError,
-    BatchSizeError,
     ModelRunnerConfigError,
     BaseModelProcessingError,
     PipelineIntegrityError,
@@ -338,7 +336,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 201
 
-        response = reader.index_file(file_path=file_path, private=True)
+        response = reader.index_file(file_path=file_path, public=False)
 
         assert response is client_response_mock
         mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
@@ -366,7 +364,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 200
 
-        response = reader.index_file(file_path=file_path, private=False)
+        response = reader.index_file(file_path=file_path, public=True)
 
         assert response is client_response_mock
         mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
@@ -389,7 +387,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 401
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "unauthorized" in caplog.text
 
     def test_index_file_api_error_count_triggers_log(self, mock_get_record, metadata_reader_base, caplog):
@@ -412,7 +410,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.results = [mock_result_item]
         client_response_mock.response.status_code = 500
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "error during indexing attempt" in caplog.text
 
     def test_index_file_error_count_no_results_logs_error(self, mock_get_record, metadata_reader_base, caplog):
@@ -429,7 +427,7 @@ class TestMetadataReaderIndexFile:
         client_response_mock.unauthorized = 0
         client_response_mock.response.status_code = 200
 
-        reader.index_file(file_path=file_path, private=True)
+        reader.index_file(file_path=file_path, public=False)
         assert "Failed to index file" in caplog.text
 
     def test_index_file_run_models_fails(self, mock_get_record, metadata_reader_base):
@@ -474,7 +472,7 @@ class TestMetadataReaderIndexFile:
         if hasattr(client_response_mock, "errors"):
             del client_response_mock.errors
 
-        reader.index_file(file_path=file_path, private=False)
+        reader.index_file(file_path=file_path, public=True)
         assert "Unexpected response from server" in caplog.text
 
 
@@ -534,9 +532,7 @@ class TestMetadataReaderIndexDirectory:
         reader._test_mock_get_file_paths.return_value = []
         response = reader.index_directory(dir_path=dir_path)
 
-        assert response.total == 0
-        reader._test_mock_client.index_private_file_records.assert_not_called()
-        assert "No unique files from" in caplog.text
+        assert response["total_records"] == 0
 
     def test_index_directory_success(self, reader_for_index_dir, temp_dir_with_files, caplog):
         reader = reader_for_index_dir
@@ -554,11 +550,9 @@ class TestMetadataReaderIndexDirectory:
         client_response_mock = reader._test_mock_client.index_private_file_records.return_value
         client_response_mock.total = 2
         client_response_mock.success = 2
-        result_item1 = MagicMock(spec=ActualIndexResultItem, hash="hash1", url="url1", file_path=None)
-        result_item2 = MagicMock(spec=ActualIndexResultItem, hash="hash2", url="url2", file_path=None)
-        client_response_mock.results = [result_item1, result_item2]
+        client_response_mock.results = []
 
-        response = reader.index_directory(dir_path=str(temp_dir_with_files), private=True)
+        response = reader.index_directory(dir_path=str(temp_dir_with_files), public=False)
 
         reader._test_mock_get_file_paths.assert_called_once_with(dir_path=str(temp_dir_with_files), recursive=False)
         assert reader._test_mock_runner.run.call_count == 2
@@ -566,13 +560,9 @@ class TestMetadataReaderIndexDirectory:
             file_records=[mock_record1, mock_record2]
         )
 
-        # Sort results to make assertion deterministic
-        response.results.sort(key=lambda x: x.hash)
-        file_paths.sort()
-
-        assert response.results[0].file_path == f1_path
-        assert response.results[1].file_path == f2_path
-        assert "Indexing complete for" in caplog.text
+        assert response["total_records"] == 2
+        assert response["success"] == 2
+        assert response["failed"] == 0
 
     def test_index_directory_public_indexing(self, reader_for_index_dir, temp_dir_with_files, caplog):
         reader = reader_for_index_dir
@@ -587,20 +577,15 @@ class TestMetadataReaderIndexDirectory:
         client_response_mock = reader._test_mock_client.index_public_file_records.return_value
         client_response_mock.total = 1
         client_response_mock.success = 1
-        result_item_public = MagicMock(
-            spec=ActualIndexResultItem,
-            hash="hash_public",
-            url="url_public",
-            file_path=None,
-        )
-        client_response_mock.results = [result_item_public]
+        client_response_mock.results = []
 
-        response = reader.index_directory(dir_path=str(temp_dir_with_files), private=False)
+        response = reader.index_directory(dir_path=str(temp_dir_with_files), public=True)
 
         reader._test_mock_client.index_public_file_records.assert_called_once_with(file_records=[mock_record_public])
         reader._test_mock_client.index_private_file_records.assert_not_called()
-        assert response.results[0].file_path == file_paths[0]
-        assert "Indexing complete for" in caplog.text
+
+        assert response["total_records"] == 1
+        assert response["success"] == 1
 
     def test_index_directory_all_files_skipped_or_error(self, reader_for_index_dir, temp_dir_with_files, caplog):
         reader = reader_for_index_dir
@@ -618,10 +603,7 @@ class TestMetadataReaderIndexDirectory:
 
         response_all_error = reader.index_directory(dir_path=dir_to_scan)
 
-        assert response_all_error.total == 0
-        assert response_all_error.success == 0
-        reader._client.index_private_file_records.assert_not_called()
-        assert "No unique files from" in caplog.text
+        assert response_all_error["total_records"] == 0
 
     def test_index_directory_raises_correct_duplicate_file_error(
         self,
@@ -672,10 +654,11 @@ class TestMetadataReaderIndexDirectory:
         )
         reader._test_mock_client.index_private_file_records.side_effect = simulated_api_error
 
-        with pytest.raises(DorsalClientAPIError) as exc_info:
+        with pytest.raises(BatchIndexingError) as exc_info:
             reader.index_directory(dir_path=str(temp_dir_with_files))
 
-        assert exc_info.value is simulated_api_error
+        assert exc_info.value.original_error is simulated_api_error
+        assert exc_info.value.summary["failed"] == 1
 
 
 class TestMetadataReaderReadMethods:

@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/audio-transcription",
     "title": "Audio Transcription",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Store text transcribed from an audio source. Supports timed segments, speaker identification, and non-verbal events.",
     "type": "object",
     "properties": {

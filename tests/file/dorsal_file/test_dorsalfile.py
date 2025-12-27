@@ -310,20 +310,20 @@ def test_tags_setter_validation(mock_dorsal_client, mock_file_record_dt_json):
 
 
 @pytest.mark.parametrize(
-    "private_flag, expected_method_called",
+    "public_flag, expected_method_called",
     [
-        (True, "download_private_file_record"),
-        (False, "download_public_file_record"),
+        (False, "download_private_file_record"),
+        (True, "download_public_file_record"),
     ],
 )
-def test_dorsal_file_init_private_flag(
-    mock_dorsal_client, mock_file_record_dt_json, private_flag, expected_method_called
+def test_dorsal_file_init_public_flag(
+    mock_dorsal_client, mock_file_record_dt_json, public_flag, expected_method_called
 ):
-    """Test that the 'private' flag calls the correct client download method."""
+    """Test that the 'public' flag calls the correct client download method."""
     record = FileRecordDateTime(**mock_file_record_dt_json)
     getattr(mock_dorsal_client, expected_method_called).return_value = record
 
-    df = DorsalFile(hash_string="a" * 64, private=private_flag, client=mock_dorsal_client)
+    df = DorsalFile(hash_string="a" * 64, public=public_flag, client=mock_dorsal_client)
 
     # Assert the correct method was called
     getattr(mock_dorsal_client, expected_method_called).assert_called_once_with(hash_string="a" * 64)

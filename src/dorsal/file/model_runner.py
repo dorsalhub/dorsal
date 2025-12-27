@@ -41,11 +41,10 @@ from dorsal.common.exceptions import (
     PydanticValidationError,
     ValidationError,
 )
-from dorsal.common.model import AnnotationModel, AnnotationModelSource
+from dorsal.common.model import is_pydantic_model_class, AnnotationModel, AnnotationModelSource
 from dorsal.common.validators import (
     CallableImportPath,
     JsonSchemaValidator,
-    JsonSchemaValidatorType,
     StringNotEmpty,
     String4096,
     import_callable,
@@ -313,7 +312,7 @@ class ModelRunner:
 
     def _load_model_and_validator_classes(
         self, config_step: ModelRunnerPipelineStep
-    ) -> tuple[Type[AnnotationModel], BaseModel | JsonSchemaValidator | None]:
+    ) -> tuple[Type[AnnotationModel], Type[BaseModel] | JsonSchemaValidator | None]:
         try:
             annotator_callable = import_callable(config_step.annotation_model)
             if not (inspect.isclass(annotator_callable) and issubclass(annotator_callable, AnnotationModel)):
@@ -328,7 +327,8 @@ class ModelRunner:
                 original_exception=err,
             ) from err
 
-        validator: BaseModel | JsonSchemaValidator | None = None
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None
+
         if config_step.validation_model is not None:
             if isinstance(config_step.validation_model, dict):
                 try:
@@ -346,14 +346,17 @@ class ModelRunner:
             else:
                 try:
                     validator_callable = import_callable(config_step.validation_model)
-                    is_pydantic_class = inspect.isclass(validator_callable) and issubclass(
-                        validator_callable, BaseModel
-                    )
-                    if not (is_pydantic_class or isinstance(validator_callable, JsonSchemaValidator)):
+
+                    if isinstance(validator_callable, JsonSchemaValidator):
+                        validator = validator_callable
+
+                    elif is_pydantic_model_class(validator_callable):
+                        validator = cast(Type[BaseModel], validator_callable)
+                    else:
                         raise TypeError(
                             f"Imported validator '{config_step.validation_model.name}' is not a Pydantic model or JsonSchemaValidator instance."
                         )
-                    validator = validator_callable
+
                     logger.debug(
                         "Imported validation model: %s",
                         config_step.validation_model.name,
@@ -417,7 +420,7 @@ class ModelRunner:
     def _json_schema_validate_raw_annotation_model_output(
         self,
         raw_model_output: dict[str, Any],
-        schema_validator_instance: JsonSchemaValidatorType,
+        schema_validator_instance: JsonSchemaValidator,
         annotator_model_name: str,
         file_path: str,
     ) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
@@ -434,7 +437,7 @@ class ModelRunner:
                 - Raw model output if validation successful, else None.
                 - List of JSON Schema error detail dicts if validation fails, else None.
         """
-        validator_type_name = type(schema_validator_instance).__name__
+        validator_type_name = schema_validator_instance.__name__
         logger.debug(
             "Validating output of annotator '%s' for file '%s' using JsonSchemaValidator instance of type '%s'.",
             annotator_model_name,

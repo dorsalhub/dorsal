@@ -110,7 +110,7 @@ def test_register_model_validator_types(mock_pipeline_config):
     """Tests dictionary, class, and instance validators."""
     with patch("dorsal.api.config.ModelRunnerPipelineStep"):
         # 1. Inert Dict (missing keywords)
-        with pytest.raises(ValueError, match="appears to be inert"):
+        with pytest.raises(ValueError, match="is inert"):
             config.register_model(DummyModel, schema_id="test/schema", validation_model={"foo": "bar"})
 
         # 2. Valid Dict (has keywords)

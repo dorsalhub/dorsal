@@ -43,8 +43,8 @@ from dorsal.common.exceptions import (
 from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.file.dorsal_file import LocalFile, _DorsalFile
 from dorsal.file.metadata_reader import MetadataReader
+from dorsal.file.permissions import is_permitted_public_media_type
 from dorsal.session import get_shared_dorsal_client
-from dorsal.file.validators.file_record import FileRecordStrict
 
 logger = logging.getLogger(__name__)
 
@@ -320,111 +320,73 @@ class LocalFileCollection(_BaseFileCollection):
 
     def push(
         self,
-        private: bool = True,
+        public: bool = False,
         api_key: str | None = None,
         console: "Console | None" = None,
         palette: dict | None = None,
+        fail_fast: bool = True,
     ) -> dict:
-        """Pushes all file records in the collection to DorsalHub for indexing."""
+        """Pushes all file records in the collection to DorsalHub for indexing.
+
+        Args:
+            public: If True, uploads as public records.
+            api_key: Optional API key override.
+            console: Rich console for progress display.
+            palette: Color palette for progress display.
+            fail_fast: If True (default), aborts immediately on the first batch error.
+
+        Returns:
+            dict: Summary of the push operation.
+        """
+        from dorsal.file.metadata_reader import MetadataReader
+        from dorsal.file.validators.file_record import FileRecordStrict
+
+        if public:
+            prohibited_files = []
+            for file in self.files:
+                if not is_permitted_public_media_type(file.media_type):
+                    name_repr = file.name or file.hash or "Unknown File"
+                    prohibited_files.append(f"'{name_repr}' ({file.media_type})")
+
+            if prohibited_files:
+                limit = 5
+                details = ", ".join(prohibited_files[:limit])
+                if len(prohibited_files) > limit:
+                    details += f" and {len(prohibited_files) - limit} others"
+
+                raise ValueError(
+                    f"Operation aborted: The collection cannot be indexed publicly because "
+                    f"it contains restricted media types: {details}."
+                )
+
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
-        all_records = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
-        summary: dict[str, Any] = {
-            "total_records_in_collection": len(self.files),
-            "total_records_to_push": len(all_records),
-            "successful_api_batches": 0,
-            "failed_api_batches": 0,
-            "total_records_accepted_by_api": 0,
-            "batch_processing_details": [],
-        }
+        reader = MetadataReader(client=self._client, offline=self.offline)
 
-        if not all_records:
+        records_to_upload = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
+
+        if not records_to_upload:
             logger.info("No valid records in the collection to push.")
-            return summary
+            return {
+                "total_records": 0,
+                "processed": 0,
+                "success": 0,
+                "failed": 0,
+                "batches": [],
+                "errors": [],
+            }
 
-        batches = [all_records[i : i + API_MAX_BATCH_SIZE] for i in range(0, len(all_records), API_MAX_BATCH_SIZE)]
+        # Delegate to Shared Utility, passing the UI elements through
+        self.push_results = reader.upload_records(
+            records=records_to_upload,
+            public=public,
+            fail_fast=fail_fast,
+            console=console,
+            palette=palette,
+        )
 
-        rich_progress = None
-        iterator: Iterable[list[FileRecordStrict]]
-        if is_jupyter_environment():
-            iterator = tqdm(batches, desc="Pushing batches")
-        elif console:
-            from rich.progress import (
-                Progress,
-                BarColumn,
-                TaskProgressColumn,
-                MofNCompleteColumn,
-                TextColumn,
-                TimeElapsedColumn,
-                TimeRemainingColumn,
-            )
-            from dorsal.cli.themes.palettes import DEFAULT_PALETTE
-
-            active_palette = palette if palette is not None else DEFAULT_PALETTE
-            progress_columns = (
-                TextColumn(
-                    "[progress.description]{task.description}",
-                    style=active_palette.get("progress_description", "default"),
-                ),
-                BarColumn(bar_width=None, style=active_palette.get("progress_bar", "default")),
-                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
-                MofNCompleteColumn(),
-                TextColumn("•", style="dim"),
-                TimeElapsedColumn(),
-                TextColumn("•", style="dim"),
-                TimeRemainingColumn(),
-            )
-            rich_progress = Progress(
-                *progress_columns,
-                console=console,
-                redirect_stdout=True,
-                transient=True,
-                redirect_stderr=True,
-            )
-            task_id = rich_progress.add_task("Pushing batches...", total=len(batches))
-            iterator = batches
-        else:
-            logger.debug("Starting push of %d batches...", len(batches))
-            iterator = batches
-
-        start_time = time.perf_counter()
-        with rich_progress if rich_progress else open(os.devnull, "w"):
-            for i, batch in enumerate(iterator):
-                detail: dict[str, Any] = {
-                    "batch_number": i + 1,
-                    "records_in_batch": len(batch),
-                }
-                try:
-                    if private:
-                        response = self._client.index_private_file_records(file_records=batch)
-                    else:
-                        response = self._client.index_public_file_records(file_records=batch)
-
-                    summary["successful_api_batches"] = cast(int, summary["successful_api_batches"]) + 1
-                    summary["total_records_accepted_by_api"] = (
-                        cast(int, summary["total_records_accepted_by_api"]) + response.success
-                    )
-                    detail.update({"status": "success", "response": response.model_dump()})
-                except DorsalClientError as e:
-                    summary["failed_api_batches"] = cast(int, summary["failed_api_batches"]) + 1
-                    detail.update(
-                        {
-                            "status": "failure",
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                        }
-                    )
-
-                cast(list, summary["batch_processing_details"]).append(detail)
-                if rich_progress:
-                    rich_progress.update(task_id, advance=1)
-
-        duration = time.perf_counter() - start_time
-        if not console:
-            logger.debug("Push finished in %.3fs.", duration)
-
-        return summary
+        return self.push_results
 
     def sync_with_remote(
         self,
@@ -435,7 +397,6 @@ class LocalFileCollection(_BaseFileCollection):
     ) -> dict:
         """
         Synchronizes the linked remote collection to exactly match this local collection.
-        ...
         """
         if not self.remote_collection_id:
             raise DorsalError(
@@ -466,10 +427,11 @@ class LocalFileCollection(_BaseFileCollection):
 
         logger.info("Step 2/3: Pushing local file records to ensure they exist on the server...")
         is_remote_private = remote_state.collection.is_private
-        push_summary = self.push(private=is_remote_private, api_key=api_key)
+        public = not is_remote_private
+        push_summary = self.push(public=public, api_key=api_key)
 
         num_to_push = cast(int, push_summary.get("total_records_to_push", 0))
-        num_accepted = cast(int, push_summary.get("total_records_accepted_by_api", 0))
+        num_accepted = cast(int, push_summary.get("success", 0))
         if not is_remote_private and num_accepted != num_to_push:
             raise DorsalClientError(
                 f"Sync aborted: Not all local files could be indexed publicly ({num_accepted}/{num_to_push}). Cannot sync with a public collection."
@@ -499,15 +461,12 @@ class LocalFileCollection(_BaseFileCollection):
         self,
         name: str,
         description: str | None = None,
-        is_private: bool = True,
+        public: bool = False,
         api_key: str | None = None,
     ) -> "DorsalFileCollection":
         """
         Creates a new remote collection on DorsalHub, populates it with the
         files from this local collection, and links the two.
-
-        Note: `is_private` here refers to the the local collection, and most importantly the *files* within the collection.
-              The collection itself cannot be created as `public` - but it can be made public after.
         """
         from dorsal.file.collection.remote import DorsalFileCollection
 
@@ -515,8 +474,8 @@ class LocalFileCollection(_BaseFileCollection):
             self._client = get_shared_dorsal_client(api_key=api_key)
 
         logger.info("Step 1/3: Pushing file records to DorsalHub...")
-        push_summary = self.push(private=is_private, api_key=api_key)
-        if cast(int, push_summary["total_records_accepted_by_api"]) == 0:
+        push_summary = self.push(public=public, api_key=api_key)
+        if cast(int, push_summary["success"]) == 0:
             raise DorsalClientError("No files were successfully indexed. Cannot create collection.")
         logger.info("File records pushed successfully.")
 
@@ -529,6 +488,7 @@ class LocalFileCollection(_BaseFileCollection):
             "comment": "Created via the Dorsal Python library.",
         }
 
+        is_private = not public
         remote_collection_meta = self._client.create_collection(
             name=name,
             description=description,

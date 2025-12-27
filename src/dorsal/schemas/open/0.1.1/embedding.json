@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/embedding",
     "title": "Embedding",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Store a vector and (optionally) the algorithm or embedding model which generated it.",
     "type": "object",
     "properties": {

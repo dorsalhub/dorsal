@@ -86,7 +86,7 @@ class MetadataReader:
 
         # Or, use the reader to process and immediately index a directory
         summary = reader.index_directory("path/to/my_data")
-        print(f"Indexed {summary['total_records_accepted_by_api']} files to DorsalHub.")
+        print(f"Indexed {summary['success']} files to DorsalHub.")
         ```
 
     Args:
@@ -436,156 +436,267 @@ class MetadataReader:
         )
         return records_to_index_list, file_hash_to_path_map
 
+    def upload_records(
+        self,
+        records: list[FileRecordStrict],
+        *,
+        public: bool = False,
+        fail_fast: bool = True,
+        hash_to_path_map: dict[str, str] | None = None,
+        console: "Console | None" = None,
+        palette: dict | None = None,
+    ) -> dict[str, Any]:
+        """
+        Uploads a list of file records to DorsalHub in batches.
+
+        Args:
+            records: List of validated FileRecordStrict objects to upload.
+            public: If True, uploads to the public index.
+            fail_fast: If True, raises BatchIndexingError on the first failed batch.
+            hash_to_path_map: Optional mapping of {hash: local_path}.
+            console: Rich Console instance for progress reporting.
+            palette: Theme palette for the progress bar.
+
+        Returns:
+            dict: A summary of the upload operation.
+        """
+        from dorsal.common.exceptions import BatchIndexingError
+        from dorsal.client.validators import FileIndexResponse
+        from dorsal.common.environment import is_jupyter_environment
+        from rich.progress import (
+            Progress,
+            BarColumn,
+            TaskProgressColumn,
+            MofNCompleteColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+
+        total_records = len(records)
+        summary: dict[str, Any] = {
+            "total_records": total_records,
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "batches": [],
+            "errors": [],
+        }
+
+        if not records:
+            return summary
+
+        batches = [
+            records[i : i + constants.API_MAX_BATCH_SIZE] for i in range(0, total_records, constants.API_MAX_BATCH_SIZE)
+        ]
+
+        logger.debug(
+            "Uploading %d records in %d batches (Public: %s).",
+            total_records,
+            len(batches),
+            public,
+        )
+
+        # --- Progress Bar Setup ---
+        rich_progress = None
+        iterator: Iterable[list[FileRecordStrict]]
+
+        if is_jupyter_environment():
+            from tqdm import tqdm
+
+            iterator = tqdm(batches, desc="Pushing batches")
+        elif console:
+            from dorsal.cli.themes.palettes import DEFAULT_PALETTE
+
+            active_palette = palette if palette is not None else DEFAULT_PALETTE
+
+            progress_columns = (
+                TextColumn(
+                    "[progress.description]{task.description}",
+                    style=active_palette.get("progress_description", "default"),
+                ),
+                BarColumn(bar_width=None, style=active_palette.get("progress_bar", "default")),
+                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
+                MofNCompleteColumn(),
+                TextColumn("•", style="dim"),
+                TimeElapsedColumn(),
+                TextColumn("•", style="dim"),
+                TimeRemainingColumn(),
+            )
+            rich_progress = Progress(
+                *progress_columns,
+                console=console,
+                redirect_stdout=True,
+                transient=True,
+                redirect_stderr=True,
+            )
+            task_id = rich_progress.add_task("Pushing batches...", total=len(batches))
+            iterator = batches
+        else:
+            iterator = batches
+
+        # --- Upload Loop ---
+        with rich_progress if rich_progress else open(os.devnull, "w"):
+            for i, batch in enumerate(iterator):
+                batch_size = len(batch)
+                batch_num = i + 1
+
+                try:
+                    api_response: FileIndexResponse
+                    if public:
+                        api_response = self._client.index_public_file_records(file_records=batch)
+                    else:
+                        api_response = self._client.index_private_file_records(file_records=batch)
+
+                    if hash_to_path_map and api_response.results:
+                        for result_item in api_response.results:
+                            if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
+                                local_path = hash_to_path_map.get(result_item.hash)
+                                if local_path:
+                                    result_item.file_path = local_path
+
+                    summary["success"] += api_response.success
+                    summary["processed"] += batch_size
+                    summary["batches"].append(
+                        {
+                            "batch_index": i,
+                            "status": "success",
+                            "records_in_batch": batch_size,
+                            "records_accepted": api_response.success,
+                        }
+                    )
+                    logger.debug("Batch %d/%d succeeded.", batch_num, len(batches))
+
+                except Exception as err:
+                    summary["failed"] += batch_size
+                    summary["processed"] += batch_size
+                    error_entry = {
+                        "batch_index": i,
+                        "status": "failure",
+                        "records_in_batch": batch_size,
+                        "error_type": type(err).__name__,
+                        "error_message": str(err),
+                    }
+                    summary["batches"].append(error_entry)
+                    summary["errors"].append(error_entry)
+                    logger.error("Batch %d failed: %s", batch_num, err)
+
+                    if fail_fast:
+                        raise BatchIndexingError(
+                            f"Batch indexing failed at batch {batch_num}: {err}",
+                            summary=summary,
+                            original_error=err,
+                        ) from err
+
+                if rich_progress:
+                    rich_progress.update(task_id, advance=1)
+
+        return summary
+
     def index_directory(
         self,
         dir_path: str,
         *,
         recursive: bool = False,
-        private: bool = True,
+        public: bool = False,
         skip_cache: bool = False,
-    ) -> FileIndexResponse:
+        fail_fast: bool = True,
+        console: "Console | None" = None,
+        palette: dict | None = None,
+    ) -> dict:
         """Scans, processes, and indexes all files in a directory to DorsalHub.
 
-        This is an online method that performs a complete workflow:
-        1. Scans the directory for files, handling recursion as specified.
+        This method performs a complete workflow:
+        1. Scans the directory for files.
         2. Runs the metadata extraction pipeline on each unique file.
-        3. Indexes all resulting records to DorsalHub in a single batch API call.
+        3. Indexes the records to DorsalHub in managed batches.
 
-        It handles duplicate file content within the directory based on the
-        `ignore_duplicates` setting provided during the reader's initialization.
-
-        Note:
-            This method is designed for convenience and sends all discovered
-            records in a single API request. It will raise a `BatchSizeError`
-            if the number of unique files in the directory exceeds the API's
-            batch limit. For very large directories, it is recommended to use
-            the `dorsal.api.file.index_directory()` wrapper, which handles
-            splitting the upload into multiple batches automatically.
+        This method supports two modes of operation via `fail_fast`:
+        - **True (Default):** Aborts immediately if a batch fails. Useful for
+          interactive sessions or debugging.
+        - **False:** Logs errors and continues processing subsequent batches.
+          Useful for bulk uploads where partial success is acceptable.
 
         Example:
             ```python
             from dorsal.file import MetadataReader
+            from dorsal.common.exceptions import BatchIndexingError
 
-            # Initialize a reader that will raise an error on duplicates.
-            reader = MetadataReader(ignore_duplicates=False)
+            reader = MetadataReader()
 
+            # Scenario 1: Interactive / Fail-Fast (Default)
             try:
-                response = reader.index_directory("path/to/project/assets", private=True)
-                print(f"Indexing complete. {response.success} of {response.total} records indexed.")
-            except Exception as e:
-                print(f"An error occurred during indexing: {e}")
+                summary = reader.index_directory("path/to/data")
+                print(f"Success! {summary['success']} records indexed.")
+            except BatchIndexingError as e:
+                print(f"Aborted after batch {e.summary['processed']}. Error: {e}")
+
+            # Scenario 2: Bulk Upload / Best-Effort
+            summary = reader.index_directory(
+                "path/to/large_dataset",
+                fail_fast=False
+            )
+            print(f"Finished. Success: {summary['success']}, Failed: {summary['failed']}")
+            if summary['errors']:
+                print(f"First error: {summary['errors'][0]['error_message']}")
             ```
 
         Args:
             dir_path (str): The path to the directory to scan and index.
-            recursive (bool, optional): If True, scans all subdirectories
-                recursively. Defaults to False.
-            private (bool, optional): If True, all file records will be created
-                as private on DorsalHub. Defaults to True.
+            recursive (bool, optional): If True, scans all subdirectories.
+            public (bool, optional): If True, records are created as public.
+            skip_cache (bool, optional): If True, re-processes files locally
+                even if they haven't changed.
+            fail_fast (bool, optional): If True, raises `BatchIndexingError`
+                immediately on batch failure. If False, records the error
+                and continues. Defaults to True.
 
         Returns:
-            FileIndexResponse: A response object from the API detailing the outcome
-                of the batch indexing operation. The `file_path` attribute of
-                each result item will be populated with its original local path.
+            dict: A summary dictionary detailing the results.
+                  Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
 
         Raises:
-            FileNotFoundError: If the `dir_path` does not exist.
-            DuplicateFileError: If duplicate file content is detected and the
-                reader was initialized with `ignore_duplicates=False`.
-            BatchSizeError: If the number of unique files found exceeds the
-                API's single-request batch limit.
-            DorsalClientError: For any other error occurring during metadata
-                extraction or the subsequent API call.
+            FileNotFoundError: If `dir_path` does not exist.
+            BatchIndexingError: If a batch fails and `fail_fast` is True.
+            DorsalClientError: For critical errors before batching begins.
         """
+        from dorsal.common.exceptions import DorsalClientError, DuplicateFileError
+
         logger.debug(
-            "MetadataReader.index_directory called: dir='%s', rec=%s, priv=%s",
+            "MetadataReader.index_directory called: dir='%s', rec=%s, public=%s, fail_fast=%s",
             dir_path,
             recursive,
-            private,
+            public,
+            fail_fast,
         )
         if self.offline:
             raise DorsalError("Cannot index directory: MetadataReader is in OFFLINE mode.")
-        try:
-            records_to_index_list, file_hash_to_path_map = self.generate_processed_records_from_directory(
-                dir_path=dir_path,
-                recursive=recursive,
-                limit=constants.API_MAX_BATCH_SIZE + 1,
-                skip_cache=skip_cache,
-            )
-        except (FileNotFoundError, ValueError, DuplicateFileError, DorsalClientError):
-            raise
+
+        records_to_index_list, file_hash_to_path_map = self.generate_processed_records_from_directory(
+            dir_path=dir_path, recursive=recursive, limit=None, skip_cache=skip_cache, console=console, palette=palette
+        )
 
         if not records_to_index_list:
-            logger.debug(
-                "No unique files from '%s' to index via MetadataReader.index_directory.",
-                dir_path,
-            )
-            return FileIndexResponse(total=0, success=0, error=0, unauthorized=0, results=[], created=False)
+            return {
+                "total_records": 0,
+                "processed": 0,
+                "success": 0,
+                "failed": 0,
+                "batches": [],
+                "errors": [],
+            }
 
-        if len(records_to_index_list) > constants.API_MAX_BATCH_SIZE:
-            error_msg = (
-                f"MetadataReader.index_directory: Directory '{dir_path}' yielded {len(records_to_index_list)} records "
-                f"(processed up to {constants.API_MAX_BATCH_SIZE + 1}), exceeding the single API call limit of "
-                f"{constants.API_MAX_BATCH_SIZE}. Use 'dorsal.api.file.index_directory' to automate batching."
-            )
-            logger.error(error_msg)
-            raise BatchSizeError(error_msg)
-
-        logger.debug(
-            "Attempting to index %d unique file records from '%s' (Private: %s) in a single batch...",
-            len(records_to_index_list),
-            dir_path,
-            private,
+        return self.upload_records(
+            records=records_to_index_list,
+            public=public,
+            fail_fast=fail_fast,
+            hash_to_path_map=file_hash_to_path_map,
+            console=console,
+            palette=palette,
         )
-        api_response: FileIndexResponse
-        try:
-            if private:
-                api_response = self._client.index_private_file_records(file_records=records_to_index_list)
-            else:
-                api_response = self._client.index_public_file_records(file_records=records_to_index_list)
-            logger.debug(
-                "MetadataReader.index_directory: Indexing complete for '%s'. API: Total=%d, Success=%d, Error=%d, Unauthorized=%d",
-                dir_path,
-                api_response.total,
-                api_response.success,
-                api_response.error,
-                api_response.unauthorized,
-            )
-        except DorsalClientError as err:
-            logger.error(
-                "MetadataReader.index_directory: API call failed for '%s'. Error: %s",
-                dir_path,
-                err,
-            )
-            raise
-        except Exception as err:
-            logger.exception(
-                "MetadataReader.index_directory: Unexpected error during API call for '%s'.",
-                dir_path,
-            )
-            raise DorsalClientError(
-                message=f"Unexpected error during API indexing for directory '{dir_path}'.",
-                original_exception=err,
-            ) from err
-
-        if file_hash_to_path_map and hasattr(api_response, "results") and api_response.results:
-            for result_item in api_response.results:
-                item_hash = getattr(result_item, "hash", None)
-                if item_hash:
-                    path = file_hash_to_path_map.get(item_hash)
-                    if path and hasattr(result_item, "file_path"):
-                        try:
-                            result_item.file_path = path
-                        except Exception as err_setattr:
-                            logger.warning(
-                                "Could not set file_path on result item for hash %s: %s",
-                                item_hash,
-                                err_setattr,
-                            )
-        return api_response
 
     def index_file(
-        self, file_path: str, *, private: bool = True, skip_cache: bool = False, overwrite_cache: bool = False
+        self, file_path: str, *, public: bool = False, skip_cache: bool = False, overwrite_cache: bool = False
     ) -> FileIndexResponse:
         """Processes a single file and immediately indexes it to DorsalHub.
 
@@ -626,7 +737,7 @@ class MetadataReader:
         """
         if self.offline:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
-        logger.debug("Starting file indexing for: %s (Private: %s)", file_path, private)
+        logger.debug("Starting file indexing for: %s (Public: %s)", file_path, public)
         file_record = self._get_or_create_record(
             file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
         )
@@ -634,10 +745,10 @@ class MetadataReader:
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)
 
         api_response: FileIndexResponse
-        if private:
-            api_response = self._client.index_private_file_records(file_records=[file_record])
-        else:
+        if public:
             api_response = self._client.index_public_file_records(file_records=[file_record])
+        else:
+            api_response = self._client.index_private_file_records(file_records=[file_record])
 
         log_status_msg = "processed by API"
         if api_response.results:

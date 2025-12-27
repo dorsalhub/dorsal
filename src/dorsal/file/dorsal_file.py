@@ -55,6 +55,7 @@ from dorsal.common.validators import (
 from dorsal.common.model import AnnotationModel, scrub_pii_from_model
 
 from dorsal.file.model_runner import ModelRunner
+from dorsal.file.permissions import is_permitted_public_media_type
 from dorsal.file.utils.hashes import hash_string_validator
 from dorsal.file.utils.size import human_filesize
 from dorsal.file.validators.open_schema import get_open_schema_validator
@@ -373,15 +374,6 @@ class DorsalFile(_DorsalFile):
         print(f"File: {dorsal_file.name}")
         ```
 
-    Args:
-        hash_string (str): The hash of the file to fetch. Can be prefixed
-            with the algorithm (e.g., "blake3:...") but defaults to SHA-256.
-        private (bool, optional): If True, searches for the file in your
-            private records. If False, searches public records. Defaults to False.
-        client (DorsalClient, optional): An existing `DorsalClient` instance
-            to use for the API call. If not provided, a shared instance
-            will be used. Defaults to None.
-
     Raises:
         DorsalClientError: If the API call fails.
         NotFoundError: If no file record with the specified hash is found.
@@ -391,7 +383,7 @@ class DorsalFile(_DorsalFile):
     def __init__(
         self,
         hash_string: str,
-        private: bool | None = None,
+        public: bool | None = None,
         client: DorsalClient | None = None,
         _file_record: "FileRecordDateTime | None" = None,
     ):
@@ -403,8 +395,10 @@ class DorsalFile(_DorsalFile):
         Args:
             hash_string: The hash string (e.g., "sha256:value" or just "value" for SHA-256)
                          of the file to fetch.
-            private (optional) : By default (None) will attempt to download the private file record, and fall
-                                 back on the public, before raising an error if neither are found.
+            public (bool | None, optional):
+                - If None (default): Attempts to find the record in both private and public indexes.
+                - If True: strict search in the public index.
+                - If False: strict search in the private index.
             client: An optional DorsalClient instance for API communication.
                     If None, a globally shared DorsalClient instance will be used.
 
@@ -418,6 +412,12 @@ class DorsalFile(_DorsalFile):
         self._source: Literal["dorsalhub"] = "dorsalhub"
         self._hash_string: str = hash_string
         self._client: DorsalClient = client if client is not None else get_shared_dorsal_client()
+        if public is True:
+            private = False
+        elif public is False:
+            private = True
+        else:
+            private = None
         self._private: bool | None = private
         self._is_deleted: bool = False
         self.annotation_stubs: dict[str, list[FileAnnotationStub]] = {}
@@ -1038,7 +1038,7 @@ class DorsalFile(_DorsalFile):
             # Intuitive default: deletes only the private record and metadata
             file.delete()
 
-            # Powerful override: performs a "full clean" from the private file object
+            # override: performs a "full clean" from the private file object
             file.delete(record="all", tags="all", annotations="all")
             ```
         """
@@ -1285,6 +1285,13 @@ class LocalFile(_DorsalFile):
             value: Value of the tag (str, bool, datetime, int, or float).
             api_key: Optional API key to use for validation
         """
+        if not is_permitted_public_media_type(self.media_type):
+            logger.warning(
+                f"Media type '{self.media_type}' cannot be indexed privately. "
+                f"Creating tag '{name}={value}' as a PRIVATE tag."
+            )
+            return self.add_private_tag(name=name, value=value, auto_validate=auto_validate, api_key=api_key)
+
         return self._add_local_tag(
             name=name,
             value=value,
@@ -1367,6 +1374,12 @@ class LocalFile(_DorsalFile):
             TaggingError: If online validation is attempted but authentication fails.
         """
         from dorsal.file.validators.file_record import NewFileTag
+
+        if len(self.tags) >= 128:
+            raise ValueError(
+                "Cannot add tag: The limit of 128 tags per file has been reached. "
+                "Please delete existing tags before adding new ones."
+            )
 
         if not self.validation_hash:
             error_msg = "Cannot add tag: File is missing a 'validation_hash'. "
@@ -1501,20 +1514,16 @@ class LocalFile(_DorsalFile):
         )
         return validation_result
 
-    def push(self, private: bool = True, api_key: str | None = None) -> FileIndexResponse:
+    def push(self, public: bool = False, api_key: str | None = None) -> FileIndexResponse:
         """Indexes file's metadata (annotations and tags) to DorsalHub.
 
-        If no record exists for this hash, a new record is created either privately or publicly.
-
-        When `private` is `True`, if you indexed any annotations or tags for this file before, they are overwritten.
-        When `private` is `False`, the record is updated in an aggregate manner.
-
-        Note:
+        If no record exists for this hash, a new record is created.
 
         Args:
-            private (bool, optional): If True, the file record will be created
-                as private and will only be accessible to the authenticated user.
-                Defaults to True.
+            public (bool, optional):
+                - If False (default): The file record is created as private and is only
+                  accessible to the authenticated user.
+                - If True: The file record is publicly accessible.
             api_key (str, optional): An API key to use for this specific request,
                 overriding the client's default key. Defaults to None.
 
@@ -1523,6 +1532,7 @@ class LocalFile(_DorsalFile):
                 result of the indexing operation.
 
         Raises:
+            ValueError: If `public=True` but the file's media type is prohibited.
             DorsalClientError: If the push operation fails due to an API error,
                 network issue, or authentication failure.
         """
@@ -1537,6 +1547,10 @@ class LocalFile(_DorsalFile):
                 message="Internal error: LocalFile model is not suitable for upload. Expected FileRecordStrict.",
             )
 
+        if public:
+            if not is_permitted_public_media_type(self.media_type):
+                raise ValueError(f"Media Type '{self.media_type}' cannot be indexed publicly.")
+
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
@@ -1544,16 +1558,16 @@ class LocalFile(_DorsalFile):
 
         logger.debug(
             "Pushing %s file record for local file '%s' (hash: %s) to DorsalHub.",
-            "private" if private else "public",
+            "public" if public else "private",
             self._file_path,
             self.hash,
         )
 
         try:
-            if private:
-                response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
-            else:
+            if public:
                 response = client.index_public_file_records(file_records=[self.model], api_key=api_key)
+            else:
+                response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
 
             logger.info(
                 "Successfully pushed file record for '%s' to DorsalHub. Total: %s, Success: %s, Error: %s",
@@ -1749,9 +1763,9 @@ class LocalFile(_DorsalFile):
         annotation: BaseModel | dict[str, Any],
         schema_id: str,
         schema_version: str | None = None,
-        private: bool,
+        public: bool,
         source_id: str | None = None,
-        validator: BaseModel | JsonSchemaValidator | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
         overwrite: bool = False,
         force: bool = False,
@@ -1770,6 +1784,7 @@ class LocalFile(_DorsalFile):
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise ValueError(f"Invalid Schema ID: {schema_id}")
 
+        private = not public
         annotation = FILE_ANNOTATOR.make_manual_annotation(
             annotation=annotation,
             schema_id=schema_id,
@@ -1788,9 +1803,9 @@ class LocalFile(_DorsalFile):
         self,
         *,
         schema_id: str,
-        private: bool,
+        public: bool,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source_id: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -1810,11 +1825,11 @@ class LocalFile(_DorsalFile):
         Args:
             schema_id: The schema identifier (e.g., 'open/generic').
                        Note: Core schemas (e.g., 'file/pdf') cannot be added manually.
-            private: Whether the annotation should be marked as private.
+            public: Whether the annotation should be marked as public.
             annotation_record: The annotation data (a Pydantic model or dict).
             validator: An optional explicit validator. If provided, overrides
                        automatic resolution.
-            detail: An optional string describing the source of the data.
+            source_id: An optional string describing the source of the data.
             api_key: An optional API key for fetching remote schemas.
             overwrite: If True, overwrite an existing annotation for the same dataset.
             force: If True, skips ALL validation checks (unsafe).
@@ -1876,7 +1891,7 @@ class LocalFile(_DorsalFile):
                 annotation=annotation_record,
                 schema_id=schema_id,
                 schema_version=schema_version,
-                private=private,
+                public=public,
                 source_id=source_id,
                 validator=validator,
                 overwrite=overwrite,
@@ -2011,7 +2026,7 @@ class LocalFile(_DorsalFile):
         *,
         schema_id: str,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -2021,7 +2036,7 @@ class LocalFile(_DorsalFile):
         """Adds a private annotation to the local file model.
 
         This is a wrapper for the `_add_annotation` method,
-        pre-setting `private=True`.
+        pre-setting `public=False`.
 
         The annotation is added locally and will be synchronized with DorsalHub upon calling `push()`.
 
@@ -2048,7 +2063,7 @@ class LocalFile(_DorsalFile):
                 schema_id="dorsal/my-internal-schema",
                 annotation_record=private_data
             )
-            my_file.push(private=True)
+            my_file.push()
             ```
         """
         logger.debug(
@@ -2058,7 +2073,7 @@ class LocalFile(_DorsalFile):
         )
         return self._add_annotation(
             schema_id=schema_id,
-            private=True,
+            public=False,
             annotation_record=annotation_record,
             validator=validator,
             source_id=source,
@@ -2073,7 +2088,7 @@ class LocalFile(_DorsalFile):
         *,
         schema_id: str,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -2083,7 +2098,7 @@ class LocalFile(_DorsalFile):
         """Adds a public annotation to the local file model.
 
         This is a wrapper for the `_add_annotation` method,
-        pre-setting `private=False`.
+        pre-setting `public=True`.
 
         The annotation is added locally and will be synchronized with DorsalHub upon calling `push()`.
 
@@ -2120,7 +2135,7 @@ class LocalFile(_DorsalFile):
         )
         return self._add_annotation(
             schema_id=schema_id,
-            private=False,
+            public=True,
             annotation_record=annotation_record,
             validator=validator,
             source_id=source,
@@ -2138,7 +2153,7 @@ class LocalFile(_DorsalFile):
         source: str | None = None,
         score_explanation: str | None = None,
         vocabulary_url: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2182,7 +2197,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/classification",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,
@@ -2198,7 +2213,7 @@ class LocalFile(_DorsalFile):
         model: str | None = None,
         target: str | None = None,
         source: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2218,7 +2233,7 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'Local CLIP Model v1.2').
                 This will be passed to the 'detail' field.
-            private (bool): Whether the annotation should be private.
+            public (bool): Whether the annotation should be public. Defaults to False.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2241,7 +2256,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/embedding",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,
@@ -2262,7 +2277,7 @@ class LocalFile(_DorsalFile):
         generation_params: dict[str, Any] | None = None,
         generation_metadata: dict[str, Any] | None = None,
         source: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2292,7 +2307,7 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'OpenAI Summarizer v3').
                 This will be passed to the 'detail' field.
-            private (bool): Whether the annotation should be private.
+            public (bool): Whether the annotation should be public. Defaults to False.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2323,7 +2338,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/llm-output",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,
@@ -2342,7 +2357,7 @@ class LocalFile(_DorsalFile):
         camera_model: str | None = None,
         bbox: list[float] | None = None,
         source: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2367,7 +2382,7 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'EXIF Data Parser').
                 This will be passed to the 'detail' field.
-            private (bool): Whether the annotation should be private.
+            public (bool): Whether the annotation should be public. Defaults to False.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2397,7 +2412,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/geolocation",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,
@@ -2413,7 +2428,7 @@ class LocalFile(_DorsalFile):
         *,
         track_id: str | int | None = None,
         source: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2438,7 +2453,7 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'Whisper v3 (simple)').
                 This will be passed to the 'detail' field.
-            private (bool): Whether the annotation should be private.
+            public (bool): Whether the annotation should be public. Defaults to False.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2465,7 +2480,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/audio-transcription",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,
@@ -2490,7 +2505,7 @@ class LocalFile(_DorsalFile):
         timestamp: str | datetime.datetime | None = None,
         attributes: dict[str, Any] | None = None,
         source: str | None = None,
-        private: bool = True,
+        public: bool = False,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2520,7 +2535,7 @@ class LocalFile(_DorsalFile):
             timestamp (str | datetime, optional): The specific time this prediction applies to.
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'PricePredictor v1.0').
-            private (bool): Whether the annotation should be private.
+            public (bool): Whether the annotation should be public. Defaults to False.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2575,7 +2590,7 @@ class LocalFile(_DorsalFile):
 
         return self._add_annotation(
             schema_id="open/regression",
-            private=private,
+            public=public,
             annotation_record=record_data,
             source_id=source,
             overwrite=overwrite,

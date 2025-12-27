@@ -17,6 +17,7 @@ import requests
 from unittest.mock import patch
 
 from dorsal.client import DorsalClient
+from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.common.exceptions import (
     APIError,
     AuthError,
@@ -44,9 +45,8 @@ def test_init():
     """Test client initialization and default values."""
     client = DorsalClient(api_key=_DUMMY_API_KEY)
     assert client.api_key == _DUMMY_API_KEY
-    # Fix: Correct default URL
     assert client.base_url == "https://api.dorsalhub.com"
-    assert client._file_records_batch_insert_size == 10_000
+    assert client._file_records_batch_insert_size == API_MAX_BATCH_SIZE
 
 
 def test_init_custom_base_url():
@@ -140,7 +140,6 @@ def test_parse_validate_file_hash(client):
 
 def test_parse_validate_file_hash_errors(client):
     """Test validation failures for hash strings."""
-    # Fix: parse_validate_hash raises ValueError for unknown formats
     with pytest.raises(ValueError):
         client._parse_validate_file_hash("TLSH:123456")
 

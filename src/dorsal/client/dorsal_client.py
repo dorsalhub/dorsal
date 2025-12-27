@@ -23,8 +23,6 @@ from urllib.parse import urljoin
 
 import logging
 
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError
-from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 import requests
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
@@ -78,11 +76,9 @@ if TYPE_CHECKING:
         FileSearchResponse,
         FileTag,
         NewFileTag,
-        UserFileSearchQuery,
         ValidateTagsResult,
     )  # pragma: no cover
     from dorsal.file.validators.collection import (
-        BulkDetailsRequest,
         SingleCollectionResponse,
         HydratedSingleCollectionResponse,
     )  # pragma: no cover
@@ -169,10 +165,6 @@ class DorsalClient:
             in seconds. Defaults to 10.0.
     """
 
-    _file_records_batch_insert_size = 10_000
-    _dataset_records_batch_insert_size = 10_000
-
-    _default_timeout = 10.0
     _dorsal_base_url = BASE_URL
     _default_identity = "dorsal.DorsalClient"
 
@@ -189,7 +181,7 @@ class DorsalClient:
         api_key: str | None = None,
         base_url: str = _dorsal_base_url,
         identity: str = _default_identity,
-        timeout: float = _default_timeout,
+        timeout: float | None = None,
     ):
         """
         Initialize the DorsalClient.
@@ -206,7 +198,8 @@ class DorsalClient:
         self.base_url = base_url.rstrip("/")
         self.identity = identity
         self.session = self._build_requests_session()
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else constants.API_TIMEOUT
+        self._file_records_batch_insert_size = constants.API_BATCH_SIZE
         self.last_response: requests.Response | None = None
         self.last_request: requests.Request | None = None
         logger.debug(
@@ -249,7 +242,7 @@ class DorsalClient:
         session.headers.update(self._make_request_headers())
 
         retry_strategy = Retry(
-            total=3,
+            total=constants.API_MAX_RETRIES,
             status_forcelist=[
                 429,
                 500,
@@ -1965,15 +1958,9 @@ class DorsalClient:
     def make_schema_validator(self, dataset_id: str, api_key: str | None = None) -> JsonSchemaValidator:
         """Fetches a dataset's schema and returns a callable validator function.
 
-        This powerful utility method fetches a dataset's schema and compiles it
-        into a validator function on the fly. This allows for client-side
-        validation of records before they are sent to the API, preventing
-        unnecessary API calls with invalid data.
-
         Example:
             ```python
             from dorsal.client import DorsalClient
-            from jsonschema.exceptions import ValidationError
 
             client = DorsalClient()
             dataset_id = "my-org/application-users"

@@ -77,13 +77,7 @@ if TYPE_CHECKING:
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import DorsalFile, LocalFile
     from dorsal.file.metadata_reader import MetadataReader
-    from dorsal.file.validators.file_record import (
-        DeletionScope,
-        FileRecord,
-        FileRecordStrict,
-        FileSearchResponse,
-        UserFileSearchQuery,
-    )
+    from dorsal.file.validators.file_record import DeletionScope, FileRecord, FileRecordStrict, FileSearchResponse
 
 __all__ = [
     "identify_file",
@@ -95,6 +89,7 @@ __all__ = [
     "delete_private_dorsal_file_record",
     "delete_public_dorsal_file_record",
     "add_tag_to_file",
+    "add_label_to_file",
     "remove_tag_from_file",
     "search_user_files",
     "search_global_files",
@@ -314,7 +309,7 @@ def identify_file(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["pydantic"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> "FileRecord": ...
 
@@ -323,7 +318,7 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["dict"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]: ...
 
@@ -332,7 +327,7 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["json"],
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> str: ...
 
@@ -340,15 +335,15 @@ def get_dorsal_file_record(
 def get_dorsal_file_record(
     hash_string: str,
     mode: Literal["pydantic", "dict", "json"] = "pydantic",
-    private: bool | None = None,
+    public: bool | None = None,
     api_key: str | None = None,
 ) -> "FileRecord | dict[str, Any] | str":
     """
     Gets metadata for a file record from DorsalHub
 
-    - `private=None` (Default): check for a public record first, and if not found, check for a private one.
-    - `private=True`: get public record
-    - `private=False`: get private record
+    - `public=None` (Default): check for a private record first, and if not found, check for a public one.
+    - `public=True`: get public record
+    - `public=False`: get private record
 
     Example:
         ```python
@@ -358,23 +353,30 @@ def get_dorsal_file_record(
         agnostic_file = get_file_metadata("some_hash")
 
         # Public-only search
-        public_file = get_file_metadata("some_hash", private=False)
+        public_file = get_file_metadata("some_hash", public=True)
 
         # Private-only search as a dictionary
-        private_file_dict = get_file_metadata("some_hash", private=True, mode="dict")
+        private_file_dict = get_file_metadata("some_hash", public=False, mode="dict")
         ```
 
     Args:
         hash_string (str): The hash of the file to fetch (e.g., "sha256:...").
         mode (Literal["pydantic", "dict", "json"], optional): The desired return
             format. Defaults to "pydantic", returning a `DorsalFile` object.
-        private (Optional[bool], optional): Controls the search visibility.
+        public (Optional[bool], optional): Controls the search visibility.
             Defaults to None (agnostic search).
         api_key (str, optional): An API key to use for this request, overriding
             any globally configured key. Defaults to None.
 
     """
     from dorsal.session import get_shared_dorsal_client
+
+    if public is True:
+        private = False
+    elif public is False:
+        private = True
+    else:
+        private = None
 
     search_strategy = (
         "Agnostic (Private, then Public)" if private is None else ("Private-only" if private else "Public-only")
@@ -636,7 +638,7 @@ def delete_public_dorsal_file_record(
 def index_file(
     file_path: str,
     *,
-    private: bool = True,
+    public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
 ) -> FileIndexResponse:
@@ -650,7 +652,8 @@ def index_file(
         from dorsal.api import index_file
 
         try:
-            response = index_file("path/to/my_image.jpg", private=True)
+            # Index publicly
+            response = index_file("path/to/my_image.jpg", public=True)
             if response.success > 0:
                 print("File indexed successfully!")
                 print(f"View at: {response.results[0].url}")
@@ -660,8 +663,8 @@ def index_file(
 
     Args:
         file_path (str): The path to the local file to process and index.
-        private (bool, optional): If True, the record will be created as private.
-            Defaults to True.
+        public (bool, optional): If True, the record will be created as public.
+            Defaults to False (Private).
         api_key (str, optional): An API key to use for this specific request.
             Defaults to None.
 
@@ -693,14 +696,14 @@ def index_file(
         metadata_reader = get_metadata_reader()
 
     logger.debug(
-        "High-level index_file calling effective MetadataReader for file_path='%s' (%s), private=%s.",
+        "High-level index_file calling effective MetadataReader for file_path='%s' (%s), public=%s.",
         file_path,
         log_message_context,
-        private,
+        public,
     )
 
     try:
-        response = metadata_reader.index_file(file_path=file_path, private=private, skip_cache=not use_cache)
+        response = metadata_reader.index_file(file_path=file_path, public=public, skip_cache=not use_cache)
         logger.debug(
             "Effective MetadataReader.index_file completed for file_path='%s'. Response success: %s",
             file_path,
@@ -733,242 +736,91 @@ def index_directory(
     dir_path: str,
     recursive: bool = False,
     *,
-    private: bool = True,
+    public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
+    fail_fast: bool = True,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
-    This is a powerful, one-shot function that performs a complete workflow:
-    1. Scans the specified directory for files.
-    2. Generates rich metadata for each file locally.
-    3. Uploads all generated metadata records to DorsalHub in managed batches.
+    This function is a high-level wrapper around the `MetadataReader`. It performs
+    three main steps:
+    1. Scans the directory for files.
+    2. Generates rich metadata for each file locally (offline).
+    3. Uploads the records to DorsalHub in managed batches.
+
+    It supports a **Fail-Fast** mode (default) for debugging and a **Best-Effort**
+    mode for bulk operations.
 
     Example:
         ```python
         from dorsal.api import index_directory
+        from dorsal.common.exceptions import BatchIndexingError
 
-        # Scan a directory and index all files to your private records
-        summary = index_directory("path/to/project_assets", recursive=True, private=True)
+        # Scenario 1: Standard usage (Fail-Fast)
+        try:
+            summary = index_directory("path/to/project_assets", recursive=True)
+            print(f"Success! {summary['success']} files indexed.")
+        except BatchIndexingError as e:
+            print(f"Indexing failed at batch {e.summary['batches'][-1]['batch_index']}.")
+            print(f"Error: {e}")
 
-        print("--- Indexing Complete ---")
-        print(f"Files processed locally: {summary['total_records_processed_locally']}")
-        print(f"Successfully indexed to API: {summary['total_records_accepted_by_api']}")
+        # Scenario 2: Bulk Upload (Best-Effort)
+        # Continue processing even if individual batches fail.
+        summary = index_directory(
+            "path/to/massive_dataset",
+            recursive=True,
+            fail_fast=False
+        )
+        print(f"Completed. Success: {summary['success']}, Failed: {summary['failed']}")
         ```
 
     Args:
         dir_path (str): The path to the directory you want to scan and index.
         recursive (bool, optional): If True, scans all subdirectories
             recursively. Defaults to False.
-        private (bool, optional): If True, all file records will be created
-            as private on DorsalHub. Defaults to True.
+        public (bool, optional): If True, all file records will be created
+            as public on DorsalHub. Defaults to False.
         api_key (str | None, optional): An API key to use for this operation,
             overriding the client's default. Defaults to None.
+        use_cache (bool, optional): If True, uses cached metadata for files
+            that haven't changed. Defaults to True.
+        fail_fast (bool, optional): If True, raises `BatchIndexingError` immediately
+            if a batch fails. If False, logs the error and continues. Defaults to True.
 
     Returns:
-        dict: A summary dictionary detailing the results of the entire batch
-            operation, including local processing and API indexing counts.
+        dict: A summary dictionary detailing the results of the operation.
+            Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
+
+    Raises:
+        FileNotFoundError: If the directory does not exist.
+        BatchIndexingError: If `fail_fast` is True and a batch fails.
+        DorsalClientError: For critical errors preventing the operation from starting.
     """
     from dorsal.file.metadata_reader import MetadataReader
 
     effective_reader: MetadataReader
-    log_message_context = ""
 
     if api_key is not None:
-        log_message_context = "using provided API key with temporary MetadataReader"
         logger.debug(
             "API key override for index_directory (dir: '%s'). Creating temporary MetadataReader.",
             dir_path,
         )
         effective_reader = MetadataReader(api_key=api_key)
     else:
-        log_message_context = "using shared METADATA_READER instance"
         logger.debug(
             "No API key override for index_directory (dir: '%s'). Using shared METADATA_READER.",
             dir_path,
         )
         effective_reader = get_metadata_reader()
 
-    logger.debug(
-        "High-level index_directory: dir_path='%s' (%s), recursive=%s, private=%s.",
-        dir_path,
-        log_message_context,
-        recursive,
-        private,
+    return effective_reader.index_directory(
+        dir_path=dir_path,
+        recursive=recursive,
+        public=public,
+        skip_cache=not use_cache,
+        fail_fast=fail_fast,
     )
-
-    all_records_to_index: list[FileRecordStrict]
-    file_hash_to_path_map: dict[str, str]
-
-    try:
-        logger.debug(
-            "Step 1: Generating file records from directory '%s' via MetadataReader.",
-            dir_path,
-        )
-        all_records_to_index, file_hash_to_path_map = effective_reader.generate_processed_records_from_directory(
-            dir_path=dir_path, recursive=recursive, skip_cache=not use_cache
-        )
-        total_records_processed_locally = len(all_records_to_index)
-        logger.debug(
-            "MetadataReader generated %d unique file records from directory '%s'.",
-            total_records_processed_locally,
-            dir_path,
-        )
-    except DorsalError as err:
-        logger.warning(
-            "Failed to generate file records from directory '%s' (%s): %s - %s",
-            dir_path,
-            log_message_context,
-            type(err).__name__,
-            err,
-        )
-        raise
-    except Exception as err:
-        logger.exception(
-            "Unexpected error generating file records from directory '%s' (%s).",
-            dir_path,
-            log_message_context,
-        )
-        if isinstance(err, DorsalError):
-            raise
-        raise DorsalError(f"Unexpected error processing directory '{dir_path}': {err}") from err
-
-    if not all_records_to_index:
-        logger.debug("No unique file records generated from directory '%s' to index.", dir_path)
-        return {
-            "total_records_processed_locally": 0,
-            "total_batches_created": 0,
-            "successful_api_batches": 0,
-            "failed_api_batches": 0,
-            "total_records_accepted_by_api": 0,
-            "batch_processing_details": [],
-        }
-
-    batches = [
-        all_records_to_index[i : i + constants.API_MAX_BATCH_SIZE]
-        for i in range(0, total_records_processed_locally, constants.API_MAX_BATCH_SIZE)
-    ]
-    total_batches_created = len(batches)
-
-    logger.debug(
-        "Submitting %d records in %d batches of up to %d each to DorsalHub (private=%s, context: %s).",
-        total_records_processed_locally,
-        total_batches_created,
-        constants.API_MAX_BATCH_SIZE,
-        private,
-        log_message_context,
-    )
-
-    successful_api_batches_count = 0
-    failed_api_batches_count = 0
-    total_records_accepted_by_api = 0
-    batch_processing_details_list = []
-
-    for i, current_batch_records in enumerate(batches):
-        batch_number = i + 1
-        records_in_this_batch = len(current_batch_records)
-        batch_detail_entry: dict = {
-            "batch_number": batch_number,
-            "records_in_batch": records_in_this_batch,
-            "status": "failure",
-            "api_response": None,
-            "error_message": None,
-            "error_type": None,
-        }
-
-        logger.debug(
-            "Submitting API batch %d of %d (%d records) for directory '%s'.",
-            batch_number,
-            total_batches_created,
-            records_in_this_batch,
-            dir_path,
-        )
-        try:
-            batch_api_response: FileIndexResponse
-            if private:
-                batch_api_response = effective_reader._client.index_private_file_records(
-                    file_records=current_batch_records
-                )
-            else:
-                batch_api_response = effective_reader._client.index_public_file_records(
-                    file_records=current_batch_records
-                )
-
-            if file_hash_to_path_map and batch_api_response.results:
-                for result_item in batch_api_response.results:
-                    if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
-                        path = file_hash_to_path_map.get(result_item.hash)
-                        if path:
-                            result_item.file_path = path
-
-            batch_detail_entry["status"] = "success"
-            batch_detail_entry["api_response"] = batch_api_response
-            successful_api_batches_count += 1
-            total_records_accepted_by_api += batch_api_response.success
-
-            logger.debug(
-                "API Batch %d of %d for directory '%s' submitted successfully. API Response: Total=%d, Success=%d.",
-                batch_number,
-                total_batches_created,
-                dir_path,
-                batch_api_response.total,
-                batch_api_response.success,
-            )
-        except DorsalError as err:
-            logger.warning(
-                "API Batch %d of %d for directory '%s' failed: %s - %s",
-                batch_number,
-                total_batches_created,
-                dir_path,
-                type(err).__name__,
-                err,
-            )
-            batch_detail_entry["error_message"] = str(err)
-            batch_detail_entry["error_type"] = type(err).__name__
-            failed_api_batches_count += 1
-        except Exception as err:
-            logger.exception(
-                "Unexpected error submitting API batch %d of %d for directory '%s'.",
-                batch_number,
-                total_batches_created,
-                dir_path,
-            )
-            batch_detail_entry["error_message"] = f"Unexpected error: {str(err)}"
-            batch_detail_entry["error_type"] = type(err).__name__
-            failed_api_batches_count += 1
-
-        batch_processing_details_list.append(batch_detail_entry)
-
-    overall_summary = {
-        "total_records_processed_locally": total_records_processed_locally,
-        "total_batches_created": total_batches_created,
-        "successful_api_batches": successful_api_batches_count,
-        "failed_api_batches": failed_api_batches_count,
-        "total_records_accepted_by_api": total_records_accepted_by_api,
-        "batch_processing_details": batch_processing_details_list,
-    }
-
-    if failed_api_batches_count > 0:
-        logger.warning(
-            "Batch indexing for directory '%s' (%s) completed with %d successful and %d failed API batches (out of %d). "
-            "Total records accepted by API in successful batches: %d.",
-            dir_path,
-            log_message_context,
-            successful_api_batches_count,
-            failed_api_batches_count,
-            total_batches_created,
-            total_records_accepted_by_api,
-        )
-    else:
-        logger.debug(
-            "Batch indexing for directory '%s' (%s) completed successfully. All %d API batches processed. "
-            "Total records accepted by API: %d.",
-            dir_path,
-            log_message_context,
-            total_batches_created,
-            total_records_accepted_by_api,
-        )
-    return overall_summary
 
 
 def scan_directory(
@@ -1133,7 +985,7 @@ def scan_file(
 
 
 def add_tag_to_file(
-    hash_string: str, name: str, value: Any, private: bool, api_key: str | None = None
+    hash_string: str, name: str, value: Any, public: bool = False, api_key: str | None = None
 ) -> FileTagResponse:
     """
     Adds a single tag to a file record on DorsalHub.
@@ -1142,7 +994,7 @@ def add_tag_to_file(
         hash_string (str): The hash of the file record to tag.
         name (str): The name of the tag.
         value (Any): The value of the tag.
-        private (bool): The visibility of the tag itself.
+        public (bool): The visibility of the tag itself. Defaults to False (Private).
         api_key (str, optional): An API key for this request.
 
     Returns:
@@ -1158,7 +1010,7 @@ def add_tag_to_file(
         effective_client = DorsalClient(api_key=api_key)
 
     try:
-        new_tag = NewFileTag(name=name, value=value, private=private)
+        new_tag = NewFileTag(name=name, value=value, private=not public)
         tag_result = effective_client.add_tags_to_file(file_hash=hash_string, tags=[new_tag])
         return tag_result
     except (DorsalClientError, ValueError):
@@ -1206,7 +1058,7 @@ def add_label_to_file(hash_string: str, label: str, api_key: str | None = None) 
     Returns:
         FileTagResponse: The API response.
     """
-    return add_tag_to_file(hash_string=hash_string, name="label", value=label, private=True, api_key=api_key)
+    return add_tag_to_file(hash_string=hash_string, name="label", value=label, public=False, api_key=api_key)
 
 
 @overload
@@ -1276,8 +1128,7 @@ def search_user_files(
 ) -> "FileSearchResponse | dict | str":
     """Searches for file records indexed by the authenticated user.
 
-    This function provides a simple and powerful interface to search for files
-    you have indexed on DorsalHub. The query supports simple text matching as
+    The query supports simple text matching as
     well as advanced operators.
 
     Example:

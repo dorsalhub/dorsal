@@ -29,13 +29,12 @@ TEST_DATA_DIR = "tests/data"
 
 # A sample summary to be returned by collection.push()
 MOCK_PUSH_SUMMARY = {
-    "total_records_in_collection": 2,
-    "total_records_to_push": 2,
-    "total_records_accepted_by_api": 2,
-    "total_batches_created": 1,
-    "successful_api_batches": 1,
-    "failed_api_batches": 0,
-    "batch_processing_details": [],
+    "total_records": 2,
+    "processed": 2,
+    "success": 2,
+    "failed": 0,
+    "batches": [{"batch_index": 0, "status": "success", "records_in_batch": 2}],
+    "errors": [],
 }
 
 
@@ -73,7 +72,7 @@ def test_push_dir_success_default(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=True, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(public=False, console=ANY, palette=ANY)
     mock_push_dir_cmd["display_summary"].assert_called_once()
     mock_push_dir_cmd["display_dry_run"].assert_not_called()
 
@@ -83,7 +82,7 @@ def test_push_dir_public(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR, "--public"])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=False, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(public=True, console=ANY, palette=ANY)
 
 
 def test_push_dir_dry_run(mock_push_dir_cmd):
@@ -134,7 +133,7 @@ def test_push_dir_create_collection_success(mock_rich_console, mock_push_dir_cmd
 
     assert result.exit_code == 0
     mock_push_dir_cmd["collection_instance"].create_remote_collection.assert_called_once_with(
-        name="MyNewCollection", description=None, is_private=True
+        name="MyNewCollection", description=None, public=False
     )
     # Verify no standard push was attempted
     mock_push_dir_cmd["collection_instance"].push.assert_not_called()
@@ -151,7 +150,7 @@ def test_push_dir_json_output(mock_rich_console, mock_push_dir_cmd):
     json_output_str = mock_rich_console.print.call_args.args[0]
     data = json.loads(json_output_str)
 
-    assert data["total_records_accepted_by_api"] == 2
+    assert data["success"] == 2
     mock_push_dir_cmd["display_summary"].assert_not_called()
 
 
@@ -159,12 +158,14 @@ def test_push_dir_duplicate_error(mock_rich_console, mock_push_dir_cmd):
     """Tests the specific error handling for duplicate file errors."""
     failed_summary = {
         **MOCK_PUSH_SUMMARY,
-        "failed_api_batches": 1,
-        "successful_api_batches": 0,
-        "batch_processing_details": [
+        "success": 0,
+        "failed": 2,
+        "errors": [
             {
+                "batch_index": 0,
                 "status": "failure",
                 "error_message": "Cannot process duplicate files in the same request.",
+                "error_type": "DuplicateFileError",
             }
         ],
     }

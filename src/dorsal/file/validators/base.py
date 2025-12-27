@@ -27,14 +27,13 @@ from pydantic import (
     model_validator,
 )
 
-from dorsal.common.validators import TString255
+from dorsal.common.validators import String128, TString255
 from dorsal.file.validators.common import QuickHash, SHA256Hash, TLSHash
 from dorsal.file.utils.hashes import hash_string_validator, HashFunctionId
 
 logger = logging.getLogger(__name__)
 
 FILESIZE_UPPER_LIMIT = 2**50  # 1 Petabyte
-
 RX_FILE_EXTENSION = re.compile(r"^\.[a-zA-Z0-9_!-]{1,16}$")
 
 MediaTypeString = Annotated[str, Field(pattern=r"^\w+\/[-+.\w]+$", min_length=3, max_length=256)]
@@ -88,7 +87,7 @@ class FileCoreValidationModelHash(BaseModel):
     """
 
     id: HashFunctionId
-    value: str
+    value: String128
 
     @field_validator("value")
     @classmethod
@@ -124,9 +123,7 @@ class FileCoreValidationModel(BaseModel):
     extension: FileExtension | None = None
     size: int = Field(ge=0, lt=FILESIZE_UPPER_LIMIT)
     media_type: MediaTypeString
-
-    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=2)
-
+    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=2, max_length=4)
     all_hash_ids: dict[HashFunctionId, str] | None = Field(default=None)
 
     @computed_field  # type: ignore
@@ -173,31 +170,9 @@ class FileCoreValidationModel(BaseModel):
         return self
 
 
-class FileCoreValidationModelLite(FileCoreValidationModel):
-    """Pydantic model for validating the stripped-down output of `FileCoreValidationModel`.
-
-    This record contains only an insecure QUICK hash, and is not suitable for indexing.
-    """
-
-    quick_hash: QuickHash
-    hash: None = Field(default=None, exclude=True)  # type: ignore[assignment]
-    similarity_hash: None = Field(default=None, exclude=True)
-
-
-class FileCoreValidationModelSuperLite(FileCoreValidationModel):
-    """Pydantic model for validating the stripped-down output of `FileCoreValidationModel`.
-
-    This record contains only an insecure QUICK hash, and is not suitable for indexing.
-    """
-
-    quick_hash: None = Field(default=None, exclude=True)
-    hash: str = Field(default_factory=lambda: str(uuid.uuid4()))  # type: ignore[assignment]
-    similarity_hash: None = Field(default=None, exclude=True)
-
-
 class FileCoreValidationModelStrict(FileCoreValidationModel):
     """
     A validated `FileCoreValidationModel` - i.e. contains 'BLAKE3' validation hash within `all_hashes`.
     """
 
-    all_hashes: list[FileCoreValidationModelHash] = Field(min_length=2)
+    all_hashes: list[FileCoreValidationModelHash] = Field(min_length=2, max_length=4)

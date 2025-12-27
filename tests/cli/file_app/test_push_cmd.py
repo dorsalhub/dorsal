@@ -65,8 +65,8 @@ def test_push_success_private_panel(mock_rich_console, mock_push_cmd):
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH])
 
     assert result.exit_code == 0
-    # Verify push was called with private=True
-    mock_push_cmd["local_file_instance"].push.assert_called_once_with(private=True)
+    # Verify push was called with public=False
+    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=False)
 
     # Verify a success panel was printed
     panel_output = mock_rich_console.print.call_args_list[1].args[0]
@@ -80,8 +80,8 @@ def test_push_success_public_panel(mock_rich_console, mock_push_cmd):
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH, "--public"])
 
     assert result.exit_code == 0
-    # Verify push was called with private=False
-    mock_push_cmd["local_file_instance"].push.assert_called_once_with(private=False)
+    # Verify push was called with public=True
+    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=True)
 
     panel_output = mock_rich_console.print.call_args_list[1].args[0]
     assert isinstance(panel_output, Panel)

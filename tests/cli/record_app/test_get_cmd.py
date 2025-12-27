@@ -56,7 +56,7 @@ def test_get_record_success_default(mock_rich_console, mock_get_cmd):
 
     assert result.exit_code == 0
     mock_get_cmd["get_dorsal_file_record"].assert_called_once_with(
-        hash_string=HASH_STRING, private=None, mode="pydantic"
+        hash_string=HASH_STRING, public=None, mode="pydantic"
     )
     mock_get_cmd["create_file_info_panel"].assert_called_once()
     mock_get_cmd["save_get_report"].assert_not_called()
@@ -66,12 +66,12 @@ def test_get_record_success_default(mock_rich_console, mock_get_cmd):
     assert isinstance(mock_rich_console.print.call_args.args[0], Panel)
 
 
-@pytest.mark.parametrize("flag, expected_scope", [("--private", True), ("--public", False)])
+@pytest.mark.parametrize("flag, expected_scope", [("--private", False), ("--public", True)])
 def test_get_record_scopes(flag, expected_scope, mock_get_cmd):
     """Tests the --private and --public scope flags."""
     runner.invoke(app, ["record", "get", HASH_STRING, flag])
 
-    assert mock_get_cmd["get_dorsal_file_record"].call_args.kwargs["private"] is expected_scope
+    assert mock_get_cmd["get_dorsal_file_record"].call_args.kwargs["public"] is expected_scope
 
 
 def test_get_record_json_output(mock_rich_console, mock_get_cmd):

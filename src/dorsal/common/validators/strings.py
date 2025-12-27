@@ -15,7 +15,7 @@
 import logging
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, BeforeValidator
 
 logger = logging.getLogger(__name__)
 

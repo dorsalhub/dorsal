@@ -77,10 +77,6 @@ def clean_logging():
 
 @pytest.fixture
 def mock_rich_console(mocker):
-    """
-    Mocks the `get_rich_console` utility by directly patching its
-    internal singleton cache, making it robust against test startup race conditions.
-    """
     mock_console = mocker.MagicMock(spec=Console)
 
     mocker.patch.object(common_cli, "_console_instance", mock_console)

@@ -44,13 +44,13 @@ def push_directory(
             help="The directory path containing files to scan and push.",
         ),
     ],
-    private: Annotated[
+    public: Annotated[
         bool,
         typer.Option(
-            "--private/--public",
-            help="Index records as private or public.",
+            "--public/--private",
+            help="Index records as public or private.",
         ),
-    ] = True,
+    ] = False,
     recursive: Annotated[
         bool,
         typer.Option(
@@ -207,7 +207,7 @@ def push_directory(
                     message="Internal Error: Collection name was not set before creation.",
                 )
             remote_collection = collection.create_remote_collection(
-                name=collection_name, description=collection_desc, is_private=private
+                name=collection_name, description=collection_desc, public=public
             )
 
             if json_output:
@@ -223,14 +223,13 @@ def push_directory(
                 console.print(success_panel)
 
         if not create_collection:
-            summary = collection.push(private=private, console=progress_console, palette=palette)
+            summary = collection.push(public=public, console=progress_console, palette=palette)
 
             is_duplicate_error = False
-            if summary.get("failed_api_batches", 0) > 0:
-                for detail in summary.get("batch_processing_details", []):
-                    if detail.get("status") == "failure" and "Cannot process duplicate files" in detail.get(
-                        "error_message", ""
-                    ):
+
+            if summary.get("failed", 0) > 0:
+                for detail in summary.get("errors", []):
+                    if "Cannot process duplicate files" in detail.get("error_message", ""):
                         is_duplicate_error = True
                         break
 
@@ -261,7 +260,7 @@ def push_directory(
             else:
                 _display_summary_panel(
                     summary=summary,
-                    private=private,
+                    public=public,
                     palette=palette,
                     use_cache=use_cache_value,
                     collection=collection,
@@ -316,7 +315,7 @@ def _display_dry_run_panel(collection: "LocalFileCollection", use_cache: bool, p
 
 def _display_summary_panel(
     summary: dict,
-    private: bool,
+    public: bool,
     palette: dict,
     use_cache: bool,
     collection: "LocalFileCollection",
@@ -327,36 +326,42 @@ def _display_summary_panel(
     console = get_rich_console()
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
-    access_level_str = "Private" if private else "Public"
-    access_level_style = (
-        palette.get("access_private", "default") if private else palette.get("access_public", "default")
-    )
+    access_level_str = "Public" if public else "Private"
+    access_level_style = palette.get("access_public", "default") if public else palette.get("access_private", "default")
 
     summary_table = Table.grid(expand=True)
     summary_table.add_column(justify="right", style=palette["key"], width=25)
     summary_table.add_column(justify="left")
     summary_table.add_row("Access Level:", Text(access_level_str, style=access_level_style))
+
     summary_table.add_row(
         "Files Scanned:",
-        f"{summary.get('total_records_in_collection')} ({files_from_cache} from cache)",
-    )
-    summary_table.add_row("File Records to Push:", str(summary.get("total_records_to_push")))
-    summary_table.add_row(
-        "File Records Accepted:",
-        Text(str(summary.get("total_records_accepted_by_api")), style=palette["success"]),
+        f"{summary.get('total_records')} ({files_from_cache} from cache)",
     )
 
-    if summary.get("total_batches_created", 0) > 1:
+    summary_table.add_row(
+        "File Records Accepted:",
+        Text(str(summary.get("success")), style=palette["success"]),
+    )
+
+    batches = summary.get("batches", [])
+    total_batches = len(batches)
+
+    if total_batches > 1:
+        successful_batches = sum(1 for b in batches if b["status"] == "success")
+        failed_batches = total_batches - successful_batches
+
         summary_table.add_row()
-        summary_table.add_row("Batches Created:", str(summary.get("total_batches_created")))
+        summary_table.add_row("Batches Created:", str(total_batches))
         summary_table.add_row(
             "Successful Batches:",
-            Text(str(summary.get("successful_api_batches")), style=palette["success"]),
+            Text(str(successful_batches), style=palette["success"]),
         )
-        summary_table.add_row(
-            "Failed Batches:",
-            Text(str(summary.get("failed_api_batches")), style=palette["error"]),
-        )
+        if failed_batches > 0:
+            summary_table.add_row(
+                "Failed Batches:",
+                Text(str(failed_batches), style=palette["error"]),
+            )
 
     console.print(
         Panel(
@@ -367,7 +372,7 @@ def _display_summary_panel(
         )
     )
 
-    if summary.get("failed_api_batches", 0) > 0:
+    if summary.get("failed", 0) > 0 or summary.get("errors"):
         console.print(f"\n[{palette['error']}]⚠️ Some batches failed to process:[/{palette['error']}]")
         failed_table = Table(
             title="Failed Batch Details",
@@ -377,11 +382,11 @@ def _display_summary_panel(
         failed_table.add_column("Batch #", style=palette["primary_value"], ratio=15)
         failed_table.add_column("Error Type", style=palette["warning"], ratio=25)
         failed_table.add_column("Error Message", ratio=60)
-        for detail in summary.get("batch_processing_details", []):
-            if detail["status"] == "failure":
-                failed_table.add_row(
-                    str(detail["batch_number"]),
-                    detail["error_type"],
-                    detail["error_message"],
-                )
+
+        for error in summary.get("errors", []):
+            failed_table.add_row(
+                str(error.get("batch_index", "?")),
+                error.get("error_type", "Unknown"),
+                error.get("error_message", "No message"),
+            )
         console.print(failed_table)

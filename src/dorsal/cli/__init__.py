@@ -54,7 +54,7 @@ def version_callback(value: bool):
 
 app = typer.Typer(
     name="dorsal",
-    help="A powerful tool for local file metadata generation and management.",
+    help="File metadata extraction and management.",
     add_completion=False,
     pretty_exceptions_enable=True,
     no_args_is_help=True,
@@ -187,7 +187,7 @@ app.add_typer(dir_app_, name="dir")
 app.add_typer(cache_app_, name="cache")
 app.add_typer(config_app_, name="config", help="View the current library configuration.")
 app.add_typer(collection_app_, name="collection", help="Commands to manage remote file collections.")
-app.add_typer(theme_app_, name="theme", help="Identifies a local file by its hash, by checking DorsalHub.")
+app.add_typer(theme_app_, name="theme", help="Manage, list, and set color themes.")
 
 
 def cli_app():
