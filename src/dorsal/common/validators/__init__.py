@@ -24,7 +24,6 @@ from dorsal.common.language import get_language_set
 from dorsal.common.validators.datasets import DatasetID, is_valid_dataset_id_or_schema_id
 from dorsal.common.validators.json_schema import (
     JsonSchemaValidator,
-    JsonSchemaValidatorType,
     get_json_schema_validator,
     json_schema_validate_records,
 )
@@ -77,7 +76,6 @@ __all__ = [
     "TStringList256",
     "StringNotEmpty",
     "JsonSchemaValidator",
-    "JsonSchemaValidatorType",
     "get_json_schema_validator",
     "json_schema_validate_records",
     "is_valid_dataset_id_or_schema_id",

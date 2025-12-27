@@ -45,7 +45,6 @@ from dorsal.file.dorsal_file import LocalFile, _DorsalFile
 from dorsal.file.metadata_reader import MetadataReader
 from dorsal.file.permissions import is_permitted_public_media_type
 from dorsal.session import get_shared_dorsal_client
-from dorsal.file.validators.file_record import FileRecordStrict
 
 logger = logging.getLogger(__name__)
 
@@ -325,16 +324,23 @@ class LocalFileCollection(_BaseFileCollection):
         api_key: str | None = None,
         console: "Console | None" = None,
         palette: dict | None = None,
+        fail_fast: bool = True,
     ) -> dict:
         """Pushes all file records in the collection to DorsalHub for indexing.
 
-        This method operates in a Fail-Fast manner. If any batch fails (due to
-        network issues, authentication, quota, or validation), the method will
-        raise the exception immediately.
+        Args:
+            public: If True, uploads as public records.
+            api_key: Optional API key override.
+            console: Rich console for progress display.
+            palette: Color palette for progress display.
+            fail_fast: If True (default), aborts immediately on the first batch error.
 
-        The state of the operation is persisted to `self.push_results`, allowing
-        you to inspect successful batches even after a crash.
+        Returns:
+            dict: Summary of the push operation.
         """
+        from dorsal.file.metadata_reader import MetadataReader
+        from dorsal.file.validators.file_record import FileRecordStrict
+
         if public:
             prohibited_files = []
             for file in self.files:
@@ -349,123 +355,36 @@ class LocalFileCollection(_BaseFileCollection):
                     details += f" and {len(prohibited_files) - limit} others"
 
                 raise ValueError(
-                    f"Operation aborted: The collection cannot be indexed publicly because it contains restricted media types: {details}."
+                    f"Operation aborted: The collection cannot be indexed publicly because "
+                    f"it contains restricted media types: {details}."
                 )
 
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
-        all_records = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
+        reader = MetadataReader(client=self._client, offline=self.offline)
 
-        self.push_results: dict[str, Any] = {
-            "total_records": len(all_records),
-            "processed": 0,
-            "success": 0,
-            "failed": 0,
-            "batches": [],
-            "errors": [],
-        }
+        records_to_upload = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
 
-        if not all_records:
+        if not records_to_upload:
             logger.info("No valid records in the collection to push.")
-            return self.push_results
+            return {
+                "total_records": 0,
+                "processed": 0,
+                "success": 0,
+                "failed": 0,
+                "batches": [],
+                "errors": [],
+            }
 
-        batches = [all_records[i : i + API_MAX_BATCH_SIZE] for i in range(0, len(all_records), API_MAX_BATCH_SIZE)]
-
-        rich_progress = None
-        iterator: Iterable[list[FileRecordStrict]]
-        if is_jupyter_environment():
-            iterator = tqdm(batches, desc="Pushing batches")
-        elif console:
-            from rich.progress import (
-                Progress,
-                BarColumn,
-                TaskProgressColumn,
-                MofNCompleteColumn,
-                TextColumn,
-                TimeElapsedColumn,
-                TimeRemainingColumn,
-            )
-            from dorsal.cli.themes.palettes import DEFAULT_PALETTE
-
-            active_palette = palette if palette is not None else DEFAULT_PALETTE
-            progress_columns = (
-                TextColumn(
-                    "[progress.description]{task.description}",
-                    style=active_palette.get("progress_description", "default"),
-                ),
-                BarColumn(bar_width=None, style=active_palette.get("progress_bar", "default")),
-                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
-                MofNCompleteColumn(),
-                TextColumn("•", style="dim"),
-                TimeElapsedColumn(),
-                TextColumn("•", style="dim"),
-                TimeRemainingColumn(),
-            )
-            rich_progress = Progress(
-                *progress_columns,
-                console=console,
-                redirect_stdout=True,
-                transient=True,
-                redirect_stderr=True,
-            )
-            task_id = rich_progress.add_task("Pushing batches...", total=len(batches))
-            iterator = batches
-        else:
-            logger.debug("Starting push of %d batches...", len(batches))
-            iterator = batches
-
-        start_time = time.perf_counter()
-
-        try:
-            with rich_progress if rich_progress else open(os.devnull, "w"):
-                for i, batch in enumerate(iterator):
-                    batch_size = len(batch)
-
-                    try:
-                        if public:
-                            response = self._client.index_public_file_records(file_records=batch)
-                        else:
-                            response = self._client.index_private_file_records(file_records=batch)
-
-                        self.push_results["success"] += response.success
-                        self.push_results["processed"] += batch_size
-                        self.push_results["batches"].append(
-                            {
-                                "batch_index": i,
-                                "status": "success",
-                                "records_in_batch": batch_size,
-                                "records_accepted": response.success,
-                            }
-                        )
-
-                        logger.debug("Batch %d/%d succeeded: %d records pushed.", i + 1, len(batches), response.success)
-
-                    except Exception as e:
-                        self.push_results["failed"] += batch_size
-                        self.push_results["processed"] += batch_size
-
-                        error_entry = {
-                            "batch_index": i,
-                            "status": "failure",
-                            "records_in_batch": batch_size,
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                        }
-                        self.push_results["batches"].append(error_entry)
-                        self.push_results["errors"].append(error_entry)
-
-                        logger.error("Push failed at batch %d/%d: %s", i + 1, len(batches), str(e))
-
-                        raise e
-
-                    if rich_progress:
-                        rich_progress.update(task_id, advance=1)
-
-        finally:
-            duration = time.perf_counter() - start_time
-            if not console:
-                logger.debug("Push operation ended in %.3fs.", duration)
+        # Delegate to Shared Utility, passing the UI elements through
+        self.push_results = reader.upload_records(
+            records=records_to_upload,
+            public=public,
+            fail_fast=fail_fast,
+            console=console,
+            palette=palette,
+        )
 
         return self.push_results
 

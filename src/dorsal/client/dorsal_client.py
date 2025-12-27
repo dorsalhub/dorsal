@@ -23,8 +23,6 @@ from urllib.parse import urljoin
 
 import logging
 
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError
-from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 import requests
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
@@ -167,7 +165,6 @@ class DorsalClient:
             in seconds. Defaults to 10.0.
     """
 
-    _default_timeout = 10.0
     _dorsal_base_url = BASE_URL
     _default_identity = "dorsal.DorsalClient"
 
@@ -1964,7 +1961,6 @@ class DorsalClient:
         Example:
             ```python
             from dorsal.client import DorsalClient
-            from jsonschema.exceptions import ValidationError
 
             client = DorsalClient()
             dataset_id = "my-org/application-users"

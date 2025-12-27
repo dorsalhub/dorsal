@@ -40,7 +40,6 @@ from dorsal.common.model import (
 )
 from dorsal.common.validators import (
     JsonSchemaValidator,
-    JsonSchemaValidatorType,
     get_json_schema_validator,
     import_callable,
     is_valid_dataset_id_or_schema_id,
@@ -313,20 +312,20 @@ class FileAnnotator:
                 )
             annotator_class = cast(Type[AnnotationModel], annotator_callable)
 
-            validator: Callable | JsonSchemaValidatorType | None = None
+            validator: Type[BaseModel] | JsonSchemaValidator | None = None
             if pipeline_step_obj.validation_model:
                 if isinstance(pipeline_step_obj.validation_model, dict):
                     validator = get_json_schema_validator(schema=pipeline_step_obj.validation_model, strict=True)
                 else:
                     validator_callable = import_callable(import_path=pipeline_step_obj.validation_model)
-                    if not (
-                        is_pydantic_model_class(validator_callable)
-                        or isinstance(validator_callable, JsonSchemaValidator)
-                    ):
+                    if is_pydantic_model_class(validator_callable):
+                        validator = cast(Type[BaseModel], validator_callable)
+                    elif isinstance(validator_callable, JsonSchemaValidator):
+                        validator = validator_callable
+                    else:
                         raise TypeError(
                             f"Imported validator '{pipeline_step_obj.validation_model.name}' is not a supported type."
                         )
-                    validator = validator_callable
         except (ImportError, AttributeError, TypeError) as err:
             msg = (
                 "Failed to import model/validator from config: "

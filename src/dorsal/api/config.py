@@ -145,7 +145,7 @@ def register_model(
     from dorsal.common.model import is_pydantic_model_class, is_pydantic_model_instance
     from dorsal.common.validators.json_schema import (
         JsonSchemaValidator,
-        JSON_SCHEMA_LIVENESS_KEYWORDS,
+        JSON_SCHEMA_CONSTRAINT_KEYWORDS,
     )
     from dorsal.common.exceptions import DorsalConfigError, PydanticValidationError
 
@@ -195,8 +195,8 @@ def register_model(
 
     elif validation_model is not None:
         if isinstance(validation_model, dict):
-            if not any(key in validation_model for key in JSON_SCHEMA_LIVENESS_KEYWORDS):
-                raise ValueError("The provided 'validation_model' schema dict appears to be inert.")
+            if not any(key in validation_model for key in JSON_SCHEMA_CONSTRAINT_KEYWORDS):
+                raise ValueError("The provided 'validation_model' JSON Schema is inert (won't validate anything)")
             validation_model_config = validation_model
         elif is_pydantic_model_class(validation_model):
             validator_module, validator_name = (

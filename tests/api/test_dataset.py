@@ -14,7 +14,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError
 
 from dorsal.api import dataset as dataset_api
 from dorsal.common.exceptions import (

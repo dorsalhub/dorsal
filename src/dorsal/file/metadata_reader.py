@@ -436,6 +436,163 @@ class MetadataReader:
         )
         return records_to_index_list, file_hash_to_path_map
 
+    def upload_records(
+        self,
+        records: list[FileRecordStrict],
+        *,
+        public: bool = False,
+        fail_fast: bool = True,
+        hash_to_path_map: dict[str, str] | None = None,
+        console: "Console | None" = None,
+        palette: dict | None = None,
+    ) -> dict[str, Any]:
+        """
+        Uploads a list of file records to DorsalHub in batches.
+
+        Args:
+            records: List of validated FileRecordStrict objects to upload.
+            public: If True, uploads to the public index.
+            fail_fast: If True, raises BatchIndexingError on the first failed batch.
+            hash_to_path_map: Optional mapping of {hash: local_path}.
+            console: Rich Console instance for progress reporting.
+            palette: Theme palette for the progress bar.
+
+        Returns:
+            dict: A summary of the upload operation.
+        """
+        from dorsal.common.exceptions import BatchIndexingError
+        from dorsal.client.validators import FileIndexResponse
+        from dorsal.common.environment import is_jupyter_environment
+        from rich.progress import (
+            Progress,
+            BarColumn,
+            TaskProgressColumn,
+            MofNCompleteColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+
+        total_records = len(records)
+        summary: dict[str, Any] = {
+            "total_records": total_records,
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "batches": [],
+            "errors": [],
+        }
+
+        if not records:
+            return summary
+
+        batches = [
+            records[i : i + constants.API_MAX_BATCH_SIZE] for i in range(0, total_records, constants.API_MAX_BATCH_SIZE)
+        ]
+
+        logger.debug(
+            "Uploading %d records in %d batches (Public: %s).",
+            total_records,
+            len(batches),
+            public,
+        )
+
+        # --- Progress Bar Setup ---
+        rich_progress = None
+        iterator: Iterable[list[FileRecordStrict]]
+
+        if is_jupyter_environment():
+            from tqdm import tqdm
+
+            iterator = tqdm(batches, desc="Pushing batches")
+        elif console:
+            from dorsal.cli.themes.palettes import DEFAULT_PALETTE
+
+            active_palette = palette if palette is not None else DEFAULT_PALETTE
+
+            progress_columns = (
+                TextColumn(
+                    "[progress.description]{task.description}",
+                    style=active_palette.get("progress_description", "default"),
+                ),
+                BarColumn(bar_width=None, style=active_palette.get("progress_bar", "default")),
+                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
+                MofNCompleteColumn(),
+                TextColumn("•", style="dim"),
+                TimeElapsedColumn(),
+                TextColumn("•", style="dim"),
+                TimeRemainingColumn(),
+            )
+            rich_progress = Progress(
+                *progress_columns,
+                console=console,
+                redirect_stdout=True,
+                transient=True,
+                redirect_stderr=True,
+            )
+            task_id = rich_progress.add_task("Pushing batches...", total=len(batches))
+            iterator = batches
+        else:
+            iterator = batches
+
+        # --- Upload Loop ---
+        with rich_progress if rich_progress else open(os.devnull, "w"):
+            for i, batch in enumerate(iterator):
+                batch_size = len(batch)
+                batch_num = i + 1
+
+                try:
+                    api_response: FileIndexResponse
+                    if public:
+                        api_response = self._client.index_public_file_records(file_records=batch)
+                    else:
+                        api_response = self._client.index_private_file_records(file_records=batch)
+
+                    if hash_to_path_map and api_response.results:
+                        for result_item in api_response.results:
+                            if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
+                                local_path = hash_to_path_map.get(result_item.hash)
+                                if local_path:
+                                    result_item.file_path = local_path
+
+                    summary["success"] += api_response.success
+                    summary["processed"] += batch_size
+                    summary["batches"].append(
+                        {
+                            "batch_index": i,
+                            "status": "success",
+                            "records_in_batch": batch_size,
+                            "records_accepted": api_response.success,
+                        }
+                    )
+                    logger.debug("Batch %d/%d succeeded.", batch_num, len(batches))
+
+                except Exception as err:
+                    summary["failed"] += batch_size
+                    summary["processed"] += batch_size
+                    error_entry = {
+                        "batch_index": i,
+                        "status": "failure",
+                        "records_in_batch": batch_size,
+                        "error_type": type(err).__name__,
+                        "error_message": str(err),
+                    }
+                    summary["batches"].append(error_entry)
+                    summary["errors"].append(error_entry)
+                    logger.error("Batch %d failed: %s", batch_num, err)
+
+                    if fail_fast:
+                        raise BatchIndexingError(
+                            f"Batch indexing failed at batch {batch_num}: {err}",
+                            summary=summary,
+                            original_error=err,
+                        ) from err
+
+                if rich_progress:
+                    rich_progress.update(task_id, advance=1)
+
+        return summary
+
     def index_directory(
         self,
         dir_path: str,
@@ -444,6 +601,8 @@ class MetadataReader:
         public: bool = False,
         skip_cache: bool = False,
         fail_fast: bool = True,
+        console: "Console | None" = None,
+        palette: dict | None = None,
     ) -> dict:
         """Scans, processes, and indexes all files in a directory to DorsalHub.
 
@@ -501,9 +660,7 @@ class MetadataReader:
             BatchIndexingError: If a batch fails and `fail_fast` is True.
             DorsalClientError: For critical errors before batching begins.
         """
-        # Import exceptions locally to avoid potential circular imports
-        from dorsal.common.exceptions import BatchIndexingError
-        from dorsal.client.validators import FileIndexResponse
+        from dorsal.common.exceptions import DorsalClientError, DuplicateFileError
 
         logger.debug(
             "MetadataReader.index_directory called: dir='%s', rec=%s, public=%s, fail_fast=%s",
@@ -515,105 +672,28 @@ class MetadataReader:
         if self.offline:
             raise DorsalError("Cannot index directory: MetadataReader is in OFFLINE mode.")
 
-        try:
-            # Generate local records (unlimited)
-            records_to_index_list, file_hash_to_path_map = self.generate_processed_records_from_directory(
-                dir_path=dir_path,
-                recursive=recursive,
-                limit=None,
-                skip_cache=skip_cache,
-            )
-        except (FileNotFoundError, ValueError, DuplicateFileError, DorsalClientError):
-            raise
-
-        total_records = len(records_to_index_list)
-
-        # Initialize summary structure
-        summary: dict[str, Any] = {
-            "total_records": total_records,
-            "processed": 0,
-            "success": 0,
-            "failed": 0,
-            "batches": [],
-            "errors": [],
-        }
-
-        if not records_to_index_list:
-            logger.debug("No unique files found in '%s' to index.", dir_path)
-            return summary
-
-        # Batching Logic
-        batches = [
-            records_to_index_list[i : i + constants.API_MAX_BATCH_SIZE]
-            for i in range(0, total_records, constants.API_MAX_BATCH_SIZE)
-        ]
-
-        logger.debug(
-            "Indexing %d records in %d batches (Public: %s).",
-            total_records,
-            len(batches),
-            public,
+        records_to_index_list, file_hash_to_path_map = self.generate_processed_records_from_directory(
+            dir_path=dir_path, recursive=recursive, limit=None, skip_cache=skip_cache, console=console, palette=palette
         )
 
-        for i, batch in enumerate(batches):
-            batch_size = len(batch)
-            batch_num = i + 1
+        if not records_to_index_list:
+            return {
+                "total_records": 0,
+                "processed": 0,
+                "success": 0,
+                "failed": 0,
+                "batches": [],
+                "errors": [],
+            }
 
-            try:
-                api_response: FileIndexResponse
-                if public:
-                    api_response = self._client.index_public_file_records(file_records=batch)
-                else:
-                    api_response = self._client.index_private_file_records(file_records=batch)
-
-                # Map paths back for local reference if needed
-                if file_hash_to_path_map and api_response.results:
-                    for result_item in api_response.results:
-                        if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
-                            path = file_hash_to_path_map.get(result_item.hash)
-                            if path:
-                                result_item.file_path = path
-
-                # Update Success State
-                summary["success"] += api_response.success
-                summary["processed"] += batch_size
-                summary["batches"].append(
-                    {
-                        "batch_index": i,
-                        "status": "success",
-                        "records_in_batch": batch_size,
-                        "records_accepted": api_response.success,
-                    }
-                )
-
-                logger.debug("Batch %d/%d succeeded. Accepted: %d", batch_num, len(batches), api_response.success)
-
-            except Exception as err:
-                # Update Failure State
-                summary["failed"] += batch_size
-                summary["processed"] += batch_size
-
-                error_entry = {
-                    "batch_index": i,
-                    "status": "failure",
-                    "records_in_batch": batch_size,
-                    "error_type": type(err).__name__,
-                    "error_message": str(err),
-                }
-                summary["batches"].append(error_entry)
-                summary["errors"].append(error_entry)
-
-                logger.error("Batch %d failed: %s", batch_num, err)
-
-                if fail_fast:
-                    logger.info("Aborting index_directory due to batch failure (fail_fast=True).")
-                    raise BatchIndexingError(
-                        f"Batch indexing failed at batch {batch_num}: {err}", summary=summary, original_error=err
-                    ) from err
-                else:
-                    logger.warning("Continuing to next batch (fail_fast=False).")
-
-        return summary
+        return self.upload_records(
+            records=records_to_index_list,
+            public=public,
+            fail_fast=fail_fast,
+            hash_to_path_map=file_hash_to_path_map,
+            console=console,
+            palette=palette,
+        )
 
     def index_file(
         self, file_path: str, *, public: bool = False, skip_cache: bool = False, overwrite_cache: bool = False

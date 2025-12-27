@@ -15,11 +15,8 @@
 import json
 from typing import Any
 
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError  # noqa: F401
-from jsonschema.exceptions import (
-    ValidationError as JSONSchemaValidationError,
-)  # noqa: F401
 from pydantic import ValidationError as PydanticValidationError  # noqa: F401
+from jsonschema_rs import ValidationError as JsonSchemaValidationError  # noqa: F401
 
 from dorsal.common import constants
 from dorsal.common.constants import BASE_URL

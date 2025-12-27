@@ -795,14 +795,6 @@ class DorsalFile(_DorsalFile):
         """
         from dorsal.file.validators.file_record import NewFileTag
 
-        if not is_permitted_public_media_type(self.media_type):
-            logger.warning(
-                f"Media type '{self.media_type}' cannot be indexed privately. "
-                f"Creating tag '{name}={value}' as a PRIVATE tag."
-            )
-            # Redirect to the private method
-            return self.add_private_tag(name=name, value=value, api_key=api_key)
-
         try:
             new_tag = NewFileTag(
                 name=name,
@@ -1293,6 +1285,13 @@ class LocalFile(_DorsalFile):
             value: Value of the tag (str, bool, datetime, int, or float).
             api_key: Optional API key to use for validation
         """
+        if not is_permitted_public_media_type(self.media_type):
+            logger.warning(
+                f"Media type '{self.media_type}' cannot be indexed privately. "
+                f"Creating tag '{name}={value}' as a PRIVATE tag."
+            )
+            return self.add_private_tag(name=name, value=value, auto_validate=auto_validate, api_key=api_key)
+
         return self._add_local_tag(
             name=name,
             value=value,
@@ -1766,7 +1765,7 @@ class LocalFile(_DorsalFile):
         schema_version: str | None = None,
         public: bool,
         source_id: str | None = None,
-        validator: BaseModel | JsonSchemaValidator | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
         overwrite: bool = False,
         force: bool = False,
@@ -1806,7 +1805,7 @@ class LocalFile(_DorsalFile):
         schema_id: str,
         public: bool,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source_id: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -2027,7 +2026,7 @@ class LocalFile(_DorsalFile):
         *,
         schema_id: str,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -2089,7 +2088,7 @@ class LocalFile(_DorsalFile):
         *,
         schema_id: str,
         annotation_record: BaseModel | dict[str, Any],
-        validator: BaseModel | None = None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
         source: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
