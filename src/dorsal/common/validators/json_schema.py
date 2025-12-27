@@ -74,7 +74,7 @@ JSON_SCHEMA_CONSTRAINT_KEYWORDS = {
 logger.debug("JsonSchemaValidator configured using jsonschema-rs backend.")
 
 if TYPE_CHECKING:
-    from jsonschema_rs import Validator as RsValidator
+    from jsonschema_rs import Validator as JsonSchemaRustValidator
 
 
 class JsonSchemaValidator:
@@ -97,7 +97,7 @@ class JsonSchemaValidator:
         self.__name__ = f"JsonSchemaValidator[{title}]"
 
         try:
-            self.validator: RsValidator = jsonschema_rs.validator_for(schema, validate_formats=True)
+            self.validator: JsonSchemaRustValidator = jsonschema_rs.validator_for(schema, validate_formats=True)
         except Exception as err:
             logger.exception(
                 "The provided schema is structurally invalid and cannot be used to create a validator: %s",

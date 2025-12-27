@@ -313,8 +313,6 @@ class ModelRunner:
     def _load_model_and_validator_classes(
         self, config_step: ModelRunnerPipelineStep
     ) -> tuple[Type[AnnotationModel], Type[BaseModel] | JsonSchemaValidator | None]:
-        # FIXED: Return type updated to 'Type[BaseModel]' to match the fact that we return classes for Pydantic
-
         try:
             annotator_callable = import_callable(config_step.annotation_model)
             if not (inspect.isclass(annotator_callable) and issubclass(annotator_callable, AnnotationModel)):
@@ -347,8 +345,6 @@ class ModelRunner:
                     ) from err
             else:
                 try:
-                    # FIXED: Cast to Any. import_callable returns Callable, but JsonSchemaValidator
-                    # instances are NOT callable. Casting to Any allows the isinstance check to proceed.
                     validator_callable = import_callable(config_step.validation_model)
 
                     if isinstance(validator_callable, JsonSchemaValidator):

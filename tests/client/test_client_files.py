@@ -38,7 +38,6 @@ def client():
 
 @pytest.fixture
 def mock_file_record_strict():
-    # Fix: Populated annotations to satisfy FileRecordStrict validation
     return FileRecordStrict(
         hash=_DUMMY_SHA256,
         validation_hash="b" * 64,
@@ -153,7 +152,6 @@ def test_search_files_client_validation(client):
 
 def test_check_files_indexed(client, requests_mock):
     """Test bulk existence check."""
-    # Fix: URL matches constant in constants.py
     requests_mock.post(
         f"{_DUMMY_BASE_URL}/v1/users/files-indexed", json={_DUMMY_SHA256: True, "other_hash": False}, status_code=200
     )

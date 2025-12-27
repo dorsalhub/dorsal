@@ -191,13 +191,11 @@ def test_local_file_add_tag_with_failed_validation(mock_get_client, mock_metadat
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
-    # The mock still says "valid=False", so this will trigger the InvalidTagError we want to test
     mock_client.validate_tag.return_value = ValidateTagsResult(valid=False, message="Value too long.")
 
     lf = LocalFile(file_path, client=mock_client)
 
     with pytest.raises(InvalidTagError, match="Value too long."):
-        # CHANGED: Use a valid local string so we reach the API check
         lf.add_public_tag(name="invalid_tag", value="valid_local_length", auto_validate=True)
 
 

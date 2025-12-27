@@ -165,6 +165,5 @@ def test_make_schema_validator_invalid_schema(client, requests_mock):
 
     requests_mock.get(target_url, json=invalid_schema, status_code=200)
 
-    # Fix: Expect DorsalClientError as per implementation
     with pytest.raises(DorsalClientError):
         client.make_schema_validator(_DUMMY_DATASET_ID)
