@@ -1460,7 +1460,7 @@ class LocalFile(_DorsalFile):
 
         self.model.tags.append(new_tag)
         private_label = "Private" if private else "Public"
-        logger.info(
+        logger.debug(
             "%s tag (%s=%s) added to local record for '%s'. Call push() to sync record with DorsalHub.",
             private_label,
             name,

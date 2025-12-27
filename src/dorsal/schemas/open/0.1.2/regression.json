@@ -5,71 +5,88 @@
         "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://dorsalhub.com/schemas/open/classification",
-    "title": "File Classification",
-    "version": "0.1.1",
-    "description": "Represent the result of a classification. Supports predicted labels, confidence scores, and vocabulary.",
+    "$id": "https://dorsalhub.com/schemas/open/regression",
+    "title": "Regression",
+    "version": "0.1.2",
+    "description": "Represent continuous numerical predictions. Supports point estimates, confidence intervals, and time-series forecasting.",
     "type": "object",
     "properties": {
         "target": {
             "type": "string",
-            "description": "The name of the variable being classified (e.g., 'sentiment', 'topic').",
+            "description": "The name of the variable being predicted (e.g., 'temperature', 'stock_price').",
             "maxLength": 128
+        },
+        "unit": {
+            "type": "string",
+            "description": "The unit of measurement.",
+            "maxLength": 32
         },
         "producer": {
             "type": "string",
-            "description": "The creator (model, tool or author) of this classification.",
+            "description": "The creator (model, tool or author) of this regression.",
             "maxLength": 1024
         },
         "score_explanation": {
             "type": "string",
-            "description": "A brief explanation of what the score represents (e.g., 'Model confidence probability [0, 1]', 'Sentiment score [-1, 1]').",
+            "description": "Explanation of the quality score metric (e.g. 'R-squared' or 'Model Confidence').",
             "maxLength": 256
         },
-        "vocabulary": {
+        "points": {
             "type": "array",
-            "description": "A list of the possible labels in this classification scheme.",
-            "maxItems": 100,
-            "items": {
-                "type": "string",
-                "description": "A single valid label from the vocabulary.",
-                "maxLength": 128
-            }
-        },
-        "vocabulary_url": {
-            "type": "string",
-            "description": "A URL pointing to a more detailed external vocabulary or ontology.",
-            "format": "uri",
-            "maxLength": 2048
-        },
-        "labels": {
-            "type": "array",
-            "description": "An array of labels applied to the file. Can be empty if no labels match.",
+            "description": "The regression data points. A single item represents a point estimate; multiple items represent a time series or distribution.",
             "maxItems": 10000,
-            "minItems": 0,
             "items": {
                 "type": "object",
                 "properties": {
-                    "label": {
-                        "type": "string",
-                        "description": "The predicted label.",
-                        "maxLength": 128
+                    "value": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "The predicted or sampled value."
                     },
-                    "score": {
+                    "statistic": {
+                        "type": "string",
+                        "description": "The statistical nature of this value.",
+                        "enum": [
+                            "mean",
+                            "median",
+                            "mode",
+                            "min",
+                            "max",
+                            "quantile",
+                            "sample"
+                        ]
+                    },
+                    "quantile_level": {
                         "type": "number",
-                        "description": "A normalized score for this label (-1.0 to 1.0). Depending on the use case, this may represent a probability (0 to 1) or a bipolar metric like sentiment (-1 to 1).",
-                        "minimum": -1,
+                        "description": "If statistic='quantile', this defines the level (e.g., 0.95).",
+                        "minimum": 0,
                         "maximum": 1
                     },
                     "timestamp": {
                         "type": "string",
                         "format": "date-time",
                         "maxLength": 128,
-                        "description": "The specific time this label applies to. Used for discrete time-series or state logging."
+                        "description": "The specific time this prediction applies to."
+                    },
+                    "interval_lower": {
+                        "type": "number",
+                        "description": "The lower bound of the confidence interval."
+                    },
+                    "interval_upper": {
+                        "type": "number",
+                        "description": "The upper bound of the confidence interval."
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "A quality score for this specific point.",
+                        "minimum": 0,
+                        "maximum": 1
                     },
                     "attributes": {
                         "type": "object",
-                        "description": "Additional metadata about this specific label.",
+                        "description": "Arbitrary metadata relevant to this point.",
                         "maxProperties": 16,
                         "additionalProperties": {
                             "anyOf": [
@@ -91,14 +108,14 @@
                     }
                 },
                 "required": [
-                    "label"
+                    "value"
                 ],
                 "additionalProperties": false
             }
         },
         "attributes": {
             "type": "object",
-            "description": "Arbitrary metadata relevant to this classification.",
+            "description": "Arbitrary metadata relevant to this regression.",
             "maxProperties": 16,
             "additionalProperties": {
                 "anyOf": [
@@ -120,34 +137,20 @@
         }
     },
     "required": [
-        "labels"
+        "points"
     ],
     "allOf": [
         {
             "if": {
                 "properties": {
-                    "labels": {
+                    "points": {
                         "maxItems": 0
                     }
                 }
             },
             "then": {
-                "anyOf": [
-                    {
-                        "required": [
-                            "vocabulary"
-                        ]
-                    },
-                    {
-                        "required": [
-                            "vocabulary_url"
-                        ]
-                    },
-                    {
-                        "required": [
-                            "producer"
-                        ]
-                    }
+                "required": [
+                    "producer"
                 ]
             }
         }

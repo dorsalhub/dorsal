@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/document-extraction",
     "title": "Document Extraction",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Represent the layout and content of a document, including text blocks, geometric coordinates, and page structure.",
     "type": "object",
     "properties": {
