@@ -548,12 +548,25 @@ class MetadataReader:
                     else:
                         api_response = self._client.index_private_file_records(file_records=batch)
 
-                    if hash_to_path_map and api_response.results:
+                    if api_response.results:
                         for result_item in api_response.results:
-                            if hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
+                            if hash_to_path_map and hasattr(result_item, "hash") and hasattr(result_item, "file_path"):
                                 local_path = hash_to_path_map.get(result_item.hash)
                                 if local_path:
                                     result_item.file_path = local_path
+
+                            if hasattr(result_item, "annotations") and result_item.annotations:
+                                for ann in result_item.annotations:
+                                    if hasattr(ann, "status") and ann.status in ("error", "unauthorized"):
+                                        summary["errors"].append(
+                                            {
+                                                "batch_index": i,
+                                                "status": ann.status,
+                                                "file_hash": result_item.hash,
+                                                "file_path": getattr(result_item, "file_path", None),
+                                                "error_message": f"Annotation '{ann.name}': {ann.detail or 'Unknown error'}",
+                                            }
+                                        )
 
                     summary["success"] += api_response.success
                     summary["processed"] += batch_size

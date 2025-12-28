@@ -195,6 +195,7 @@ def test_push(mock_get_client):
 
     mock_response = MagicMock(spec=FileIndexResponse)
     mock_response.success = 1
+    mock_response.results = []
     mock_client.index_private_file_records.return_value = mock_response
 
     mock_get_client.return_value = mock_client
