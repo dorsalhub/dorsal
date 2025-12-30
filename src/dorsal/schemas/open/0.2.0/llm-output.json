@@ -1,5 +1,5 @@
 {
-    "_license": {
+    "x-license": {
         "id": "Apache-2.0",
         "notice": "Copyright 2025 Dorsal Hub LTD",
         "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/llm-output",
     "title": "LLM Output",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "description": "Store a single interaction with an LLM (a Prompt/Response pair). Captures the input prompt, the resulting output, and the configuration parameters used at that moment.",
     "type": "object",
     "properties": {

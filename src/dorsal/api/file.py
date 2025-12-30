@@ -47,6 +47,7 @@ from dorsal.common.exceptions import (
     DorsalConfigError,
     DorsalError,
     NotFoundError,
+    PartialIndexingError,
 )
 from dorsal.file.dependencies import (
     make_file_extension_dependency,
@@ -641,6 +642,7 @@ def index_file(
     public: bool = False,
     api_key: str | None = None,
     use_cache: bool = True,
+    strict: bool = False,
 ) -> FileIndexResponse:
     """Processes a single local file and uploads its metadata to DorsalHub.
 
@@ -667,52 +669,48 @@ def index_file(
             Defaults to False (Private).
         api_key (str, optional): An API key to use for this specific request.
             Defaults to None.
+        strict (bool, optional): If True, raises PartialIndexingError if any part of the
+            request fails (e.g., invalid annotation schema), ensuring zero data loss.
+            Defaults to False.
 
     Returns:
         FileIndexResponse: A response object from the API detailing the
             result of the indexing operation.
     """
-    from dorsal.file.metadata_reader import MetadataReader
+    from dorsal.file.dorsal_file import LocalFile
 
-    metadata_reader: MetadataReader
     log_message_context = ""
 
     if api_key is not None:
-        log_message_context = (
-            "using provided API key with temporary MetadataReader (default model/ignore_duplicates settings)"
-        )
+        log_message_context = "using provided API key"
         logger.debug(
-            "API key override provided for index_file (file: '%s'). Creating temporary MetadataReader instance.",
+            "API key override provided for index_file (file: '%s').",
             file_path,
         )
-        metadata_reader = MetadataReader(api_key=api_key)
-
     else:
-        log_message_context = "using shared METADATA_READER instance"
-        logger.debug(
-            "No API key override for index_file (file: '%s'). Using shared METADATA_READER instance.",
-            file_path,
-        )
-        metadata_reader = get_metadata_reader()
+        log_message_context = "using default/shared client"
 
     logger.debug(
-        "High-level index_file calling effective MetadataReader for file_path='%s' (%s), public=%s.",
+        "High-level index_file calling LocalFile.push for file_path='%s' (%s), public=%s, strict=%s.",
         file_path,
         log_message_context,
         public,
+        strict,
     )
 
     try:
-        response = metadata_reader.index_file(file_path=file_path, public=public, skip_cache=not use_cache)
+        local_file = LocalFile(file_path=file_path, use_cache=use_cache)
+        response = local_file.push(public=public, api_key=api_key, strict=strict)
+
         logger.debug(
-            "Effective MetadataReader.index_file completed for file_path='%s'. Response success: %s",
+            "index_file completed for file_path='%s'. Response success: %s",
             file_path,
             response.success if hasattr(response, "success") else "N/A",
         )
         return response
     except (FileNotFoundError, IOError, DorsalError) as err:
         logger.warning(
-            "Call to effective MetadataReader.index_file for file_path='%s' (%s) failed: %s - %s",
+            "Call to LocalFile.push for file_path='%s' (%s) failed: %s - %s",
             file_path,
             log_message_context,
             type(err).__name__,
@@ -740,6 +738,7 @@ def index_directory(
     api_key: str | None = None,
     use_cache: bool = True,
     fail_fast: bool = True,
+    strict: bool = False,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
@@ -786,7 +785,9 @@ def index_directory(
         use_cache (bool, optional): If True, uses cached metadata for files
             that haven't changed. Defaults to True.
         fail_fast (bool, optional): If True, raises `BatchIndexingError` immediately
-            if a batch fails. If False, logs the error and continues. Defaults to True.
+            if a batch fails (HTTP error). Defaults to True.
+        strict (bool, optional): If True, raises `PartialIndexingError` if any partial
+            failures (e.g. invalid annotations) occur. Defaults to False.
 
     Returns:
         dict: A summary dictionary detailing the results of the operation.
@@ -795,6 +796,7 @@ def index_directory(
     Raises:
         FileNotFoundError: If the directory does not exist.
         BatchIndexingError: If `fail_fast` is True and a batch fails.
+        PartialIndexingError: If `strict` is True and partial errors occur.
         DorsalClientError: For critical errors preventing the operation from starting.
     """
     from dorsal.file.metadata_reader import MetadataReader
@@ -814,13 +816,22 @@ def index_directory(
         )
         effective_reader = get_metadata_reader()
 
-    return effective_reader.index_directory(
+    result = effective_reader.index_directory(
         dir_path=dir_path,
         recursive=recursive,
         public=public,
         skip_cache=not use_cache,
         fail_fast=fail_fast,
     )
+
+    if strict:
+        failed_count = result.get("failed", 0)
+        if failed_count > 0:
+            raise PartialIndexingError(
+                message=f"Directory indexing failed in strict mode. {failed_count} errors detected.", summary=result
+            )
+
+    return result
 
 
 def scan_directory(

@@ -63,6 +63,14 @@ def push_file(
             rich_help_panel="Cache Options",
         ),
     ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Fail with an error code if any metadata is rejected (Partial Success).",
+            rich_help_panel="Integrity Options",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output the API response as a raw JSON object."),
@@ -78,7 +86,12 @@ def push_file(
         exit_cli,
     )
     from dorsal.file.dorsal_file import LocalFile
-    from dorsal.common.exceptions import DorsalClientError, DorsalOfflineError, AuthError
+    from dorsal.common.exceptions import (
+        DorsalClientError,
+        DorsalOfflineError,
+        AuthError,
+        PartialIndexingError,
+    )
 
     console = get_rich_console()
 
@@ -109,7 +122,7 @@ def push_file(
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
         with console.status("Pushing to DorsalHub..."):
-            api_response = local_file.push(public=public)
+            api_response = local_file.push(public=public, strict=strict)
 
         if json_output:
             console.print(json.dumps(api_response.model_dump(mode="json"), indent=2, ensure_ascii=False))
@@ -148,6 +161,24 @@ def push_file(
                 border_style=panel_border_style,
             )
         )
+
+    except PartialIndexingError as e:
+        if json_output:
+            error_payload = {
+                "error": "PartialIndexingError",
+                "message": str(e),
+                "summary": e.summary,
+            }
+            console.print(json.dumps(error_payload, indent=2, ensure_ascii=False))
+        else:
+            console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Error:[/] {e}")
+            if e.summary and "failures" in e.summary:
+                console.print(f"[{palette.get('warning', 'yellow')}]Failures detected:[/]")
+                for failure in e.summary["failures"]:
+                    console.print(f"  - {failure}")
+
+        exit_cli(code=EXIT_CODE_ERROR)
+
     except typer.Exit:
         raise
     except DorsalOfflineError:

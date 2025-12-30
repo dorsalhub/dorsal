@@ -1,39 +1,30 @@
 {
-    "_license": {
+    "x-license": {
         "id": "Apache-2.0",
         "notice": "Copyright 2025 Dorsal Hub LTD",
         "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://dorsalhub.com/schemas/open/embedding",
-    "title": "Embedding",
-    "version": "0.1.2",
-    "description": "Store a vector and (optionally) the algorithm or embedding model which generated it.",
+    "$id": "https://dorsalhub.com/schemas/open/generic",
+    "title": "Generic",
+    "version": "0.2.0",
+    "description": "A flexible schema for storing arbitrary key-value data.",
     "type": "object",
     "properties": {
-        "model": {
+        "description": {
             "type": "string",
-            "description": "The model, tool or algorithm used to create this embedding.",
+            "description": "Describe the data.",
             "maxLength": 1024
         },
-        "target": {
+        "producer": {
             "type": "string",
-            "description": "The name of the variable or feature being embedded (e.g., 'description_text', 'query').",
-            "maxLength": 128
+            "description": "The creator (model, tool or author) of this record.",
+            "maxLength": 1024
         },
-        "vector": {
-            "type": "array",
-            "description": "Embedding vector. Its length represents its dimensionality.",
-            "items": {
-                "type": "number"
-            },
-            "minItems": 1,
-            "maxItems": 16384
-        },
-        "attributes": {
+        "data": {
             "type": "object",
-            "description": "Arbitrary metadata relevant to this embedding.",
-            "maxProperties": 16,
+            "description": "An object containing custom key-value data. Nesting is disallowed.",
+            "maxProperties": 128,
             "additionalProperties": {
                 "anyOf": [
                     {
@@ -54,7 +45,7 @@
         }
     },
     "required": [
-        "vector"
+        "data"
     ],
     "additionalProperties": false
 }

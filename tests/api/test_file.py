@@ -258,24 +258,21 @@ def test_delete_dorsal_file_record_invalid_hash():
         file_api._delete_dorsal_file_record("not-a-hash")
 
 
-@patch("dorsal.api.file.get_metadata_reader")
-def test_index_file_success(mock_get_reader, tmp_path):
+@patch("dorsal.file.dorsal_file.LocalFile")
+def test_index_file_success(mock_local_file_cls, tmp_path):
     """Test successful indexing of a single file."""
-    # Setup a fake file
-    file = tmp_path / "index_me.txt"
+    file = tmp_path / "things_and_stuff.txt"
     file.write_text("content")
 
-    # Configure the mocked MetadataReader
-    mock_reader_instance = MagicMock()
-    mock_get_reader.return_value = mock_reader_instance
+    mock_instance = mock_local_file_cls.return_value
     mock_index_response = FileIndexResponse(total=1, success=1, error=0, unauthorized=0, results=[])
-    mock_reader_instance.index_file.return_value = mock_index_response
+    mock_instance.push.return_value = mock_index_response
 
     result = file_api.index_file(str(file), public=False, use_cache=False)
 
-    # Assert that the underlying reader method was called correctly
-    mock_reader_instance.index_file.assert_called_once_with(file_path=str(file), public=False, skip_cache=True)
-    assert result.success == 1
+    assert result == mock_index_response
+    mock_local_file_cls.assert_called_with(file_path=str(file), use_cache=False)
+    mock_instance.push.assert_called_with(public=False, api_key=None, strict=False)
 
 
 def test_add_tag_to_file_success(mock_shared_client):

@@ -63,6 +63,32 @@ class FileIndexResponse(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    def __repr__(self) -> str:
+        """Summary of the index operation."""
+        status_parts = []
+        if self.success > 0:
+            status_parts.append(f"Success: {self.success}")
+        if self.error > 0:
+            status_parts.append(f"Errors: {self.error}")  # Highlight errors
+        if self.unauthorized > 0:
+            status_parts.append(f"Unauthorized: {self.unauthorized}")
+
+        summary = ", ".join(status_parts)
+
+        # If there are errors, we list them explicitly
+        error_details = ""
+        if self.error > 0:
+            error_details = "\n  [!] ERRORS FOUND:"
+            for res in self.results:
+                # check for annotation errors
+                failed_anns = [ann for ann in res.annotations if ann.status == "error"]
+                if failed_anns:
+                    error_details += f"\n      - File: {res.name or res.hash[:8]}"
+                    for ann in failed_anns:
+                        error_details += f"\n        x Annotation '{ann.name}': {ann.detail}"
+
+        return f"<FileIndexResponse [{summary}]{error_details}>"
+
 
 class NewDatasetResponse(BaseModel):
     created: str

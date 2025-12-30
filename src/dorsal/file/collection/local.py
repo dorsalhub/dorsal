@@ -325,6 +325,7 @@ class LocalFileCollection(_BaseFileCollection):
         console: "Console | None" = None,
         palette: dict | None = None,
         fail_fast: bool = True,
+        strict: bool = False,
     ) -> dict:
         """Pushes all file records in the collection to DorsalHub for indexing.
 
@@ -334,12 +335,18 @@ class LocalFileCollection(_BaseFileCollection):
             console: Rich console for progress display.
             palette: Color palette for progress display.
             fail_fast: If True (default), aborts immediately on the first batch error.
+            strict: If True, raises PartialIndexingError the response contains any errors.
 
         Returns:
             dict: Summary of the push operation.
+
+        Raises:
+            ValueError: If public indexing is attempted with restricted media types.
+            PartialIndexingError: If strict=True and partial failures are detected.
         """
         from dorsal.file.metadata_reader import MetadataReader
         from dorsal.file.validators.file_record import FileRecordStrict
+        from dorsal.common.exceptions import PartialIndexingError
 
         if public:
             prohibited_files = []
@@ -377,7 +384,6 @@ class LocalFileCollection(_BaseFileCollection):
                 "errors": [],
             }
 
-        # Delegate to Shared Utility, passing the UI elements through
         self.push_results = reader.upload_records(
             records=records_to_upload,
             public=public,
@@ -385,6 +391,18 @@ class LocalFileCollection(_BaseFileCollection):
             console=console,
             palette=palette,
         )
+
+        if strict:
+            failed_count = self.push_results.get("failed", 0)
+            if failed_count > 0:
+                errors = self.push_results.get("errors", [])
+                if not errors:
+                    errors = [f"{failed_count} records failed to index properly."]
+
+                raise PartialIndexingError(
+                    message=f"Collection push failed in strict mode. {failed_count} errors detected.",
+                    summary=self.push_results,
+                )
 
         return self.push_results
 

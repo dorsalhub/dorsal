@@ -40,6 +40,7 @@ from dorsal.common.exceptions import (
     AuthError,
     DorsalClientError,
     AttributeConflictError,
+    PartialIndexingError,
 )
 from dorsal.client.validators import FileIndexResponse
 
@@ -692,3 +693,36 @@ def test_local_file_get_annotations_integration(mock_metadata_reader, mock_file_
     filtered = lf.get_annotations("test/data", source_id="src1")
     assert len(filtered) == 1
     assert filtered[0].record.data == "one"
+
+
+def test_push_strict_raises_on_partial_failure(mock_metadata_reader, mock_file_record_strict, fs):
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+
+    mock_annotation_error = MagicMock()
+    mock_annotation_error.name = "classification"
+    mock_annotation_error.status = "error"
+    mock_annotation_error.detail = "Schema mismatch"
+
+    mock_result = MagicMock()
+    mock_result.annotations = [mock_annotation_error]
+    mock_result.tags = []
+
+    mock_response = MagicMock(spec=FileIndexResponse)
+    mock_response.total = 1
+    mock_response.success = 0
+    mock_response.error = 1
+    mock_response.results = [mock_result]
+
+    mock_client.index_private_file_records.return_value = mock_response
+
+    lf = LocalFile(file_path, client=mock_client)
+
+    with pytest.raises(PartialIndexingError) as exc_info:
+        lf.push(strict=True)
+
+    assert "Strict Mode enabled" in str(exc_info.value)
+    assert "classification" in str(exc_info.value.summary)

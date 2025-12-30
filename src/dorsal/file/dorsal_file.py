@@ -42,6 +42,7 @@ from dorsal.common.exceptions import (
     InvalidTagError,
     NetworkError as DorsalClientNetworkError,
     NotFoundError as DorsalClientNotFoundError,
+    PartialIndexingError,
     PydanticValidationError,
     RateLimitError as DorsalClientRateLimitError,
     TaggingError,
@@ -1514,7 +1515,7 @@ class LocalFile(_DorsalFile):
         )
         return validation_result
 
-    def push(self, public: bool = False, api_key: str | None = None) -> FileIndexResponse:
+    def push(self, public: bool = False, api_key: str | None = None, strict: bool = False) -> FileIndexResponse:
         """Indexes file's metadata (annotations and tags) to DorsalHub.
 
         If no record exists for this hash, a new record is created.
@@ -1526,6 +1527,8 @@ class LocalFile(_DorsalFile):
                 - If True: The file record is publicly accessible.
             api_key (str, optional): An API key to use for this specific request,
                 overriding the client's default key. Defaults to None.
+            strict (bool, optional):
+                - If True: Raises a PartialIndexingError if the response contains any errors
 
         Returns:
             FileIndexResponse: A response object from the API detailing the
@@ -1533,13 +1536,14 @@ class LocalFile(_DorsalFile):
 
         Raises:
             ValueError: If `public=True` but the file's media type is prohibited.
-            DorsalClientError: If the push operation fails due to an API error,
+            DorsalClientError: If the push operation fails due to API error,
                 network issue, or authentication failure.
+            PartialIndexingError: If strict=True and the response contains partial errors.
         """
         from dorsal.file.validators.file_record import FileRecordStrict
 
         if self.offline:
-            raise DorsalError("Cannot push file record: LocalFile is in OFFLINE mode. ")
+            raise DorsalError("Cannot push file record: LocalFile is in OFFLINE mode.")
 
         if not isinstance(self.model, FileRecordStrict):
             logger.error("Cannot push LocalFile: internal model is not FileRecordStrict.")  # type: ignore[unreachable]
@@ -1569,14 +1573,49 @@ class LocalFile(_DorsalFile):
             else:
                 response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
 
-            logger.info(
-                "Successfully pushed file record for '%s' to DorsalHub. Total: %s, Success: %s, Error: %s",
-                self._file_path,
-                response.total,
-                response.success,
-                response.error,
-            )
+            if response.error > 0:
+                error_msg = (
+                    f"PARTIAL FAILURE pushing file '{self._file_path}'. "
+                    f"The file record was created, but {response.error} annotation(s) were rejected."
+                )
+
+                logger.warning(error_msg)
+                failed_details = []
+
+                for result in response.results:
+                    for annotation in result.annotations:
+                        if annotation.status == "error":
+                            detail_str = f"Annotation '{annotation.name}': {annotation.detail}"
+                            logger.warning("  > %s", detail_str)
+                            failed_details.append(detail_str)
+
+                    if result.tags:
+                        for tag in result.tags:
+                            if tag.status == "error":
+                                detail_str = f"Tag '{tag.name}': {tag.detail}"
+                                logger.warning("  > %s", detail_str)
+                                failed_details.append(detail_str)
+
+                if strict:
+                    summary_data = {
+                        "total": response.total,
+                        "success": response.success,
+                        "error": response.error,
+                        "failures": failed_details,
+                    }
+
+                    raise PartialIndexingError(message=error_msg + " (Strict Mode enabled)", summary=summary_data)
+            else:
+                logger.info(
+                    "Successfully pushed file record for '%s' to DorsalHub. Total: %s, Success: %s, Error: %s",
+                    self._file_path,
+                    response.total,
+                    response.success,
+                    response.error,
+                )
+
             return response
+
         except DorsalClientError as err:
             logger.error(
                 "Failed to push file record for '%s' to DorsalHub. Error: %s",

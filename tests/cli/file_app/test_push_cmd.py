@@ -24,7 +24,6 @@ from dorsal.common.exceptions import DorsalClientError, AuthError
 
 runner = CliRunner()
 
-# Use a real file from your test data directory
 TEST_FILE_PATH = "tests/data/valid.txt"
 
 
@@ -35,20 +34,18 @@ def mock_push_cmd(mocker):
     """
     mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=True)
 
-    # Mock the LocalFile class
     mock_local_file_class = mocker.patch("dorsal.file.dorsal_file.LocalFile")
 
-    # Configure the instance that will be returned by the LocalFile constructor
     mock_instance = mock_local_file_class.return_value
 
-    # Create a mock for the API response object returned by the .push() method
     mock_api_response = MagicMock()
     mock_api_response.success = 1
+    mock_api_response.error = 0
     mock_api_response.results = [MagicMock()]
     mock_api_response.results[0].hash = "mock_pushed_hash"
-    # .model_dump() is called for JSON output, so we mock it too
     mock_api_response.model_dump.return_value = {
         "success": 1,
+        "error": 0,
         "results": [{"hash": "mock_pushed_hash"}],
     }
 
@@ -65,10 +62,8 @@ def test_push_success_private_panel(mock_rich_console, mock_push_cmd):
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH])
 
     assert result.exit_code == 0
-    # Verify push was called with public=False
-    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=False)
+    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=False, strict=False)
 
-    # Verify a success panel was printed
     panel_output = mock_rich_console.print.call_args_list[1].args[0]
     assert isinstance(panel_output, Panel)
     assert "Push Complete" in str(panel_output.title)
@@ -80,8 +75,7 @@ def test_push_success_public_panel(mock_rich_console, mock_push_cmd):
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH, "--public"])
 
     assert result.exit_code == 0
-    # Verify push was called with public=True
-    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=True)
+    mock_push_cmd["local_file_instance"].push.assert_called_once_with(public=True, strict=False)
 
     panel_output = mock_rich_console.print.call_args_list[1].args[0]
     assert isinstance(panel_output, Panel)
@@ -93,7 +87,6 @@ def test_push_success_json_output(mock_rich_console, mock_push_cmd):
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH, "--json"])
 
     assert result.exit_code == 0
-    # In JSON mode, the API response's model_dump is printed directly
     json_output_str = mock_rich_console.print.call_args.args[0]
     data = json.loads(json_output_str)
     assert data["success"] == 1
@@ -104,11 +97,12 @@ def test_push_api_failure_panel(mock_rich_console, mock_push_cmd):
     """Tests a failed push due to an API-side reason."""
     mock_api_response = mock_push_cmd["local_file_instance"].push.return_value
     mock_api_response.success = 0
+    mock_api_response.error = 1
     mock_api_response.results[0].annotations[0].detail = "File already indexed"
 
     result = runner.invoke(app, ["file", "push", TEST_FILE_PATH])
 
-    assert result.exit_code == 0  # The command succeeds, but the push fails
+    assert result.exit_code == 0
     panel_output = mock_rich_console.print.call_args_list[1].args[0]
     assert isinstance(panel_output, Panel)
     assert "Push Failed" in str(panel_output.title)

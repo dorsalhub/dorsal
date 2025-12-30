@@ -112,6 +112,21 @@ def push_directory(
             rich_help_panel="Cache Options",
         ),
     ] = False,
+    fail_fast: Annotated[
+        bool,
+        typer.Option(
+            "--fail-fast/--no-fail-fast",
+            help="Stop immediately if a batch fails (HTTP error).",
+        ),
+    ] = True,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Fail immediately if any file in the directory fails to index (Partial Success).",
+            rich_help_panel="Integrity Options",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -133,7 +148,7 @@ def push_directory(
     )
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
-    from dorsal.common.exceptions import AuthError, DorsalError, DorsalOfflineError
+    from dorsal.common.exceptions import AuthError, DorsalError, DorsalOfflineError, PartialIndexingError
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
@@ -223,7 +238,13 @@ def push_directory(
                 console.print(success_panel)
 
         if not create_collection:
-            summary = collection.push(public=public, console=progress_console, palette=palette)
+            summary = collection.push(
+                public=public,
+                console=progress_console,
+                palette=palette,
+                fail_fast=fail_fast,
+                strict=strict,
+            )
 
             is_duplicate_error = False
 
@@ -265,6 +286,32 @@ def push_directory(
                     use_cache=use_cache_value,
                     collection=collection,
                 )
+
+    except PartialIndexingError as e:
+        if json_output:
+            error_output = {"error": "PartialIndexingError", "message": e, "summary": e.summary}
+            console.print(json.dumps(error_output, indent=2, default=str, ensure_ascii=False))
+        else:
+            console.print(f"[{palette['error']}]Strict Mode Failed:[/{palette['error']}] {e}")
+
+            summary = e.summary
+            if summary and (summary.get("failed", 0) > 0 or summary.get("errors") or summary.get("failures")):
+                failed_table = Table(
+                    title="Strict Integrity Failures", expand=True, header_style=palette["table_header"], style="red"
+                )
+                failed_table.add_column("Error Detail", style="red")
+
+                if "failures" in summary:
+                    for failure in summary["failures"]:
+                        failed_table.add_row(escape(str(failure)))
+                elif "errors" in summary:
+                    for error in summary["errors"]:
+                        msg = error.get("message") if isinstance(error, dict) else str(error)
+                        failed_table.add_row(escape(str(msg)))
+
+                console.print(failed_table)
+
+        exit_cli(code=EXIT_CODE_ERROR, message="Directory push failed strict integrity check.")
 
     except DorsalError as err:
         exit_cli(code=EXIT_CODE_ERROR, message=str(err))
