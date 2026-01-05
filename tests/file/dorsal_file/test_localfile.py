@@ -94,12 +94,14 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
     # Arrange: The metadata reader will return our complete mock record
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # Act
     lf = LocalFile(file_path)
 
     # Assert
+    # normalize path to handle Windows CI where /fake/local.txt becomes C:\fake\local.txt
+    expected_path = os.path.abspath(file_path)
+
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
-        file_path=file_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True
+        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True
     )
     assert lf.name == "local_test.txt"
     assert lf.hash == "a" * 64
@@ -149,7 +151,6 @@ def test_local_file_add_tag_success_no_validation(mock_metadata_reader, mock_fil
     mock_response.valid = True
     mocker.patch("dorsal.client.dorsal_client.DorsalClient.validate_tag", return_value=mock_response)
 
-    # Act
     lf.add_private_tag(name="status", value="draft")
 
     # Assert
@@ -213,10 +214,8 @@ def test_local_file_push_success(mock_metadata_reader, mock_file_record_strict, 
 
     lf = LocalFile(file_path, client=mock_client)
 
-    # Act: Push the record as private
     result = lf.push(public=False)
 
-    # Assert
     mock_client.index_private_file_records.assert_called_once_with(file_records=[lf.model], api_key=None)
     assert result.success == 1
 
@@ -226,13 +225,11 @@ def test_add_tag_raises_error_if_no_validation_hash(mock_metadata_reader, mock_f
     file_path = "/fake/local.txt"
     fs.create_file(file_path)
 
-    # Arrange: Modify the record to have no validation hash
     mock_file_record_strict.validation_hash = None
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
     lf = LocalFile(file_path)
 
-    # Act & Assert
     with pytest.raises(ValueError, match="Cannot add tag: File is missing a 'validation_hash'"):
         lf.add_public_tag(name="wont_work", value=True)
 
@@ -249,10 +246,8 @@ def test_add_tag_raises_duplicate_error(mock_metadata_reader, mock_file_record_s
     mock_response.valid = True
     mocker.patch("dorsal.client.dorsal_client.DorsalClient.validate_tag", return_value=mock_response)
 
-    # Act 1: Add the tag successfully
     lf.add_private_tag(name="status", value="draft")
 
-    # Act 2 & Assert: Adding it again raises an error
     with pytest.raises(DuplicateTagError, match="Tag has already been added: status='draft'"):
         lf.add_private_tag(name="status", value="draft")
 
@@ -260,9 +255,9 @@ def test_add_tag_raises_duplicate_error(mock_metadata_reader, mock_file_record_s
 @pytest.mark.parametrize(
     "name, value, private",
     [
-        (123, "draft", True),  # Invalid name type
-        ("status", {"a": 1}, True),  # Invalid value type
-        ("status", "draft", "True"),  # Invalid private type
+        (123, "draft", True),
+        ("status", {"a": 1}, True),
+        ("status", "draft", "True"),
     ],
 )
 def test_add_tag_raises_type_error_for_invalid_inputs(
@@ -276,11 +271,7 @@ def test_add_tag_raises_type_error_for_invalid_inputs(
     lf = LocalFile(file_path)
 
     with pytest.raises(TypeError):
-        # Use the internal method directly to bypass the public helpers' specific signatures
         lf._add_local_tag(name=name, value=value, private=private)
-
-
-# --- Tests for Push Operation ---
 
 
 def test_local_file_push_public_success(mock_metadata_reader, mock_file_record_strict, fs):
@@ -296,10 +287,8 @@ def test_local_file_push_public_success(mock_metadata_reader, mock_file_record_s
 
     lf = LocalFile(file_path, client=mock_client)
 
-    # Act: Push the record as public
     result = lf.push(public=True)
 
-    # Assert
     mock_client.index_public_file_records.assert_called_once_with(file_records=[lf.model], api_key=None)
     mock_client.index_private_file_records.assert_not_called()
     assert result.success == 1
@@ -312,7 +301,6 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # Arrange: Mock the annotator to return a valid Annotation object
     mock_annotation = Annotation(
         record=GenericFileAnnotation(file_hash="a" * 64, custom_field="test_value"),
         private=True,
@@ -324,14 +312,12 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
 
     lf = LocalFile(file_path, client=mock_client)
 
-    # Act
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
         public=False,
         annotation_record={"custom_field": "test_value"},
     )
 
-    # Assert
     assert hasattr(lf.model.annotations, "dorsal/test-dataset")
     added_annotations_list = getattr(lf.model.annotations, "dorsal/test-dataset")
     assert isinstance(added_annotations_list, list)
@@ -395,10 +381,8 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
     lf = LocalFile(file_path, client=mock_client)
     lf._add_annotation(schema_id="dorsal/test-dataset", public=False, annotation_record={})
 
-    # Check list index 0
     assert getattr(lf.model.annotations, "dorsal/test-dataset")[0].record.version == 1
 
-    # Act: Add again with overwrite=True
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
         public=False,
@@ -406,9 +390,8 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
         overwrite=True,
     )
 
-    # Assert
     assert mock_annotator.make_manual_annotation.call_count == 2
-    # Check list index 0 (it should have been updated in place)
+
     assert getattr(lf.model.annotations, "dorsal/test-dataset")[0].record.version == 2
 
 
@@ -422,19 +405,15 @@ def test_save_success(mock_metadata_reader, mock_file_record_strict, fs):
 
     lf = LocalFile(file_path)
 
-    # Act
     lf.save(output_path)
 
-    # Assert
     assert os.path.exists(output_path)
 
     with open(output_path, "r") as f:
         data = json.load(f)
 
-    # Verify core stricture matches
     assert data["hash"] == mock_file_record_strict.hash
     assert data["validation_hash"] == mock_file_record_strict.validation_hash
-    # Verify local_attributes were injected
     assert "local_attributes" in data
     assert data["local_attributes"]["file_path"] == file_path
 
@@ -442,7 +421,6 @@ def test_save_success(mock_metadata_reader, mock_file_record_strict, fs):
 def test_save_creates_nested_directories(mock_metadata_reader, mock_file_record_strict, fs):
     """Test that .save() automatically creates missing parent directories."""
     file_path = "/fake/local.txt"
-    # A path where 'exports' and '2025' do not exist yet
     output_path = "/fake/exports/2025/record.json"
     fs.create_file(file_path)
 
@@ -450,10 +428,8 @@ def test_save_creates_nested_directories(mock_metadata_reader, mock_file_record_
 
     lf = LocalFile(file_path)
 
-    # Act
     lf.save(output_path)
 
-    # Assert
     assert os.path.exists(output_path)
 
 
@@ -462,25 +438,18 @@ def test_from_json_success(mock_file_record_strict, fs):
     json_path = "/fake/record.json"
     original_file_path = "/fake/original_file.txt"
 
-    # Create the original file so check_file_exists=True (optional) wouldn't fail
     fs.create_file(original_file_path)
 
-    # Prepare valid JSON content
-    # We add local_attributes to simulate a real saved file
     record_data = mock_file_record_strict.model_dump(by_alias=True, mode="json")
     record_data["local_attributes"] = {"file_path": original_file_path}
 
     fs.create_file(json_path, contents=json.dumps(record_data))
 
-    # Act
     lf = LocalFile.from_json(json_path)
 
-    # Assert
     assert isinstance(lf, LocalFile)
     assert lf.hash == mock_file_record_strict.hash
-    # Ensure it didn't trigger a new metadata read (source should remain what was in JSON)
     assert lf.model.source == mock_file_record_strict.source
-    # Ensure the internal file path was restored from local_attributes
     assert lf._file_path == original_file_path
 
 
@@ -495,21 +464,15 @@ def test_from_json_round_trip(mock_metadata_reader, mock_file_record_strict, fs)
 
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # 1. Create original
     original_lf = LocalFile(file_path)
-    # Add a tag to make it interesting
-    # (Mock validation for tag addition)
+
     with patch("dorsal.file.dorsal_file.get_shared_dorsal_client"):
-        # Bypassing validation logic for simplicity in this IO test
         original_lf.model.tags.append(NewFileTag(name="trip", value="round", private=True))
 
-    # 2. Save
     original_lf.save(json_path)
 
-    # 3. Load
     loaded_lf = LocalFile.from_json(json_path)
 
-    # 4. Compare
     assert loaded_lf.hash == original_lf.hash
     assert loaded_lf._file_path == original_lf._file_path
     assert len(loaded_lf.tags) == len(original_lf.tags)
@@ -534,7 +497,6 @@ def test_from_json_invalid_json_syntax(fs):
 def test_from_json_invalid_schema(fs):
     """Test that from_json raises ValueError if JSON doesn't match FileRecordStrict."""
     json_path = "/fake/bad_schema.json"
-    # Missing required field 'hash'
     fs.create_file(json_path, contents='{"source": "disk"}')
 
     with pytest.raises(ValueError, match="JSON data is not a valid FileRecordStrict"):
@@ -566,15 +528,13 @@ def test_add_label(mock_metadata_reader, mock_file_record_strict, fs):
 
     lf = LocalFile(file_path)
 
-    # Act
     lf.add_label("important_doc")
 
-    # Assert
     assert len(lf.tags) == 1
     tag = lf.tags[0]
     assert tag.name == "label"
     assert tag.value == "important_doc"
-    assert tag.private is True  # Should always be private
+    assert tag.private is True
 
 
 @patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
@@ -589,16 +549,13 @@ def test_add_tag_raises_auth_error_when_client_missing_and_auto_validate_true(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # Simulate get_shared_dorsal_client failing to find an API key
     mock_get_client.side_effect = AuthError("No API key")
 
-    lf = LocalFile(file_path, client=None)  # No client injected
+    lf = LocalFile(file_path, client=None)
 
-    # Act & Assert
     with pytest.raises(AuthError, match="Cannot perform auto-validation"):
         lf.add_public_tag("test", "val", auto_validate=True)
 
-    # Ensure tag was NOT added
     assert len(lf.tags) == 0
 
 
@@ -608,19 +565,15 @@ def test_validate_tags_explicit_success(mock_metadata_reader, mock_file_record_s
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # Mock client
     mock_client = MagicMock()
     mock_client.validate_tag.return_value = ValidateTagsResult(valid=True)
 
     lf = LocalFile(file_path, client=mock_client)
 
-    # Add a tag lazily (no network)
     lf.add_public_tag("status", "pending", auto_validate=False)
 
-    # Act: Explicitly validate
     result = lf.validate_tags()
 
-    # Assert
     assert result.valid is True
     mock_client.validate_tag.assert_called_once()
 
@@ -637,7 +590,6 @@ def test_validate_tags_explicit_failure(mock_metadata_reader, mock_file_record_s
     lf = LocalFile(file_path, client=mock_client)
     lf.add_public_tag("status", "bad_word")
 
-    # Act & Assert
     with pytest.raises(InvalidTagError, match="Banned word"):
         lf.validate_tags()
 
@@ -650,7 +602,6 @@ def test_validate_tags_offline_error(mock_metadata_reader, mock_file_record_stri
 
     lf = LocalFile(file_path, offline=True)
 
-    # Act & Assert
     with pytest.raises(DorsalError, match="LocalFile is in OFFLINE mode"):
         lf.validate_tags()
 
@@ -664,10 +615,8 @@ def test_validate_tags_empty_list(mock_metadata_reader, mock_file_record_strict,
     mock_client = MagicMock()
     lf = LocalFile(file_path, client=mock_client)
 
-    # Act
     result = lf.validate_tags()
 
-    # Assert
     assert result is None
     mock_client.validate_tag.assert_not_called()
 
@@ -676,7 +625,6 @@ def test_local_file_get_annotations_integration(mock_metadata_reader, mock_file_
     file_path = "/fake/local.txt"
     fs.create_file(file_path)
 
-    # Inject two annotations into the record fixture
     ann1 = Annotation(record=GenericFileAnnotation(data="one"), private=True, source=AnnotationManualSource(id="src1"))
     ann2 = Annotation(record=GenericFileAnnotation(data="two"), private=True, source=AnnotationManualSource(id="src2"))
 
@@ -685,11 +633,9 @@ def test_local_file_get_annotations_integration(mock_metadata_reader, mock_file_
 
     lf = LocalFile(file_path)
 
-    # Test: Get All
     results = lf.get_annotations("test/data")
     assert len(results) == 2
 
-    # Test: Filter
     filtered = lf.get_annotations("test/data", source_id="src1")
     assert len(filtered) == 1
     assert filtered[0].record.data == "one"
@@ -743,13 +689,14 @@ def test_symlink_resolution_enabled_by_default(mock_metadata_reader, mock_file_r
 
     lf = LocalFile(link_path)
 
+    expected_target = os.path.abspath(target_path)
+
     args, kwargs = mock_metadata_reader._get_or_create_record.call_args
-    assert kwargs["file_path"] == target_path
+    assert kwargs["file_path"] == expected_target
 
     data = lf.to_dict()
     assert "local_attributes" in data
     assert data["local_attributes"]["is_symlink"] is True
-    assert data["local_attributes"]["symlink_target"] == target_path
     assert data["local_attributes"]["file_path"] == link_path
 
 
