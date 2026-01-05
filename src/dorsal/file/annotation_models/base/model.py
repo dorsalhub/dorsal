@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,7 +52,6 @@ class FileCoreAnnotationModel(AnnotationModel):
             FileNotFoundError, IOError: If the file cannot be read by `multi_hash`.
 
         """
-        logger.debug("I'm getting the file hashes, that's my job. %s", self.follow_symlinks)
         try:
             return multi_hash(
                 file_path=self.file_path,
