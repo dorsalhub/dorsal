@@ -87,7 +87,7 @@ def test_scan_file_success_panel_output(mock_rich_console, mock_scan_cmd):
 
     assert result.exit_code == 0, result.output
     mock_scan_cmd["local_file_class"].assert_called_once_with(
-        file_path=str(pathlib.Path(TEST_FILE_PATH)), use_cache=False, overwrite_cache=False
+        file_path=str(pathlib.Path(TEST_FILE_PATH)), use_cache=False, overwrite_cache=False, follow_symlinks=True
     )
 
     # In interactive mode, no report should be saved

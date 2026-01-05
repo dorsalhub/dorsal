@@ -1159,6 +1159,7 @@ class LocalFile(_DorsalFile):
         use_cache: bool = True,
         overwrite_cache: bool = False,
         offline: bool = False,
+        follow_symlinks: bool = True,
         _file_record: FileRecordStrict | None = None,
     ):
         """
@@ -1171,6 +1172,8 @@ class LocalFile(_DorsalFile):
             use_cache: Whether to use the local cache to speed up processing. Defaults to True.
             overwrite_cache: Whether to run the full pipeline *and* overwrite the cache result. Defaults to False
             offline: If True, puts the instance in Offline Mode. Blocks network calls from `LocalFile`.
+            follow_symlinks: If True (default), resolves symbolic links to their target content.
+                              If False, uses the path as-is (potentially resulting in link metadata).
 
         Raises:
             FileNotFoundError: If the file_path does not exist or is not a file.
@@ -1199,7 +1202,7 @@ class LocalFile(_DorsalFile):
         if _file_record is None:
             self._metadata_reader = MetadataReader(client=self._client, model_config=model_runner_pipeline)
             logger.debug("LocalFile init: Generating record for local file at '%s'.", file_path)
-            file_record_model = self._generate_record()
+            file_record_model = self._generate_record(follow_symlinks=follow_symlinks)
         else:
             self._metadata_reader = None
             file_record_model = _file_record
@@ -1207,15 +1210,20 @@ class LocalFile(_DorsalFile):
 
         self._source = file_record_model.source
 
-        stat = pathlib.Path(file_path).stat()
-        self.date_modified = datetime.datetime.fromtimestamp(stat.st_mtime).astimezone()
+        path_obj = pathlib.Path(file_path)
+        try:
+            stat_result = path_obj.stat()
+        except OSError:  # e.g. broken symlink
+            stat_result = path_obj.lstat()
 
-        if hasattr(stat, "st_birthtime"):  # type: ignore[attr-defined]
+        self.date_modified = datetime.datetime.fromtimestamp(stat_result.st_mtime).astimezone()
+
+        if hasattr(stat_result, "st_birthtime"):  # type: ignore[attr-defined]
             self.date_created = datetime.datetime.fromtimestamp(
-                stat.st_birthtime  # type: ignore[attr-defined]
+                stat_result.st_birthtime  # type: ignore[attr-defined]
             ).astimezone()
         else:
-            self.date_created = datetime.datetime.fromtimestamp(stat.st_ctime).astimezone()
+            self.date_created = datetime.datetime.fromtimestamp(stat_result.st_ctime).astimezone()
 
         super().__init__(file_record=file_record_model)
         logger.debug(
@@ -1224,12 +1232,31 @@ class LocalFile(_DorsalFile):
             self.hash,
         )
 
-    def _generate_record(self) -> FileRecordStrict:
+    def _generate_record(self, follow_symlinks: bool = True) -> FileRecordStrict:
         """Use `_metadata_reader` instance to generate File metadata record (`FileRecordStrict`)"""
         if self._metadata_reader is None:
             raise RuntimeError("MetadataReader is not initialized.")
+
+        target_path = self._file_path
+
+        if follow_symlinks:
+            try:
+                path_obj = pathlib.Path(self._file_path)
+                resolved_path = path_obj.resolve()
+
+                if resolved_path.exists():
+                    target_path = str(resolved_path)
+                else:
+                    logger.debug("Symlink target does not exist '%s' for file '%s'", resolved_path, self._file_path)
+            except (OSError, RuntimeError) as err:
+                logger.debug("Failed to resolve symlink for file %s, %s", self._file_path, err)
+                pass
+
         return self._metadata_reader._get_or_create_record(
-            file_path=self._file_path, skip_cache=not self._use_cache, overwrite_cache=self._overwrite_cache
+            file_path=target_path,
+            skip_cache=not self._use_cache,
+            overwrite_cache=self._overwrite_cache,
+            follow_symlinks=follow_symlinks,
         )
 
     @classmethod
@@ -2639,17 +2666,21 @@ class LocalFile(_DorsalFile):
         )
 
     def _get_local_info_dict(self) -> dict:
-        """
-        Gathers system-agnostic, local-only attributes into a dictionary
-        by using os.stat to provide a more complete overview of the file's
-        local state.
+        """Returns local file attributes (file-system metadata) as a dictionary. Supports symlinks."""
+        local_info: dict[str, Any] = {}
+        path_obj = pathlib.Path(self._file_path)
 
-        Note: datetime objects are not converted to strings here to maintain
-        consistency with other date fields in the LocalFile object.
-        """
-        local_info: dict[str, str | datetime.datetime | int] = {}
         try:
-            stat_result = pathlib.Path(self._file_path).stat()
+            stat_result = path_obj.lstat()
+
+            if path_obj.is_symlink():
+                local_info["is_symlink"] = True
+                try:
+                    local_info["symlink_target"] = str(path_obj.readlink())
+                except OSError:
+                    local_info["symlink_target"] = "<unreadable>"
+            else:
+                local_info["is_symlink"] = False
 
             local_info["date_modified"] = datetime.datetime.fromtimestamp(stat_result.st_mtime).astimezone()
             local_info["date_accessed"] = datetime.datetime.fromtimestamp(stat_result.st_atime).astimezone()

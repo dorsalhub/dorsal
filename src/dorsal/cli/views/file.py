@@ -159,11 +159,20 @@ def create_file_info_panel(
     file_info_table = Table(box=None, show_header=False, padding=(0, 1))
     file_info_table.add_column(style=palette["key"], justify="right", width=12)
     file_info_table.add_column(style=primary_color)
-    local_info = record_dict.get("local_filesystem", {})
+    local_info: dict[str, Any] = record_dict.get("local_filesystem", {})
     base_info = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
     if access_text:
         file_info_table.add_row("Access:", access_text)
-    if local_info.get("full_path"):
+    if local_info.get("is_symlink"):
+        file_info_table.add_row("Type:", Text("Symbolic Link", style="cyan italic"))
+
+        if local_info.get("full_path"):
+            file_info_table.add_row("Link Path:", escape(local_info["full_path"]))
+
+        target = local_info.get("symlink_target", "Unknown")
+        file_info_table.add_row("Target:", Text(target, style="cyan"))
+
+    elif local_info.get("full_path"):
         file_info_table.add_row("Full Path:", escape(local_info["full_path"]))
     if local_info.get("date_modified"):
         file_info_table.add_row(

@@ -66,6 +66,7 @@ def test_build_cache_default(mock_rich_console, mock_build_cache_cmd):
         console=mock_rich_console,
         palette=ANY,
         use_cache=True,
+        follow_symlinks=True,
     )
 
     # Check the formatted text output

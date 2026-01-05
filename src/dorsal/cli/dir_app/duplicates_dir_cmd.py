@@ -271,8 +271,19 @@ def duplicates_dir(
 
             paths_table = Table.grid(padding=(0, 1, 0, 3))
             paths_table.add_column(style=palette["primary_value"])
+
             for p in dupe_set["paths"]:
-                paths_table.add_row(f"📄 {escape(p)}")
+                path_obj = pathlib.Path(p)
+                path_display = f"📄 {escape(p)}"
+
+                if path_obj.is_symlink():
+                    try:
+                        target = path_obj.readlink()
+                        path_display += f" [dim italic]→ {escape(str(target))}[/]"
+                    except OSError:
+                        path_display += " [dim italic](symlink)[/]"
+
+                paths_table.add_row(path_display)
 
             content_grid = Table.grid(padding=(0, 0, 1, 0))
             content_grid.add_row(hash_info_body)

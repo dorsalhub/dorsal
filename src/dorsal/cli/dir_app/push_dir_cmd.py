@@ -134,6 +134,13 @@ def push_directory(
             help="Output the final summary as a raw JSON object to stdout for scripting.",
         ),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to index target metadata vs indexing the link itself.",
+        ),
+    ] = True,
 ):
     """
     Scans a directory, pushes all file metadata to DorsalHub,
@@ -187,6 +194,7 @@ def push_directory(
             palette=palette,
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
         )
 
         if not collection:

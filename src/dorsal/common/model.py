@@ -31,16 +31,48 @@ logger = logging.getLogger(__name__)
 
 class AnnotationModel:
     """
-    The base class for all Annotation Models.
+    The abstract base class for all Annotation Models in the pipeline.
+
+    An **Annotation Model** is processes a file and returns a structured dictionary of metadata (an **Annotation**).
 
     See: [AnnotationModel docs](http://docs.dorsalhub.com/reference/annotation-model/)
 
-    Subclasses must implement the `main` method.
+    ### 1. The Input Contract (Attributes)
+    When the `ModelRunner` instantiates your model, it automatically populates instance attributes before calling `main()`.
+
+    Attributes:
+        file_path (str): The absolute path to the file on disk.
+        media_type (str | None): The IANA Media Type (e.g., 'application/pdf') identified by the Base model.
+        extension (str | None): The file extension (lowercase, e.g., '.docx').
+        size (int | None): The file size in bytes.
+        hash (str | None): The SHA-256 hash of the file.
+        name (str | None): The filename (e.g., 'report.pdf').
+        follow_symlinks (bool): Defaults to `True`.
+            - **True (Target Mode):** This model analyzes the file content. If path is a symlink, the link is resolved to its target.
+            - **False (Link Mode):** Trust the path provided, even if it is a symlink. Useful if you *want* to analyse symbolic links.
+
+    ### 2. The Output Contract (Return Values)
+    Your subclass must implement the `main()` method, which must return:
+
+    - **`dict`**: A dictionary containing the extracted metadata.
+                  Validates against the schema ID configured for this model in the pipeline.
+    - **`None`**: To indicate that the model ran successfully but found no relevant data, or encountered a handled error.
+
+    ### 3. Identity (Class Attributes)
+    To ensure annotations are traceable and unique, your subclass must define:
+
+    - `id` (str): A global identifier (e.g., "github:dorsalhub/pdf-model").
+    - `version` (str): Semantic version of the model logic (e.g., "1.0.0").
+    - `variant` (str, optional): Specific engine or config used (e.g., "v2-large").
+
+    ### 4. Error Handling
+    Do not raise exceptions for expected failures. Call `self.set_error("Reason")` and return `None`.
     """
 
     id: str
     version: str | None = None
     variant: str | None = None
+    follow_symlinks: bool = True
 
     file_path: str
     error: str | None
@@ -91,14 +123,15 @@ class AnnotationModel:
         self.similarity_hash: str | None = None
         self.quick_hash: str | None = None
 
-    def set_error(self, message: str):
+    def set_error(self, message: str, level: int = logging.DEBUG):
         """
-        Sets a graceful error message for the model and logs it as a warning.
+        Sets a graceful error message for the model and logs it.
 
         Call this and return None from `main()` for non-critical,
         expected failures (e.g., file is not the right type).
         """
-        logger.warning(
+        logger.log(
+            level,
             "Model '%s' (v%s) failed for file '%s': %s",
             self.id,
             self.version,

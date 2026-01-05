@@ -380,7 +380,7 @@ def test_scan_file_success(mock_metadata_reader):
     result = file_api.scan_file(file_path, use_cache=False)
 
     # Assert that the reader was called with the right parameters
-    mock_metadata_reader.scan_file.assert_called_once_with(file_path=file_path, skip_cache=True)
+    mock_metadata_reader.scan_file.assert_called_once_with(file_path=file_path, skip_cache=True, follow_symlinks=True)
     assert result == mock_local_file
 
 
@@ -393,7 +393,9 @@ def test_scan_directory_success(mock_metadata_reader):
     result = file_api.scan_directory(dir_path, recursive=True, use_cache=True)
 
     # Assert the reader was called with the correct parameters
-    mock_metadata_reader.scan_directory.assert_called_once_with(dir_path=dir_path, recursive=True, skip_cache=False)
+    mock_metadata_reader.scan_directory.assert_called_once_with(
+        dir_path=dir_path, recursive=True, skip_cache=False, follow_symlinks=True
+    )
     assert result == mock_files
 
 

@@ -45,13 +45,13 @@ def mock_os_path_getsize(mocker):
 def test_get_quick_hash_success(mock_quick_hasher, mock_filesize):
     mock_quick_hasher.hash.return_value = "qh123"
     assert get_quick_hash("file.txt") == "qh123"
-    mock_quick_hasher.hash.assert_called_with(file_path="file.txt", file_size=1000)
+    mock_quick_hasher.hash.assert_called_with(file_path="file.txt", file_size=1000, follow_symlinks=True)
 
 
 def test_get_quick_hash_fallback(mock_quick_hasher, mock_filesize, mocker):
     """Test fallback to SHA256 when quick hash returns None."""
     mock_quick_hasher.hash.return_value = None
-    mocker.patch("dorsal.file.utils._calculate_sha256", return_value="sha123")
+    mocker.patch("dorsal.file.utils.FILE_HASHER.hash_sha256", return_value="sha123")
 
     assert get_quick_hash("file.txt", fallback_to_sha256=True) == "sha123"
 

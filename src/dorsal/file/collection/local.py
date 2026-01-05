@@ -41,7 +41,7 @@ from dorsal.common.exceptions import (
     SyncConflictError,
 )
 from dorsal.common.constants import API_MAX_BATCH_SIZE
-from dorsal.file.dorsal_file import LocalFile, _DorsalFile
+from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.metadata_reader import MetadataReader
 from dorsal.file.permissions import is_permitted_public_media_type
 from dorsal.session import get_shared_dorsal_client
@@ -74,11 +74,13 @@ class LocalFileCollection(_BaseFileCollection):
     performing bulk operations like tagging.
     """
 
+    files: Sequence[LocalFile]
+
     def __init__(
         self,
         source: str | list[LocalFile] | None = None,
         *,
-        files: Sequence[_DorsalFile] | None = None,
+        files: Sequence[LocalFile] | None = None,
         recursive: bool = False,
         client: DorsalClient | None = None,
         model_runner_pipeline: str | list[dict[str, Any]] | None = "default",
@@ -89,6 +91,7 @@ class LocalFileCollection(_BaseFileCollection):
         use_cache: bool = True,
         overwrite_cache: bool = False,
         offline: bool = False,
+        follow_symlinks: bool = True,
     ):
         """
         Initializes the LocalFileCollection.
@@ -123,7 +126,7 @@ class LocalFileCollection(_BaseFileCollection):
         self.remote_last_modified: datetime.datetime | None = None
         self.remote_file_count: int | None = None
 
-        final_files: Sequence[_DorsalFile]
+        final_files: Sequence[LocalFile]
         final_source_info: dict | None = source_info
 
         if files is not None:
@@ -141,6 +144,7 @@ class LocalFileCollection(_BaseFileCollection):
                 palette=palette,
                 skip_cache=not use_cache,
                 overwrite_cache=overwrite_cache,
+                follow_symlinks=follow_symlinks,
             )
             final_files = scan_files
             if self.warnings:
@@ -162,6 +166,12 @@ class LocalFileCollection(_BaseFileCollection):
 
         super().__init__(files=final_files, source_info=final_source_info)
         self._is_populated = True
+
+    def __iter__(self) -> Iterator[LocalFile]:
+        return iter(self.files)
+
+    def __getitem__(self, index: int) -> LocalFile:  # type: ignore[override]
+        return self.files[index]
 
     def __add__(self, other: "_BaseFileCollection") -> "LocalFileCollection":
         """
@@ -259,7 +269,7 @@ class LocalFileCollection(_BaseFileCollection):
         logger.info(f"Step 2/2: Applying {len(tags_to_validate)} tags to {len(self.files)} files...")
 
         rich_progress = None
-        iterator: Iterable[_DorsalFile]
+        iterator: Iterable[LocalFile]
         if is_jupyter_environment():
             iterator = tqdm(self.files, desc="Applying tags")
         elif console:

@@ -49,6 +49,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         palette=None,
         skip_cache=False,
         overwrite_cache=False,
+        follow_symlinks=True,
     )
     assert len(collection) == 1
     assert collection.warnings == ["warning1"]
@@ -302,3 +303,20 @@ def test_push_public_raises_error_for_restricted_types(mock_is_permitted):
     assert "Operation aborted" in error_msg
     assert "restricted media types" in error_msg
     assert "'secret_plans.doc' (application/secret)" in error_msg
+
+
+def test_collection_iteration_and_access_types():
+    file1 = MagicMock(spec=LocalFile)
+    file1.name = "file1"
+    file1._file_path = "/local/path/file1"
+
+    collection = LocalFileCollection(files=[file1])
+
+    items = list(collection)
+    assert len(items) == 1
+    assert items[0] is file1
+    assert items[0]._file_path == "/local/path/file1"
+
+    item = collection[0]
+    assert item is file1
+    assert item._file_path == "/local/path/file1"

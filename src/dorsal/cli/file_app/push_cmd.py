@@ -75,6 +75,13 @@ def push_file(
         bool,
         typer.Option("--json", help="Output the API response as a raw JSON object."),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to index target metadata vs indexing the link itself.",
+        ),
+    ] = True,
 ):
     """
     Pushes a single file's metadata to DorsalHub.
@@ -117,7 +124,12 @@ def push_file(
         )
 
     try:
-        local_file = LocalFile(file_path=str(path), use_cache=use_cache_value, overwrite_cache=overwrite_cache)
+        local_file = LocalFile(
+            file_path=str(path),
+            use_cache=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
+        )
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 

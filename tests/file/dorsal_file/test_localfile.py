@@ -99,7 +99,7 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
 
     # Assert
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
-        file_path=file_path, skip_cache=False, overwrite_cache=False
+        file_path=file_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True
     )
     assert lf.name == "local_test.txt"
     assert lf.hash == "a" * 64
@@ -726,3 +726,63 @@ def test_push_strict_raises_on_partial_failure(mock_metadata_reader, mock_file_r
 
     assert "Strict Mode enabled" in str(exc_info.value)
     assert "classification" in str(exc_info.value.summary)
+
+
+def test_symlink_resolution_enabled_by_default(mock_metadata_reader, mock_file_record_strict, fs):
+    """
+    Verifies that by default, LocalFile resolves a symlink to its target
+    for the MetadataReader (hashing), but preserves symlink info in local_attributes.
+    """
+    target_path = "/usr/bin/python3.14"
+    link_path = "/usr/bin/python3"
+
+    fs.create_file(target_path, contents="binary_content")
+    fs.create_symlink(link_path, target_path)
+
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(link_path)
+
+    args, kwargs = mock_metadata_reader._get_or_create_record.call_args
+    assert kwargs["file_path"] == target_path
+
+    data = lf.to_dict()
+    assert "local_attributes" in data
+    assert data["local_attributes"]["is_symlink"] is True
+    assert data["local_attributes"]["symlink_target"] == target_path
+    assert data["local_attributes"]["file_path"] == link_path
+
+
+def test_symlink_resolution_not_enabled(mock_metadata_reader, mock_file_record_strict, fs):
+    """
+    Verifies that if we pass follow_symlinks=False, we treat the link as the file.
+    """
+    target_path = "/usr/bin/python3.14"
+    link_path = "/usr/bin/python3"
+
+    fs.create_file(target_path, contents="binary_content")
+    fs.create_symlink(link_path, target_path)
+
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    LocalFile(link_path, follow_symlinks=False)
+
+    args, kwargs = mock_metadata_reader._get_or_create_record.call_args
+    assert kwargs["file_path"] == link_path
+
+
+def test_broken_symlink_fallback(mock_metadata_reader, mock_file_record_strict, fs):
+    """
+    Verifies that if a symlink is broken, LocalFile handles the crash gracefully
+    and defaults to processing the link path itself.
+    """
+    link_path = "/broken_link"
+
+    fs.create_symlink(link_path, "/does/not/exist")
+
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    LocalFile(link_path)
+
+    args, kwargs = mock_metadata_reader._get_or_create_record.call_args
+    assert kwargs["file_path"] == link_path

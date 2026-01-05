@@ -261,6 +261,10 @@ class DorsalClient:
 
     def _handle_api_error(self, response: requests.Response, suppress_warning_log: bool = False) -> NoReturn:
         status_code = response.status_code
+        if response.status_code in (401, 402, 403, 404):
+            log_level = logging.DEBUG
+        else:
+            log_level = logging.WARNING
         try:
             error_data: dict = response.json()
             detail = error_data.get("detail", response.text)
@@ -268,7 +272,8 @@ class DorsalClient:
             detail = response.text
 
         if not suppress_warning_log:
-            logger.warning(
+            logger.log(
+                log_level,
                 "API request to %s failed with status %s. Detail: %s",
                 response.url,
                 status_code,

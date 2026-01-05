@@ -487,6 +487,7 @@ class ModelRunner:
         schema_id: str | None = None,
         options: dict[str, Any] | None = None,
         ignore_linter_errors: bool = False,
+        follow_symlinks: bool = True,
     ) -> "RunModelResult":
         """
         Runs a single annotation model and validates its output.
@@ -509,6 +510,8 @@ class ModelRunner:
                                This is `None` only when running the base model itself.
             schema_id: The target schema ID for this annotation.
             options: A dictionary of options to pass to the model's `.main()` method.
+            follow_symlinks: If True (default), the model will treat the path as resolving
+                              to its target. If False, it may treat it as a raw node.
 
         Returns:
             A RunModelResult object containing the model's output or an error.
@@ -536,6 +539,8 @@ class ModelRunner:
         try:
             logger.debug("Instantiating model '%s' for file '%s'", model_name, file_path)
             annotation_model_instance = annotation_model(file_path=file_path)  # type: ignore[call-arg]
+
+            annotation_model_instance.follow_symlinks = follow_symlinks
 
             if base_model_result and base_model_result.record:
                 for key, value in base_model_result.record.items():
@@ -767,16 +772,36 @@ class ModelRunner:
                 logger.debug("Dependency NOT MET: %s. Model will be skipped.", dep_error)
                 return False
 
-    def run(self, file_path: str) -> "FileRecordStrict":
+    def _validate_file_path(self, file_path: str, follow_symlinks: bool) -> None:
+        """
+        Validates that the file path exists and is suitable for processing based on the mode.
+
+        Raises:
+            FileNotFoundError: If path doesn't exist or isn't a valid target for the mode.
+            IsADirectoryError: If path is a directory.
+        """
+        if not os.path.lexists(file_path):
+            raise FileNotFoundError(f"The specified file_path does not exist: {file_path}")
+
+        if os.path.isdir(file_path):
+            raise IsADirectoryError(f"The specified path is a directory: {file_path}")
+
+        if follow_symlinks:
+            if not os.path.isfile(file_path):
+                if os.path.islink(file_path):
+                    raise FileNotFoundError(f"The specified path is a broken symbolic link: {file_path}")
+                raise FileNotFoundError(f"The specified path is not a regular file: {file_path}")
+        else:
+            if not os.path.isfile(file_path) and not os.path.islink(file_path):
+                raise FileNotFoundError(f"Cannot process: {file_path}")
+
+    def run(self, file_path: str, follow_symlinks: bool = True) -> "FileRecordStrict":
         from dorsal.file.configs.model_runner import RunModelResult
 
         logger.debug("Starting model execution pipeline for file: %s", file_path)
-        all_model_results: "list[RunModelResult]" = []
+        self._validate_file_path(file_path, follow_symlinks)
 
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"The specified file_path does not exist: {file_path}")
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError(f"The specified file_path is not a file: {file_path}")
+        all_model_results: "list[RunModelResult]" = []
 
         logger.debug("Processing with base file model using effective options...")
         try:
@@ -795,6 +820,7 @@ class ModelRunner:
             file_path=file_path,
             schema_id=self.pre_model.schema_id,
             options=self.pre_model_options,
+            follow_symlinks=follow_symlinks,
         )
 
         if base_model_result.error:
@@ -834,6 +860,15 @@ class ModelRunner:
                 annotator_model_version = annotator_class.version
                 annotator_model_variant = annotator_class.variant
                 annotator_model_id = annotator_class.id
+
+                if not follow_symlinks and os.path.islink(file_path):
+                    if annotator_class.follow_symlinks:
+                        logger.debug(
+                            "Skipping model '%s' for symlink '%s': Not resolving symbolic links.",
+                            annotator_model_id,
+                            file_path,
+                        )
+                        continue
 
                 proceed_with_model = True
                 if step_config.dependencies:
@@ -875,6 +910,7 @@ class ModelRunner:
                         schema_id=step_config.schema_id,
                         options=step_config.options,
                         ignore_linter_errors=step_config.ignore_linter_errors,
+                        follow_symlinks=follow_symlinks,
                     )
                     all_model_results.append(model_run_result)
                     if model_run_result.error:

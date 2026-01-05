@@ -264,7 +264,7 @@ class TestMetadataReaderInternalRunModels:
         result = reader._run_models(file_path=file_path)
 
         assert result is mock_record
-        reader._test_mock_runner.run.assert_called_once_with(file_path=file_path)
+        reader._test_mock_runner.run.assert_called_once_with(file_path=file_path, follow_symlinks=True)
 
     def test_run_models_file_not_found(self, metadata_reader_base, caplog):
         reader = metadata_reader_base

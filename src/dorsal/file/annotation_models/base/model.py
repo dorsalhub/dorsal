@@ -36,6 +36,7 @@ class FileCoreAnnotationModel(AnnotationModel):
 
     id: str = "dorsal/base"
     version: str = "1.0.0"
+    follow_symlinks: bool = False
 
     def _get_file_hashes(self, calculate_similarity_hash: bool = False) -> dict[str, str]:
         """Calculates cryptographic hashes for the file.
@@ -51,8 +52,13 @@ class FileCoreAnnotationModel(AnnotationModel):
             FileNotFoundError, IOError: If the file cannot be read by `multi_hash`.
 
         """
+        logger.debug("I'm getting the file hashes, that's my job. %s", self.follow_symlinks)
         try:
-            return multi_hash(file_path=self.file_path, similarity_hash=calculate_similarity_hash)
+            return multi_hash(
+                file_path=self.file_path,
+                similarity_hash=calculate_similarity_hash,
+                follow_symlinks=self.follow_symlinks,
+            )
         except Exception as e:
             logger.error(
                 "Error calculating hashes for '%s': %s",
@@ -73,9 +79,11 @@ class FileCoreAnnotationModel(AnnotationModel):
 
         """
         try:
-            if os.path.islink(self.file_path):
+            if not self.follow_symlinks and os.path.islink(self.file_path):
                 return os.lstat(self.file_path).st_size
-            return os.stat(self.file_path).st_size
+
+            return os.path.getsize(self.file_path)
+
         except OSError as e:
             logger.error("Error getting filesize for '%s': %s", self.file_path, e, exc_info=True)
             raise
@@ -112,7 +120,11 @@ class FileCoreAnnotationModel(AnnotationModel):
         Returns:
             The determined media type string.
         """
-        return get_media_type(file_path=self.file_path, file_extension=file_extension)
+        return get_media_type(
+            file_path=self.file_path,
+            file_extension=file_extension,
+            follow_symlinks=self.follow_symlinks,
+        )
 
     def main(self, calculate_similarity_hash: bool = False) -> dict[str, Any] | None:
         """

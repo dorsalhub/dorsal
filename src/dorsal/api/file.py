@@ -835,7 +835,13 @@ def index_directory(
 
 
 def scan_directory(
-    dir_path: str, recursive: bool = False, *, api_key: str | None = None, use_cache: bool = True, offline: bool = False
+    dir_path: str,
+    recursive: bool = False,
+    *,
+    api_key: str | None = None,
+    use_cache: bool = True,
+    offline: bool = False,
+    follow_symlinks: bool = True,
 ) -> list[LocalFile]:
     """Scans a directory and returns a list of LocalFile objects.
 
@@ -895,7 +901,9 @@ def scan_directory(
     )
 
     try:
-        local_files = effective_reader.scan_directory(dir_path=dir_path, recursive=recursive, skip_cache=not use_cache)
+        local_files = effective_reader.scan_directory(
+            dir_path=dir_path, recursive=recursive, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+        )
         logger.debug(
             "Effective MetadataReader.scan_directory completed for dir_path='%s'. Found %d LocalFile objects.",
             dir_path,
@@ -921,7 +929,12 @@ def scan_directory(
 
 
 def scan_file(
-    file_path: str, *, api_key: str | None = None, use_cache: bool = True, offline: bool = False
+    file_path: str,
+    *,
+    api_key: str | None = None,
+    use_cache: bool = True,
+    offline: bool = False,
+    follow_symlinks: bool = True,
 ) -> LocalFile:
     """Processes a single file and returns a LocalFile object.
 
@@ -970,7 +983,9 @@ def scan_file(
     logger.debug("High-level scan_file calling effective MetadataReader for file_path='%s'.", file_path)
 
     try:
-        local_file = effective_reader.scan_file(file_path=file_path, skip_cache=not use_cache)
+        local_file = effective_reader.scan_file(
+            file_path=file_path, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+        )
         logger.debug(
             "Effective MetadataReader.scan_file completed for file_path='%s'. Hash: %s",
             file_path,

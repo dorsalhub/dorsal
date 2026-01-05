@@ -32,6 +32,7 @@ from dorsal.file.utils.size import human_filesize
 from dorsal.common import constants
 
 if TYPE_CHECKING:
+    from dorsal.file.dorsal_file import LocalFile
     from dorsal.file.collection.local import LocalFileCollection
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,13 @@ def scan_directory(
             rich_help_panel="Cache Options",
         ),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to scan target content vs scanning the link itself.",
+        ),
+    ] = True,
 ):
     """
     Scans a directory, generates metadata for all files, and displays or saves the results.
@@ -212,6 +220,7 @@ def scan_directory(
             recursive=recursive,
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")
@@ -442,8 +451,18 @@ def _print_file_details_table(
     for file in files_to_display:
         modified_date_str = file.date_modified.strftime("%Y-%m-%d %H:%M:%S")
 
+        path_obj = pathlib.Path(file._file_path)
+        display_name = file.name
+
+        if path_obj.is_symlink():
+            try:
+                target = path_obj.readlink()
+                display_name = f"{escape(path_obj.name)} [dim italic]→ {escape(str(target))}[/]"
+            except OSError:
+                display_name = f"{escape(path_obj.name)} [dim italic](symlink)[/]"
+
         table.add_row(
-            file.name,
+            display_name,
             human_filesize(file.size),
             file.media_type,
             modified_date_str,

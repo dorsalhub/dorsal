@@ -16,6 +16,7 @@ from __future__ import annotations
 from functools import cached_property
 import logging
 import os
+import pathlib
 from typing import Any, Iterable, Literal, Sequence, Type, TYPE_CHECKING, overload
 
 import requests
@@ -168,7 +169,7 @@ class MetadataReader:
 
         return self._client_instance
 
-    def _run_models(self, file_path: str) -> FileRecordStrict:
+    def _run_models(self, file_path: str, follow_symlinks: bool = True) -> FileRecordStrict:
         """
         Internal helper to run local file models on a given file path.
 
@@ -184,7 +185,7 @@ class MetadataReader:
             DorsalClientError: For other errors during model execution, wrapped for consistency.
         """
         try:
-            return self._model_runner.run(file_path=file_path)
+            return self._model_runner.run(file_path=file_path, follow_symlinks=follow_symlinks)
         except FileNotFoundError:
             logger.error("File not found by ModelRunner: %s", file_path)
             raise
@@ -199,7 +200,7 @@ class MetadataReader:
             ) from e
 
     def _get_or_create_record(
-        self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False
+        self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False, follow_symlinks: bool = True
     ) -> FileRecordStrict:
         """
         Gets a file record from cache or creates it by running the ModelRunner.
@@ -241,7 +242,7 @@ class MetadataReader:
 
         logger.debug("Cache miss or skipped for file: %s. Running models.", file_path)
         try:
-            file_record = self._model_runner.run(file_path=file_path)
+            file_record = self._model_runner.run(file_path=file_path, follow_symlinks=follow_symlinks)
 
             if not skip_cache or overwrite_cache:
                 abspath = os.path.abspath(file_path)
@@ -273,6 +274,7 @@ class MetadataReader:
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
     ) -> tuple[list[FileRecordStrict], dict[str, str]]:
         """
         Scan directory, and sends each file through the ModelRunner pipeline.
@@ -374,8 +376,18 @@ class MetadataReader:
                     )
                     break
                 try:
+                    processing_path = file_path
+                    if follow_symlinks:
+                        try:
+                            path_obj = pathlib.Path(file_path)
+                            resolved = path_obj.resolve()
+                            if resolved.exists():
+                                processing_path = str(resolved)
+                        except (OSError, RuntimeError) as err:
+                            logger.debug("Failed to resolve symlink: %s - %s", file_path, err)
+                            pass
                     file_record = self._get_or_create_record(
-                        file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
+                        file_path=processing_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
                     )
                     if not hasattr(file_record, "hash") or not file_record.hash:
                         logger.error(
@@ -616,6 +628,7 @@ class MetadataReader:
         fail_fast: bool = True,
         console: "Console | None" = None,
         palette: dict | None = None,
+        follow_symlinks: bool = True,
     ) -> dict:
         """Scans, processes, and indexes all files in a directory to DorsalHub.
 
@@ -686,7 +699,13 @@ class MetadataReader:
             raise DorsalError("Cannot index directory: MetadataReader is in OFFLINE mode.")
 
         records_to_index_list, file_hash_to_path_map = self.generate_processed_records_from_directory(
-            dir_path=dir_path, recursive=recursive, limit=None, skip_cache=skip_cache, console=console, palette=palette
+            dir_path=dir_path,
+            recursive=recursive,
+            limit=None,
+            skip_cache=skip_cache,
+            console=console,
+            palette=palette,
+            follow_symlinks=follow_symlinks,
         )
 
         if not records_to_index_list:
@@ -814,6 +833,7 @@ class MetadataReader:
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
     ) -> list[LocalFile]: ...
 
     @overload
@@ -827,6 +847,7 @@ class MetadataReader:
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
     ) -> tuple[list[LocalFile], list[str]]: ...
 
     def scan_directory(
@@ -839,6 +860,7 @@ class MetadataReader:
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
     ) -> list[LocalFile] | tuple[list[LocalFile], list[str]]:
         """Scans a directory and runs the pipeline on all found files.
 
@@ -932,6 +954,7 @@ class MetadataReader:
                         use_cache=not skip_cache,
                         offline=self.offline,
                         overwrite_cache=overwrite_cache,
+                        follow_symlinks=follow_symlinks,
                     )
                     local_files.append(local_file_obj)
                 except Exception as e:
@@ -953,7 +976,9 @@ class MetadataReader:
             return local_files, warnings
         return local_files
 
-    def scan_file(self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False) -> LocalFile:
+    def scan_file(
+        self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False, follow_symlinks: bool = True
+    ) -> LocalFile:
         """Runs the metadata extraction pipeline on a single file.
 
         This method processes a single local file through the configured
@@ -995,6 +1020,7 @@ class MetadataReader:
                 use_cache=not skip_cache,
                 overwrite_cache=overwrite_cache,
                 offline=self.offline,
+                follow_symlinks=follow_symlinks,
             )
         except FileNotFoundError:
             logger.error("File not found for reading: %s", file_path)
