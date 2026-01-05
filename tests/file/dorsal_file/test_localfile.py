@@ -14,6 +14,7 @@
 
 import json
 import os
+import pathlib
 import pytest
 from unittest.mock import patch, MagicMock
 import datetime
@@ -674,7 +675,7 @@ def test_push_strict_raises_on_partial_failure(mock_metadata_reader, mock_file_r
     assert "classification" in str(exc_info.value.summary)
 
 
-def test_symlink_resolution_enabled_by_default(mock_metadata_reader, mock_file_record_strict, fs):
+def test_symlink_resolution_enabled_by_default(mock_metadata_reader, mock_file_record_strict, fs, mocker):
     """
     Verifies that by default, LocalFile resolves a symlink to its target
     for the MetadataReader (hashing), but preserves symlink info in local_attributes.
@@ -686,6 +687,9 @@ def test_symlink_resolution_enabled_by_default(mock_metadata_reader, mock_file_r
     fs.create_symlink(link_path, target_path)
 
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    expected_target_abs = os.path.abspath(target_path)
+    mocker.patch("pathlib.Path.resolve", return_value=pathlib.Path(expected_target_abs))
 
     lf = LocalFile(link_path)
 
