@@ -31,7 +31,7 @@ class PDFAnnotationModel(AnnotationModel):
     """Extract metadata from PDF files using pypdfium2."""
 
     id: str = "dorsal/pdf"
-    version: str = "1.0.1"
+    version: str = "1.1.0"
     variant: str = "pypdfium2"
 
     def _normalize_pdf_metadata(self, raw_metadata: dict[str, Any]) -> dict[str, Any]:
