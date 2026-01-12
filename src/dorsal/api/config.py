@@ -183,9 +183,10 @@ def register_model(
 
     if is_open_schema:
         schema_name = schema_id.removeprefix("open/")
+        clean_name = schema_name.replace("-", "_")
         validator_path = (
             "dorsal.file.validators.open_schema",
-            f"{schema_name}_validator",
+            f"{clean_name}_validator",
         )
         if validation_model is not None:
             raise ValueError(
