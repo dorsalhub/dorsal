@@ -14,13 +14,25 @@
 
 import logging
 from functools import lru_cache
-from typing import List
+from typing import TYPE_CHECKING
 
 from dorsal.common.validators.json_schema import (
     JsonSchemaValidator,
     get_json_schema_validator,
 )
 from dorsal.file.schemas import OpenSchemaName, get_open_schema, OPEN_SCHEMA_NAME_MAP
+
+if TYPE_CHECKING:
+    audio_transcription: JsonSchemaValidator
+    classification: JsonSchemaValidator
+    document_extraction: JsonSchemaValidator
+    embedding: JsonSchemaValidator
+    entity_extraction: JsonSchemaValidator
+    generic: JsonSchemaValidator
+    geolocation: JsonSchemaValidator
+    llm_output: JsonSchemaValidator
+    object_detection: JsonSchemaValidator
+    regression: JsonSchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +73,7 @@ def __getattr__(name: str) -> JsonSchemaValidator:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     """
     Expose dynamic attributes to dir() calls (e.g. for autocomplete or introspection).
     """

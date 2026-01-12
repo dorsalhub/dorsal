@@ -39,8 +39,8 @@ def __getattr__(name: str):
 
     try:
         return getattr(open_schema, name)
-    except AttributeError:
-        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+    except AttributeError as err:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'") from err
 
 
 def __dir__() -> List[str]:
