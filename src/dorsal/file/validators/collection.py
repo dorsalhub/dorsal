@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -70,11 +70,3 @@ class HydratedSingleCollectionResponse(BaseModel):
     collection: FileCollection
     files: list[FileRecordDateTime]
     pagination: Pagination
-
-
-class BulkDetailsRequest(BaseModel):
-    hash_strings: list[str] = Field(..., min_length=1)
-    private: bool = Field(
-        False,
-        description="Specifies whether to look for the hashes in public (False) or private (True) file records.",
-    )

@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import pytest
 from pydantic import BaseModel, ValidationError as PydanticValidationError
 from unittest.mock import MagicMock
 
+from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
 from dorsal.common.exceptions import (
     BaseModelProcessingError,
     DependencyNotMetError,
@@ -689,7 +690,7 @@ class TestModelRunnerAdvanced:
 
         # Mock get_json_schema_validator to return a dummy validator
         mock_validator = MagicMock(spec=JsonSchemaValidator)
-        mock_validator.schema = {"version": "0.1.0"}
+        mock_validator.schema = {"version": OPEN_VALIDATION_SCHEMAS_VER}
         mocker.patch("dorsal.common.validators.json_schema.get_json_schema_validator", return_value=mock_validator)
 
         # We mock the module-level function used by the runner

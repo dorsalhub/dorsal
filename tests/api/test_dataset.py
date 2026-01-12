@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError
 
 from dorsal.api import dataset as dataset_api
 from dorsal.common.exceptions import (

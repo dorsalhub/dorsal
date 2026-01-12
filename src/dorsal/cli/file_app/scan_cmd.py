@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import typer
 import pathlib
 import datetime
 import json
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from dorsal.common import constants
 from dorsal.cli.views.file import create_file_info_panel
@@ -116,6 +116,13 @@ def scan_file(
             rich_help_panel="Output Options",
         ),
     ] = "default",
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to scan target content vs scanning the link itself.",
+        ),
+    ] = True,
 ):
     """
     Scans and displays the full metadata for a file, with options to save reports.
@@ -158,14 +165,31 @@ def scan_file(
         console.print(f"📄 Scanning metadata for [{palette['primary_value']}]{path.name}[/]")
 
     try:
-        local_file = LocalFile(file_path=str(path), use_cache=use_cache_value, overwrite_cache=overwrite_cache)
+        local_file = LocalFile(
+            file_path=str(path),
+            use_cache=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
+        )
 
-        record_dict = local_file.to_dict(mode="json")
-        record_dict["local_filesystem"] = {
-            "full_path": local_file._file_path,
-            "date_created": (local_file.date_created.isoformat() if hasattr(local_file, "date_created") else None),
-            "date_modified": (local_file.date_modified.isoformat() if hasattr(local_file, "date_modified") else None),
-        }
+        record_dict: dict[str, Any] = local_file.to_dict(mode="json")
+        if "local_attributes" in record_dict:
+            record_dict["local_filesystem"] = record_dict["local_attributes"]
+            record_dict["local_filesystem"]["full_path"] = record_dict["local_attributes"].get("file_path", str(path))
+
+            for key in ["date_created", "date_modified", "date_accessed"]:
+                val = record_dict["local_filesystem"].get(key)
+                if isinstance(val, datetime.datetime):
+                    record_dict["local_filesystem"][key] = val.isoformat()
+
+        else:
+            record_dict["local_filesystem"] = {
+                "full_path": local_file._file_path,
+                "date_created": (local_file.date_created.isoformat() if hasattr(local_file, "date_created") else None),
+                "date_modified": (
+                    local_file.date_modified.isoformat() if hasattr(local_file, "date_modified") else None
+                ),
+            }
 
         if json_output:
             console.print(json.dumps(record_dict, indent=2, default=str, ensure_ascii=False))

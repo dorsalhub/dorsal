@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -285,7 +285,7 @@ class DorsalCache:
 
         cached_mod_time = row["modified_time"]
         try:
-            current_mod_time = os.path.getmtime(path)
+            current_mod_time = os.lstat(path).st_mtime
         except FileNotFoundError:
             logger.debug(f"Cache stale: File not found on disk at path: {path}")
             return None
@@ -369,7 +369,7 @@ class DorsalCache:
                 continue
 
             try:
-                current_mod_time = os.path.getmtime(path)
+                current_mod_time = os.lstat(path).st_mtime
                 if current_mod_time != cached_mod_time:
                     logger.debug(f"Marking stale (mtime mismatch): {path}")
                     stale_paths.append(path)

@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,13 +44,13 @@ def push_directory(
             help="The directory path containing files to scan and push.",
         ),
     ],
-    private: Annotated[
+    public: Annotated[
         bool,
         typer.Option(
-            "--private/--public",
-            help="Index records as private or public.",
+            "--public/--private",
+            help="Index records as public or private.",
         ),
-    ] = True,
+    ] = False,
     recursive: Annotated[
         bool,
         typer.Option(
@@ -112,6 +112,21 @@ def push_directory(
             rich_help_panel="Cache Options",
         ),
     ] = False,
+    fail_fast: Annotated[
+        bool,
+        typer.Option(
+            "--fail-fast/--no-fail-fast",
+            help="Stop immediately if a batch fails (HTTP error).",
+        ),
+    ] = True,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Fail immediately if any file in the directory fails to index (Partial Success).",
+            rich_help_panel="Integrity Options",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -119,6 +134,13 @@ def push_directory(
             help="Output the final summary as a raw JSON object to stdout for scripting.",
         ),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to index target metadata vs indexing the link itself.",
+        ),
+    ] = True,
 ):
     """
     Scans a directory, pushes all file metadata to DorsalHub,
@@ -133,7 +155,7 @@ def push_directory(
     )
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
-    from dorsal.common.exceptions import AuthError, DorsalError, DorsalOfflineError
+    from dorsal.common.exceptions import AuthError, DorsalError, DorsalOfflineError, PartialIndexingError
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
@@ -172,6 +194,7 @@ def push_directory(
             palette=palette,
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
         )
 
         if not collection:
@@ -207,7 +230,7 @@ def push_directory(
                     message="Internal Error: Collection name was not set before creation.",
                 )
             remote_collection = collection.create_remote_collection(
-                name=collection_name, description=collection_desc, is_private=private
+                name=collection_name, description=collection_desc, public=public
             )
 
             if json_output:
@@ -223,14 +246,19 @@ def push_directory(
                 console.print(success_panel)
 
         if not create_collection:
-            summary = collection.push(private=private, console=progress_console, palette=palette)
+            summary = collection.push(
+                public=public,
+                console=progress_console,
+                palette=palette,
+                fail_fast=fail_fast,
+                strict=strict,
+            )
 
             is_duplicate_error = False
-            if summary.get("failed_api_batches", 0) > 0:
-                for detail in summary.get("batch_processing_details", []):
-                    if detail.get("status") == "failure" and "Cannot process duplicate files" in detail.get(
-                        "error_message", ""
-                    ):
+
+            if summary.get("failed", 0) > 0:
+                for detail in summary.get("errors", []):
+                    if "Cannot process duplicate files" in detail.get("error_message", ""):
                         is_duplicate_error = True
                         break
 
@@ -261,11 +289,37 @@ def push_directory(
             else:
                 _display_summary_panel(
                     summary=summary,
-                    private=private,
+                    public=public,
                     palette=palette,
                     use_cache=use_cache_value,
                     collection=collection,
                 )
+
+    except PartialIndexingError as e:
+        if json_output:
+            error_output = {"error": "PartialIndexingError", "message": e, "summary": e.summary}
+            console.print(json.dumps(error_output, indent=2, default=str, ensure_ascii=False))
+        else:
+            console.print(f"[{palette['error']}]Strict Mode Failed:[/{palette['error']}] {e}")
+
+            summary = e.summary
+            if summary and (summary.get("failed", 0) > 0 or summary.get("errors") or summary.get("failures")):
+                failed_table = Table(
+                    title="Strict Integrity Failures", expand=True, header_style=palette["table_header"], style="red"
+                )
+                failed_table.add_column("Error Detail", style="red")
+
+                if "failures" in summary:
+                    for failure in summary["failures"]:
+                        failed_table.add_row(escape(str(failure)))
+                elif "errors" in summary:
+                    for error in summary["errors"]:
+                        msg = error.get("message") if isinstance(error, dict) else str(error)
+                        failed_table.add_row(escape(str(msg)))
+
+                console.print(failed_table)
+
+        exit_cli(code=EXIT_CODE_ERROR, message="Directory push failed strict integrity check.")
 
     except DorsalError as err:
         exit_cli(code=EXIT_CODE_ERROR, message=str(err))
@@ -316,7 +370,7 @@ def _display_dry_run_panel(collection: "LocalFileCollection", use_cache: bool, p
 
 def _display_summary_panel(
     summary: dict,
-    private: bool,
+    public: bool,
     palette: dict,
     use_cache: bool,
     collection: "LocalFileCollection",
@@ -327,36 +381,42 @@ def _display_summary_panel(
     console = get_rich_console()
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
-    access_level_str = "Private" if private else "Public"
-    access_level_style = (
-        palette.get("access_private", "default") if private else palette.get("access_public", "default")
-    )
+    access_level_str = "Public" if public else "Private"
+    access_level_style = palette.get("access_public", "default") if public else palette.get("access_private", "default")
 
     summary_table = Table.grid(expand=True)
     summary_table.add_column(justify="right", style=palette["key"], width=25)
     summary_table.add_column(justify="left")
     summary_table.add_row("Access Level:", Text(access_level_str, style=access_level_style))
+
     summary_table.add_row(
         "Files Scanned:",
-        f"{summary.get('total_records_in_collection')} ({files_from_cache} from cache)",
-    )
-    summary_table.add_row("File Records to Push:", str(summary.get("total_records_to_push")))
-    summary_table.add_row(
-        "File Records Accepted:",
-        Text(str(summary.get("total_records_accepted_by_api")), style=palette["success"]),
+        f"{summary.get('total_records')} ({files_from_cache} from cache)",
     )
 
-    if summary.get("total_batches_created", 0) > 1:
+    summary_table.add_row(
+        "File Records Accepted:",
+        Text(str(summary.get("success")), style=palette["success"]),
+    )
+
+    batches = summary.get("batches", [])
+    total_batches = len(batches)
+
+    if total_batches > 1:
+        successful_batches = sum(1 for b in batches if b["status"] == "success")
+        failed_batches = total_batches - successful_batches
+
         summary_table.add_row()
-        summary_table.add_row("Batches Created:", str(summary.get("total_batches_created")))
+        summary_table.add_row("Batches Created:", str(total_batches))
         summary_table.add_row(
             "Successful Batches:",
-            Text(str(summary.get("successful_api_batches")), style=palette["success"]),
+            Text(str(successful_batches), style=palette["success"]),
         )
-        summary_table.add_row(
-            "Failed Batches:",
-            Text(str(summary.get("failed_api_batches")), style=palette["error"]),
-        )
+        if failed_batches > 0:
+            summary_table.add_row(
+                "Failed Batches:",
+                Text(str(failed_batches), style=palette["error"]),
+            )
 
     console.print(
         Panel(
@@ -367,7 +427,7 @@ def _display_summary_panel(
         )
     )
 
-    if summary.get("failed_api_batches", 0) > 0:
+    if summary.get("failed", 0) > 0 or summary.get("errors"):
         console.print(f"\n[{palette['error']}]⚠️ Some batches failed to process:[/{palette['error']}]")
         failed_table = Table(
             title="Failed Batch Details",
@@ -377,11 +437,11 @@ def _display_summary_panel(
         failed_table.add_column("Batch #", style=palette["primary_value"], ratio=15)
         failed_table.add_column("Error Type", style=palette["warning"], ratio=25)
         failed_table.add_column("Error Message", ratio=60)
-        for detail in summary.get("batch_processing_details", []):
-            if detail["status"] == "failure":
-                failed_table.add_row(
-                    str(detail["batch_number"]),
-                    detail["error_type"],
-                    detail["error_message"],
-                )
+
+        for error in summary.get("errors", []):
+            failed_table.add_row(
+                str(error.get("batch_index", "?")),
+                error.get("error_type", "Unknown"),
+                error.get("error_message", "No message"),
+            )
         console.print(failed_table)

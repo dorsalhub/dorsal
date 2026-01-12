@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,36 +27,30 @@ runner = CliRunner()
 
 TEST_DATA_DIR = "tests/data"
 
-# A sample summary to be returned by collection.push()
 MOCK_PUSH_SUMMARY = {
-    "total_records_in_collection": 2,
-    "total_records_to_push": 2,
-    "total_records_accepted_by_api": 2,
-    "total_batches_created": 1,
-    "successful_api_batches": 1,
-    "failed_api_batches": 0,
-    "batch_processing_details": [],
+    "total_records": 2,
+    "processed": 2,
+    "success": 2,
+    "failed": 0,
+    "batches": [{"batch_index": 0, "status": "success", "records_in_batch": 2}],
+    "errors": [],
 }
 
 
 @pytest.fixture
 def mock_push_dir_cmd(mocker):
     """Mocks backend dependencies for the `dir push` command."""
-    # Patch the LocalFileCollection at its source due to lazy loading
     mock_collection_class = mocker.patch("dorsal.file.collection.local.LocalFileCollection")
 
-    # Configure the instance that will be returned by the constructor
     mock_instance = mock_collection_class.return_value
     mock_instance.warnings = []
     mock_instance.__len__.return_value = 2
     mock_instance.push.return_value = MOCK_PUSH_SUMMARY
 
-    # Mock the remote collection returned when creating a new one
     mock_remote_collection = MagicMock()
     mock_remote_collection.metadata.private_url = "https://dorsal.hub/c/user/mock-collection"
     mock_instance.create_remote_collection.return_value = mock_remote_collection
 
-    # Patch the helper functions to isolate their logic and prevent actual output
     mocker.patch.object(push_dir_cmd, "_display_dry_run_panel")
     mocker.patch.object(push_dir_cmd, "_display_summary_panel")
 
@@ -73,7 +67,9 @@ def test_push_dir_success_default(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=True, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(
+        public=False, console=ANY, palette=ANY, fail_fast=True, strict=False
+    )
     mock_push_dir_cmd["display_summary"].assert_called_once()
     mock_push_dir_cmd["display_dry_run"].assert_not_called()
 
@@ -83,7 +79,9 @@ def test_push_dir_public(mock_push_dir_cmd):
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR, "--public"])
 
     assert result.exit_code == 0
-    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(private=False, console=ANY, palette=ANY)
+    mock_push_dir_cmd["collection_instance"].push.assert_called_once_with(
+        public=True, console=ANY, palette=ANY, fail_fast=True, strict=False
+    )
 
 
 def test_push_dir_dry_run(mock_push_dir_cmd):
@@ -105,10 +103,10 @@ def test_push_dir_ignore_duplicates(mock_push_dir_cmd):
     mock_file2 = MagicMock()
     mock_file2.hash = "hash_B"
     mock_file3 = MagicMock()
-    mock_file3.hash = "hash_A"  # This is a duplicate of file 1
+    mock_file3.hash = "hash_A"
     mock_files = [mock_file1, mock_file2, mock_file3]
 
-    mock_collection_instance.__len__.return_value = len(mock_files)  # Original count is 3
+    mock_collection_instance.__len__.return_value = len(mock_files)
     mock_collection_instance.__iter__.return_value = iter(mock_files)
 
     result = runner.invoke(app, ["dir", "push", TEST_DATA_DIR, "--ignore-duplicates"])
@@ -134,11 +132,9 @@ def test_push_dir_create_collection_success(mock_rich_console, mock_push_dir_cmd
 
     assert result.exit_code == 0
     mock_push_dir_cmd["collection_instance"].create_remote_collection.assert_called_once_with(
-        name="MyNewCollection", description=None, is_private=True
+        name="MyNewCollection", description=None, public=False
     )
-    # Verify no standard push was attempted
     mock_push_dir_cmd["collection_instance"].push.assert_not_called()
-    # Check that the success panel was printed
     assert "Successfully pushed 2 files and created collection" in mock_rich_console.print.call_args.args[0].renderable
 
 
@@ -151,7 +147,7 @@ def test_push_dir_json_output(mock_rich_console, mock_push_dir_cmd):
     json_output_str = mock_rich_console.print.call_args.args[0]
     data = json.loads(json_output_str)
 
-    assert data["total_records_accepted_by_api"] == 2
+    assert data["success"] == 2
     mock_push_dir_cmd["display_summary"].assert_not_called()
 
 
@@ -159,12 +155,14 @@ def test_push_dir_duplicate_error(mock_rich_console, mock_push_dir_cmd):
     """Tests the specific error handling for duplicate file errors."""
     failed_summary = {
         **MOCK_PUSH_SUMMARY,
-        "failed_api_batches": 1,
-        "successful_api_batches": 0,
-        "batch_processing_details": [
+        "success": 0,
+        "failed": 2,
+        "errors": [
             {
+                "batch_index": 0,
                 "status": "failure",
                 "error_message": "Cannot process duplicate files in the same request.",
+                "error_type": "DuplicateFileError",
             }
         ],
     }

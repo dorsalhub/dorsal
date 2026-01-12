@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,10 +35,10 @@ def push_file(
             help="The path to the single file to push to DorsalHub.",
         ),
     ],
-    private: Annotated[
+    public: Annotated[
         bool,
-        typer.Option("--private/--public", help="Index the file record as private or public."),
-    ] = True,
+        typer.Option("--public/--private", help="Index the file record as public or private."),
+    ] = False,
     use_cache: Annotated[
         bool,
         typer.Option(
@@ -63,10 +63,25 @@ def push_file(
             rich_help_panel="Cache Options",
         ),
     ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Fail with an error code if any metadata is rejected (Partial Success).",
+            rich_help_panel="Integrity Options",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output the API response as a raw JSON object."),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to index target metadata vs indexing the link itself.",
+        ),
+    ] = True,
 ):
     """
     Pushes a single file's metadata to DorsalHub.
@@ -78,7 +93,12 @@ def push_file(
         exit_cli,
     )
     from dorsal.file.dorsal_file import LocalFile
-    from dorsal.common.exceptions import DorsalClientError, DorsalOfflineError, AuthError
+    from dorsal.common.exceptions import (
+        DorsalClientError,
+        DorsalOfflineError,
+        AuthError,
+        PartialIndexingError,
+    )
 
     console = get_rich_console()
 
@@ -96,7 +116,7 @@ def push_file(
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
     palette: dict[str, str] = ctx.obj["palette"]
-    access_level_str = "private" if private else "public"
+    access_level_str = "public" if public else "private"
 
     if not json_output:
         console.print(
@@ -104,12 +124,17 @@ def push_file(
         )
 
     try:
-        local_file = LocalFile(file_path=str(path), use_cache=use_cache_value, overwrite_cache=overwrite_cache)
+        local_file = LocalFile(
+            file_path=str(path),
+            use_cache=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
+        )
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
         with console.status("Pushing to DorsalHub..."):
-            api_response = local_file.push(private=private)
+            api_response = local_file.push(public=public, strict=strict)
 
         if json_output:
             console.print(json.dumps(api_response.model_dump(mode="json"), indent=2, ensure_ascii=False))
@@ -148,6 +173,24 @@ def push_file(
                 border_style=panel_border_style,
             )
         )
+
+    except PartialIndexingError as e:
+        if json_output:
+            error_payload = {
+                "error": "PartialIndexingError",
+                "message": str(e),
+                "summary": e.summary,
+            }
+            console.print(json.dumps(error_payload, indent=2, ensure_ascii=False))
+        else:
+            console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Error:[/] {e}")
+            if e.summary and "failures" in e.summary:
+                console.print(f"[{palette.get('warning', 'yellow')}]Failures detected:[/]")
+                for failure in e.summary["failures"]:
+                    console.print(f"  - {failure}")
+
+        exit_cli(code=EXIT_CODE_ERROR)
+
     except typer.Exit:
         raise
     except DorsalOfflineError:

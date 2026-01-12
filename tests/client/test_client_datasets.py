@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -165,6 +165,5 @@ def test_make_schema_validator_invalid_schema(client, requests_mock):
 
     requests_mock.get(target_url, json=invalid_schema, status_code=200)
 
-    # Fix: Expect DorsalClientError as per implementation
     with pytest.raises(DorsalClientError):
         client.make_schema_validator(_DUMMY_DATASET_ID)

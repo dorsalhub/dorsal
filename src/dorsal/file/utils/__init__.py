@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ from dorsal.common.exceptions import (
     QuickHashFileInstabilityError,
     QuickHashFileSizeError,
 )
-from dorsal.file.configs.sampling import _calculate_sha256
 from dorsal.file.utils.file_hasher import FileHasher
 from dorsal.file.utils.quick_hasher import QuickHasher
 from dorsal.file.utils.size import get_filesize, human_filesize as human_filesize
@@ -34,7 +33,9 @@ FILE_HASHER = FileHasher()
 QUICK_HASHER = QuickHasher()
 
 
-def get_quick_hash(file_path: str, fallback_to_sha256: bool = False, file_size: int | None = None) -> str | None:
+def get_quick_hash(
+    file_path: str, fallback_to_sha256: bool = False, file_size: int | None = None, follow_symlinks: bool = True
+) -> str | None:
     """Get the quick hash of a file.
 
     When `fallback_to_sha256` is True, when QuickHasher fails (e.g. the file is too small)
@@ -44,9 +45,9 @@ def get_quick_hash(file_path: str, fallback_to_sha256: bool = False, file_size: 
     try:
         if file_size is None:
             file_size = get_filesize(file_path)
-        quick_hash = QUICK_HASHER.hash(file_path=file_path, file_size=file_size)
+        quick_hash = QUICK_HASHER.hash(file_path=file_path, file_size=file_size, follow_symlinks=follow_symlinks)
         if quick_hash is None and fallback_to_sha256:
-            quick_hash = _calculate_sha256(file_path=file_path)
+            quick_hash = FILE_HASHER.hash_sha256(file_path=file_path, follow_symlinks=follow_symlinks)
     except OSError as err:
         logger.exception("multi_hash: Failed to get file size for '%s' - %s", file_path, err)
         raise
@@ -54,21 +55,21 @@ def get_quick_hash(file_path: str, fallback_to_sha256: bool = False, file_size: 
     return quick_hash
 
 
-def get_sha256_hash(file_path: str) -> str:
+def get_sha256_hash(file_path: str, follow_symlinks: bool = True) -> str:
     try:
-        return FILE_HASHER.hash_sha256(file_path=file_path)
+        return FILE_HASHER.hash_sha256(file_path=file_path, follow_symlinks=follow_symlinks)
     except (IOError, PermissionError):
         raise
 
 
-def get_blake3_hash(file_path: str) -> str:
+def get_blake3_hash(file_path: str, follow_symlinks: bool = True) -> str:
     try:
-        return FILE_HASHER.hash_blake3(file_path=file_path)
+        return FILE_HASHER.hash_blake3(file_path=file_path, follow_symlinks=follow_symlinks)
     except (IOError, PermissionError):
         raise
 
 
-def multi_hash(file_path: str, similarity_hash: bool = False) -> dict[str, str]:
+def multi_hash(file_path: str, similarity_hash: bool = False, follow_symlinks: bool = True) -> dict[str, str]:
     """Calculate several hashes for a given file.
 
     - SHA-256 (always)
@@ -87,7 +88,10 @@ def multi_hash(file_path: str, similarity_hash: bool = False) -> dict[str, str]:
     logger.debug("Starting multi-hash calculations for file: '%s'", file_path)
 
     try:
-        file_size = os.path.getsize(file_path)
+        if not follow_symlinks and os.path.islink(file_path):
+            file_size = os.lstat(file_path).st_size
+        else:
+            file_size = os.path.getsize(file_path)
     except OSError:
         logger.exception("multi_hash: Failed to get file size for '%s'.", file_path)
         raise
@@ -99,6 +103,7 @@ def multi_hash(file_path: str, similarity_hash: bool = False) -> dict[str, str]:
             calculate_sha256=True,
             calculate_blake3=True,
             calculate_tlsh=similarity_hash,
+            follow_symlinks=follow_symlinks,
         )
     except OSError:
         logger.exception("multi_hash: FileHasher failed for '%s'.", file_path)
@@ -109,7 +114,12 @@ def multi_hash(file_path: str, similarity_hash: bool = False) -> dict[str, str]:
 
     quick_hash_value: str | None = None
     try:
-        quick_hash_value = QUICK_HASHER.hash(file_path=file_path, file_size=file_size, raise_on_filesize_error=False)
+        quick_hash_value = QUICK_HASHER.hash(
+            file_path=file_path,
+            file_size=file_size,
+            raise_on_filesize_error=False,
+            follow_symlinks=follow_symlinks,
+        )
 
         if quick_hash_value is not None:
             hashes["QUICK"] = quick_hash_value

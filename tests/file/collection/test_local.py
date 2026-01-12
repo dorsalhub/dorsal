@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         palette=None,
         skip_cache=False,
         overwrite_cache=False,
+        follow_symlinks=True,
     )
     assert len(collection) == 1
     assert collection.warnings == ["warning1"]
@@ -195,6 +196,7 @@ def test_push(mock_get_client):
 
     mock_response = MagicMock(spec=FileIndexResponse)
     mock_response.success = 1
+    mock_response.results = []
     mock_client.index_private_file_records.return_value = mock_response
 
     mock_get_client.return_value = mock_client
@@ -205,10 +207,10 @@ def test_push(mock_get_client):
     collection = LocalFileCollection(source=[file1])
     collection._client = mock_client
 
-    summary = collection.push(private=True)
+    summary = collection.push(public=False)
 
     mock_client.index_private_file_records.assert_called_once_with(file_records=[file1.model])
-    assert summary["total_records_accepted_by_api"] == 1
+    assert summary["success"] == 1
 
 
 @patch("dorsal.file.collection.remote.DorsalFileCollection")
@@ -230,12 +232,12 @@ def test_create_remote_collection(mock_get_client, mock_remote_class):
     collection = LocalFileCollection(source=[file1])
     collection._client = mock_client
 
-    with patch.object(collection, "push", return_value={"total_records_accepted_by_api": 1}) as mock_push:
+    with patch.object(collection, "push", return_value={"success": 1}) as mock_push:
         # Act
         collection.create_remote_collection(name="New Test Collection")
 
         # Assert
-        mock_push.assert_called_once_with(private=True, api_key=None)
+        mock_push.assert_called_once_with(public=False, api_key=None)
         mock_client.create_collection.assert_called_once()
         assert collection.remote_collection_id == "new_col_123"
 
@@ -277,3 +279,44 @@ def test_to_dataframe_export():
     assert list(df.columns) == ["hash", "file_path", "source_path"]
     assert df.iloc[0]["hash"] == "h1"
     assert df.iloc[0]["file_path"] == "/fake/a.txt"
+
+
+@patch("dorsal.file.collection.local.is_permitted_public_media_type")
+def test_push_public_raises_error_for_restricted_types(mock_is_permitted):
+    """
+    Test that pushing with public=True raises a ValueError if the collection
+    contains files with restricted media types.
+    """
+    # Arrange: Force the permission check to fail
+    mock_is_permitted.return_value = False
+
+    file1 = MagicMock(spec=LocalFile, media_type="application/secret", hash="h1")
+    file1.name = "secret_plans.doc"
+
+    collection = LocalFileCollection(source=[file1])
+
+    # Act & Assert
+    with pytest.raises(ValueError) as exc_info:
+        collection.push(public=True)
+
+    error_msg = str(exc_info.value)
+    assert "Operation aborted" in error_msg
+    assert "restricted media types" in error_msg
+    assert "'secret_plans.doc' (application/secret)" in error_msg
+
+
+def test_collection_iteration_and_access_types():
+    file1 = MagicMock(spec=LocalFile)
+    file1.name = "file1"
+    file1._file_path = "/local/path/file1"
+
+    collection = LocalFileCollection(files=[file1])
+
+    items = list(collection)
+    assert len(items) == 1
+    assert items[0] is file1
+    assert items[0]._file_path == "/local/path/file1"
+
+    item = collection[0]
+    assert item is file1
+    assert item._file_path == "/local/path/file1"

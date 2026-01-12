@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -117,6 +117,7 @@ def test_scan_dir_success_default(mock_rich_console, mock_scan_dir_cmd, mock_exi
         recursive=False,
         use_cache=False,
         overwrite_cache=False,
+        follow_symlinks=True,
     )
 
     # Verify Summary Panel was printed
@@ -225,7 +226,7 @@ def test_scan_dir_recursive_flag(mock_rich_console, mock_scan_dir_cmd):
 
     assert result.exit_code == 0
     mock_scan_dir_cmd["collection_class"].assert_called_once_with(
-        source=ANY, console=ANY, palette=ANY, recursive=True, use_cache=ANY, overwrite_cache=ANY
+        source=ANY, console=ANY, palette=ANY, recursive=True, use_cache=ANY, overwrite_cache=ANY, follow_symlinks=ANY
     )
 
 

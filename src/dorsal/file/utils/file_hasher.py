@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
 import io
 import importlib.util
 import logging
-from typing import Any, Iterator, cast
+import os
+from typing import Any, Iterator, cast, ContextManager
 import hashlib
 
 import blake3
@@ -61,12 +62,25 @@ class FileHasher:
                 )
         return self._tlsh_available
 
-    def _yield_chunks(self, file_handler: io.BufferedReader) -> Iterator[bytes]:
+    def _stream_file_content(self, file_path: str, follow_symlinks: bool) -> ContextManager[Any]:
+        """
+        Returns a context manager yielding a binary stream.
+
+        - Regular Files (or follow_symlinks=True): The actual file content on disk.
+        - Symlinks (with follow_symlinks=False): The target path string encoded as bytes.
+        """
+        if not follow_symlinks and os.path.islink(file_path):
+            target_path = os.readlink(file_path)
+            return io.BytesIO(target_path.encode("utf-8"))
+
+        return open(file_path, "rb")
+
+    def _yield_chunks(self, file_handler: Any) -> Iterator[bytes]:
         """
         Reads the file in chunks.
 
         Args:
-            file_handler: An opened binary file handler.
+            file_handler: An opened binary file handler (or BytesIO).
 
         Yields:
             Bytes representing chunks of the file.
@@ -84,21 +98,23 @@ class FileHasher:
         calculate_sha256: bool = True,
         calculate_blake3: bool = True,
         calculate_tlsh: bool = True,
+        follow_symlinks: bool = True,
     ) -> dict[HashFunctionId, str]:
         """
         Calculates multiple hashes for the specified file.
 
         Args:
             file_path: The absolute path to the file to be hashed.
-            file_size: The size of the file in bytes. This must be provided by the caller.
+            file_size: The size of the file in bytes.
+            calculate_sha256: Whether to calculate SHA-256 (default True).
+            calculate_blake3: Whether to calculate BLAKE3 (default True).
             calculate_tlsh: If True, attempts to calculate the TLSH similarity hash.
-                                       Requires `tlsh` library and the file size >= `tlsh_min_size`.
+            follow_symlinks: If True (default), follows symlinks to hash target content.
+                              If False, hashes the symlink pointer string itself.
 
         Returns:
-            A dictionary mapping hash algorithm names (e.g., "SHA-256", "BLAKE3", "TLSH")
-            to their hexadecimal string representations. If a hash cannot be
-            calculated (e.g., TLSH due to size or missing library), it will be
-            omitted from the dictionary.
+            A dictionary mapping hash algorithm names to their hexadecimal string representations.
+            If a hash cannot be calculated (e.g., TLSH due to size), it is omitted.
 
         Raises:
             FileNotFoundError: If `file_path` does not exist.
@@ -126,24 +142,27 @@ class FileHasher:
 
         active_hashers: dict[str, Any] = {name: constructor() for name, constructor in constructors_to_use.items()}
 
-        if calculate_tlsh and self._check_tlsh_availability():
-            if file_size >= self.tlsh_min_size:
-                import tlsh  # type: ignore[import-not-found]
+        if calculate_tlsh:
+            if not follow_symlinks and os.path.islink(file_path):
+                logger.debug("Skipping TLSH for symlink '%s' (Physical Mode).", file_path)
+            elif self._check_tlsh_availability():
+                if file_size >= self.tlsh_min_size:
+                    import tlsh  # type: ignore[import-not-found]
 
-                active_hashers["TLSH"] = tlsh.Tlsh()
-                logger.debug("TLSH hasher added for file: '%s'", file_path)
-            else:
-                logger.debug(
-                    "File '%s' is too small for TLSH. It will not be calculated.",
-                    file_path,
-                )
+                    active_hashers["TLSH"] = tlsh.Tlsh()
+                    logger.debug("TLSH hasher added for file: '%s'", file_path)
+                else:
+                    logger.debug(
+                        "File '%s' is too small for TLSH. It will not be calculated.",
+                        file_path,
+                    )
 
         try:
-            with open(file_path, "rb") as fp:
+            with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
                 for chunk in self._yield_chunks(fp):
                     for hasher_instance in active_hashers.values():
                         hasher_instance.update(chunk)
-        except (FileNotFoundError, PermissionError, IOError) as e:
+        except (FileNotFoundError, PermissionError, IOError, OSError) as e:
             logger.exception("Failed to read file '%s' for hashing: %s", file_path, e)
             raise
 
@@ -179,62 +198,82 @@ class FileHasher:
         )
         return calculated_hashes
 
-    def hash_sha256(self, file_path: str) -> str:
+    def hash_sha256(self, file_path: str, follow_symlinks: bool = True) -> str:
         """
         Calculates the SHA-256 hash for a single file.
 
         Args:
             file_path: The absolute path to the file to be hashed.
+            follow_symlinks: If True (default), follows symlinks.
+                              If False, hashes the link target string.
 
         Returns:
             The hexadecimal SHA-256 hash as a string.
+
+        Raises:
+            IOError, PermissionError, OSError: If the file cannot be read.
         """
         logger.debug("SHA-256 hashing file: '%s'", file_path)
         hasher = hashlib.sha256()
         try:
-            with open(file_path, "rb") as fp:
+            with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
                 for chunk in self._yield_chunks(fp):
                     hasher.update(chunk)
             return hasher.hexdigest()
-        except (IOError, PermissionError) as err:
+        except (IOError, PermissionError, OSError) as err:
             logger.error("Failed to read file '%s' for SHA-256 hashing: %s", file_path, err)
             raise
 
-    def hash_blake3(self, file_path: str) -> str:
+    def hash_blake3(self, file_path: str, follow_symlinks: bool = True) -> str:
         """
         Calculates the BLAKE3 hash for a single file.
 
         Args:
             file_path: The absolute path to the file to be hashed.
+            follow_symlinks: If True (default), follows symlinks.
+                              If False, hashes the link target string.
 
         Returns:
             The hexadecimal BLAKE3 hash as a string.
+
+        Raises:
+            IOError, PermissionError, OSError: If the file cannot be read.
         """
         logger.debug("BLAKE3 hashing file: '%s'", file_path)
         hasher = blake3.blake3()
         try:
-            with open(file_path, "rb") as fp:
+            with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
                 for chunk in self._yield_chunks(fp):
                     hasher.update(chunk)
             return hasher.hexdigest()
-        except (IOError, PermissionError) as err:
+        except (IOError, PermissionError, OSError) as err:
             logger.error("Failed to read file '%s' for BLAKE3 hashing: %s", file_path, err)
             raise
 
-    def hash_tlsh(self, file_path: str, file_size: int) -> str | None:
+    def hash_tlsh(self, file_path: str, file_size: int, follow_symlinks: bool = True) -> str | None:
         """
         Calculates the TLSH similarity hash for a single file.
 
         Args:
             file_path: The absolute path to the file to be hashed.
             file_size: The size of the file in bytes.
+            follow_symlinks: If True (default), follows symlinks.
+                              If False, always returns None (TLSH not supported on pointers).
 
         Returns:
-            The TLSH hash as a string, or None if the tlsh library is not
-            available, the file is too small, the file cannot be read, or the
-            data has insufficient variance for TLSH.
+            The TLSH hash as a string, or None if:
+            - The library is unavailable.
+            - The file is too small.
+            - The file is a symlink and `follow_symlinks` is False.
+
+        Raises:
+            IOError, PermissionError, OSError: If the file cannot be read.
         """
         logger.debug("TLSH hashing file: '%s'", file_path)
+
+        if not follow_symlinks and os.path.islink(file_path):
+            return None
+
         if not self._check_tlsh_availability():
             logger.warning("Cannot calculate TLSH for '%s': tlsh library not available.", file_path)
             return None
@@ -253,13 +292,13 @@ class FileHasher:
         hasher = tlsh.Tlsh()
 
         try:
-            with open(file_path, "rb") as fp:
+            with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
                 for chunk in self._yield_chunks(fp):
                     hasher.update(chunk)
 
             hasher.final()
             return hasher.hexdigest()
-        except (IOError, PermissionError) as err:
+        except (IOError, PermissionError, OSError) as err:
             logger.error("Failed to read file '%s' for TLSH hashing: %s", file_path, err)
             raise
         except ValueError as e:

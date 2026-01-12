@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 class EbookAnnotationModel(AnnotationModel):
-    """Extracts metadata from common ebook formats (e.g., EPUB, MOBI)."""
+    """Extracts metadata from common ebook formats (currently only supports Epub)."""
 
     id: str = "dorsal/ebook"
-    version: str = "1.0.0"
+    version: str = "0.1.0"
     variant: str = "dispatcher"
 
     def main(self) -> dict[str, Any] | None:

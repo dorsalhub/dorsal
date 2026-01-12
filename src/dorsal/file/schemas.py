@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ def _load_schema_from_package(filename: str) -> dict:
     try:
         schema = json.loads(schema_text)
     except json.JSONDecodeError as err:
-        raise ValueError(f"Schema '{filename}' (from {source_desc}) contains invalid JSON.") from err
+        raise ValueError(f"Schema '{filename}' (from {source_desc}) contains invalid JSON. Full error: {err}") from err
 
     file_version = schema.get("version")
     if file_version != OPEN_VALIDATION_SCHEMAS_VER:

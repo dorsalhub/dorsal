@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import datetime
 from typing import Any, Literal
 import requests
 from pydantic import BaseModel, Field, NonNegativeInt, computed_field
+
 from dorsal.file.validators.file_record import AnnotationGroup, FileRecordDateTime
 from dorsal.file.validators.collection import (
     FileCollection,
@@ -23,6 +24,7 @@ from dorsal.file.validators.collection import (
     HydratedSingleCollectionResponse,
 )
 from dorsal.common.validators import Pagination
+from dorsal.file.validators.common import SHA256Hash
 
 
 class TagResult(BaseModel):
@@ -60,6 +62,32 @@ class FileIndexResponse(BaseModel):
     response: requests.Response | None = Field(default=None, exclude=True)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    def __repr__(self) -> str:
+        """Summary of the index operation."""
+        status_parts = []
+        if self.success > 0:
+            status_parts.append(f"Success: {self.success}")
+        if self.error > 0:
+            status_parts.append(f"Errors: {self.error}")  # Highlight errors
+        if self.unauthorized > 0:
+            status_parts.append(f"Unauthorized: {self.unauthorized}")
+
+        summary = ", ".join(status_parts)
+
+        # If there are errors, we list them explicitly
+        error_details = ""
+        if self.error > 0:
+            error_details = "\n  [!] ERRORS FOUND:"
+            for res in self.results:
+                # check for annotation errors
+                failed_anns = [ann for ann in res.annotations if ann.status == "error"]
+                if failed_anns:
+                    error_details += f"\n      - File: {res.name or res.hash[:8]}"
+                    for ann in failed_anns:
+                        error_details += f"\n        x Annotation '{ann.name}': {ann.detail}"
+
+        return f"<FileIndexResponse [{summary}]{error_details}>"
 
 
 class NewDatasetResponse(BaseModel):
@@ -118,7 +146,7 @@ class CollectionCreateRequest(BaseModel):
 class AddFilesRequest(BaseModel):
     """For adding files to a collection."""
 
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="A list of file SHA-256 hashes to add to the collection.",
         max_length=10_000,
     )
@@ -168,7 +196,7 @@ class ExportJobRequest(BaseModel):
 
 
 class RemoveFilesRequest(BaseModel):
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="A list of file SHA-256 hashes to remove from the collection.",
         max_length=10_000,
     )
@@ -180,7 +208,7 @@ class RemoveFilesResponse(BaseModel):
 
 
 class CollectionSyncRequest(BaseModel):
-    hashes: list[str] = Field(
+    hashes: list[SHA256Hash] = Field(
         description="The complete list of file SHA-256 hashes the collection should contain.",
         max_length=1_000_000,
     )

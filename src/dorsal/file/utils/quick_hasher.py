@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -155,7 +155,9 @@ class QuickHasher:
             return False
         return True
 
-    def hash(self, file_path: str, file_size: int, raise_on_filesize_error: bool = False) -> str | None:
+    def hash(
+        self, file_path: str, file_size: int, raise_on_filesize_error: bool = False, follow_symlinks: bool = True
+    ) -> str | None:
         """
         Generate a 'quick hash' by sampling file content.
 
@@ -177,6 +179,10 @@ class QuickHasher:
           * QuickHashFileInstabilityError: If the file changes state during hashing.
         """
         logger.debug("Attempting to generate QuickHash for: %s", file_path)
+
+        if not follow_symlinks and os.path.islink(file_path):
+            logger.debug("QuickHash not generated for file '%s': file_path is a symbolic link.")
+            return None
 
         if not self._check_permitted_filesize(
             file_path=file_path,

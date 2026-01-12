@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +15,8 @@
 import json
 from typing import Any
 
-from jsonschema.exceptions import SchemaError as JSONSchemaSchemaError  # noqa: F401
-from jsonschema.exceptions import (
-    ValidationError as JSONSchemaValidationError,
-)  # noqa: F401
 from pydantic import ValidationError as PydanticValidationError  # noqa: F401
+from jsonschema_rs import ValidationError as JsonSchemaValidationError  # noqa: F401
 
 from dorsal.common import constants
 from dorsal.common.constants import BASE_URL
@@ -550,6 +547,24 @@ class UnexpectedResponseError(DorsalClientError):
 
 class DatasetExistsError(ConflictError):
     """Dataset exists."""
+
+
+class PartialIndexingError(DorsalError):
+    """An indexing operation completed but includes one or more errors."""
+
+    def __init__(self, message: str, summary: dict, original_error: Exception | None = None):
+        super().__init__(message)
+        self.summary = summary
+        self.original_error = original_error
+
+
+class BatchIndexingError(DorsalError):
+    """Batch indexing operation failure."""
+
+    def __init__(self, message: str, summary: dict, original_error: Exception | None = None):
+        super().__init__(message)
+        self.summary = summary
+        self.original_error = original_error
 
 
 # == FileAnnotator ==

@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,6 +53,13 @@ def build_cache(
         bool,
         typer.Option("--json", help="Output the summary as a raw JSON object."),
     ] = False,
+    resolve_links: Annotated[
+        bool,
+        typer.Option(
+            "--follow-links/--no-follow-links",
+            help="Follow symlinks to cache target content vs caching the link itself.",
+        ),
+    ] = True,
 ):
     """
     Scans a directory and populates the cache with full metadata records.
@@ -84,6 +91,7 @@ def build_cache(
                     console=progress_console,
                     palette=palette,
                     use_cache=use_cache_value,
+                    follow_symlinks=resolve_links,
                 )
         else:
             collection = LocalFileCollection(
@@ -92,6 +100,7 @@ def build_cache(
                 console=progress_console,
                 palette=palette,
                 use_cache=use_cache_value,
+                follow_symlinks=resolve_links,
             )
 
         collection_info = collection.info()

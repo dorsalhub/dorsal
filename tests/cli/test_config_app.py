@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ def mock_config_app(mocker):
         },
     )
 
-    mocker.patch("dorsal.api.config.constants.BASE_URL", "https://api.dorsal.ai/v2")
+    mocker.patch("dorsal.api.config.constants.BASE_URL", "https://api.dorsalhub.test/v1")
 
     mocker.patch("dorsal.cli.themes.palettes.BUILT_IN_PALETTES", {"default": {}, "dark": {}})
     mocker.patch("dorsal.cli.themes.palettes._load_custom_palettes", return_value={})

@@ -1,4 +1,4 @@
-# Copyright 2025 Dorsal Hub LTD
+# Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import json
 import logging
 import mimetypes
 import os
+import pathlib
 import sys
 from typing import TYPE_CHECKING
 import zipfile
@@ -270,7 +271,7 @@ def _refine_media_type_with_rules(
     return current_type
 
 
-def get_media_type(file_path: str, file_extension: str | None) -> str:
+def get_media_type(file_path: str, file_extension: str | None, follow_symlinks: bool = True) -> str:
     """
     Determines the 'best guess' media type for the file.
 
@@ -287,6 +288,18 @@ def get_media_type(file_path: str, file_extension: str | None) -> str:
         The determined media type string. This method always returns a string,
         falling back to a default like 'application/octet-stream' if necessary.
     """
+    path_to_analyze = file_path
+
+    if follow_symlinks:
+        try:
+            path_to_analyze = str(pathlib.Path(file_path).resolve())
+        except (OSError, RuntimeError):
+            logger.debug("Failed to resolve symlink: %s", file_path)
+            pass
+
+    if os.path.islink(path_to_analyze):
+        return "inode/symlink"
+
     libmagic_initial_type = _get_libmagic_type(file_path)
 
     refined_media_type = _refine_media_type_with_rules(
