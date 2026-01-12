@@ -199,7 +199,7 @@ class ModelRunner:
 
         pipeline: list[dict[str, Any]]
         if config == "default":
-            logger.debug("Resolving 'default' pipeline configuration from dorsal.toml hierarchy.")
+            logger.debug("Using 'default' pipeline config")
             full_config, _ = load_config()
             pipeline = full_config.get("model_pipeline", [])
         elif isinstance(config, list):
