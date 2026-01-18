@@ -182,3 +182,140 @@ def test_push_dir_generic_dorsal_error(mock_push_dir_cmd):
 
     assert result.exit_code != 0
     assert "Generic API failure" in result.output
+
+def test_display_dry_run_panel_output(mocker):
+    """
+    Directly tests _display_dry_run_panel. 
+    Fix: Patches dorsal.common.cli.get_rich_console because the import is local to the function.
+    """
+    mock_console = MagicMock()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
+
+    mock_file_cache = MagicMock()
+    mock_file_cache.name = "cached_file.txt"
+    mock_file_cache.size = 1024
+    mock_file_cache.media_type = "text/plain"
+    mock_file_cache._source = "cache"
+
+    mock_file_disk = MagicMock()
+    mock_file_disk.name = "new_file.jpg"
+    mock_file_disk.size = 2048 * 1024
+    mock_file_disk.media_type = "image/jpeg"
+    mock_file_disk._source = "disk"
+
+    mock_collection = MagicMock()
+    mock_collection.__len__.return_value = 2
+    mock_collection.__iter__.return_value = iter([mock_file_cache, mock_file_disk])
+
+    palette = {
+        "primary_value": "blue",
+        "success": "green",
+        "key": "dim",
+        "panel_border_warning": "yellow",
+        "table_header": "bold magenta"
+    }
+
+    from dorsal.cli.dir_app.push_dir_cmd import _display_dry_run_panel
+    
+    _display_dry_run_panel(
+        collection=mock_collection,
+        use_cache=True,
+        palette=palette
+    )
+
+    assert mock_console.print.call_count >= 2
+    args, _ = mock_console.print.call_args_list[0] 
+    assert "DRY RUN MODE" in str(args[0].renderable)
+
+
+def test_display_summary_panel_output_success(mocker):
+    """
+    Directly tests _display_summary_panel for success.
+    Fix: Patches dorsal.common.cli.get_rich_console.
+    """
+    mock_console = MagicMock()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
+
+    palette = {
+        "key": "cyan",
+        "success": "green",
+        "error": "red",
+        "primary_value": "blue",
+        "panel_title_success": "bold green",
+        "panel_border_success": "green",
+        "access_public": "bold yellow",
+        "access_private": "dim"
+    }
+
+    summary_data = {
+        "total_records": 10,
+        "success": 10,
+        "failed": 0,
+        "batches": [{"status": "success"}]
+    }
+
+    mock_collection = MagicMock()
+    mock_collection.__iter__.return_value = iter([])
+
+    from dorsal.cli.dir_app.push_dir_cmd import _display_summary_panel
+
+    _display_summary_panel(
+        summary=summary_data,
+        public=False,
+        palette=palette,
+        use_cache=False,
+        collection=mock_collection
+    )
+
+    assert mock_console.print.called
+    printed_obj = mock_console.print.call_args[0][0]
+    assert "Push Complete" in str(printed_obj.title)
+
+
+def test_display_summary_panel_with_failures(mocker):
+    """
+    Tests failure rendering in _display_summary_panel.
+    Fix: Patches dorsal.common.cli.get_rich_console.
+    """
+    mock_console = MagicMock()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
+
+    palette = {
+        "key": "cyan",
+        "success": "green",
+        "error": "red",
+        "warning": "yellow",
+        "primary_value": "blue",
+        "table_header": "bold red"
+    }
+
+    summary_data = {
+        "total_records": 5,
+        "success": 3,
+        "failed": 2,
+        "errors": [
+            {
+                "batch_index": 1,
+                "error_type": "HTTP 500",
+                "error_message": "Server exploded"
+            }
+        ],
+        "batches": [{"status": "failure"}]
+    }
+
+    mock_collection = MagicMock()
+    mock_collection.__iter__.return_value = iter([])
+
+    from dorsal.cli.dir_app.push_dir_cmd import _display_summary_panel
+
+    _display_summary_panel(
+        summary=summary_data,
+        public=True,
+        palette=palette,
+        use_cache=False,
+        collection=mock_collection
+    )
+
+    assert mock_console.print.call_count >= 2
+    last_print_arg = mock_console.print.call_args[0][0]
+    assert "Failed Batch Details" in str(last_print_arg.title)
