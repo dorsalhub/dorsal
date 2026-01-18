@@ -125,7 +125,6 @@ class TestCheckMediaTypeDependency:
 
 
 class TestCheckExtensionDependency:
-
     def test_extension_match_success(self, mock_results):
         results = mock_results({"extension": ".pdf"})
         config = FileExtensionDependencyConfig(extensions={".pdf", ".txt"})
@@ -146,7 +145,6 @@ class TestCheckExtensionDependency:
         assert check_extension_dependency(results, config) is False
 
     def test_missing_record_or_extension(self, mock_results):
-
         assert (
             check_extension_dependency([MagicMock(record=None)], FileExtensionDependencyConfig(extensions={".pdf"}))
             is False
@@ -168,7 +166,6 @@ class TestCheckExtensionDependency:
 
 
 class TestCheckSizeDependency:
-
     def test_size_within_range(self, mock_results):
         results = mock_results({"size": 500})
         config = FileSizeDependencyConfig(min_size=100, max_size=1000)
@@ -188,14 +185,12 @@ class TestCheckSizeDependency:
         assert check_size_dependency(results, config) is False
 
     def test_invalid_size_field(self, mock_results):
-
         assert check_size_dependency(mock_results({}), FileSizeDependencyConfig(min_size=1)) is False
 
         assert check_size_dependency(mock_results({"size": "big"}), FileSizeDependencyConfig(min_size=1)) is False
 
 
 class TestCheckNameDependency:
-
     def test_name_match_regex_string(self, mock_results):
         results = mock_results({"name": "report_2025.pdf"})
         config = FilenameDependencyConfig(pattern=r"^report_\d+")
