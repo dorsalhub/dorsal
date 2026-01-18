@@ -154,3 +154,4 @@ junk/
 test
 requirements.txt
 *.temp.bin
+coverage.xml
