@@ -560,7 +560,10 @@ class DorsalFile(_DorsalFile):
                             ]
 
     def get_annotations(
-        self, schema_id: str, source_id: str | None = None
+        self,
+        schema_id: str,
+        source_id: str | None = None,
+        user_id: int | None = None,
     ) -> Sequence[
         FileAnnotationStub
         | PDFValidationModel
@@ -574,25 +577,73 @@ class DorsalFile(_DorsalFile):
         Args:
             schema_id: The unique identifier of the dataset/schema (e.g. 'open/classification').
             source_id: Optional. Filter annotations by their source ID.
+            user_id: Optional. Filter annotations by the creator's User ID.
 
         Returns:
             A list of FileAnnotationStub objects (for custom schemas) or Core Models.
         """
+
+        # Helper to check if a core annotation wrapper matches the user_id filter
+        def _check_core_user(attr_name: str) -> bool:
+            if user_id is None:
+                return True
+            wrapper = getattr(self.model.annotations, attr_name, None)
+            # If we can't find the wrapper or it doesn't have a user_id, we assume mismatch if filtering is requested
+            if not wrapper or getattr(wrapper, "user_id", None) != user_id:
+                return False
+            return True
+
         if schema_id == "file/pdf":
-            return [self.pdf] if self.pdf else []
+            return [self.pdf] if self.pdf and _check_core_user("file_pdf") else []
         elif schema_id == "file/mediainfo":
-            return [self.mediainfo] if self.mediainfo else []
+            return [self.mediainfo] if self.mediainfo and _check_core_user("file_mediainfo") else []
         elif schema_id == "file/ebook":
-            return [self.ebook] if self.ebook else []
+            return [self.ebook] if self.ebook and _check_core_user("file_ebook") else []
         elif schema_id == "file/office":
-            return [self.office] if self.office else []
+            return [self.office] if self.office and _check_core_user("file_office") else []
 
         stubs = self.annotation_stubs.get(schema_id, [])
 
         if source_id is not None:
-            return [stub for stub in stubs if stub.source.id == source_id]
+            stubs = [stub for stub in stubs if stub.source.id == source_id]
+
+        if user_id is not None:
+            stubs = [stub for stub in stubs if stub.user_id == user_id]
 
         return stubs
+
+    def get_user_annotations(
+        self,
+        schema_id: str,
+        user_id: int | None = None,
+    ) -> Sequence[
+        FileAnnotationStub
+        | PDFValidationModel
+        | MediaInfoValidationModel
+        | EbookValidationModel
+        | OfficeDocumentValidationModel
+    ]:
+        """
+        Retrieves annotations created by a specific user.
+
+        If `user_id` is not provided, it defaults to the authenticated user's ID
+        (retrieved via the attached DorsalClient).
+
+        Args:
+            schema_id: The unique identifier of the dataset/schema.
+            user_id: Optional. The User ID to filter by. Defaults to the current user.
+
+        Returns:
+            A sequence of matching annotations or stubs.
+
+        Raises:
+            DorsalClientError: If user_id is not provided and cannot be resolved from the client.
+        """
+        if user_id is None:
+            client = self._client or get_shared_dorsal_client()
+            user_id = client.user_id
+
+        return self.get_annotations(schema_id=schema_id, user_id=user_id)
 
     def set_validation_hash(self, validation_hash: str) -> None:
         """Sets the BLAKE3 validation hash, potentially upgrading the model.
@@ -2031,6 +2082,48 @@ class LocalFile(_DorsalFile):
             return [ann for ann in processed_list if ann.source.id == source_id]
 
         return processed_list
+
+    def get_latest_annotation(
+        self,
+        schema_id: str,
+        source_id: str | None = None,
+    ) -> (
+        Annotation
+        | AnnotationXL
+        | PDFValidationModel
+        | MediaInfoValidationModel
+        | EbookValidationModel
+        | OfficeDocumentValidationModel
+        | None
+    ):
+        """
+        Retrieves the single latest annotation for this file.
+
+        This method sorts results by `date_modified` (descending) and returns the most recent one.
+        This is useful when multiple versions of an annotation exist locally.
+
+        Args:
+            schema_id: The unique identifier of the dataset/schema.
+            source_id: Optional. Filter by source ID before determining the latest.
+
+        Returns:
+            The latest matching annotation, or None if no matches found.
+        """
+        results = self.get_annotations(schema_id=schema_id, source_id=source_id)
+
+        if not results:
+            return None
+
+        try:
+            sorted_results = sorted(
+                results,
+                key=lambda x: getattr(x, "date_modified", datetime.datetime.min),
+                reverse=True,
+            )
+            return sorted_results[0]
+        except Exception as err:
+            logger.warning("Failed to sort by date_modified - %s", err)
+            return results[0]
 
     def remove_annotation(self, schema_id: str, source_id: str | None = None) -> "LocalFile":
         """

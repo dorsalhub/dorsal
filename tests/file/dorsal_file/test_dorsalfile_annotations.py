@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import pytest
 from unittest.mock import MagicMock, patch
 from dorsal.file.dorsal_file import LocalFile
@@ -37,7 +38,6 @@ def mock_local_file():
         lf.model.annotations.__pydantic_extra__ = {}
         lf.model.annotations.model_fields_set = set()
 
-        # Initialize core properties to None for tests
         lf.pdf = None
         lf.mediainfo = None
         lf.ebook = None
@@ -53,30 +53,25 @@ def test_annotate_using_pipeline_step_success(mock_annotator, mock_local_file):
     """Tests successful annotation via pipeline step config."""
     step_config = {"annotation_model": ("mod", "cls"), "schema_id": "test/schema"}
     mock_annotation = MagicMock()
-    # Setup source ID for the mock to pass collision checks
+
     mock_annotation.source.id = "pipeline_source"
     mock_annotation.source.version = "1.0"
     mock_annotation.source.variant = None
 
     mock_annotator.annotate_file_using_pipeline_step.return_value = mock_annotation
 
-    # Execute
     mock_local_file._annotate_using_pipeline_step(pipeline_step_config=step_config, private=True)
 
-    # Verify attribute was set as a LIST
     assert getattr(mock_local_file.model.annotations, "test/schema") == [mock_annotation]
 
 
 def test_annotate_using_pipeline_step_invalid_schema(mock_local_file):
     """Tests error with invalid schema ID."""
-    # Pydantic validation happens first
+
     with pytest.raises(ValidationError):
         mock_local_file._annotate_using_pipeline_step(
             pipeline_step_config={"schema_id": "bad_id", "annotation_model": ("a", "b")}, private=True
         )
-
-
-# --- Tests for _annotate_using_model_and_validator ---
 
 
 @patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
@@ -106,7 +101,7 @@ def test_annotate_model_validator_success(mock_annotator, mock_local_file):
     )
 
     mock_annotator.annotate_file_using_model_and_validator.assert_called_once()
-    # Verify attribute was set as a LIST
+
     assert getattr(mock_local_file.model.annotations, "test/manual") == [mock_annotation]
 
 
@@ -124,9 +119,6 @@ def test_annotate_model_validator_failure(mock_annotator, mock_local_file):
         )
 
 
-# --- Tests for remove_annotation ---
-
-
 def test_remove_annotation_missing(mock_local_file):
     """Tests removing an annotation that doesn't exist (safe no-op)."""
     mock_local_file.remove_annotation("non/existent")
@@ -135,7 +127,7 @@ def test_remove_annotation_missing(mock_local_file):
 
 def test_remove_annotation_success(mock_local_file):
     """Tests successful removal."""
-    # Mock an annotation with source.id to satisfy remove_annotation logic
+
     mock_ann = MagicMock()
     mock_ann.source.id = "delete_me"
 
@@ -147,23 +139,17 @@ def test_remove_annotation_success(mock_local_file):
     mock_local_file._populate.assert_called_once()
 
 
-# --- Helper Test: _set_annotation_attribute ---
-
-
 def test_set_annotation_conflict(mock_local_file):
     """Tests that overwriting without overwrite=True raises error."""
     schema_id = "test/conflict"
 
-    # Mock an existing annotation object with a specific source ID
     existing_mock = MagicMock()
     existing_mock.source.id = "conflict_id"
     existing_mock.source.version = "1.0"
     existing_mock.source.variant = None
 
-    # Set it as a list on the model
     setattr(mock_local_file.model.annotations, schema_id, [existing_mock])
 
-    # Create a new annotation mock with the SAME source ID
     new_mock = MagicMock()
     new_mock.source.id = "conflict_id"
     new_mock.source.version = "1.0"
@@ -173,12 +159,9 @@ def test_set_annotation_conflict(mock_local_file):
         mock_local_file._set_annotation_attribute(schema_id=schema_id, annotation=new_mock, overwrite=False)
 
 
-# --- Tests for Retrieval Methods (get_annotations) ---
-
-
 def test_get_annotations_returns_list(mock_local_file):
     """Test the standard list retrieval behavior."""
-    # 1. Setup data
+
     schema_id = "test/multi"
     ann1 = MagicMock()
     ann1.source.id = "source_1"
@@ -187,17 +170,90 @@ def test_get_annotations_returns_list(mock_local_file):
 
     setattr(mock_local_file.model.annotations, schema_id, [ann1, ann2])
 
-    # 2. Test getting all
     all_anns = mock_local_file.get_annotations(schema_id)
     assert isinstance(all_anns, list)
     assert len(all_anns) == 2
 
-    # 3. Test filtering
     filtered = mock_local_file.get_annotations(schema_id, source_id="source_1")
     assert len(filtered) == 1
     assert filtered[0].source.id == "source_1"
 
-    # 4. Test missing
     empty = mock_local_file.get_annotations("test/missing")
     assert isinstance(empty, list)
     assert len(empty) == 0
+
+
+def test_get_latest_annotation_success(mock_local_file):
+    """Test retrieving the latest annotation by date_modified."""
+    schema_id = "test/dates"
+    now = datetime.datetime.now(datetime.UTC)
+
+    ann_old = MagicMock()
+    ann_old.date_modified = now - datetime.timedelta(days=1)
+    ann_old.record.data = "old"
+
+    ann_new = MagicMock()
+    ann_new.date_modified = now
+    ann_new.record.data = "new"
+
+    ann_mid = MagicMock()
+    ann_mid.date_modified = now - datetime.timedelta(hours=1)
+    ann_mid.record.data = "mid"
+
+    setattr(mock_local_file.model.annotations, schema_id, [ann_old, ann_new, ann_mid])
+
+    latest = mock_local_file.get_latest_annotation(schema_id)
+
+    assert latest is not None
+    assert latest.record.data == "new"
+
+
+def test_get_latest_annotation_with_source_filter(mock_local_file):
+    """Test retrieving latest annotation filtered by source ID first."""
+    schema_id = "test/dates_source"
+    now = datetime.datetime.now(datetime.UTC)
+
+    ann_wrong_source = MagicMock()
+    ann_wrong_source.date_modified = now + datetime.timedelta(hours=1)
+    ann_wrong_source.source.id = "src_B"
+
+    ann_src_a_new = MagicMock()
+    ann_src_a_new.date_modified = now
+    ann_src_a_new.source.id = "src_A"
+
+    ann_src_a_old = MagicMock()
+    ann_src_a_old.date_modified = now - datetime.timedelta(days=1)
+    ann_src_a_old.source.id = "src_A"
+
+    setattr(mock_local_file.model.annotations, schema_id, [ann_wrong_source, ann_src_a_new, ann_src_a_old])
+
+    latest = mock_local_file.get_latest_annotation(schema_id, source_id="src_A")
+
+    assert latest is not None
+    assert latest.source.id == "src_A"
+    assert latest == ann_src_a_new
+
+
+def test_get_latest_annotation_empty(mock_local_file):
+    """Test returns None when no annotations exist."""
+    assert mock_local_file.get_latest_annotation("test/empty") is None
+
+
+def test_get_latest_annotation_fallback_no_dates(mock_local_file):
+    """Test fallback behavior when date_modified is missing (e.g. freshly created local objects)."""
+    schema_id = "test/nodates"
+
+    ann1 = MagicMock()
+    del ann1.date_modified
+    ann1.record.id = 1
+
+    ann2 = MagicMock()
+    del ann2.date_modified
+    ann2.record.id = 2
+
+    setattr(mock_local_file.model.annotations, schema_id, [ann1, ann2])
+
+    result = mock_local_file.get_latest_annotation(schema_id)
+    assert result is not None
+
+    assert result in [ann1, ann2]

@@ -30,7 +30,7 @@ from urllib3.util.retry import Retry
 
 
 from dorsal.common import constants
-from dorsal.common.auth import is_offline_mode, read_api_key
+from dorsal.common.auth import is_offline_mode, read_api_key, get_user_id_from_config, write_auth_config
 from dorsal.common.constants import BASE_URL, VALID_DATASET_TYPES
 from dorsal.common.environment import is_jupyter_environment
 from dorsal.common.exceptions import (
@@ -167,6 +167,7 @@ class DorsalClient:
 
     _dorsal_base_url = BASE_URL
     _default_identity = "dorsal.DorsalClient"
+    _user_id: int | None = None
 
     _collections_endpoint = constants.API_ENDPOINT_COLLECTIONS
     _export_endpoint = constants.API_ENDPOINT_EXPORT
@@ -209,6 +210,29 @@ class DorsalClient:
             ("Yes" if self.api_key else "No (will use session headers if previously set, or fail if auth needed)"),
             self.api_key,
         )
+
+    @property
+    def user_id(self) -> int:
+        """Returns the authenticated User ID."""
+        if hasattr(self, "_user_id") and self._user_id is not None:
+            return self._user_id
+
+        config_id = get_user_id_from_config()
+        if config_id is not None:
+            self._user_id = config_id
+            return self._user_id
+
+        try:
+            creds = self.verify_credentials()
+            user_id = creds.get("user_id")
+            if user_id:
+                self._user_id = user_id
+                write_auth_config(api_key=self.api_key, user_id=user_id)
+                return user_id
+        except Exception:
+            pass
+
+        raise AuthError("Could not determine User ID. Ensure the client is authenticated.")
 
     def _make_user_agent(self) -> dict:
         dorsal_user_agent = {
