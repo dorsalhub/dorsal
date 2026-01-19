@@ -3137,7 +3137,7 @@ class DorsalClient:
 
         Args:
             file_hash (str): The SHA-256 hash of the file to annotate.
-            dataset_id (str): The target dataset ID (e.g., "namespace/name").
+            schema_id (str): The target Schema (e.g., "open/entity-extraction").
             annotation (Annotation): The `dorsal.file.validators.file_record.Annotation`
                 object to add.
             overwrite (bool): If True, replaces an existing annotation from the

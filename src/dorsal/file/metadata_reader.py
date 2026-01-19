@@ -752,10 +752,9 @@ class MetadataReader:
 
         Args:
             file_path (str): The path to the local file to process and index.
-            private (bool, optional): If True, the file record will be created
-                as private on DorsalHub. Defaults to True.
-            api_key (str, optional): An API key to use for this specific request,
-                overriding the client's default key. Defaults to None.
+            public (bool, optional): If True, the file record will be created as public. Defaults to False.
+            skip_cache (bool, optional): If True, forces reprocessing even if cache exists.
+            overwrite_cache (bool, optional): If True, updates the cache with new results.
 
         Returns:
             FileIndexResponse: A response object from the API detailing the

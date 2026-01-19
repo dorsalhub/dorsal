@@ -43,10 +43,10 @@ class PDFAnnotationModel(AnnotationModel):
         - Ignore unmapped fields from raw_metadata with a debug log.
 
         Args:
-          * raw_metadata: Dictionary of metadata directly from pypdfium2.
+            raw_metadata: Dictionary of metadata directly from pypdfium2.
 
         Returns:
-          * Normalized metadata dictionary.
+            Normalized metadata dictionary.
         """
         normalized_metadata: dict[str, Any] = {}
 
@@ -112,8 +112,7 @@ class PDFAnnotationModel(AnnotationModel):
 
         Raises:
             ImportError: If `pypdfium2` is not installed (propagated from utils).
-            Other exceptions from `pypdfium2` for critical, unrecoverable errors not handled by `pdfium_extract_pdf_metadata`.
-
+            Exception: For other critical, unrecoverable errors from `pypdfium2` not handled by `pdfium_extract_pdf_metadata`.
         """
         logger.debug("PDFAnnotationModel: Starting metadata extraction for '%s'", self.file_path)
 

@@ -83,6 +83,7 @@ if TYPE_CHECKING:
         FileRecordStrict,
         FileTag,
         NewFileTag,
+        ValidateTagsResult,
     )
     from dorsal.file.validators.base import FileCoreValidationModelHash
     from dorsal.file.validators.mediainfo import MediaInfoValidationModel
@@ -773,9 +774,6 @@ class DorsalFile(_DorsalFile):
             name: Name of the tag (typically 3-64 alphanumeric characters and
                   underscores).
             value: Value of the tag (str, bool, datetime, int, or float).
-            auto_validate: If True, immediately validates the tag against the
-                           DorsalHub API (requires internet connection).
-                           Defaults to False (lazy validation).
             api_key: Optional API key to use if auto_validate is True.
 
         Returns:
@@ -1497,7 +1495,7 @@ class LocalFile(_DorsalFile):
         )
         return self
 
-    def validate_tags(self, *, api_key: str | None = None):
+    def validate_tags(self, *, api_key: str | None = None) -> ValidateTagsResult | None:
         """
         Validates all tags against DorsalHub's API.
 
@@ -2229,7 +2227,16 @@ class LocalFile(_DorsalFile):
         Adds an 'open/classification' annotation to the file.
 
         Args:
-            - labels: can be simple strings (e.g., ["cat"]) or dictionaries
+            labels: can be simple strings (e.g., ["cat"]) or dictionaries.
+            vocabulary: List of valid labels for this classification task.
+            source: Source of the classification.
+            score_explanation: Explanation string for the score.
+            vocabulary_url: URL to the vocabulary definition.
+            public: If True, marks annotation as public.
+            overwrite: If True, overwrites existing classification.
+            api_key: API key for validation.
+            ignore_linter_errors: Skip linter checks.
+            force: Force add without validation.
 
         example:
             >>> # Only labels
