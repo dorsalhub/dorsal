@@ -1,10 +1,34 @@
 # Dorsal
 
-**A local-first metadata generation and management toolkit.**
+<p align="center">
+  <img src="https://dorsalhub.com/static/img/dorsal-logo.png" alt="Dorsal" width="520">
+</p>
 
-[![PyPI version](https://badge.fury.io/py/dorsalhub.svg)](https://pypi.org/project/dorsalhub/)
-[![Tests](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg)](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<p align="center">
+  <strong>A local-first metadata generation and management toolkit.</strong>
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/dorsalhub/">
+    <img src="https://img.shields.io/pypi/v/dorsalhub?color=0ea5e9" alt="PyPI version">
+  </a>
+  <a href="https://pypi.org/project/dorsalhub/">
+    <img src="https://img.shields.io/pypi/pyversions/dorsalhub?color=0ea5e9" alt="Python versions">
+  </a>
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/license-Apache_2.0-0ea5e9" alt="License">
+  </a>
+  <a href="https://docs.dorsalhub.com">
+    <img src="https://img.shields.io/badge/docs-dorsalhub.com-0ea5e9" alt="Documentation">
+  </a>
+  <br>
+  <a href="https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml">
+    <img src="https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg" alt="Tests">
+  </a>
+  <a href="https://codecov.io/gh/dorsalhub/dorsal">
+    <img src="https://codecov.io/gh/dorsalhub/dorsal/graph/badge.svg" alt="codecov">
+  </a>
+</p>
 
 **Dorsal** is a Python library and command line tool for generating, validating, and managing structured file metadata.
 
