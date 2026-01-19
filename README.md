@@ -1,11 +1,9 @@
-# Dorsal
-
 <p align="center">
   <img src="https://dorsalhub.com/static/img/dorsal-logo.png" alt="Dorsal" width="520">
 </p>
 
 <p align="center">
-  <strong>A local-first metadata generation and management toolkit.</strong>
+  <strong>A local-first file metadata generation and management toolkit.</strong>
 </p>
 
 <p align="center">
@@ -30,7 +28,7 @@
   </a>
 </p>
 
-**Dorsal** is a Python library and command line tool for generating, validating, and managing structured file metadata.
+**Dorsal** is a Python library and command line tool for **generating, validating, and managing structured file metadata**.
 
 Dorsal has a fully configurable local metadata extraction pipeline. Metadata records can be exported to file or synced to **[DorsalHub](https://dorsalhub.com)** - a private-by-default platform for searching and tagging file metadata.
 
@@ -38,8 +36,8 @@ Dorsal has a fully configurable local metadata extraction pipeline. Metadata rec
 
 * **Local First:** Metadata extraction happens locally, not in the cloud. Use the CLI or python API to run the built-in extraction models or incorporate your own.
 * **Strictly Validated:** All annotations are automatically checked against strict JSON Schemas and Pydantic models, ensuring predictability and easy downstream integration.
-* **Annotate Any File:** No file-type restrictions, and out-of-the-box support for many common file types including PDFs, Office documents, Media files and more.
-* **Extensible:** Support your own file types or annotation generation needs. Integrate your own models with arbitrary code.
+* **Batteries Included:** No file-type restrictions, and out-of-the-box support for core metadata extraction for many common file types including PDFs, Office documents, Media files and more.
+* **Extensible:** Support your own file types and metadata annotation needs. Integrate your own models easily.
 -----
 
 ## Installation
@@ -217,8 +215,23 @@ assert result.error is None
 
 You can add it to Dorsal's local file metadata extraction pipeline:
 ```python
+from collections import Counter
+from dorsal import AnnotationModel
 from dorsal.api import register_model
-from helloword import HelloWord
+from dorsal.file.helpers import build_generic_record
+
+class HelloWord(AnnotationModel):
+    def main(self):
+        with open(self.file_path, 'r') as f:
+            words = f.read().split()
+            
+        data = {str(i+1): v[0] for i, v in enumerate(Counter(words).most_common(5))}
+        
+        return build_generic_record(
+            file_hash=self.hash,
+            description="Top 5 most common words",
+            data=data
+        )
 
 # Add the model to your pipeline
 register_model(
