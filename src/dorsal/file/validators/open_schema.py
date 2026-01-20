@@ -14,15 +14,34 @@
 
 import logging
 from functools import lru_cache
+from typing import TYPE_CHECKING
+
 from dorsal.common.validators.json_schema import (
     JsonSchemaValidator,
     get_json_schema_validator,
 )
 from dorsal.file.schemas import OpenSchemaName, get_open_schema, OPEN_SCHEMA_NAME_MAP
 
+if TYPE_CHECKING:
+    audio_transcription: JsonSchemaValidator
+    classification: JsonSchemaValidator
+    document_extraction: JsonSchemaValidator
+    embedding: JsonSchemaValidator
+    entity_extraction: JsonSchemaValidator
+    generic: JsonSchemaValidator
+    geolocation: JsonSchemaValidator
+    llm_output: JsonSchemaValidator
+    object_detection: JsonSchemaValidator
+    regression: JsonSchemaValidator
+
 logger = logging.getLogger(__name__)
 
-_VALIDATOR_NAMES = {f"{name}_validator": name for name in OPEN_SCHEMA_NAME_MAP}
+_VALIDATOR_LOOKUP = {}
+
+for schema_id in OPEN_SCHEMA_NAME_MAP:
+    clean_name = schema_id.replace("-", "_")
+    _VALIDATOR_LOOKUP[clean_name] = schema_id
+    _VALIDATOR_LOOKUP[f"{clean_name}_validator"] = schema_id
 
 
 @lru_cache(maxsize=None)
@@ -38,22 +57,15 @@ def _build_and_cache_validator(schema_name: OpenSchemaName) -> JsonSchemaValidat
 
 
 def get_open_schema_validator(name: OpenSchemaName) -> JsonSchemaValidator:
-    """
-    Gets the pre-built, cached JsonSchemaValidator instance for a
-    Dorsal 'open/' schema by its short name.
-    """
+    """Gets the pre-built, cached JsonSchemaValidator instance for a Dorsal 'open/' schema by its short name."""
     if name not in OPEN_SCHEMA_NAME_MAP:
         raise ValueError(f"Unknown schema name: '{name}'.")
     return _build_and_cache_validator(name)
 
 
 def __getattr__(name: str) -> JsonSchemaValidator:
-    """
-    Called by Python when a module attribute is not found.
-    This allows for lazy-loading of the open schema validators
-    when they are imported by name (e.g., by the ModelRunner).
-    """
-    schema_name = _VALIDATOR_NAMES.get(name)
+    """Called by Python when a module attribute is not found."""
+    schema_name = _VALIDATOR_LOOKUP.get(name)
 
     if schema_name:
         return _build_and_cache_validator(schema_name)
@@ -61,6 +73,13 @@ def __getattr__(name: str) -> JsonSchemaValidator:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-__all__ = [
+def __dir__() -> list[str]:
+    """
+    Expose dynamic attributes to dir() calls (e.g. for autocomplete or introspection).
+    """
+    return list(globals().keys()) + list(_VALIDATOR_LOOKUP.keys())
+
+
+__all__ = list(_VALIDATOR_LOOKUP.keys()) + [
     "get_open_schema_validator",
-] + list(_VALIDATOR_NAMES.keys())
+]

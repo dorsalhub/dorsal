@@ -48,7 +48,7 @@ def version_callback(value: bool):
         from dorsal.common.cli import get_rich_console
 
         console = get_rich_console()
-        console.print(f"Dorsal CLI Version: {__version__}")
+        console.print(f"Dorsal Version {__version__}")
         raise typer.Exit()
 
 

@@ -439,8 +439,6 @@ class FileAnnotator:
         Args:
             annotation: The annotation data payload (dict or Pydantic model).
             validator: The validator to use (Pydantic class or JsonSchemaValidator instance).
-            file_hash: (Deprecated) The primary hash of the file being annotated.
-                       No longer injected into the record.
 
         Returns:
             The validated annotation as a dictionary.
@@ -534,8 +532,12 @@ class FileAnnotator:
         Args:
             annotation: The annotation data (dict or Pydantic model).
             schema_id: The validation schema for this annotation.
-            detail: A string describing the source of the manual annotation.
+            schema_version: Specific version of the schema.
+            source_id: A string identifying the source ID.
             validator: An optional validator for the payload.
+            private: Visibility status of the annotation.
+            ignore_linter_errors: If True, bypass data quality checks.
+            force: If True, bypass all validation.
 
         Returns:
             A constructed and validated `Annotation` object.

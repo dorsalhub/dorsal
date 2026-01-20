@@ -35,7 +35,7 @@ class AnnotationModel:
 
     An **Annotation Model** is processes a file and returns a structured dictionary of metadata (an **Annotation**).
 
-    See: [AnnotationModel docs](http://docs.dorsalhub.com/reference/annotation-model/)
+    See: [AnnotationModel docs](https://docs.dorsalhub.com/reference/annotation-model/)
 
     ### 1. The Input Contract (Attributes)
     When the `ModelRunner` instantiates your model, it automatically populates instance attributes before calling `main()`.

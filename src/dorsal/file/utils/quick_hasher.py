@@ -84,13 +84,13 @@ class QuickHasher:
         Use for predictable number sequence offset.
 
         Args:
-          * file_size: Size of the file in bytes.
+            file_size: Size of the file in bytes.
 
         Returns:
-          * Integer seed value (0 to PREDICTABLE_SEQUENCE_LENGTH - 1).
+            Integer seed value (0 to PREDICTABLE_SEQUENCE_LENGTH - 1).
 
         Raises:
-          * QuickHashConfigurationError: If PREDICTABLE_SEQUENCE_LENGTH is not positive.
+            QuickHashConfigurationError: If PREDICTABLE_SEQUENCE_LENGTH is not positive.
         """
         if self.PREDICTABLE_SEQUENCE_LENGTH <= 0:
             msg = f"PREDICTABLE_SEQUENCE_LENGTH must be positive for seed generation, got {self.PREDICTABLE_SEQUENCE_LENGTH}."
@@ -162,21 +162,21 @@ class QuickHasher:
         Generate a 'quick hash' by sampling file content.
 
         Args:
-          * file_path: Absolute path to the file.
-          * file_size: File size in bytes.
-          * raise_on_filesize_error: If True, raise ValueError if file size
+            file_path: Absolute path to the file.
+            file_size: File size in bytes.
+            raise_on_filesize_error: If True, raise ValueError if file size
                                      is outside permitted range. Default False (returns None).
 
         Returns:
-          * Hexadecimal string of QuickHash if successful and permitted.
-          * None if size out of range and `raise_on_filesize_error` is False.
+            Hexadecimal string of QuickHash if successful and permitted.
+            None if size out of range and `raise_on_filesize_error` is False.
 
         Raises:
-          * OSError: For file access errors (e.g., FileNotFoundError, PermissionError).
-          * ValueError: If `raise_on_filesize_error` is True and file size is out of range,
+            OSError: For file access errors (e.g., FileNotFoundError, PermissionError).
+            ValueError: If `raise_on_filesize_error` is True and file size is out of range,
                         or if internal configuration (e.g. chunk_size) is invalid.
                         (Specific subtypes like QuickHashFileSizeError or QuickHashConfigurationError may be raised).
-          * QuickHashFileInstabilityError: If the file changes state during hashing.
+            QuickHashFileInstabilityError: If the file changes state during hashing.
         """
         logger.debug("Attempting to generate QuickHash for: %s", file_path)
 

@@ -22,7 +22,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-
 from dorsal.cli import app
 from dorsal.common.auth import APIKeySource, APIKeyDetails
 
@@ -259,13 +258,11 @@ def test_pipeline_show_populated(mock_rich_console, mock_pipeline_api):
 def test_pipeline_actions(mock_rich_console, mock_pipeline_api, command, api_idx, api_name, verb):
     """Generic test for remove/activate/deactivate by index and name."""
 
-    # 1. Test by Index
     result_idx = runner.invoke(app, ["config", "pipeline", command, "1"])
     assert result_idx.exit_code == 0
     mock_pipeline_api[api_idx].assert_called_with(index=1)
     assert f"Successfully {verb} model at index 1" in str(mock_rich_console.print.call_args.args[0])
 
-    # 2. Test by Name
     result_name = runner.invoke(app, ["config", "pipeline", command, "MyModel"])
     assert result_name.exit_code == 0
     mock_pipeline_api[api_name].assert_called_with(name="MyModel")
@@ -284,12 +281,12 @@ def test_pipeline_action_error(mock_rich_console, mock_pipeline_api):
 
 def test_pipeline_check_clean(mock_rich_console, mock_pipeline_api):
     """Tests `config pipeline check` when everything is fine."""
-    # Mock step objects
+
     step1 = MagicMock()
     step1.annotation_model = "valid.path"
     step1.validation_model = None
 
-    mock_pipeline_api["get_steps"].return_value = [MagicMock(), step1]  # index 0 skipped
+    mock_pipeline_api["get_steps"].return_value = [MagicMock(), step1]
 
     result = runner.invoke(app, ["config", "pipeline", "check"])
 
@@ -299,25 +296,22 @@ def test_pipeline_check_clean(mock_rich_console, mock_pipeline_api):
 
 def test_pipeline_check_broken_with_fix(mock_rich_console, mock_pipeline_api):
     """Tests `config pipeline check --fix` with broken models."""
-    # Setup broken step
+
     step_broken = MagicMock()
     step_broken.annotation_model.name = "BrokenModel"
-    # Mock get_steps returning [base, broken]
+
     mock_pipeline_api["get_steps"].return_value = [MagicMock(), step_broken]
 
     mock_pipeline_api["import_callable"].side_effect = ImportError("Missing module")
 
-    # Run with --fix
     result = runner.invoke(app, ["config", "pipeline", "check", "--fix"])
 
     assert result.exit_code == 0
 
-    # Verify output
     output_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "Found 1 broken models" in output_text
     assert "Removed broken model 'BrokenModel'" in output_text
 
-    # Verify removal call (Index 1)
     mock_pipeline_api["remove_idx"].assert_called_with(index=1)
 
 
@@ -330,12 +324,10 @@ def test_pipeline_check_broken_no_fix(mock_rich_console, mock_pipeline_api):
 
     result = runner.invoke(app, ["config", "pipeline", "check"])
 
-    # Should fail exit code
     assert result.exit_code != 0
 
     output_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "--fix" in output_text
     assert "automatically remove" in output_text
 
-    # Verify NO removal called
     mock_pipeline_api["remove_idx"].assert_not_called()

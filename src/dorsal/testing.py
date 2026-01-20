@@ -73,7 +73,7 @@ def run_model(
     4.  Returns the result of your model's execution.
 
     Args:
-        model_class: The custom AnnotationModel class you want to test (e.g., `ArchiveModel`).
+        annotation_model: The custom AnnotationModel class you want to test (e.g., `ArchiveModel`).
         file_path: The absolute path to the file to test against.
         schema_id: (Optional) The target schema ID (e.g., "open/generic").
                    If this is an "open/" schema, the standard validator

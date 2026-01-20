@@ -50,7 +50,6 @@ from dorsal.client.validators import FileIndexResponse
 def mock_metadata_reader():
     """Mocks the MetadataReader class used by LocalFile."""
     with patch("dorsal.file.metadata_reader.MetadataReader") as mock_reader_class:
-        # Configure the instance that will be created by LocalFile
         mock_reader_instance = MagicMock()
         mock_reader_class.return_value = mock_reader_instance
         yield mock_reader_instance
@@ -59,8 +58,6 @@ def mock_metadata_reader():
 @pytest.fixture
 def mock_file_record_strict() -> FileRecordStrict:
     """Provides a valid, complete FileRecordStrict object."""
-    # This needs to be a real Pydantic object now, not a mock,
-    # because LocalFile's internal logic depends on its structure.
     return FileRecordStrict(
         hash="a" * 64,
         validation_hash="b" * 64,
@@ -84,21 +81,15 @@ def mock_file_record_strict() -> FileRecordStrict:
     )
 
 
-# --- Tests Start Here ---
-
-
 def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, fs):
     """Test successful initialization of a LocalFile."""
     file_path = "/fake/local.txt"
     fs.create_file(file_path)
 
-    # Arrange: The metadata reader will return our complete mock record
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
     lf = LocalFile(file_path)
 
-    # Assert
-    # normalize path to handle Windows CI where /fake/local.txt becomes C:\fake\local.txt
     expected_path = os.path.abspath(file_path)
 
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
@@ -113,7 +104,6 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
 
 def test_local_file_init_file_not_found():
     """Test that initializing with a non-existent path raises FileNotFoundError."""
-    # Note: We don't use the fake filesystem (fs) here to ensure the path doesn't exist
     with pytest.raises(FileNotFoundError):
         LocalFile("/path/that/does/not/exist.xyz")
 
@@ -126,15 +116,12 @@ def test_local_file_properties_are_correct(mock_metadata_reader, mock_file_recor
 
     lf = LocalFile(file_path)
 
-    # Test tags property (should be an empty list initially)
     assert lf.tags == []
 
-    # Test to_dict()
     as_dict = lf.to_dict()
     assert isinstance(as_dict, dict)
     assert as_dict["hash"] == "a" * 64
 
-    # Test to_json()
     as_json = lf.to_json()
     assert isinstance(as_json, str)
     assert '"hash": "aaaaaaaa' in as_json
@@ -154,7 +141,6 @@ def test_local_file_add_tag_success_no_validation(mock_metadata_reader, mock_fil
 
     lf.add_private_tag(name="status", value="draft")
 
-    # Assert
     assert len(lf.tags) == 1
     tag = lf.tags[0]
     assert isinstance(tag, NewFileTag)
@@ -172,7 +158,6 @@ def test_local_file_add_tag_with_successful_validation(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    # Mock the client that will be used for validation
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.validate_tag.return_value = ValidateTagsResult(valid=True)
@@ -510,7 +495,7 @@ def test_from_json_check_file_exists_fail(mock_file_record_strict, fs):
     if the *original* file (pointed to by JSON) is missing.
     """
     json_path = "/fake/record.json"
-    ghost_path = "/fake/ghost.txt"  # This file is NOT created in fs
+    ghost_path = "/fake/ghost.txt"
 
     record_data = mock_file_record_strict.model_dump(by_alias=True, mode="json")
     record_data["local_attributes"] = {"file_path": ghost_path}
@@ -737,3 +722,247 @@ def test_broken_symlink_fallback(mock_metadata_reader, mock_file_record_strict, 
 
     args, kwargs = mock_metadata_reader._get_or_create_record.call_args
     assert kwargs["file_path"] == link_path
+
+
+@patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_annotation_crud_lifecycle(
+    mock_annotator, mock_get_client, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """
+    Tests the full lifecycle of adding (private/public), getting, and removing annotations.
+    """
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.make_schema_validator.return_value = MagicMock()
+
+    def mock_make_annotation(annotation, **kwargs):
+        return Annotation(
+            record=GenericFileAnnotation(**annotation),
+            private=kwargs.get("private", True),
+            source=AnnotationManualSource(id=kwargs.get("source_id", "default_src")),
+        )
+
+    mock_annotator.make_manual_annotation.side_effect = mock_make_annotation
+
+    lf = LocalFile(file_path)
+
+    lf.add_private_annotation(
+        schema_id="test/private-schema", annotation_record={"key": "secret_value"}, source="src_A"
+    )
+
+    lf.add_public_annotation(schema_id="test/public-schema", annotation_record={"key": "public_value"}, source="src_B")
+
+    private_anns = lf.get_annotations("test/private-schema")
+    assert len(private_anns) == 1
+    assert private_anns[0].record.key == "secret_value"
+    assert private_anns[0].private is True
+    assert private_anns[0].source.id == "src_A"
+
+    public_anns = lf.get_annotations("test/public-schema")
+    assert len(public_anns) == 1
+    assert public_anns[0].record.key == "public_value"
+    assert public_anns[0].private is False
+
+    lf.remove_annotation("test/private-schema", source_id="src_A")
+    assert len(lf.get_annotations("test/private-schema")) == 0
+
+    lf.remove_annotation("test/public-schema")
+    assert len(lf.get_annotations("test/public-schema")) == 0
+
+
+@patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_annotation_wrappers_call_correct_helper(
+    mock_annotator, mock_get_client, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Verifies _add_annotation is called correctly by public/private wrappers."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.make_schema_validator.return_value = MagicMock()
+
+    mock_annotator.make_manual_annotation.return_value = Annotation(
+        record=GenericFileAnnotation(x=1), private=True, source=AnnotationManualSource(id="s")
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_private_annotation(schema_id="foo/bar", annotation_record={"x": 1})
+    assert mock_annotator.make_manual_annotation.call_args.kwargs["private"] is True
+
+    lf.add_public_annotation(schema_id="foo/baz", annotation_record={"x": 1})
+    assert mock_annotator.make_manual_annotation.call_args.kwargs["private"] is False
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_classification_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_classification using the real build_classification_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="cls"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_classification(labels=["cat", "dog"], score_explanation="Visual check")
+
+    anns = lf.get_annotations("open/classification")
+    assert len(anns) == 1
+    record = anns[0].record
+
+    assert record.labels == [{"label": "cat"}, {"label": "dog"}]
+    assert record.score_explanation == "Visual check"
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_embedding_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_embedding using the real build_embedding_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="emb"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_embedding(vector=[0.1, 0.5, -0.9], model="clip-vit-b32")
+
+    anns = lf.get_annotations("open/embedding")
+    assert len(anns) == 1
+    assert anns[0].record.vector == [0.1, 0.5, -0.9]
+    assert anns[0].record.model == "clip-vit-b32"
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_llm_output_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_llm_output using the real build_llm_output_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="llm"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_llm_output(model="gpt-4", response_data={"summary": "It was good."})
+
+    anns = lf.get_annotations("open/llm-output")
+    assert len(anns) == 1
+    assert anns[0].record.model == "gpt-4"
+    assert anns[0].record.response_data == '{"summary": "It was good."}'
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_location_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_location using the real build_location_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="loc"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_location(longitude=12.5, latitude=55.2, camera_make="Canon")
+
+    anns = lf.get_annotations("open/geolocation")
+    assert len(anns) == 1
+    record = anns[0].record
+
+    assert record.type == "Feature"
+    assert record.geometry == {"type": "Point", "coordinates": [12.5, 55.2]}
+    assert record.properties["camera_make"] == "Canon"
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_transcription_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_transcription using the real build_transcription_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="trans"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_transcription(text="Hello world", language="eng")
+
+    anns = lf.get_annotations("open/audio-transcription")
+    assert len(anns) == 1
+    assert anns[0].record.text == "Hello world"
+    assert anns[0].record.language == "eng"
+
+
+@patch("dorsal.file.dorsal_file.get_open_schema_validator")
+@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
+def test_add_regression_integration(
+    mock_annotator, mock_get_validator, mock_metadata_reader, mock_file_record_strict, fs
+):
+    """Test add_regression using the real build_single_point_regression_record helper."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
+        record=GenericFileAnnotation(**annotation),
+        private=kwargs.get("private", True),
+        source=AnnotationManualSource(id="reg"),
+    )
+
+    lf = LocalFile(file_path)
+
+    lf.add_regression(value=42.0, target="age", statistic="mean", unit="years")
+
+    anns = lf.get_annotations("open/regression")
+    assert len(anns) == 1
+    record = anns[0].record
+
+    assert record.target == "age"
+    assert record.unit == "years"
+    assert len(record.points) == 1
+    assert record.points[0]["value"] == 42.0
+    assert record.points[0]["statistic"] == "mean"

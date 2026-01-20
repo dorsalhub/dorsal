@@ -1,21 +1,43 @@
-# Dorsal
+<p align="center">
+  <img src="https://dorsalhub.com/static/img/dorsal-logo.png" alt="Dorsal" width="520">
+</p>
 
-**A local-first metadata generation and management toolkit.**
+<p align="center">
+  <strong>A local-first file metadata generation and management toolkit.</strong>
+</p>
 
-[![PyPI version](https://badge.fury.io/py/dorsalhub.svg)](https://pypi.org/project/dorsalhub/)
-[![Tests](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg)](https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<p align="center">
+  <a href="https://pypi.org/project/dorsalhub/">
+    <img src="https://img.shields.io/pypi/v/dorsalhub?color=0ea5e9" alt="PyPI version">
+  </a>
+  <a href="https://pypi.org/project/dorsalhub/">
+    <img src="https://img.shields.io/pypi/pyversions/dorsalhub?color=0ea5e9" alt="Python versions">
+  </a>
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/license-Apache_2.0-0ea5e9" alt="License">
+  </a>
+  <a href="https://docs.dorsalhub.com">
+    <img src="https://img.shields.io/badge/docs-dorsalhub.com-0ea5e9" alt="Documentation">
+  </a>
+  <br>
+  <a href="https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml">
+    <img src="https://github.com/dorsalhub/dorsal/actions/workflows/ci.yml/badge.svg" alt="Tests">
+  </a>
+  <a href="https://codecov.io/gh/dorsalhub/dorsal">
+    <img src="https://codecov.io/gh/dorsalhub/dorsal/graph/badge.svg" alt="codecov">
+  </a>
+</p>
 
-**Dorsal** is a Python library and command line tool for generating, validating, and managing structured file metadata.
+**Dorsal** is a Python library and command line tool for **generating, validating, and managing structured file metadata**.
 
 Dorsal has a fully configurable local metadata extraction pipeline. Metadata records can be exported to file or synced to **[DorsalHub](https://dorsalhub.com)** - a private-by-default platform for searching and tagging file metadata.
 
-### Core Concepts
+### Dorsal is...
 
 * **Local First:** Metadata extraction happens locally, not in the cloud. Use the CLI or python API to run the built-in extraction models or incorporate your own.
 * **Strictly Validated:** All annotations are automatically checked against strict JSON Schemas and Pydantic models, ensuring predictability and easy downstream integration.
-* **Annotate Any File:** No file-type restrictions, and out-of-the-box support for many common file types including PDFs, Office documents, Media files and more.
-* **Extensible:** Support your own file types or annotation generation needs. Integrate your own models with arbitrary code.
+* **Batteries Included:** No file-type restrictions, and out-of-the-box support for core metadata extraction for many common file types including PDFs, Office documents, Media files and more.
+* **Extensible:** Support your own file types and metadata annotation needs. Integrate your own models easily.
 -----
 
 ## Installation
@@ -160,7 +182,8 @@ generate_html_directory_report(
 You can extend Dorsal by adding custom **Annotation Models** to the extraction pipeline. These are Python classes that define extraction logic and the output schema.
 
 **Example: A "Hello Word" Model**
-This model counts the top 5 words in a text file.
+
+This toy model counts the top 5 words in a text file.
 
 ```python
 from collections import Counter

@@ -62,6 +62,11 @@ def get_email_from_config() -> str | None:
     return config.get(constants.CONFIG_SECTION_AUTH, {}).get(constants.CONFIG_OPTION_EMAIL)
 
 
+def get_user_id_from_config() -> int | None:
+    config, _ = load_config()
+    return config.get(constants.CONFIG_SECTION_AUTH, {}).get(constants.CONFIG_OPTION_USER_ID)
+
+
 def get_api_key_details() -> APIKeyDetails:
     """
     Finds the active API key and returns its details.
@@ -86,7 +91,9 @@ def get_api_key_details() -> APIKeyDetails:
     return APIKeyDetails(source=APIKeySource.NONE, value=None, path=None)
 
 
-def write_auth_config(api_key: str, email: str | None = None, scope: str = "global") -> None:
+def write_auth_config(
+    api_key: str, email: str | None = None, user_id: int | None = None, scope: str = "global"
+) -> None:
     """Writes authentication details to the specified config scope."""
     set_config_value(
         section=constants.CONFIG_SECTION_AUTH,
@@ -99,6 +106,14 @@ def write_auth_config(api_key: str, email: str | None = None, scope: str = "glob
             section=constants.CONFIG_SECTION_AUTH,
             option=constants.CONFIG_OPTION_EMAIL,
             value=email,
+            scope=scope,
+        )
+
+    if user_id is not None:
+        set_config_value(
+            section=constants.CONFIG_SECTION_AUTH,
+            option=constants.CONFIG_OPTION_USER_ID,
+            value=user_id,
             scope=scope,
         )
 
