@@ -1,20 +1,20 @@
 {
     "x-license": {
         "id": "Apache-2.0",
-        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "notice": "Copyright 2025-2026 Dorsal Hub LTD",
         "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/regression",
     "title": "Regression",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Represent continuous numerical predictions. Supports point estimates, confidence intervals, and time-series forecasting.",
     "type": "object",
     "properties": {
         "target": {
             "type": "string",
-            "description": "The name of the variable being predicted (e.g., 'temperature', 'stock_price').",
-            "maxLength": 128
+            "description": "The name of or a reference to the variable being predicted (e.g., 'temperature', 'stock_price').",
+            "maxLength": 256
         },
         "unit": {
             "type": "string",

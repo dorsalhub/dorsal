@@ -182,7 +182,8 @@ generate_html_directory_report(
 You can extend Dorsal by adding custom **Annotation Models** to the extraction pipeline. These are Python classes that define extraction logic and the output schema.
 
 **Example: A "Hello Word" Model**
-This model counts the top 5 words in a text file.
+
+This toy model counts the top 5 words in a text file.
 
 ```python
 from collections import Counter
@@ -215,23 +216,8 @@ assert result.error is None
 
 You can add it to Dorsal's local file metadata extraction pipeline:
 ```python
-from collections import Counter
-from dorsal import AnnotationModel
 from dorsal.api import register_model
-from dorsal.file.helpers import build_generic_record
-
-class HelloWord(AnnotationModel):
-    def main(self):
-        with open(self.file_path, 'r') as f:
-            words = f.read().split()
-            
-        data = {str(i+1): v[0] for i, v in enumerate(Counter(words).most_common(5))}
-        
-        return build_generic_record(
-            file_hash=self.hash,
-            description="Top 5 most common words",
-            data=data
-        )
+from helloword import HelloWord
 
 # Add the model to your pipeline
 register_model(

@@ -1,13 +1,13 @@
 {
     "x-license": {
         "id": "Apache-2.0",
-        "notice": "Copyright 2025 Dorsal Hub LTD",
+        "notice": "Copyright 2025-2026 Dorsal Hub LTD",
         "url": "https://github.com/dorsalhub/open-validation-schemas/blob/main/LICENSE"
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/generic",
     "title": "Generic",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "A flexible schema for storing arbitrary key-value data.",
     "type": "object",
     "properties": {
