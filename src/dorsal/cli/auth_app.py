@@ -27,7 +27,7 @@ from typing import Annotated, Optional
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(name="auth", help="Manage authentication and user sessions.", no_args_is_help=True)
+app = typer.Typer(name="auth", help="Manage DorsalHub API Key authentication.", no_args_is_help=True)
 
 
 def _display_user_info(user_info: dict, title: str, palette: dict, console: Console):

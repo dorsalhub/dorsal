@@ -27,6 +27,7 @@ from dorsal.cli.config_app import app as config_app_
 from dorsal.cli.auth_app import app as auth_app_
 from dorsal.cli.dir_app import app as dir_app_
 from dorsal.cli.file_app import app as file_app_
+from dorsal.cli.model_app import app as model_app_
 from dorsal.cli.record_app import app as record_app_
 from dorsal.cli.collection_app import app as collection_app_
 from dorsal.cli.config_app import theme_app as theme_app_
@@ -121,10 +122,7 @@ def main(
     ctx.obj = {"palette": get_palette(theme)}
 
 
-app.command(name="search", help="Search DorsalHub file records.")(search_record)
-
-
-@app.command(name="id", help="Identifies a local file by its hash, by checking DorsalHub.")
+@app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.")
 def id_alias(
     ctx: typer.Context,
     path: Annotated[
@@ -180,14 +178,17 @@ def id_alias(
     )
 
 
-app.add_typer(auth_app_, name="auth", help="Manage authentication and user sessions.")
-app.add_typer(file_app_, name="file", help="Commands to manage local file metadata.")
-app.add_typer(record_app_, name="record", help="Commands to manage remote file metadata.")
+app.command(name="search", help="Search DorsalHub file metadata.")(search_record)
+
+app.add_typer(auth_app_, name="auth")
+app.add_typer(file_app_, name="file")
 app.add_typer(dir_app_, name="dir")
+app.add_typer(record_app_, name="record")
+app.add_typer(collection_app_, name="collection")
 app.add_typer(cache_app_, name="cache")
-app.add_typer(config_app_, name="config", help="View the current library configuration.")
-app.add_typer(collection_app_, name="collection", help="Commands to manage remote file collections.")
-app.add_typer(theme_app_, name="theme", help="Manage, list, and set color themes.")
+app.add_typer(config_app_, name="config")
+app.add_typer(model_app_, name="model")
+app.add_typer(theme_app_, name="theme")
 
 
 def cli_app():

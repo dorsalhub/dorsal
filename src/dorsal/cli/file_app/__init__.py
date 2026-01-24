@@ -22,7 +22,7 @@ from dorsal.cli.file_app.identify_cmd import identify_file_cmd
 
 app = typer.Typer(
     name="file",
-    help="Commands to manage local file metadata.",
+    help="Scan, manage, identify and push local file metadata.",
     no_args_is_help=True,
 )
 

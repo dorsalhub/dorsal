@@ -21,7 +21,7 @@ from dorsal.cli.record_app.search_cmd import search_record
 
 app = typer.Typer(
     name="record",
-    help="Commands to manage remote file metadata.",
+    help="Search, view and delete file metadata records and tags on DorsalHub.",
     no_args_is_help=True,
 )
 
