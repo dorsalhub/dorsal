@@ -7,7 +7,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://dorsalhub.com/schemas/open/audio-transcription",
     "title": "Audio Transcription",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Store text transcribed from an audio source. Supports timed segments, speaker identification, and non-verbal events.",
     "type": "object",
     "properties": {
@@ -29,6 +29,11 @@
             "description": "The 3-letter ISO-639-3 language code of the transcription (e.g., 'eng', 'fra').",
             "pattern": "^[a-z]{3}$",
             "maxLength": 3
+        },
+        "duration": {
+            "type": "number",
+            "description": "The total duration of the source media in seconds.",
+            "minimum": 0
         },
         "score_explanation": {
             "type": "string",
