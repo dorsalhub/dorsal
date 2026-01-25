@@ -206,7 +206,7 @@ def scan_directory(
             console.print(
                 f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                 f" Please use -s (for .json) or -c (for .csv) to specify the report type.",
-                style="yellow",
+                style=palette.get("warning", "yellow"),
             )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
@@ -331,7 +331,9 @@ def _save_json_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {e}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )
 
 
 def _save_csv_report(
@@ -359,7 +361,9 @@ def _save_csv_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {e}")
     except Exception as e:
         logger.error(f"Failed to save CSV report: {e}")
-        console.print(f"⚠️ Could not save CSV report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save CSV report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )
 
 
 def _print_directory_summary_panel(collection_info: dict, palette: dict):

@@ -277,3 +277,13 @@ class FileAnnotationGroupResponse(BaseModel):
     date_created: datetime.datetime
     date_modified: datetime.datetime
     private: bool
+
+
+class RegistryModelResponse(BaseModel):
+    namespace: str
+    name: str
+    version: str
+    install_url: str
+    schema_id: str
+    description: str | None = None
+    maintainer: str | None = None

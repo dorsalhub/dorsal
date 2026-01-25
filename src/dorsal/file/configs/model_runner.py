@@ -123,8 +123,12 @@ class FilenameDependencyConfig(DependencyConfig):
     pattern: str | re.Pattern
 
 
+DependencyType = Union[
+    MediaTypeDependencyConfig, FileExtensionDependencyConfig, FileSizeDependencyConfig, FilenameDependencyConfig
+]
+
 ModelRunnerDependencyConfig = Annotated[
-    Union[MediaTypeDependencyConfig, FileExtensionDependencyConfig, FileSizeDependencyConfig, FilenameDependencyConfig],
+    DependencyType,
     Field(discriminator="type"),
 ]
 

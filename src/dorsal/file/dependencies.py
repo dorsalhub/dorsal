@@ -17,6 +17,7 @@ import re
 from typing import Sequence
 
 from dorsal.file.configs.model_runner import (
+    DependencyType,
     FileExtensionDependencyConfig,
     FilenameDependencyConfig,
     FileSizeDependencyConfig,
@@ -24,6 +25,17 @@ from dorsal.file.configs.model_runner import (
 )
 from dorsal.file.utils.size import parse_filesize
 
+__all__ = [
+    "DependencyType",
+    "FileExtensionDependencyConfig",
+    "FilenameDependencyConfig",
+    "FileSizeDependencyConfig",
+    "MediaTypeDependencyConfig",
+    "make_media_type_dependency",
+    "make_file_extension_dependency",
+    "make_file_name_dependency",
+    "make_file_size_dependency",
+]
 
 logger = logging.getLogger(__name__)
 

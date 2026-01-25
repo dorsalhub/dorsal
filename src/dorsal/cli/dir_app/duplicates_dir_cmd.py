@@ -181,7 +181,7 @@ def duplicates_dir(
                 console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
-                    style="yellow",
+                    style=palette.get("warning", "yellow"),
                 )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)

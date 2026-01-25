@@ -126,7 +126,7 @@ def search_and_display(
                 console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
-                    style="yellow",
+                    style=palette.get("warning", "yellow"),
                 )
 
     if not query:
@@ -166,7 +166,7 @@ def search_and_display(
 
         search_caption = (
             f"Search powered by DorsalHub Search {response.api_version}. "
-            f"For search syntax, visit: https://docs.dorsalhub.com/search"
+            f"For search syntax, visit: https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
         table = Table(

@@ -101,6 +101,7 @@ if TYPE_CHECKING:
         FileDeleteResponse,
         AddFilesResponse,
         AddFilesRequest,
+        RegistryModelResponse,
         RemoveFilesRequest,
         RemoveFilesResponse,
     )  # pragma: no cover
@@ -175,6 +176,7 @@ class DorsalClient:
     _file_search_endpoint = constants.API_ENDPOINT_FILE_SEARCH
     _file_tag_validation_endpoint = constants.API_ENDPOINT_FILE_TAG_VALIDATION
     _namespaces_endpoint = constants.API_ENDPOINT_NAMESPACES
+    _registry_endpoint = constants.API_ENDPOINT_REGISTRY
     _user_check_files_indexed_endpoint = constants.API_ENDPOINT_USER_CHECK_FILES_INDEXED
 
     def __init__(
@@ -465,6 +467,10 @@ class DorsalClient:
     def _make_delete_file_annotation_url(self, file_hash: str, annotation_id: str) -> str:
         """Constructs the URL for deleting a specific file annotation."""
         return f"{self.base_url}/{self._files_endpoint.strip('/')}/{file_hash.strip('/')}/annotations/{annotation_id.strip('/')}"
+
+    def _make_model_registry_url(self, namespace: str, name: str) -> str:
+        """Constructs the URL for the model registry endpoint."""
+        return f"{self.base_url}/{self._registry_endpoint.strip('/')}/models/{namespace.strip('/')}/{name.strip('/')}"
 
     def _validate_sha256_hashes(self, file_hashes: list[str]) -> list[str]:
         if not isinstance(file_hashes, list) or not file_hashes:
@@ -3434,3 +3440,39 @@ class DorsalClient:
 
         logger.debug("Successfully deleted annotation %s from file %s.", annotation_id, validated_hash)
         return None
+
+    def get_registry_model(self, model_identifier: str) -> RegistryModelResponse:
+        """
+        Resolves a registry ID (e.g. 'dorsal/whisper') to its installation metadata.
+
+        Args:
+            model_identifier: The namespaced model ID (e.g. "dorsal/whisper").
+
+        Raises:
+            NotFoundError: If the model does not exist in the registry.
+            DorsalClientError: If the identifier format is invalid.
+        """
+        from dorsal.client.validators import RegistryModelResponse
+
+        if "/" not in model_identifier:
+            # We enforce namespacing for registry lookups.
+            # Single words (e.g. 'whisper') are treated as PyPI packages by the caller.
+            raise DorsalClientError(f"Invalid registry ID '{model_identifier}'. Expected format 'namespace/name'.")
+
+        namespace, name = model_identifier.split("/", 1)
+
+        target_url = self._make_model_registry_url(namespace=namespace, name=name)
+
+        logger.debug("Resolving registry model: %s", target_url)
+
+        try:
+            response = self.session.get(url=target_url, timeout=self.timeout, headers=self._make_request_headers())
+            self.last_response = response
+        except requests.exceptions.RequestException as err:
+            logger.exception("Registry lookup failed for %s", target_url)
+            raise NetworkError("Failed to connect to registry.", target_url, err) from err
+
+        if response.status_code != 200:
+            self._handle_api_error(response)
+
+        return RegistryModelResponse(**response.json())
