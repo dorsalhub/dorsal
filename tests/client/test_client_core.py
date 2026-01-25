@@ -17,7 +17,7 @@ import requests
 from unittest.mock import patch
 
 from dorsal.client import DorsalClient
-from dorsal.common.constants import API_MAX_BATCH_SIZE
+from dorsal.common.constants import API_MAX_BATCH_SIZE, BASE_URL
 from dorsal.common.exceptions import (
     APIError,
     AuthError,
@@ -32,27 +32,26 @@ from dorsal.common.exceptions import (
 
 # Constants
 _DUMMY_API_KEY = "abc123_test_key"
-_DUMMY_BASE_URL = "http://dorsalhub.test"
 _DUMMY_SHA256 = "a" * 64
 
 
 @pytest.fixture
 def client():
-    return DorsalClient(api_key=_DUMMY_API_KEY, base_url=_DUMMY_BASE_URL)
+    return DorsalClient(api_key=_DUMMY_API_KEY, base_url=BASE_URL)
 
 
 def test_init():
     """Test client initialization and default values."""
     client = DorsalClient(api_key=_DUMMY_API_KEY)
     assert client.api_key == _DUMMY_API_KEY
-    assert client.base_url == "https://api.dorsalhub.com"
+    assert client.base_url == BASE_URL
     assert client._file_records_batch_insert_size == API_MAX_BATCH_SIZE
 
 
 def test_init_custom_base_url():
     """Test initialization with custom base URL."""
-    client = DorsalClient(api_key=_DUMMY_API_KEY, base_url=_DUMMY_BASE_URL)
-    assert client.base_url == _DUMMY_BASE_URL
+    client = DorsalClient(api_key=_DUMMY_API_KEY, base_url=BASE_URL)
+    assert client.base_url == BASE_URL
 
 
 def test_make_user_agent(client):
@@ -106,7 +105,7 @@ def test_handle_api_error_json(client, status_code, error_json, expected_excepti
     mock_response.status_code = status_code
     mock_response.json = lambda: error_json
     mock_response._content = b'{"detail": "Error"}'
-    mock_response.url = f"{_DUMMY_BASE_URL}/test"
+    mock_response.url = f"{BASE_URL}/test"
 
     with pytest.raises(expected_exception) as excinfo:
         client._handle_api_error(mock_response, suppress_warning_log=True)
@@ -118,7 +117,7 @@ def test_handle_api_error_no_json(client):
     """Test error handling when response body is not JSON."""
     mock_response = requests.Response()
     mock_response.status_code = 400
-    mock_response.url = f"{_DUMMY_BASE_URL}/test"
+    mock_response.url = f"{BASE_URL}/test"
     mock_response._content = b"Raw text error message"
 
     with pytest.raises(BadRequestError) as excinfo:
@@ -190,7 +189,7 @@ def test_validate_sha256_hashes_errors(client):
 def test_verify_credentials_success(client, requests_mock):
     """Test successful credential verification."""
     mock_response = {"user_id": 1, "username": "test"}
-    requests_mock.get(f"{_DUMMY_BASE_URL}/v1/users/me", json=mock_response, status_code=200)
+    requests_mock.get(f"{BASE_URL}/v1/users/me", json=mock_response, status_code=200)
 
     result = client.verify_credentials()
     assert result["username"] == "test"
@@ -198,7 +197,7 @@ def test_verify_credentials_success(client, requests_mock):
 
 def test_verify_credentials_failure(client, requests_mock):
     """Test failed credential verification."""
-    requests_mock.get(f"{_DUMMY_BASE_URL}/v1/users/me", status_code=401)
+    requests_mock.get(f"{BASE_URL}/v1/users/me", status_code=401)
 
     with pytest.raises(AuthError):
         client.verify_credentials()
@@ -206,7 +205,7 @@ def test_verify_credentials_failure(client, requests_mock):
 
 def test_verify_credentials_network_error(client, requests_mock):
     """Test network error during verification."""
-    requests_mock.get(f"{_DUMMY_BASE_URL}/v1/users/me", exc=requests.exceptions.ConnectionError)
+    requests_mock.get(f"{BASE_URL}/v1/users/me", exc=requests.exceptions.ConnectionError)
 
     with pytest.raises(NetworkError):
         client.verify_credentials()
