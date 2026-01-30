@@ -26,86 +26,99 @@ dependencies = [
     "dorsalhub",
 ]
 
-# --- DORSAL REGISTRY CONFIG ---
-# This registers your model with the Dorsal ecosystem.
 [project.entry-points."dorsal.models"]
-{entry_point_name} = "{module_name}:DORSAL_CONFIG"
+{entry_point_name} = "{module_name}"
 
-# --- PACKAGING CONFIG ---
 [tool.hatch.build.targets.wheel]
 packages = ["{module_name}"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"model_config.toml" = "{module_name}/model_config.toml"
 """
 
-MODEL_TEMPLATE = """from dorsal import AnnotationModel
+MODEL_CONFIG_TEMPLATE = """# Dorsal Model Configuration
+# Documentation: https://docs.dorsalhub.com/models/config
+
+# --- BASIC CONFIG ---
+# The name of your Annotation Model class
+model_class = "{class_name}"
+
+# The schema which validates the model output
+schema_id = "open/generic"
+
+# --- DEPENDENCIES ---
+# Define when this model should run.
+
+# Example 1 (media_type): Run on files with the `text/plain` media type
+[[dependencies]]
+type = "media_type"
+include = ["text/plain"]
+
+# Example 2 (media_type): Run on any audio/video files except for Matroska video
+# [[dependencies]]
+# type = "media_type"
+# include = ["audio", "video", "text/plain"]
+# exclude = ["video/matroska"]
+
+# Example 3 (file extension): Run only on MS Office Docs
+# [[dependencies]]
+# type = "extension"
+# extensions = ["doc", "docx]
+
+# Example 4 (file size): Run only on files smaller than 100MB
+# [[dependencies]]
+# type = "file_size"
+# max_size = "100MB"
+
+# --- RUNTIME OPTIONS ---
+[options]
+# Pass keyword arguments to your model class `main` method
+"""
+
+INIT_TEMPLATE = """from .model import {class_name}
+
+__all__ = ["{class_name}"]
+"""
+
+MODEL_TEMPLATE = """from importlib.metadata import version
+from dorsal import AnnotationModel
 
 class {class_name}(AnnotationModel):
     id = "local/{entry_point_name}"
-    version = "0.1.0"
+    version = version("{package_name}")
 
     def main(self):
-        # The file content is available at self.file_path
-        # The base metadata (hash, size) is in self.base_record
         
-        # TODO: Implement your logic here.
-        # This return value must match the 'open/generic' schema.
-        return {{
-            "data": {{
-                "hello": "world"
-            }},
-            "producer": self.id
-        }}
+        # Implement your logic here.
+
+        return {{"data": {{"Hello": "World"}}}}
 """
 
-CONFIG_TEMPLATE = """from dorsal.file.dependencies import make_media_type_dependency
-from .model import {class_name}
-
-# The Registry Contract
-DORSAL_CONFIG = {{
-    "model_class": {class_name},
-    "schema_id": "open/generic",
-    "dependencies": [
-        # Example: Run only on PDFs
-        # make_media_type_dependency(include=["application/pdf"])
-    ],
-    "options": {{
-        # Define default options here
-    }}
-}}
-"""
-
-INIT_TEMPLATE = """from .config import DORSAL_CONFIG
-
-__all__ = ["DORSAL_CONFIG"]
-"""
-
-# NEW: Uses dorsal.testing.run_model to simulate a real execution
 TEST_TEMPLATE = """import pytest
+import pathlib
+import tomllib
 from dorsal.testing import run_model
-from {module_name}.config import DORSAL_CONFIG
+from {module_name}.model import {class_name}
 
 def test_model_integration(tmp_path):
-    \"\"\"
-    Tests the model running inside the Dorsal harness.
-    This verifies config, schema validation, and execution logic.
-    \"\"\"
     # 1. Setup a dummy file
     dummy_file = tmp_path / "test_doc.txt"
     dummy_file.write_text("Hello Dorsal!")
 
-    # 2. Run the model using the actual config
+    # 2. Load Registry Metadata
+    root = pathlib.Path(__file__).parent.parent
+    with open(root / "model_config.toml", "rb") as f:
+        config = tomllib.load(f)
+
+    # 3. Run Model
     result = run_model(
-        annotation_model=DORSAL_CONFIG["model_class"],
+        annotation_model={class_name},
         file_path=str(dummy_file),
-        schema_id=DORSAL_CONFIG["schema_id"],
-        validation_model=DORSAL_CONFIG.get("validation_model"),
-        dependencies=DORSAL_CONFIG.get("dependencies"),
-        options=DORSAL_CONFIG.get("options"),
+        schema_id=config.get("schema_id", "open/generic"),
+        dependencies=config.get("dependencies"),
+        options=config.get("options"),
     )
 
-    # 3. Assertions
     assert result.error is None, f"Model execution failed: {{result.error}}"
-    assert result.record is not None, "Model returned no data"
-    
-    # Check expected output from the template logic
-    assert result.record["data"]["hello"] == "world"
+    assert result.record is not None
 """

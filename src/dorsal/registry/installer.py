@@ -1,9 +1,13 @@
+# dorsal/registry/installer.py
+
 import sys
 import subprocess
 import importlib.metadata
+import importlib.resources
 import logging
 import pathlib
-from typing import Literal
+import tomllib
+from typing import Literal, Any
 
 import tomlkit
 
@@ -36,11 +40,36 @@ def _get_local_pyproject_name(target_path: pathlib.Path) -> str | None:
         return None
 
 
+def _load_packaged_model_config(module_name: str) -> dict[str, Any]:
+    """
+    Loads 'model_config.toml' from the installed package resources.
+    """
+    try:
+        # traverse the package resources safely (zip-safe)
+        resource_path = importlib.resources.files(module_name) / "model_config.toml"
+
+        if not resource_path.is_file():
+            return {}
+
+        content = resource_path.read_text(encoding="utf-8")
+        return tomllib.loads(content)
+
+    except (ImportError, FileNotFoundError):
+        return {}
+    except tomllib.TOMLDecodeError as e:
+        raise DorsalConfigError(f"Syntax error in '{module_name}/model_config.toml': {e}") from e
+    except Exception as e:
+        logger.warning(f"Unexpected error loading config from {module_name}: {e}")
+        return {}
+
+
 def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     """
     Runs pip install while streaming output to stdout, but capturing it for
     error analysis if the process fails.
     """
+    logger.info(f"Installing {target_desc}...")
+
     # Merge stderr into stdout so we capture everything in one stream
     process = subprocess.Popen(
         cmd,
@@ -49,6 +78,7 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
         text=True,
         encoding="utf-8",
         errors="replace",  # Prevent crashing on non-utf8 install logs
+        bufsize=1,  # Line buffered
     )
 
     captured_lines = []
@@ -121,7 +151,7 @@ def install_model_target(
     # 2. Snapshot environment
     pre_install_packages = _get_installed_distribution_names()
 
-    # 3. Run pip install (using the new streaming helper)
+    # 3. Run pip install (using the streaming helper)
     cmd = [sys.executable, "-m", "pip", "install", actual_target]
     if force_reinstall:
         cmd.append("--force-reinstall")
@@ -173,7 +203,7 @@ def install_model_target(
             "Tip: Try running with [bold white]--force[/] to trigger a clean reinstall."
         )
 
-    # 5. Register
+    # 5. Register using the detected name
     install_model_from_package(package_name, scope=scope)
 
     return package_name
@@ -184,12 +214,14 @@ def install_model_from_package(
     entry_point_group: str = "dorsal.models",
     scope: Literal["project", "global"] = "project",
 ) -> None:
-    # ... (Keep existing implementation) ...
-    # This part was working fine
+    """
+    Registers a model from an installed package.
+    Strictly requires 'model_config.toml' with an explicit 'model_class' definition.
+    """
     logger.info(f"Registering model from package '{package_name}'...")
 
+    # 1. Resolve Entry Point
     eps = importlib.metadata.entry_points(group=entry_point_group)
-
     target_ep = None
     normalized_pkg_name = package_name.lower().replace("_", "-")
 
@@ -203,16 +235,49 @@ def install_model_from_package(
 
     if not target_ep:
         raise DorsalError(
-            f"Package '{package_name}' is installed but does not expose a '{entry_point_group}' entry point.\n"
-            "Is this a valid Dorsal model?"
+            f"Package '{package_name}' is installed but does not expose a '{entry_point_group}' entry point."
         )
 
     try:
-        raw_config = target_ep.load()
-        spec = ModelSpec(**raw_config)
-    except Exception as e:
-        raise DorsalError(f"Failed to load model contract from '{package_name}': {e}") from e
+        # 2. Load the Module (Code)
+        module = target_ep.load()
+        module_name = target_ep.module
 
+        # 3. Load the Metadata (Config)
+        toml_config = _load_packaged_model_config(module_name)
+
+        if not toml_config:
+            raise DorsalError(
+                f"Missing 'model_config.toml' in package '{package_name}'.\n"
+                "Modern Dorsal models must include this file via 'force-include' in pyproject.toml."
+            )
+
+        # 4. Resolve Model Class (Explicit Definition Required)
+        if "model_class" not in toml_config:
+            raise DorsalError(f"Invalid 'model_config.toml' in '{package_name}': Missing required key 'model_class'.")
+
+        class_name = toml_config["model_class"]
+        try:
+            model_class = getattr(module, class_name)
+        except AttributeError as err:
+            raise DorsalError(
+                f"Config defines model_class='{class_name}', but it was not exported by module '{module_name}' - {err}"
+            ) from err
+
+        # 5. Merge Config
+        merged_config = {
+            "model_class": model_class,
+            "schema_id": toml_config.get("schema_id", "open/generic"),
+            "dependencies": toml_config.get("dependencies"),
+            "options": toml_config.get("options", {}),
+        }
+
+        spec = ModelSpec(**merged_config)
+
+    except Exception as e:
+        raise DorsalError(f"Failed to inspect model package '{package_name}': {e}") from e
+
+    # 6. Register
     try:
         register_model(
             annotation_model=spec.model_class,
@@ -223,5 +288,7 @@ def install_model_from_package(
             overwrite=True,
             scope=scope,
         )
+        logger.info(f"Successfully registered model: {spec.model_class.__name__} ({spec.schema_id})")
+
     except Exception as e:
         raise DorsalConfigError(f"Failed to update {scope} config: {e}") from e

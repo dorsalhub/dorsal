@@ -22,6 +22,7 @@ from dorsal.file.configs.model_runner import (
     FilenameDependencyConfig,
     FileSizeDependencyConfig,
     MediaTypeDependencyConfig,
+    MAX_DEPENDENCY_ARRAY_ITEMS
 )
 from dorsal.file.utils.size import parse_filesize
 
@@ -38,7 +39,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
 
 def make_media_type_dependency(
     include: Sequence[str] | None = None,
@@ -73,6 +73,12 @@ def make_media_type_dependency(
             "If the model should run on all media types, call 'dorsal.testing.run_model' without 'dependencies' instead."
         )
 
+    if include and len(include) > MAX_DEPENDENCY_ARRAY_ITEMS:
+        raise ValueError(f"'include' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items. Use a regex 'pattern' for broad matching.")
+
+    if exclude and len(exclude) > MAX_DEPENDENCY_ARRAY_ITEMS:
+        raise ValueError(f"'exclude' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items.")
+
     return MediaTypeDependencyConfig(
         include=set(include) if include else None,
         exclude=set(exclude) if exclude else None,
@@ -103,6 +109,9 @@ def make_file_extension_dependency(
             "A file extension dependency must have at least one extension.\n"
             "If the model should run on all file types, call 'dorsal.testing.run_model' without 'dependencies' instead."
         )
+
+    if len(extensions) > MAX_DEPENDENCY_ARRAY_ITEMS:
+        raise ValueError(f"'extensions' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items.")
 
     processed_extensions = {f".{ext.lstrip('.').lower()}" for ext in extensions}
 
