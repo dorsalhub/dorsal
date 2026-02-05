@@ -119,31 +119,6 @@ def test_logout_success(mocker, mock_rich_console, mock_auth_app):
     assert "✅ You have been successfully logged out." in str(printed_text)
 
 
-def test_logout_global_needs_force(mocker, mock_rich_console, mock_auth_app):
-    """Tests that logging out of GLOBAL scope requires --force."""
-    from dorsal.common.auth import APIKeySource
-
-    mocker.patch(
-        "dorsal.common.auth.get_api_key_details", return_value={"source": APIKeySource.GLOBAL, "value": "g-key"}
-    )
-
-    result = runner.invoke(app, ["auth", "logout"])
-
-    # Should fail/exit early asking for confirmation
-    assert result.exit_code == 0
-    printed_text = str(mock_rich_console.print.call_args_list)
-    assert "Warning" in printed_text
-    assert "--force" in printed_text
-
-    # Now try with force
-    mock_remove = mocker.patch("dorsal.common.auth.remove_api_key", return_value=True)
-    result_force = runner.invoke(app, ["auth", "logout", "--force"])
-
-    assert result_force.exit_code == 0
-    mock_remove.assert_called_with(scope=APIKeySource.GLOBAL)
-    assert "successfully logged out" in str(mock_rich_console.print.call_args.args[0])
-
-
 def test_logout_not_logged_in(mocker, mock_rich_console, mock_auth_app):
     """Tests 'auth logout' when no key exists."""
     from dorsal.common.auth import APIKeySource

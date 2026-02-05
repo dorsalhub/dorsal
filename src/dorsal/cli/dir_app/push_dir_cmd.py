@@ -141,6 +141,14 @@ def push_directory(
             help="Follow symlinks to index target metadata vs indexing the link itself.",
         ),
     ] = True,
+    lazy: Annotated[
+        bool,
+        typer.Option(
+            "--lazy",
+            help="Start processing immediately with an indeterminate progress bar. Useful for massive directories.",
+            rich_help_panel="Performance Options",
+        ),
+    ] = False,
 ):
     """
     Scans a directory, pushes all file metadata to DorsalHub,
@@ -195,6 +203,7 @@ def push_directory(
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
+            lazy=lazy,
         )
 
         if not collection:

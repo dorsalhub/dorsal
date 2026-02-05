@@ -286,4 +286,7 @@ class RegistryModelResponse(BaseModel):
     install_url: str
     schema_id: str
     description: str | None = None
-    maintainer: str | None = None
+    is_official: bool = False
+    is_verified: bool = False
+    created_at: datetime.datetime | None = None
+    dependencies: list[dict[str, Any]] | None = None

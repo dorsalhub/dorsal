@@ -50,6 +50,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         skip_cache=False,
         overwrite_cache=False,
         follow_symlinks=True,
+        lazy=False,
     )
     assert len(collection) == 1
     assert collection.warnings == ["warning1"]

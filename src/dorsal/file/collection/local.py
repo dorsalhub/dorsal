@@ -92,6 +92,7 @@ class LocalFileCollection(_BaseFileCollection):
         overwrite_cache: bool = False,
         offline: bool = False,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ):
         """
         Initializes the LocalFileCollection.
@@ -116,6 +117,7 @@ class LocalFileCollection(_BaseFileCollection):
             console (Console | None): A Rich Console for progress display.
             use_cache (bool): Whether to use the local cache for hashing and
                 metadata. Defaults to True.
+            lazy (bool): If True, processes files via an iterator.
         """
         self.offline = offline or is_offline_mode()
         self._client = client
@@ -145,6 +147,7 @@ class LocalFileCollection(_BaseFileCollection):
                 skip_cache=not use_cache,
                 overwrite_cache=overwrite_cache,
                 follow_symlinks=follow_symlinks,
+                lazy=lazy,
             )
             final_files = scan_files
             if self.warnings:

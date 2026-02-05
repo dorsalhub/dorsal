@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 MAX_DEPENDENCY_ARRAY_ITEMS = 100
 
+
 class RunModelResult(BaseModel):
     """
     The standardized result object returned by `ModelRunner` execution steps.
@@ -114,7 +115,7 @@ class FileExtensionDependencyConfig(DependencyConfig):
     type: Literal["extension"] = "extension"
     checker: CallableImportPath = CallableImportPath("dorsal.file.configs.model_runner", "check_extension_dependency")
     silent: bool = True
-    extensions: set[str] = Field(max_length=MediaTypePartString)
+    extensions: set[str] = Field(max_length=MAX_DEPENDENCY_ARRAY_ITEMS)
 
     @field_validator("extensions", mode="before")
     @classmethod
@@ -134,12 +135,12 @@ class FileSizeDependencyConfig(DependencyConfig):
     type: Literal["file_size"] = "file_size"
     checker: CallableImportPath = CallableImportPath("dorsal.file.configs.model_runner", "check_size_dependency")
     silent: bool = True
-    min_size: int | str | None = None
-    max_size: int | str | None = None
+    min_size: int | None = None
+    max_size: int | None = None
 
     @field_validator("min_size", "max_size", mode="before")
     @classmethod
-    def parse_size_strings(cls, v):
+    def parse_size_strings(cls, v) -> int | None:
         if isinstance(v, str):
             return parse_filesize(v)
         return v

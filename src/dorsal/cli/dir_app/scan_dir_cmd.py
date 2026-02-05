@@ -162,6 +162,14 @@ def scan_directory(
             help="Follow symlinks to scan target content vs scanning the link itself.",
         ),
     ] = True,
+    lazy: Annotated[
+        bool,
+        typer.Option(
+            "--lazy",
+            help="Start processing immediately with an indeterminate progress bar (spinner). Useful for massive directories.",
+            rich_help_panel="Scan Options",
+        ),
+    ] = False,
 ):
     """
     Scans a directory, generates metadata for all files, and displays or saves the results.
@@ -221,6 +229,7 @@ def scan_directory(
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
+            lazy=lazy,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")

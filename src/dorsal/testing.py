@@ -1,5 +1,3 @@
-# dorsal/testing.py
-
 # Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -95,12 +93,9 @@ def run_model(
                     'validation_model' is also provided, as this
                     is an ambiguous configuration.
     """
-    # 1. Normalize Dependencies (The Fix)
-    # Convert raw dicts (from TOML) into proper Pydantic objects so isinstance() checks work below.
     parsed_dependencies: list[ModelRunnerDependencyConfig] = []
     if dependencies:
         try:
-            # Handle single item vs list
             raw_input = dependencies if isinstance(dependencies, list) else [dependencies]
             adapter = TypeAdapter(list[ModelRunnerDependencyConfig])
             parsed_dependencies = adapter.validate_python(raw_input)
@@ -113,10 +108,10 @@ def run_model(
                     version=getattr(annotation_model, "version", "0.0.0"),
                 ),
                 record=None,
+                schema_id=schema_id,
                 error=f"Test Configuration Error: Invalid dependencies format. {e}",
             )
 
-    # 2. Instantiate Runner (Correctly)
     runner = ModelRunner(pipeline_config=None, debug=True, testing=True)
 
     logger.info(f"Running FileCoreAnnotationModel on {file_path}...")
@@ -131,7 +126,6 @@ def run_model(
         logger.error(f"Base model failed, cannot proceed: {base_model_result.error}")
         return base_model_result
 
-    # 3. Check Dependencies (Restored Logic)
     if parsed_dependencies:
         logger.info("Checking dependencies...")
         for dep_config in parsed_dependencies:
@@ -208,7 +202,6 @@ def run_model(
 
     logger.info("Running %s on file: '%s'", annotation_model.__name__, file_path)
 
-    # 4. Run Target Model
     my_model_result = runner.run_single_model(
         annotation_model=annotation_model,
         validation_model=effective_validator,

@@ -1,4 +1,16 @@
-# dorsal/registry/installer.py
+# Copyright 2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import sys
 import subprocess
@@ -12,8 +24,8 @@ from typing import Literal, Any
 import tomlkit
 
 from dorsal.api.config import register_model
-from dorsal.common.exceptions import DorsalError, DorsalConfigError
-from dorsal.registry.validators import ModelSpec, is_registry_id
+from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError
+from dorsal.registry.validators import ModelSpec, is_registry_id, is_valid_local_path, validate_install_url
 from dorsal.session import get_shared_dorsal_client
 
 logger = logging.getLogger(__name__)
@@ -45,7 +57,7 @@ def _load_packaged_model_config(module_name: str) -> dict[str, Any]:
     Loads 'model_config.toml' from the installed package resources.
     """
     try:
-        # traverse the package resources safely (zip-safe)
+
         resource_path = importlib.resources.files(module_name) / "model_config.toml"
 
         if not resource_path.is_file():
@@ -70,25 +82,23 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     """
     logger.info(f"Installing {target_desc}...")
 
-    # Merge stderr into stdout so we capture everything in one stream
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
-        errors="replace",  # Prevent crashing on non-utf8 install logs
-        bufsize=1,  # Line buffered
+        errors="replace",
+        bufsize=1,
     )
 
     captured_lines = []
 
-    # Real-time streaming
     if process.stdout:
         for line in process.stdout:
-            # Print to user immediately
+
             sys.stdout.write(line)
-            # Capture for analysis
+
             captured_lines.append(line)
 
     return_code = process.wait()
@@ -96,30 +106,24 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     if return_code != 0:
         full_log = "".join(captured_lines)
 
-        # --- Error Analysis Logic ---
-
-        # Case 1: Git Repository Not Found
         if "Repository not found" in full_log or "fatal: repository" in full_log:
             raise DorsalError(
                 f"The git repository for '{target_desc}' could not be found.\n"
                 "It may have been deleted, made private, or you may lack the necessary SSH keys."
             )
 
-        # Case 2: Git Authentication Failed (Private Repo)
         if "Authentication failed" in full_log or "could not read Username" in full_log:
             raise DorsalError(
                 f"Authentication failed while accessing '{target_desc}'.\n"
                 "Please ensure you have access to this private repository."
             )
 
-        # Case 3: Invalid PyPI package
         if "No matching distribution found" in full_log:
             raise DorsalError(
                 f"Could not find a package for '{target_desc}' on PyPI.\n"
                 "Check the spelling or ensuring you have the correct python version."
             )
 
-        # Fallback: Generic Pip Error
         raise DorsalError(f"Installation failed for '{target_desc}'. See log output above.")
 
 
@@ -129,41 +133,67 @@ def install_model_target(
     force_reinstall: bool = False,
 ) -> str:
     """
-    Installs a model from a pip-compatible target (PyPI name, git URL, or local path)
-    and registers it to the dorsal configuration.
+    Installs a model from a pip-compatible target and registers it.
+
+    This function acts as a strict gatekeeper. It allows installation ONLY from:
+    1. Valid Registry IDs (namespace/name) that resolve to a DorsalHub entry.
+    2. Explicit local file paths.
+
+    It explicitly rejects generic PyPI package names to prevent users from
+    accidentally polluting their environment with non-Dorsal libraries.
     """
     logger.info(f"Processing target: {target}")
+    actual_target = None
 
-    actual_target = target
-
-    # 1. Resolve Registry ID
     if is_registry_id(target):
+
+        if pathlib.Path(target).exists():
+            raise DorsalError(
+                f"Ambiguous Target: You requested Registry Model '{target}', but a directory with this name exists locally.\n"
+                "To install the local model, use an explicit path: './{target}'\n"
+                "To install the remote model, please rename or move the local directory."
+            )
+
+        logger.info(f"Resolved '{target}' to Registry ID.")
+        client = get_shared_dorsal_client()
         try:
-            client = get_shared_dorsal_client()
-            registry_data = client.get_registry_model(target)
-            actual_target = registry_data.install_url
+            reg_data = client.get_registry_model(target)
 
-            logger.info(f"Resolved registry ID '{target}' to install target: {actual_target}")
+            actual_target = validate_install_url(reg_data.install_url)
+
+            logger.info(f"Registry lookup successful. Install target: {actual_target}")
+
+        except AuthError as e:
+            raise e
+
         except Exception as e:
-            logger.warning(f"Registry lookup failed. Treating '{target}' as direct pip target. Error: {e}")
-            actual_target = target
+            raise DorsalError(f"Failed to resolve model '{target}' in registry: {e}") from e
 
-    # 2. Snapshot environment
+    elif is_valid_local_path(target):
+        logger.info(f"Resolved '{target}' to local path.")
+
+        actual_target = str(pathlib.Path(target).resolve())
+
+    else:
+        raise DorsalError(
+            f"Invalid install target '{target}'.\n\n"
+            "Dorsal only supports installing from:\n"
+            "1. A Registry ID (e.g. 'dorsalhub/whisper')\n"
+            "2. A local directory path (e.g. './my-model')\n\n"
+            "Generic PyPI packages must be installed via standard 'pip install'."
+        )
+
     pre_install_packages = _get_installed_distribution_names()
 
-    # 3. Run pip install (using the streaming helper)
     cmd = [sys.executable, "-m", "pip", "install", actual_target]
     if force_reinstall:
         cmd.append("--force-reinstall")
 
     _run_pip_install_streaming(cmd, target)
 
-    # 4. Detect the package
     importlib.invalidate_caches()
     post_install_packages = _get_installed_distribution_names()
-
     new_packages = post_install_packages - pre_install_packages
-
     package_name = None
 
     if len(new_packages) == 1:
@@ -178,34 +208,30 @@ def install_model_target(
             except Exception:
                 continue
 
-    # Fallback 1: Check local pyproject.toml
-    if not package_name:
+    if not package_name and is_valid_local_path(target):
         try:
-            path_target = pathlib.Path(actual_target).resolve()
-            candidate_name = _get_local_pyproject_name(path_target)
-
-            if candidate_name:
-                norm_name = candidate_name.lower().replace("_", "-")
-                if norm_name in post_install_packages:
-                    package_name = norm_name
-                    logger.debug(f"Detected existing local package: {package_name}")
-        except Exception as e:
-            logger.debug(f"Failed to inspect local path '{actual_target}': {e}")
-
-    # Fallback 2: Heuristic
-    if not package_name:
-        if "git+" not in actual_target and "/" not in actual_target and "\\" not in actual_target:
-            package_name = actual_target
+            candidate = _get_local_pyproject_name(pathlib.Path(target))
+            if candidate and candidate.lower().replace("_", "-") in post_install_packages:
+                package_name = candidate.lower().replace("_", "-")
+        except Exception:
+            pass
 
     if not package_name:
+        if new_packages:
+            junk_list = " ".join(sorted(list(new_packages)))
+            raise DorsalError(
+                "Installation successful, but the package does not contain a valid Dorsal Model.\n"
+                "The package is missing the 'dorsal.models' entry point in pyproject.toml.\n\n"
+                "To remove the unused package(s), run:\n"
+                f"  pip uninstall {junk_list}"
+            )
+
         raise DorsalError(
-            f"Package from '{target}' appears to be installed, but we could not determine its name to register it.\n"
-            "Tip: Try running with [bold white]--force[/] to trigger a clean reinstall."
+            "Installation completed, but could not detect a registered Dorsal model.\n"
+            "Ensure the package defines a 'dorsal.models' entry point."
         )
 
-    # 5. Register using the detected name
     install_model_from_package(package_name, scope=scope)
-
     return package_name
 
 
@@ -215,12 +241,11 @@ def install_model_from_package(
     scope: Literal["project", "global"] = "project",
 ) -> None:
     """
-    Registers a model from an installed package.
+    Registers a model from an already installed package.
     Strictly requires 'model_config.toml' with an explicit 'model_class' definition.
     """
     logger.info(f"Registering model from package '{package_name}'...")
 
-    # 1. Resolve Entry Point
     eps = importlib.metadata.entry_points(group=entry_point_group)
     target_ep = None
     normalized_pkg_name = package_name.lower().replace("_", "-")
@@ -239,11 +264,10 @@ def install_model_from_package(
         )
 
     try:
-        # 2. Load the Module (Code)
+
         module = target_ep.load()
         module_name = target_ep.module
 
-        # 3. Load the Metadata (Config)
         toml_config = _load_packaged_model_config(module_name)
 
         if not toml_config:
@@ -252,7 +276,6 @@ def install_model_from_package(
                 "Modern Dorsal models must include this file via 'force-include' in pyproject.toml."
             )
 
-        # 4. Resolve Model Class (Explicit Definition Required)
         if "model_class" not in toml_config:
             raise DorsalError(f"Invalid 'model_config.toml' in '{package_name}': Missing required key 'model_class'.")
 
@@ -264,7 +287,6 @@ def install_model_from_package(
                 f"Config defines model_class='{class_name}', but it was not exported by module '{module_name}' - {err}"
             ) from err
 
-        # 5. Merge Config
         merged_config = {
             "model_class": model_class,
             "schema_id": toml_config.get("schema_id", "open/generic"),
@@ -277,7 +299,6 @@ def install_model_from_package(
     except Exception as e:
         raise DorsalError(f"Failed to inspect model package '{package_name}': {e}") from e
 
-    # 6. Register
     try:
         register_model(
             annotation_model=spec.model_class,

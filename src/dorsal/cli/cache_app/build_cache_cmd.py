@@ -60,6 +60,13 @@ def build_cache(
             help="Follow symlinks to cache target content vs caching the link itself.",
         ),
     ] = True,
+    lazy: Annotated[
+        bool,
+        typer.Option(
+            "--lazy",
+            help="Start processing immediately with an indeterminate progress bar.",
+        ),
+    ] = False,
 ):
     """
     Scans a directory and populates the cache with full metadata records.
@@ -92,6 +99,7 @@ def build_cache(
                     palette=palette,
                     use_cache=use_cache_value,
                     follow_symlinks=resolve_links,
+                    lazy=lazy,
                 )
         else:
             collection = LocalFileCollection(

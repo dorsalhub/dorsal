@@ -22,7 +22,7 @@ from dorsal.file.configs.model_runner import (
     FilenameDependencyConfig,
     FileSizeDependencyConfig,
     MediaTypeDependencyConfig,
-    MAX_DEPENDENCY_ARRAY_ITEMS
+    MAX_DEPENDENCY_ARRAY_ITEMS,
 )
 from dorsal.file.utils.size import parse_filesize
 
@@ -39,6 +39,7 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
 
 def make_media_type_dependency(
     include: Sequence[str] | None = None,
@@ -74,7 +75,9 @@ def make_media_type_dependency(
         )
 
     if include and len(include) > MAX_DEPENDENCY_ARRAY_ITEMS:
-        raise ValueError(f"'include' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items. Use a regex 'pattern' for broad matching.")
+        raise ValueError(
+            f"'include' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items. Use a regex 'pattern' for broad matching."
+        )
 
     if exclude and len(exclude) > MAX_DEPENDENCY_ARRAY_ITEMS:
         raise ValueError(f"'exclude' list cannot exceed {MAX_DEPENDENCY_ARRAY_ITEMS} items.")
@@ -135,15 +138,12 @@ def make_file_size_dependency(
         max_size: The maximum file size (inclusive) for the model to run.
         silent: If False, raises an error if the dependency isn't met.
     """
-    min_size_bytes = parse_filesize(min_size) if isinstance(min_size, str) else min_size
-    max_size_bytes = parse_filesize(max_size) if isinstance(max_size, str) else max_size
-
-    if min_size_bytes is None and max_size_bytes is None:
+    if min_size is None and max_size is None:
         raise ValueError("A file size dependency must have at least one of 'min_size' or 'max_size'.")
 
     return FileSizeDependencyConfig(
-        min_size=min_size_bytes,
-        max_size=max_size_bytes,
+        min_size=min_size,
+        max_size=max_size,
         silent=silent,
     )
 

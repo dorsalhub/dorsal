@@ -13,18 +13,37 @@
 # limitations under the License.
 
 import os
+from typing import Iterator, List, Union
 
 
-def get_file_paths(dir_path: str, recursive: bool = False) -> list[str]:
-    file_paths = []
-    if recursive:
-        for root, _, files in os.walk(dir_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                file_paths.append(file_path)
-    else:
-        for entry in os.listdir(dir_path):
-            file_path = os.path.join(dir_path, entry)
-            if os.path.isfile(file_path):
-                file_paths.append(file_path)
-    return file_paths
+def get_file_paths(dir_path: str, recursive: bool = False, lazy: bool = False) -> Union[List[str], Iterator[str]]:
+    """
+    Retrieves file paths from a directory.
+
+    Args:
+        dir_path: The directory to scan.
+        recursive: If True, scans subdirectories recursively.
+        lazy: If True, yields paths, else returns a list after scanning is complete.
+
+    Returns:
+        List[str] | Iterator[str]: A list of file paths or an iterator yielding them.
+    """
+
+    def _scanner() -> Iterator[str]:
+        if recursive:
+            for root, _, files in os.walk(dir_path):
+                for file in files:
+                    yield os.path.join(root, file)
+        else:
+            try:
+                with os.scandir(dir_path) as entries:
+                    for entry in entries:
+                        if entry.is_file():
+                            yield entry.path
+            except OSError:
+                return
+
+    if lazy:
+        return _scanner()
+
+    return list(_scanner())

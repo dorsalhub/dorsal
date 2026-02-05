@@ -262,10 +262,5 @@ def search_and_display(
                 padding=(1, 2),
             )
             console.print(panel)
-    except DorsalClientError as err:
-        exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {err}")
     except typer.Exit:
         raise
-    except Exception as err:
-        logging.getLogger(__name__).exception("CLI 'search' command failed.")
-        exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")

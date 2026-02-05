@@ -18,39 +18,25 @@ import re
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
-# Import existing core types
 from dorsal.common.model import AnnotationModel
 from dorsal.file.configs.model_runner import DependencyType
+
+REGISTRY_ID_RX = re.compile(r"^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$", re.IGNORECASE)
+SAFE_INSTALL_URL_RX = re.compile(r"^git\+https?://[a-zA-Z0-9.\-_/]+\.git@[a-f0-9]{40}$")
 
 
 class ModelSpec(BaseModel):
     """Specification for external (installed) model packages."""
 
-    # 1. The Model Class
-    # The registry will extract the module path from this class.
     model_class: Type[AnnotationModel]
-
-    # 2. The Output Schema
-    # e.g., 'open/classification' or 'my-org/custom-schema'
     schema_id: str
-
-    # 3. Default Dependencies
-    # The model author defines *when* this model should run by default.
-    # The registry writes these to dorsal.toml, but the user can edit them later.
     dependencies: list[DependencyType] | None = None
-
-    # 4. Optional Validation Logic
-    # Can be a Pydantic model class, a dict (JSON Schema), or a Validator instance.
     validation_model: Any | None = None
-
-    # 5. Default Runtime Options
-    # Passed to the model's main() method.
     options: dict[str, Any] | None = None
 
     @field_validator("model_class")
     @classmethod
     def validate_model_class(cls, v):
-        # Enforce inheritance from the base class
         if not issubclass(v, AnnotationModel):
             raise ValueError(f"External model_class must inherit from dorsal.AnnotationModel, got {v}")
         return v
@@ -63,23 +49,30 @@ class InitResult(BaseModel):
 
 
 def is_registry_id(target: str) -> bool:
+    """Determines if a target string is a valid Registry ID."""
+    if "/" not in target:
+        return False
+
+    return bool(REGISTRY_ID_RX.match(target))
+
+
+def is_valid_local_path(target: str) -> bool:
     """
-    Determines if a target string is a Registry ID (e.g. 'dorsal/whisper')
-    vs a file path, git URL, or archive.
+    Determines if the target is a valid local resource (File or Directory).
     """
-    # If it looks like a path or URL, it's not a registry ID
-    if any(x in target for x in ["/", "\\", ".", "git+"]):
-        # Exception: "owner/model" contains a slash but no extension/protocol
-        # simple heuristic: does it start with http, git, file, or ./ ?
-        if re.match(r"^(http|https|git\+|file:|/|\./|\.\.)", target):
-            return False
+    path = pathlib.Path(target)
+    return path.exists() and (path.is_dir() or path.is_file())
 
-        # If it ends in an extension like .whl or .tar.gz
-        if re.search(r"\.(whl|tar\.gz|zip)$", target):
-            return False
 
-        return True
-
-    # Single word (e.g. "whisper") is also treated as a registry ID (or PyPI package)
-    # For now, we assume everything that isn't a path is a Registry ID lookup.
-    return True
+def validate_install_url(url: str) -> str:
+    """
+    Validates the install URL returned by the Registry API.
+        1. Protocol must be git+http(s).
+        2. Must end in .git@{sha} (pinned version).
+    """
+    if not SAFE_INSTALL_URL_RX.match(url):
+        raise ValueError(
+            f"Registry returned an invalid install URL: '{url}'. "
+            "Expected format: 'git+https://host/repo.git@commit_sha'"
+        )
+    return url

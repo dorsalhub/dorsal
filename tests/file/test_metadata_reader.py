@@ -554,7 +554,9 @@ class TestMetadataReaderIndexDirectory:
 
         response = reader.index_directory(dir_path=str(temp_dir_with_files), public=False)
 
-        reader._test_mock_get_file_paths.assert_called_once_with(dir_path=str(temp_dir_with_files), recursive=False)
+        reader._test_mock_get_file_paths.assert_called_once_with(
+            dir_path=str(temp_dir_with_files), recursive=False, lazy=False
+        )
         assert reader._test_mock_runner.run.call_count == 2
         reader._test_mock_client.index_private_file_records.assert_called_once_with(
             file_records=[mock_record1, mock_record2]
