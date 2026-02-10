@@ -17,8 +17,10 @@ import subprocess
 import importlib.metadata
 import importlib.resources
 import logging
+from packaging.utils import canonicalize_name
 import pathlib
 import tomllib
+import shutil
 from typing import Literal, Any
 
 import tomlkit
@@ -29,11 +31,6 @@ from dorsal.registry.validators import ModelSpec, is_registry_id, is_valid_local
 from dorsal.session import get_shared_dorsal_client
 
 logger = logging.getLogger(__name__)
-
-
-def _get_installed_distribution_names() -> set[str]:
-    """Helper to get a set of all currently installed package names (normalized)."""
-    return {dist.metadata["Name"].lower().replace("_", "-") for dist in importlib.metadata.distributions()}
 
 
 def _get_local_pyproject_name(target_path: pathlib.Path) -> str | None:
@@ -74,12 +71,28 @@ def _load_packaged_model_config(module_name: str) -> dict[str, Any]:
         return {}
 
 
+def _ensure_git_installed() -> None:
+    """
+    Verifies that 'git' is installed and available in the system PATH.
+    """
+    if shutil.which("git") is None:
+        raise DorsalError(
+            "Git is not installed or not found in your system PATH.\n"
+            "Installing models from the Dorsal Registry requires Git to clone the repositories.\n\n"
+            "Please install Git and try again."
+        )
+
+
 def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     """
-    Runs pip install while streaming output to stdout, but capturing it for
-    error analysis if the process fails.
+    Runs pip install.
+    - Default: Captures output silently, only printing it if an error occurs.
+    - Verbose (-v): Streams output to stdout in real-time.
     """
     logger.info(f"Installing {target_desc}...")
+
+    # Check if verbose mode is active (INFO level or lower)
+    is_verbose = logger.isEnabledFor(logging.INFO)
 
     process = subprocess.Popen(
         cmd,
@@ -95,14 +108,20 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
 
     if process.stdout:
         for line in process.stdout:
-            sys.stdout.write(line)
-
+            if is_verbose:
+                sys.stdout.write(line)
             captured_lines.append(line)
 
     return_code = process.wait()
 
     if return_code != 0:
         full_log = "".join(captured_lines)
+
+        # Dump logs to stderr if we were silent
+        if not is_verbose:
+            sys.stderr.write(f"\n[!] Pip Installation Log for '{target_desc}':\n")
+            sys.stderr.write(full_log)
+            sys.stderr.write("\n")
 
         if "Repository not found" in full_log or "fatal: repository" in full_log:
             raise DorsalError(
@@ -133,16 +152,14 @@ def install_model_target(
     """
     Installs a model from a pip-compatible target and registers it.
 
-    This function acts as a strict gatekeeper. It allows installation ONLY from:
-    1. Valid Registry IDs (namespace/name) that resolve to a DorsalHub entry.
-    2. Explicit local file paths.
-
-    It explicitly rejects generic PyPI package names to prevent users from
-    accidentally polluting their environment with non-Dorsal libraries.
+    Identifies the package name from the Source of Truth (Registry Model or Local Config)
+    BEFORE installation, ensuring robust handling of updates and reinstallations.
     """
     logger.info(f"Processing target: {target}")
     actual_target = None
+    target_package_name = None
 
+    # --- 1. Resolution & Name Discovery ---
     if is_registry_id(target):
         if pathlib.Path(target).exists():
             raise DorsalError(
@@ -155,21 +172,35 @@ def install_model_target(
         client = get_shared_dorsal_client()
         try:
             reg_data = client.get_registry_model(target)
-
             actual_target = validate_install_url(reg_data.install_url)
 
-            logger.info(f"Registry lookup successful. Install target: {actual_target}")
+            # SOURCE OF TRUTH: The Registry Model
+            # Guaranteed by Pydantic model definition
+            target_package_name = reg_data.package_name
+
+            if actual_target.startswith("git+"):
+                _ensure_git_installed()
+
+            logger.info(f"Registry lookup successful. Package: {target_package_name}")
 
         except AuthError as e:
             raise e
-
         except Exception as e:
             raise DorsalError(f"Failed to resolve model '{target}' in registry: {e}") from e
 
     elif is_valid_local_path(target):
         logger.info(f"Resolved '{target}' to local path.")
+        local_path = pathlib.Path(target).resolve()
+        actual_target = str(local_path)
 
-        actual_target = str(pathlib.Path(target).resolve())
+        # SOURCE OF TRUTH: Local pyproject.toml
+        target_package_name = _get_local_pyproject_name(local_path)
+
+        if not target_package_name:
+            raise DorsalError(
+                f"Could not determine package name from '{target}'.\n"
+                "Ensure the directory contains a valid 'pyproject.toml'."
+            )
 
     else:
         raise DorsalError(
@@ -180,56 +211,22 @@ def install_model_target(
             "Generic PyPI packages must be installed via standard 'pip install'."
         )
 
-    pre_install_packages = _get_installed_distribution_names()
-
+    # --- 2. Installation ---
     cmd = [sys.executable, "-m", "pip", "install", actual_target]
     if force_reinstall:
         cmd.append("--force-reinstall")
 
     _run_pip_install_streaming(cmd, target)
 
+    # --- 3. Registration ---
+    # We now trust 'target_package_name' explicitly.
     importlib.invalidate_caches()
-    post_install_packages = _get_installed_distribution_names()
-    new_packages = post_install_packages - pre_install_packages
-    package_name = None
 
-    if len(new_packages) == 1:
-        package_name = list(new_packages)[0]
-    elif len(new_packages) > 1:
-        for pkg in new_packages:
-            try:
-                eps = importlib.metadata.entry_points(group="dorsal.models")
-                if any(ep.dist and ep.dist.name.lower().replace("_", "-") == pkg for ep in eps):
-                    package_name = pkg
-                    break
-            except Exception:
-                continue
+    # Normalize for safety (pip is case-insensitive, importlib is not)
+    safe_package_name = canonicalize_name(target_package_name)
+    install_model_from_package(safe_package_name, scope=scope)
 
-    if not package_name and is_valid_local_path(target):
-        try:
-            candidate = _get_local_pyproject_name(pathlib.Path(target))
-            if candidate and candidate.lower().replace("_", "-") in post_install_packages:
-                package_name = candidate.lower().replace("_", "-")
-        except Exception:
-            pass
-
-    if not package_name:
-        if new_packages:
-            junk_list = " ".join(sorted(list(new_packages)))
-            raise DorsalError(
-                "Installation successful, but the package does not contain a valid Dorsal Model.\n"
-                "The package is missing the 'dorsal.models' entry point in pyproject.toml.\n\n"
-                "To remove the unused package(s), run:\n"
-                f"  pip uninstall {junk_list}"
-            )
-
-        raise DorsalError(
-            "Installation completed, but could not detect a registered Dorsal model.\n"
-            "Ensure the package defines a 'dorsal.models' entry point."
-        )
-
-    install_model_from_package(package_name, scope=scope)
-    return package_name
+    return safe_package_name
 
 
 def install_model_from_package(
@@ -257,7 +254,8 @@ def install_model_from_package(
 
     if not target_ep:
         raise DorsalError(
-            f"Package '{package_name}' is installed but does not expose a '{entry_point_group}' entry point."
+            f"Package '{package_name}' is installed but does not expose a '{entry_point_group}' entry point.\n"
+            "Try running with --force-reinstall if you believe this is an error."
         )
 
     try:
@@ -302,6 +300,7 @@ def install_model_from_package(
             validation_model=spec.validation_model,
             dependencies=spec.dependencies,
             options=spec.options,
+            package_name=package_name,
             overwrite=True,
             scope=scope,
         )

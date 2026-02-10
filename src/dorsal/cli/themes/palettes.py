@@ -30,6 +30,7 @@ DEFAULT_PALETTE: dict[str, str] = {
     "key": "dim",
     "primary_value": "cyan",
     "hash_value": "magenta",
+    "link": "cornflower_blue underline",
     # Tags & Access Levels
     "tag_public": "blue",
     "tag_private": "dark_orange3",
@@ -71,8 +72,9 @@ HIGH_CONTRAST_PALETTE: dict[str, str] = {
     "key": "white",
     "primary_value": "bright_cyan",
     "hash_value": "bright_magenta",
+    "link": "spring_green2 underline",
     # Tags & Access Levels
-    "tag_public": "bright_blue",
+    "tag_public": "spring_green2",
     "tag_private": "bright_yellow",
     "tag_subtext": "default",
     "access_public": "bright_cyan",
@@ -111,6 +113,7 @@ LIGHT_THEME_PALETTE: dict[str, str] = {
     "key": "grey50",
     "primary_value": "dark_cyan",
     "hash_value": "dark_magenta",
+    "link": "blue3 underline",
     # Tags & Access Levels
     "tag_public": "blue3",
     "tag_private": "orange3",
@@ -151,6 +154,7 @@ MONOCHROME_PALETTE: dict[str, str] = {
     "key": "dim",
     "primary_value": "white",
     "hash_value": "bright_white",
+    "link": "white underline",
     # Tags & Access Levels
     "tag_public": "white",
     "tag_private": "white",
@@ -191,6 +195,7 @@ NEON_PALETTE: dict[str, str] = {
     "key": "dim",
     "primary_value": "bright_cyan",
     "hash_value": "bright_magenta",
+    "link": "bright_cyan underline",
     # Tags & Access Levels
     "tag_public": "bright_cyan",
     "tag_private": "hot_pink",
@@ -231,6 +236,7 @@ DRACULA_PALETTE: dict[str, str] = {
     "key": "grey50",
     "primary_value": "cyan",
     "hash_value": "hot_pink",
+    "link": "cyan underline",
     # Tags & Access Levels
     "tag_public": "cyan",
     "tag_private": "dark_orange",

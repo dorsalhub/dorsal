@@ -22,7 +22,7 @@ import os
 import time
 from typing import Any, NamedTuple, Type, TYPE_CHECKING, TypeVar, cast, Callable
 
-from pydantic import BaseModel, Field, ConfigDict, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ConfigDict, TypeAdapter, ValidationInfo, field_validator
 
 from dorsal.common import constants
 from dorsal.common.exceptions import (
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from dorsal.file.configs.model_runner import (
         DependencyConfig,
         ModelRunnerPipelineStep,
+        ModelRunnerDependencyConfig,
         RunModelResult,
     )
 
@@ -92,7 +93,10 @@ class ModelRunner:
     exclude_none: bool = True
 
     def __init__(
-        self, pipeline_config: str | list[dict[str, Any]] | None = "default", debug: bool = False, testing: bool = False
+        self,
+        pipeline_config: str | list[dict[str, Any]] | None = "default",
+        debug: bool = False,
+        single_model_mode: bool = False,
     ):
         """
         Initializes the ModelRunner.
@@ -105,7 +109,7 @@ class ModelRunner:
                         only the base model will be run with its effective options.
                 - None: No pipeline will be set up. Useful for when you only need
             debug: If True, enables timing of model executions.
-            testing: If True, supresses warning about the pipeline_config being set to None
+            single_model_mode: If True, supresses warning about the pipeline_config being set to None
         """
         from dorsal.common.config import load_config
 
@@ -131,7 +135,7 @@ class ModelRunner:
         self.pre_model = self._load_pre_pipeline_model_step()
 
         if pipeline_config is None:
-            if not testing:
+            if not single_model_mode:
                 logger.warning(
                     "Pipeline is being executed with pipeline_config set to `None` - this means any config will be ignored."
                 )
@@ -1141,3 +1145,198 @@ class ModelRunner:
             ) from err
 
         return file_record
+
+
+def run_model(
+    annotation_model: Type[AnnotationModel],
+    file_path: str,
+    *,
+    schema_id: str | None = None,
+    validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
+    dependencies: list[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
+    options: dict[str, Any] | None = None,
+    debug: bool = False,
+) -> RunModelResult:
+    """
+    Execute a single AnnotationModel in isolation.
+
+    1.  `FileCoreAnnotationModel` retrieves base metadata.
+    2.  (Optional) Checks your model's dependencies
+    3.  Runs your model
+    4.  Returns the result of your model's execution.
+
+    Args:
+        annotation_model: The custom AnnotationModel class you want to test (e.g., `ArchiveModel`).
+        file_path: The absolute path to the file to test against.
+        schema_id: (Optional) The target schema ID (e.g., "open/generic").
+                   If this is an "open/" schema, the standard validator
+                   will be used automatically.
+        validation_model: (Optional) A *custom* Pydantic model or
+                          JsonSchemaValidator. This overrides the
+                          automatic validator from 'schema_id'.
+        dependencies: (Optional) A list of dependency configs to check before running.
+                      Can be Pydantic objects or raw dictionaries (from TOML).
+        options: (Optional) A dictionary of options to pass to the model's `.main()` method.
+
+    Returns:
+        A RunModelResult object containing your model's output or any errors.
+
+    Raises:
+        ValueError: If 'schema_id' is an "open/" schema and a
+                    'validation_model' is also provided, as this
+                    is an ambiguous configuration.
+    """
+    from dorsal.file.configs.model_runner import (
+        RunModelResult,
+        ModelRunnerDependencyConfig,
+    )
+    from dorsal.file.annotation_models.base import FileCoreAnnotationModel
+
+    from dorsal.file.schemas import OpenSchemaName
+
+    from dorsal.file.validators.open_schema import get_open_schema_validator
+    from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
+
+    parsed_dependencies: list[ModelRunnerDependencyConfig] = []
+    if dependencies:
+        try:
+            raw_input = dependencies if isinstance(dependencies, list) else [dependencies]
+            adapter = TypeAdapter(list[ModelRunnerDependencyConfig])
+            parsed_dependencies = adapter.validate_python(raw_input)
+        except Exception as e:
+            return RunModelResult(
+                name=getattr(annotation_model, "id", annotation_model.__name__),
+                source=AnnotationModelSource(
+                    type="Model",
+                    id=getattr(annotation_model, "id", "unknown"),
+                    version=getattr(annotation_model, "version", "0.0.0"),
+                ),
+                record=None,
+                schema_id=schema_id,
+                error=f"Configuration Error: Invalid dependencies format. {e}",
+            )
+
+    runner = ModelRunner(pipeline_config=None, debug=debug, single_model_mode=True)
+
+    logger.info(f"Running FileCoreAnnotationModel on {file_path}...")
+    core_validation_model: Type[FileCoreValidationModel]
+    if annotation_model.requires_hashes:
+        core_validation_model = FileCoreValidationModelStrict
+        requires_hashes = True
+    else:
+        core_validation_model = FileCoreValidationModel
+        requires_hashes = False
+
+    requires_hashes = annotation_model.requires_hashes
+    if not requires_hashes:
+        logger.debug("Skipping hash calculation, as model has no strict dependency.")
+    base_model_result = runner.run_single_model(
+        annotation_model=FileCoreAnnotationModel,
+        validation_model=core_validation_model,
+        file_path=file_path,
+        options={"calculate_similarity_hash": requires_hashes, "calculate_hashes": requires_hashes},
+    )
+
+    if base_model_result.error or base_model_result.record is None:
+        logger.error(f"Base model failed, cannot proceed: {base_model_result.error}")
+        return base_model_result
+
+    if parsed_dependencies:
+        logger.info("Checking dependencies...")
+        for dep_config in parsed_dependencies:
+            try:
+                is_met = runner._check_single_dependency(
+                    dependency_config=dep_config,
+                    prior_model_results=[base_model_result],
+                    current_model_name=annotation_model.__name__,
+                )
+            except DependencyNotMetError as e:
+                error_msg = f"Skipped: Dependency not met: {e}"
+                logger.warning(error_msg)
+                return RunModelResult(
+                    name=getattr(annotation_model, "id", annotation_model.__name__),
+                    source=AnnotationModelSource(
+                        type="Model",
+                        id=getattr(annotation_model, "id", annotation_model.__name__),
+                        version=getattr(annotation_model, "version", "0.0.0"),
+                        variant=getattr(annotation_model, "variant", None),
+                    ),
+                    record=None,
+                    schema_id=schema_id,
+                    error=error_msg,
+                )
+
+            if not is_met:
+                dep_type = getattr(dep_config, "type", "Unknown")
+                error_msg = f"Skipped: Silent Dependency not met: {dep_type}"
+                logger.warning(error_msg)
+                return RunModelResult(
+                    name=getattr(annotation_model, "id", annotation_model.__name__),
+                    source=AnnotationModelSource(
+                        type="Model",
+                        id=getattr(annotation_model, "id", annotation_model.__name__),
+                        version=getattr(annotation_model, "version", "0.0.0"),
+                        variant=getattr(annotation_model, "variant", None),
+                    ),
+                    record=None,
+                    schema_id=schema_id,
+                    error=error_msg,
+                )
+
+        logger.info("All dependencies met.")
+
+    if validation_model and schema_id and schema_id.startswith("open/"):
+        raise ValueError(
+            f"Ambiguous configuration: You cannot provide a custom 'validation_model' when using an 'open/' schema_id ('{schema_id}').\n"
+            f"The 'open/' schemas use a standard, built-in validator.\n"
+            f"  - To test with the standard validator: Remove the 'validation_model' argument.\n"
+            f"  - To test with your custom validator: Use a custom 'schema_id' (e.g., 'my-org/my-custom-schema') or set schema_id=None."
+        )
+
+    effective_validator: Type[BaseModel] | JsonSchemaValidator | None = validation_model
+
+    if effective_validator:
+        logger.debug("Using explicitly provided 'validation_model'.")
+    elif schema_id and schema_id.startswith("open/"):
+        schema_name = schema_id.removeprefix("open/")
+        try:
+            effective_validator = get_open_schema_validator(cast(OpenSchemaName, schema_name))
+            logger.debug("Resolved 'schema_id' (%s) to standard validator.", schema_id)
+        except (ValueError, TypeError, RuntimeError) as e:
+            logger.warning(
+                "Could not find a standard validator for 'schema_id' (%s): %s. Proceeding without validation.",
+                schema_id,
+                e,
+            )
+
+    if annotation_model.__module__ == "__main__":
+        logger.debug(
+            "The 'annotation_model' (%s) is defined in your main script. "
+            "Move it to an importable .py file before using 'register_model' or that function will complain.",
+            annotation_model.__name__,
+        )
+
+    if (
+        effective_validator
+        and hasattr(effective_validator, "__module__")
+        and effective_validator.__module__ == "__main__"
+    ):
+        validator_name = getattr(effective_validator, "__name__", str(effective_validator))
+        logger.debug(
+            "The 'validation_model' (%s) is defined in your main script. "
+            "Move it to an importable .py file before using 'register_model' or that function will complain.",
+            validator_name,
+        )
+
+    logger.info("Running %s on file: '%s'", annotation_model.__name__, file_path)
+
+    my_model_result = runner.run_single_model(
+        annotation_model=annotation_model,
+        validation_model=effective_validator,
+        file_path=file_path,
+        base_model_result=base_model_result,
+        schema_id=schema_id,
+        options=options,
+    )
+
+    return my_model_result

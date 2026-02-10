@@ -58,7 +58,7 @@ def clear_cache(
         console.print(success_msg)
 
     except typer.Abort:
-        console.print("Cache clearing aborted.")
+        console.print("Cache clearing cancelled.")
         exit_cli()
     except typer.Exit:
         raise

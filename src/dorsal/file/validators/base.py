@@ -116,7 +116,7 @@ class FileCoreValidationModel(BaseModel):
     This record forms the foundational data about a file.
     """
 
-    hash: SHA256Hash
+    hash: SHA256Hash | None = None
     quick_hash: QuickHash | None = None
     similarity_hash: TLSHash | None = None
     name: TString255
@@ -175,4 +175,5 @@ class FileCoreValidationModelStrict(FileCoreValidationModel):
     A validated `FileCoreValidationModel` - i.e. contains 'BLAKE3' validation hash within `all_hashes`.
     """
 
+    hash: SHA256Hash
     all_hashes: list[FileCoreValidationModelHash] = Field(min_length=2, max_length=4)

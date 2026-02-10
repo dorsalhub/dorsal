@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "blake3>=1.0.8",
     "langcodes[data]==3.5.0",
+    "packaging>=23.0",
     "pydantic>=2.12.1",
     "python-dateutil>=2.9.0.post0",
     "python-magic>=0.4.27; sys_platform == 'linux' or sys_platform == 'darwin'",

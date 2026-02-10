@@ -304,6 +304,7 @@ class ModelRunnerPipelineStep(BaseModel):
     - options: Runtime options for the model.
     - ignore_linter_errors: Skip strict linting if True.
     - deactivated: (Optional) If True, this step is skipped. Defaults to False.
+    - package_name: The installed package name (used when installing a model via registry)
     """
 
     annotation_model: CallableImportPath
@@ -313,6 +314,7 @@ class ModelRunnerPipelineStep(BaseModel):
     options: dict[str, Any] | None = None
     ignore_linter_errors: bool = False
     deactivated: bool = False
+    package_name: str | None = None
 
 
 BASE_ANNOTATION_MODEL = {

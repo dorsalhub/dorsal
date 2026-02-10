@@ -14,9 +14,12 @@
 
 import logging
 import sys
+import shutil
 from typing import Annotated, Literal
 
 import typer
+
+from dorsal.common.constants import WEB_URL
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ def install_model(
     """
     from rich.panel import Panel
     from rich.prompt import Confirm
+    from rich.text import Text
     from dorsal.common.exceptions import DorsalError, NotFoundError, AuthError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
     from dorsal.registry.installer import install_model_target
@@ -57,10 +61,14 @@ def install_model(
 
     # --- 1. Safety Check / Pre-flight ---
     if not yes and not force:
-        display_meta = {"Target": target, "Source": "Local/Direct"}
+        # Default for local paths
+        display_meta = {"Model": target, "Source": "Local Path"}
 
-        trust_badge = f"[{palette.get('error', 'bold red')}]UNVERIFIED[/]"
+        status_badge = f"[{palette.get('warning', 'bold yellow')}]Unverified[/]"
         border_style = palette.get("panel_border_warning", "yellow")
+
+        # Link style from palette (fallback to blue underline if missing)
+        link_style = palette.get("link", "blue underline")
 
         if is_registry_id(target):
             try:
@@ -68,35 +76,57 @@ def install_model(
                     client = get_shared_dorsal_client()
                     reg_data = client.get_registry_model(target)
 
-                    # Update Badge based on Trust Signals
-                    if reg_data.is_official:
-                        trust_badge = f"[{palette.get('success', 'bold green')}]OFFICIAL MODEL[/] 🛡️"
-                        border_style = palette.get("panel_border_success", "green")
-                    elif reg_data.is_verified:
-                        trust_badge = f"[{palette.get('panel_border', 'bold blue')}]VERIFIED PUBLISHER[/] ☑️"
+                    if reg_data.is_official or reg_data.is_verified:
+                        status_badge = f"[{palette.get('panel_border', 'bold blue')}]Verified[/]"
                         border_style = palette.get("panel_border", "blue")
 
-                    display_meta["Trust Level"] = trust_badge
-                    display_meta["Target"] = f"{reg_data.namespace}/{reg_data.name}"
-                    display_meta["Description"] = reg_data.description or "No description provided."
+                    # --- UI Polish: Field Construction ---
+                    dorsalhub_url = f"{WEB_URL}/models/{reg_data.namespace}/{reg_data.name}"
+                    display_meta = {
+                        "Model": f"{reg_data.namespace}/{reg_data.name}",
+                        "Status": status_badge,
+                        "URL": f"[{link_style} link={dorsalhub_url}]{dorsalhub_url}[/]",
+                        "Description": reg_data.description or "No description provided.",
+                    }
 
                     if reg_data.install_url:
+                        # --- PRE-FLIGHT GIT CHECK ---
+                        if reg_data.install_url.startswith("git+") and not shutil.which("git"):
+                            message = Text.assemble(
+                                (f"The model '{target}' requires Git to install.\n\n", "default"),
+                                ("Dorsal could not find the ", "default"),
+                                ("git", f"bold {palette.get('primary_value', 'cyan')}"),
+                                (" command in your system PATH.\n\n", "default"),
+                                ("To proceed, please install Git from:\n", "default"),
+                                ("https://git-scm.com/downloads", link_style),
+                            )
+
+                            console.print(
+                                Panel(
+                                    message,
+                                    expand=False,
+                                    title=f"[{palette.get('panel_title_error', 'bold red')}]Missing System Dependency[/]",
+                                    border_style=palette.get("panel_border_error", "red"),
+                                )
+                            )
+                            exit_cli(code=EXIT_CODE_ERROR)
+                        # ---------------------------
+
+                        # Clean Repository Link
                         raw_url = reg_data.install_url.replace("git+", "").split("@")[0]
-                        display_meta["Source Code"] = raw_url
+                        display_meta["Source Code"] = f"[{link_style} link={raw_url}]{raw_url}[/]"
 
+                    # Clean Timestamp (Feb 09, 2026)
                     if reg_data.created_at:
-                        display_meta["Published"] = str(reg_data.created_at)
+                        display_meta["Published"] = reg_data.created_at.date().isoformat()
 
-            # --- CRITICAL FIX 1: Catch AuthError specifically ---
             except AuthError:
-                raise  # Bubble up to the global handler (displays the Auth Panel)
+                raise  # Bubble up to the global handler
 
             except Exception as e:
                 logger.debug(f"Metadata fetch failed: {e}")
 
-                # Fail Fast for Registry IDs (404s or other non-auth errors)
                 if "/" in target:
-                    # We strictly check for NotFoundError or 404 string
                     if isinstance(e, NotFoundError) or "404" in str(e):
                         console.print(
                             f"[{palette.get('error', 'bold red')}]Error: Model '{target}' not found in registry.[/]"
@@ -105,7 +135,6 @@ def install_model(
                         console.print(
                             f"[{palette.get('error', 'bold red')}]Error: Failed to connect to registry for '{target}'.[/]\n{e}"
                         )
-
                     exit_cli(code=EXIT_CODE_ERROR)
 
                 display_meta["Warning"] = "Could not fetch remote metadata."
@@ -113,25 +142,25 @@ def install_model(
         # Build the Review Panel
         msg_lines = []
         for k, v in display_meta.items():
+            # Align keys for cleaner look
             msg_lines.append(f"[{palette.get('key', 'dim')}]{k}:[/] {v}")
 
-        if "UNVERIFIED" in trust_badge:
-            msg_lines.append(f"\n[{palette.get('warning', 'bold yellow')}]⚠️  Safety Warning[/]")
+        if "Unverified" in status_badge:
+            msg_lines.append(f"\n[{palette.get('warning', 'bold yellow')}]⚠️ Safety Warning[/]")
             msg_lines.append("You are about to install executable code from an unverified source.")
             msg_lines.append("Please review the source above before proceeding.")
-
-        msg_lines.append(f"\n[{palette.get('info', 'dim')}]Review full registry at: https://dorsalhub.com/registry[/]")
 
         console.print(
             Panel(
                 "\n".join(msg_lines),
-                title=f"[{palette.get('panel_title_warning', 'bold yellow')}]🔍 Review Model[/]",
+                title=f"[{palette.get('panel_title_warning', 'bold yellow')}]Model Info[/]",
                 border_style=border_style,
+                expand=False,
             )
         )
 
         if not Confirm.ask("Do you trust this source and want to proceed?"):
-            console.print(f"[{palette.get('error', 'bold red')}]Aborted.[/]")
+            console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
             exit_cli(code=0)
 
     # --- 2. Installation ---
@@ -153,12 +182,16 @@ def install_model(
 
     # --- 3. Success Output ---
     success_color = palette.get("primary_value", "cyan")
-    scope_color = palette.get("warning", "yellow")
+    success_message = f"Successfully installed [{success_color}]{package_name}[/]"
+    if scope == "global":
+        scope_color = palette.get("warning", "yellow")
+        success_message += f"\nActive Scope: [{scope_color}]{scope}[/]"
 
     console.print(
         Panel(
-            f"Successfully installed [{success_color}]{package_name}[/]\nActive Scope: [{scope_color}]{scope}[/]",
+            success_message,
             title=f"[{palette.get('panel_title_success', 'bold green')}]✅ Installation Complete[/]",
             border_style=palette.get("panel_border_success", "green"),
+            expand=False,
         )
     )

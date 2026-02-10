@@ -16,6 +16,7 @@ import typer
 
 from dorsal.cli.model_app.init_model_cmd import init_model
 from dorsal.cli.model_app.install_model_cmd import install_model
+from dorsal.cli.model_app.uninstall_model_cmd import uninstall_model
 
 
 app = typer.Typer(
@@ -24,3 +25,4 @@ app = typer.Typer(
 
 app.command(name="init")(init_model)
 app.command(name="install")(install_model)
+app.command(name="uninstall")(uninstall_model)

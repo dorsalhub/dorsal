@@ -372,7 +372,7 @@ class FileRecord(BaseModel):
 
     """
 
-    hash: SHA256Hash
+    hash: SHA256Hash | None = None
     validation_hash: Blake3Hash | None = None
     quick_hash: QuickHash | None = None
     similarity_hash: TLSHash | None = None
@@ -472,6 +472,7 @@ class FileRecordStrict(FileRecord):
     - `POST /file/public|private`
     """
 
+    hash: SHA256Hash
     validation_hash: Blake3Hash
     annotations: AnnotationsStrict
     source: Literal["disk", "cache", "dorsalhub"]
@@ -480,12 +481,9 @@ class FileRecordStrict(FileRecord):
 
 
 class FileRecordDateTime(FileRecord):
-    """A `FileRecord` with dates in the root level.
+    """A `FileRecord` with dates in the root level."""
 
-    - This format is returned by the DorsalHub API
-
-    """
-
+    hash: SHA256Hash
     all_hashes: None = Field(default=None, exclude=True)
     all_hash_ids: None = Field(default=None, exclude=True)
     date_created: AwareDatetime

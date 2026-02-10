@@ -166,7 +166,7 @@ def search_and_display(
 
         search_caption = (
             f"Search powered by DorsalHub Search {response.api_version}. "
-            f"For search syntax, visit: https://docs.dorsalhub.com/reference/search-syntax/"
+            f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
         table = Table(
@@ -250,7 +250,7 @@ def search_and_display(
             upgrade_message = Text.assemble(
                 ("The 'global' search scope is a premium feature.\n\n", "default"),
                 ("To find out more, or to upgrade your account, visit:\n", "default"),
-                ("https://dorsalhub.com/pricing", "underline blue"),
+                ("https://dorsalhub.com/pricing", palette.get("link", "blue underline")),
                 style=palette.get("text_default", "default"),
             )
 
