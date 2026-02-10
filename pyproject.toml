@@ -9,9 +9,7 @@ description = "Dorsal is a local-first metadata generation and management toolki
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-authors = [
-    { name = "Rio Achuzia", email = "rio@dorsalhub.com" }
-]
+authors = [{ name = "Rio Achuzia", email = "rio@dorsalhub.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
@@ -43,18 +41,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-tlsh = [
-    "py-tlsh>=4.7.2"
-]
+tlsh = ["py-tlsh>=4.7.2"]
 
-pandas = [
-    "pandas>=2.0.0"
-]
+pandas = ["pandas>=2.0.0"]
 
-all = [
-    "dorsalhub[tlsh]",
-    "dorsalhub[pandas]",
-]
+all = ["dorsalhub[tlsh]", "dorsalhub[pandas]"]
 
 [project.urls]
 "Homepage" = "https://dorsalhub.com"
@@ -69,13 +60,7 @@ packages = ["src/dorsal"]
 include = ["LICENSE", "NOTICE", "/src/dorsal/schemas/open/*.json", "/src/dorsal/py.typed"]
 
 [tool.hatch.build.targets.sdist]
-exclude = [
-  "/reference",
-  "/notebooks",
-  "/scripts",
-  "uv.lock",
-  ".github",
-]
+exclude = ["/reference", "/notebooks", "/scripts", "uv.lock", ".github"]
 
 [tool.pytest.ini_options]
 log_cli = true
@@ -90,7 +75,7 @@ extend-exclude = ["*.ipynb"]
 line-length = 120
 
 [tool.ruff.lint]
-select = [ "E4", "E7", "E9", "F", "B" ]
+select = ["E4", "E7", "E9", "F", "B"]
 ignore = ["F401"]
 
 [tool.ruff.lint.per-file-ignores]
