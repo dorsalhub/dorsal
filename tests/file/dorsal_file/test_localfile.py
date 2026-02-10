@@ -139,14 +139,14 @@ def test_local_file_add_tag_success_no_validation(mock_metadata_reader, mock_fil
     mock_response.valid = True
     mocker.patch("dorsal.client.dorsal_client.DorsalClient.validate_tag", return_value=mock_response)
 
-    lf.add_private_tag(name="status", value="draft")
+    lf.add_tag(name="status", value="draft")
 
     assert len(lf.tags) == 1
     tag = lf.tags[0]
     assert isinstance(tag, NewFileTag)
     assert tag.name == "status"
     assert tag.value == "draft"
-    assert tag.private is True
+    assert tag.private is None
 
 
 @patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
@@ -163,7 +163,7 @@ def test_local_file_add_tag_with_successful_validation(
     mock_client.validate_tag.return_value = ValidateTagsResult(valid=True)
 
     lf = LocalFile(file_path, client=mock_client)
-    lf.add_public_tag(name="reviewed", value=True, auto_validate=True)
+    lf.add_tag(name="reviewed", value=True, auto_validate=True)
 
     mock_client.validate_tag.assert_called_once()
     assert len(lf.tags) == 1
@@ -184,7 +184,7 @@ def test_local_file_add_tag_with_failed_validation(mock_get_client, mock_metadat
     lf = LocalFile(file_path, client=mock_client)
 
     with pytest.raises(InvalidTagError, match="Value too long."):
-        lf.add_public_tag(name="invalid_tag", value="valid_local_length", auto_validate=True)
+        lf.add_tag(name="invalid_tag", value="valid_local_length", auto_validate=True)
 
 
 def test_local_file_push_success(mock_metadata_reader, mock_file_record_strict, fs):
@@ -217,7 +217,7 @@ def test_add_tag_raises_error_if_no_validation_hash(mock_metadata_reader, mock_f
     lf = LocalFile(file_path)
 
     with pytest.raises(ValueError, match="Cannot add tag: File is missing a 'validation_hash'"):
-        lf.add_public_tag(name="wont_work", value=True)
+        lf.add_tag(name="wont_work", value=True)
 
 
 def test_add_tag_raises_duplicate_error(mock_metadata_reader, mock_file_record_strict, fs, mocker):
@@ -232,10 +232,10 @@ def test_add_tag_raises_duplicate_error(mock_metadata_reader, mock_file_record_s
     mock_response.valid = True
     mocker.patch("dorsal.client.dorsal_client.DorsalClient.validate_tag", return_value=mock_response)
 
-    lf.add_private_tag(name="status", value="draft")
+    lf.add_tag(name="status", value="draft")
 
     with pytest.raises(DuplicateTagError, match="Tag has already been added: status='draft'"):
-        lf.add_private_tag(name="status", value="draft")
+        lf.add_tag(name="status", value="draft")
 
 
 @pytest.mark.parametrize(
@@ -289,7 +289,7 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
 
     mock_annotation = Annotation(
         record=GenericFileAnnotation(file_hash="a" * 64, custom_field="test_value"),
-        private=True,
+        private=None,
         source=AnnotationManualSource(id="test"),
     )
     mock_annotator.make_manual_annotation.return_value = mock_annotation
@@ -300,7 +300,6 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
 
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
-        public=False,
         annotation_record={"custom_field": "test_value"},
     )
 
@@ -312,7 +311,7 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
     added_annotation = added_annotations_list[0]
     assert isinstance(added_annotation, Annotation)
     assert added_annotation.record.custom_field == "test_value"
-    assert added_annotation.private is True
+    assert added_annotation.private is None
 
 
 @patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
@@ -331,7 +330,7 @@ def test_add_annotation_raises_conflict_error(mock_annotator, mock_metadata_read
 
     lf = LocalFile(file_path, client=mock_client)
 
-    lf._add_annotation(schema_id="dorsal/test-dataset", public=False, annotation_record={})
+    lf._add_annotation(schema_id="dorsal/test-dataset", annotation_record={})
 
     with pytest.raises(
         AttributeConflictError,
@@ -339,7 +338,6 @@ def test_add_annotation_raises_conflict_error(mock_annotator, mock_metadata_read
     ):
         lf._add_annotation(
             schema_id="dorsal/test-dataset",
-            public=False,
             annotation_record={},
             overwrite=False,
         )
@@ -365,13 +363,12 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
     mock_client = MagicMock()
 
     lf = LocalFile(file_path, client=mock_client)
-    lf._add_annotation(schema_id="dorsal/test-dataset", public=False, annotation_record={})
+    lf._add_annotation(schema_id="dorsal/test-dataset", annotation_record={})
 
     assert getattr(lf.model.annotations, "dorsal/test-dataset")[0].record.version == 1
 
     lf._add_annotation(
         schema_id="dorsal/test-dataset",
-        public=False,
         annotation_record={},
         overwrite=True,
     )
@@ -540,7 +537,7 @@ def test_add_tag_raises_auth_error_when_client_missing_and_auto_validate_true(
     lf = LocalFile(file_path, client=None)
 
     with pytest.raises(AuthError, match="Cannot perform auto-validation"):
-        lf.add_public_tag("test", "val", auto_validate=True)
+        lf.add_tag("test", "val", auto_validate=True)
 
     assert len(lf.tags) == 0
 
@@ -556,7 +553,7 @@ def test_validate_tags_explicit_success(mock_metadata_reader, mock_file_record_s
 
     lf = LocalFile(file_path, client=mock_client)
 
-    lf.add_public_tag("status", "pending", auto_validate=False)
+    lf.add_tag("status", "pending", auto_validate=False)
 
     result = lf.validate_tags()
 
@@ -574,7 +571,7 @@ def test_validate_tags_explicit_failure(mock_metadata_reader, mock_file_record_s
     mock_client.validate_tag.return_value = ValidateTagsResult(valid=False, message="Banned word")
 
     lf = LocalFile(file_path, client=mock_client)
-    lf.add_public_tag("status", "bad_word")
+    lf.add_tag("status", "bad_word")
 
     with pytest.raises(InvalidTagError, match="Banned word"):
         lf.validate_tags()
@@ -720,7 +717,7 @@ def test_broken_symlink_fallback(mock_metadata_reader, mock_file_record_strict, 
 
     LocalFile(link_path)
 
-    args, kwargs = mock_metadata_reader._get_or_create_record.call_args
+    _args, kwargs = mock_metadata_reader._get_or_create_record.call_args
     assert kwargs["file_path"] == link_path
 
 
@@ -743,7 +740,6 @@ def test_add_annotation_crud_lifecycle(
     def mock_make_annotation(annotation, **kwargs):
         return Annotation(
             record=GenericFileAnnotation(**annotation),
-            private=kwargs.get("private", True),
             source=AnnotationManualSource(id=kwargs.get("source_id", "default_src")),
         )
 
@@ -751,55 +747,26 @@ def test_add_annotation_crud_lifecycle(
 
     lf = LocalFile(file_path)
 
-    lf.add_private_annotation(
-        schema_id="test/private-schema", annotation_record={"key": "secret_value"}, source="src_A"
-    )
+    lf._add_annotation(schema_id="test/private-schema", annotation_record={"key": "secret_value"}, source_id="src_A")
 
-    lf.add_public_annotation(schema_id="test/public-schema", annotation_record={"key": "public_value"}, source="src_B")
+    lf._add_annotation(schema_id="test/public-schema", annotation_record={"key": "public_value"}, source_id="src_B")
 
     private_anns = lf.get_annotations("test/private-schema")
     assert len(private_anns) == 1
     assert private_anns[0].record.key == "secret_value"
-    assert private_anns[0].private is True
+    assert private_anns[0].private is None
     assert private_anns[0].source.id == "src_A"
 
     public_anns = lf.get_annotations("test/public-schema")
     assert len(public_anns) == 1
     assert public_anns[0].record.key == "public_value"
-    assert public_anns[0].private is False
+    assert public_anns[0].private is None
 
     lf.remove_annotation("test/private-schema", source_id="src_A")
     assert len(lf.get_annotations("test/private-schema")) == 0
 
     lf.remove_annotation("test/public-schema")
     assert len(lf.get_annotations("test/public-schema")) == 0
-
-
-@patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
-@patch("dorsal.file.file_annotator.FILE_ANNOTATOR")
-def test_add_annotation_wrappers_call_correct_helper(
-    mock_annotator, mock_get_client, mock_metadata_reader, mock_file_record_strict, fs
-):
-    """Verifies _add_annotation is called correctly by public/private wrappers."""
-    file_path = "/fake/local.txt"
-    fs.create_file(file_path)
-    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
-
-    mock_client = MagicMock()
-    mock_get_client.return_value = mock_client
-    mock_client.make_schema_validator.return_value = MagicMock()
-
-    mock_annotator.make_manual_annotation.return_value = Annotation(
-        record=GenericFileAnnotation(x=1), private=True, source=AnnotationManualSource(id="s")
-    )
-
-    lf = LocalFile(file_path)
-
-    lf.add_private_annotation(schema_id="foo/bar", annotation_record={"x": 1})
-    assert mock_annotator.make_manual_annotation.call_args.kwargs["private"] is True
-
-    lf.add_public_annotation(schema_id="foo/baz", annotation_record={"x": 1})
-    assert mock_annotator.make_manual_annotation.call_args.kwargs["private"] is False
 
 
 @patch("dorsal.file.dorsal_file.get_open_schema_validator")

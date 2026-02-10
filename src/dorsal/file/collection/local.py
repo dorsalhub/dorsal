@@ -135,10 +135,10 @@ class LocalFileCollection(_BaseFileCollection):
             final_files = files
         elif isinstance(source, str):
             path = source
-            reader = MetadataReader(
+            self.reader = MetadataReader(
                 client=self._client, model_config=model_runner_pipeline, file_class=file_class, offline=self.offline
             )
-            scan_files, self.warnings = reader.scan_directory(
+            scan_files, self.warnings = self.reader.scan_directory(
                 dir_path=source,
                 recursive=recursive,
                 return_errors=True,
@@ -318,11 +318,7 @@ class LocalFileCollection(_BaseFileCollection):
                 if isinstance(file, LocalFile):
                     for tag in tags_to_validate:
                         try:
-                            file._add_local_tag(
-                                name=tag.name,
-                                value=tag.value,
-                                private=tag.private,
-                            )
+                            file._add_local_tag(name=tag.name, value=tag.value)
                         except Exception as e:
                             logger.warning(f"Could not apply tag '{tag.name}' to file '{file.name}': {e}")
                 if rich_progress:
@@ -363,10 +359,15 @@ class LocalFileCollection(_BaseFileCollection):
 
         if public:
             prohibited_files = []
+            prohibited_tags = []
             for file in self.files:
                 if not is_permitted_public_media_type(file.media_type):
                     name_repr = file.name or file.hash or "Unknown File"
                     prohibited_files.append(f"'{name_repr}' ({file.media_type})")
+
+                if any(t.name == "label" for t in file.tags):
+                    name_repr = file.name or file.hash or "Unknown File"
+                    prohibited_tags.append(name_repr)
 
             if prohibited_files:
                 limit = 5
@@ -375,8 +376,18 @@ class LocalFileCollection(_BaseFileCollection):
                     details += f" and {len(prohibited_files) - limit} others"
 
                 raise ValueError(
-                    f"Operation aborted: The collection cannot be indexed publicly because "
-                    f"it contains restricted media types: {details}."
+                    f"The collection cannot be indexed publicly because it contains restricted media types: {details}."
+                )
+
+            if prohibited_tags:
+                limit = 5
+                details = ", ".join(prohibited_tags[:limit])
+                if len(prohibited_tags) > limit:
+                    details += f" and {len(prohibited_tags) - limit} others"
+
+                raise ValueError(
+                    f"The collection cannot be indexed publicly because "
+                    f"it contains files with strictly private 'label' tags: {details}."
                 )
 
         if self._client is None:

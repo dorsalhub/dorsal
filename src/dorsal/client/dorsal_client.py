@@ -60,7 +60,7 @@ from dorsal.common.validators.datasets import (
     Dataset,
     is_valid_dataset_id_or_schema_id,
 )
-from dorsal.file.integrity import align_core_annotation_privacy
+from dorsal.file.integrity import normalize_record_privacy
 from dorsal.file.validators.common import validate_hex64
 from dorsal.file.utils.hashes import HashFunction, parse_validate_hash
 from dorsal.version import __version__
@@ -984,7 +984,7 @@ class DorsalClient:
             try:
                 payload = rec.model_copy(deep=True)
 
-                payload = align_core_annotation_privacy(record=payload, is_private=private)
+                payload = normalize_record_privacy(record=payload, target_private=None, strict=False)
 
                 if not private:
                     payload = scrub_pii_from_model(payload)

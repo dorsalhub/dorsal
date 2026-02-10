@@ -57,7 +57,6 @@ def _load_packaged_model_config(module_name: str) -> dict[str, Any]:
     Loads 'model_config.toml' from the installed package resources.
     """
     try:
-
         resource_path = importlib.resources.files(module_name) / "model_config.toml"
 
         if not resource_path.is_file():
@@ -96,7 +95,6 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
 
     if process.stdout:
         for line in process.stdout:
-
             sys.stdout.write(line)
 
             captured_lines.append(line)
@@ -146,7 +144,6 @@ def install_model_target(
     actual_target = None
 
     if is_registry_id(target):
-
         if pathlib.Path(target).exists():
             raise DorsalError(
                 f"Ambiguous Target: You requested Registry Model '{target}', but a directory with this name exists locally.\n"
@@ -264,7 +261,6 @@ def install_model_from_package(
         )
 
     try:
-
         module = target_ep.load()
         module_name = target_ep.module
 

@@ -123,8 +123,10 @@ class ModelRunner:
         else:
             raise ModelRunnerConfigError(f"Invalid pipeline_config type: {type(pipeline_config).__name__}")
 
+        self.pipeline_config = pipeline_config
         self.debug = debug
         self.time_taken: dict[str, float] = {}
+        self.errors: dict[str, str] = {}
 
         self.pre_model = self._load_pre_pipeline_model_step()
 
@@ -914,6 +916,7 @@ class ModelRunner:
                     )
                     all_model_results.append(model_run_result)
                     if model_run_result.error:
+                        self.errors[file_path] = model_run_result
                         logger.warning(
                             "Model '%s' completed with error: %s",
                             annotator_class.__name__,

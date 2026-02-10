@@ -138,7 +138,7 @@ class FileAnnotator:
         wrapper_class: Type[Annotation],
         schema_id: str,
         source: dict,
-        private: bool,
+        private: bool | None,
         schema_version: str | None = None,
         group_info: AnnotationGroupInfo | None = None,
     ) -> Annotation:
@@ -182,7 +182,7 @@ class FileAnnotator:
         schema_id: str,
         schema_version: str | None = None,
         source: dict,
-        private: bool,
+        private: bool | None,
         force: bool = False,
     ) -> Annotation | AnnotationGroup:
         """
@@ -268,7 +268,7 @@ class FileAnnotator:
         pipeline_step: ModelRunnerPipelineStep | dict[str, Any],
         schema_id: str | None = None,
         schema_version: str | None = None,
-        private: bool,
+        private: bool | None,
     ) -> Annotation | AnnotationGroup:
         """
         Runs an annotation model defined by a single pipeline step.
@@ -364,7 +364,7 @@ class FileAnnotator:
         annotation_model_cls: Type[AnnotationModel],
         schema_id: str,
         schema_version: str | None = None,
-        private: bool,
+        private: bool | None,
         options: dict | None = None,
         validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
@@ -522,7 +522,7 @@ class FileAnnotator:
         schema_version: str | None = None,
         source_id: str | None,
         validator: Type[BaseModel] | JsonSchemaValidator | None = None,
-        private: bool,
+        private: bool | None,
         ignore_linter_errors: bool = False,
         force: bool = False,
     ) -> Annotation | AnnotationGroup:

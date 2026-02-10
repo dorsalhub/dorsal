@@ -39,7 +39,7 @@ from dorsal.client import DorsalClient
 from dorsal.client.validators import FileIndexResponse
 from dorsal.common import constants
 from dorsal.common.auth import is_offline_mode
-from dorsal.common.environment import is_jupyter_environment
+from dorsal.common.environment import is_jupyter_environment, should_show_progress
 from dorsal.common.exceptions import (
     BatchSizeError,
     DorsalError,
@@ -271,6 +271,7 @@ class MetadataReader:
         recursive: bool = False,
         limit: int | None = None,
         console: Console | None = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
@@ -346,12 +347,14 @@ class MetadataReader:
         records_to_index_list: list[FileRecordStrict] = []
         processed_files_summary_local: dict[str, str] = {}
 
+        should_display = should_show_progress(show_progress, console)
+
         rich_progress = None
         iterator: Iterable[str]
 
-        if is_jupyter_environment():
+        if should_display and is_jupyter_environment():
             iterator = tqdm(file_paths, desc="Generating Metadata (Local)", total=total_count)
-        elif console is not None:
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -469,6 +472,7 @@ class MetadataReader:
         fail_fast: bool = True,
         hash_to_path_map: dict[str, str] | None = None,
         console: "Console | None" = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
     ) -> dict[str, Any]:
         """
@@ -522,14 +526,16 @@ class MetadataReader:
             public,
         )
 
+        should_display = should_show_progress(show_progress, console)
+
         rich_progress = None
         iterator: Iterable[list[FileRecordStrict]]
 
-        if is_jupyter_environment():
+        if should_display and is_jupyter_environment():
             from tqdm import tqdm
 
             iterator = tqdm(batches, desc="Pushing batches")
-        elif console:
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -638,6 +644,7 @@ class MetadataReader:
         skip_cache: bool = False,
         fail_fast: bool = True,
         console: "Console | None" = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
         follow_symlinks: bool = True,
         lazy: bool = False,
@@ -717,6 +724,7 @@ class MetadataReader:
             limit=None,
             skip_cache=skip_cache,
             console=console,
+            show_progress=show_progress,
             palette=palette,
             follow_symlinks=follow_symlinks,
             lazy=lazy,
@@ -842,6 +850,7 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: Literal[False] = False,
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
@@ -857,6 +866,7 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: Literal[True],
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
@@ -871,6 +881,7 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: bool = False,
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
@@ -885,11 +896,18 @@ class MetadataReader:
         and returns a list of the resulting `LocalFile` objects. This is an
         offline operation.
 
+        This method utilizes the internal `ModelRunner` instance of this
+        `MetadataReader` (via `_get_or_create_record`), ensuring that any custom
+        pipeline configuration provided during initialization is respected and
+        that initialization overhead is incurred only once, not per file.
+
         Example:
             ```python
             from dorsal.file import MetadataReader
 
-            reader = MetadataReader()
+            # Initialize with a custom pipeline if needed
+            reader = MetadataReader(model_config="my_pipeline.json")
+
             files_to_process = reader.scan_directory("path/to/images", recursive=True)
 
             print(f"Found and processed {len(files_to_process)} image files.")
@@ -899,14 +917,26 @@ class MetadataReader:
             dir_path (str): The path to the directory to scan.
             recursive (bool, optional): If True, scans all subdirectories
                 recursively. Defaults to False.
-            lazy (bool, optional): If True, processes files via an iterator.
+            return_errors (bool, optional): If True, returns a tuple containing
+                the list of successfully processed files and a list of error strings.
+                Defaults to False.
+            console (Console, optional): A Rich Console instance for progress bars.
+            palette (dict, optional): A dictionary defining colors for the progress bar.
+            skip_cache (bool, optional): If True, forces reprocessing even if
+                valid cache exists. Defaults to False.
+            overwrite_cache (bool, optional): If True, updates the cache with
+                new results. Defaults to False.
+            follow_symlinks (bool, optional): If True, resolves symlinks to their
+                targets. Defaults to True.
+            lazy (bool, optional): If True, processes files via an iterator to avoid
+                scanning the entire tree before processing begins. Defaults to False.
 
         Returns:
             list[LocalFile]: initialized `LocalFile` instances.
             Or
             tuple:
             - list[LocalFile]: initialized `LocalFile` instances.
-            - list[str]: errors (for cli output).
+            - list[str]: errors (useful for CLI output/debugging).
         """
         logger.debug("Starting directory read for: %s (Recursive: %s, Lazy: %s)", dir_path, recursive, lazy)
         try:
@@ -934,12 +964,14 @@ class MetadataReader:
         local_files: list[LocalFile] = []
         warnings: list[str] = []
 
+        should_display = should_show_progress(show_progress, console)
+
         rich_progress = None
         iterator: Iterable[str]
 
-        if is_jupyter_environment():
+        if should_display and is_jupyter_environment():
             iterator = tqdm(file_paths, desc="Processing Files", total=total_count)
-        elif console is not None:
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -971,14 +1003,31 @@ class MetadataReader:
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for file_path in iterator:
                 try:
-                    local_file_obj = self._file_class(
-                        file_path=file_path,
-                        client=self._client_instance,
-                        use_cache=not skip_cache,
-                        offline=self.offline,
+                    processing_path = file_path
+                    if follow_symlinks:
+                        try:
+                            path_obj = pathlib.Path(file_path)
+                            resolved = path_obj.resolve()
+                            if resolved.exists():
+                                processing_path = str(resolved)
+                        except (OSError, RuntimeError) as err:
+                            logger.debug("Failed to resolve symlink during scan: %s - %s", file_path, err)
+                            pass
+
+                    record = self._get_or_create_record(
+                        file_path=processing_path,
+                        skip_cache=skip_cache,
                         overwrite_cache=overwrite_cache,
                         follow_symlinks=follow_symlinks,
                     )
+
+                    local_file_obj = self._file_class(
+                        file_path=file_path,
+                        client=self._client_instance,
+                        offline=self.offline,
+                        _file_record=record,
+                    )
+
                     local_files.append(local_file_obj)
                 except Exception as e:
                     msg = f"Skipping '{os.path.basename(file_path)}' due to processing error: {e}"
@@ -998,7 +1047,6 @@ class MetadataReader:
         if return_errors:
             return local_files, warnings
         return local_files
-
 
     def scan_file(
         self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False, follow_symlinks: bool = True

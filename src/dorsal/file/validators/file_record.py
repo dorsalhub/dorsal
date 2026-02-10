@@ -79,7 +79,7 @@ class Annotation(BaseModel):
     """
 
     record: GenericFileAnnotation | None
-    private: bool = True
+    private: bool | None = None
     source: AnnotationSource
     schema_version: str | None = None
     group: AnnotationGroupInfo | None = None
@@ -142,7 +142,7 @@ class AnnotationGroup(BaseModel):
         return self
 
     @property
-    def private(self) -> bool:
+    def private(self) -> bool | None:
         return self.annotations[0].private
 
     @property
@@ -156,27 +156,27 @@ class AnnotationGroup(BaseModel):
 
 class Annotation_Base(Annotation):
     record: FileCoreValidationModel  # type: ignore[assignment]
-    private: None = Field(default=None, exclude=True)  # type: ignore[assignment]
+    private: bool | None = Field(default=None, exclude=True)
 
 
 class Annotation_OfficeDocument(Annotation):
     record: OfficeDocumentValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_MediaInfo(Annotation):
     record: MediaInfoValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_PDF(Annotation):
     record: PDFValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_Ebook(Annotation):
     record: EbookValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 CORE_MODEL_ANNOTATION_WRAPPERS: dict[str, Type[Annotation]] = {
@@ -327,7 +327,7 @@ class FileTag(BaseModel):
     name: str = Field(pattern=r"^[a-zA-Z0-9\_]{3,64}$")
     value: String256 | bool | datetime.datetime | int | float
     value_code: String256 | None = None
-    private: bool
+    private: bool | None = None
     hidden: bool
     upvotes: NonNegativeInt
     downvotes: NonNegativeInt

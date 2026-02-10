@@ -190,9 +190,7 @@ def test_index_file_records_integrity_failure(client):
         },
     )
 
-    with patch(
-        "dorsal.client.dorsal_client.align_core_annotation_privacy", side_effect=Exception("Privacy Check Failed")
-    ):
+    with patch("dorsal.client.dorsal_client.normalize_record_privacy", side_effect=Exception("Privacy Check Failed")):
         with pytest.raises(DorsalClientError, match="Internal error preparing record"):
             client.index_private_file_records([valid_record])
 
