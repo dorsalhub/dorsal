@@ -27,7 +27,6 @@ def run_or_install_model(
     target: str,
     file_path: str,
     *,
-    api_key: str | None = None,
     options: dict[str, Any] | None = None,
     ignore_linter_errors: bool = False,
     private: bool = False,

@@ -81,6 +81,7 @@ class Annotation(BaseModel):
     record: GenericFileAnnotation | None
     private: bool | None = None
     source: AnnotationSource
+    schema_id: str | None = None
     schema_version: str | None = None
     group: AnnotationGroupInfo | None = None
 

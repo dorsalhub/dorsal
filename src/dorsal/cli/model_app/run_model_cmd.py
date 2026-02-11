@@ -111,7 +111,7 @@ def run_model(
 
     if not json_output:
         console.print(
-            f"🚀 Running model [{palette.get('primary_value', 'cyan')}]{target}[/] "
+            f"Running model [{palette.get('primary_value', 'cyan')}]{target}[/] "
             f"on [{palette.get('primary_value', 'cyan')}]{file_path.name}[/]..."
         )
 
@@ -135,7 +135,7 @@ def run_model(
 
         # Handle Output
         if json_output:
-            data = result.model_dump() if hasattr(result, "model_dump") else result.dict()
+            data = result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result.dict()
             console.print(json.dumps(data, indent=2, default=str, ensure_ascii=False))
         else:
             panel = create_model_result_panel(result=result, target=target, file_name=file_path.name, palette=palette)

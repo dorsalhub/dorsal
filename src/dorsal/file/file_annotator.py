@@ -166,6 +166,7 @@ class FileAnnotator:
                 record=annotation_record,
                 private=private,
                 source=source,
+                schema_id=schema_id,
                 schema_version=schema_version,
                 group=group_info,
             )
@@ -179,7 +180,7 @@ class FileAnnotator:
         self,
         *,
         validated_annotation: dict,
-        schema_id: str,
+        schema_id: str | None,
         schema_version: str | None = None,
         source: dict,
         private: bool | None,
@@ -303,6 +304,7 @@ class FileAnnotator:
             )
 
         effective_schema_id = schema_id if schema_id is not None else pipeline_step_obj.schema_id
+        logger.debug("Validation schema: %s", effective_schema_id)
 
         try:
             annotator_callable = import_callable(import_path=pipeline_step_obj.annotation_model)

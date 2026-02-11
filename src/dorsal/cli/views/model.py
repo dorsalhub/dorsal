@@ -110,7 +110,7 @@ def create_model_result_panel(
     header = Table.grid(expand=True)
     header.add_column(justify="left")
     header.add_column(justify="right")
-    header.add_row(f"🎯 [bold]{target}[/]", f"📄 [dim]{file_name}[/]")
+    header.add_row(f"[bold]{target}[/]", f"📄 [dim]{file_name}[/]")
 
     return Panel(
         Group(header, Rule(style=palette.get("info", "dim")), Text(""), content),
