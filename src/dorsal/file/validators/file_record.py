@@ -180,7 +180,7 @@ class Annotation_Ebook(Annotation):
     private: bool | None = None
 
 
-CORE_MODEL_ANNOTATION_WRAPPERS: dict[str, Type[Annotation]] = {
+CORE_MODEL_ANNOTATION_WRAPPERS: dict[str | None, Type[Annotation]] = {
     "file/base": Annotation_Base,
     "file/ebook": Annotation_Ebook,
     "file/office": Annotation_OfficeDocument,

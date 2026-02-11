@@ -136,7 +136,7 @@ class FileAnnotator:
         *,
         record_data: dict[str, Any],
         wrapper_class: Type[Annotation],
-        schema_id: str,
+        schema_id: str | None,
         source: dict,
         private: bool | None,
         schema_version: str | None = None,
