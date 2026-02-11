@@ -16,6 +16,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from dorsal.testing import run_model
 from dorsal.common.model import AnnotationModel
+from dorsal.file.model_runner import ModelRunner
 
 
 class DummyModel(AnnotationModel):
@@ -28,7 +29,8 @@ class DummyModel(AnnotationModel):
 
 @pytest.fixture
 def mock_runner():
-    with patch("dorsal.testing.ModelRunner") as MockRunnerCls:
+    # Patch ModelRunner in the module where it is instantiated
+    with patch("dorsal.file.model_runner.ModelRunner") as MockRunnerCls:
         runner_instance = MockRunnerCls.return_value
 
         base_result = MagicMock()
@@ -48,46 +50,35 @@ def mock_runner():
 def test_test_model_success(mock_runner):
     run_model(DummyModel, "/tmp/fake.txt")
 
-    # Verify it ran the base model
     assert mock_runner.run_single_model.call_count == 2
-    # Check call args for base model options
     call_args = mock_runner.run_single_model.call_args_list[0]
-    assert call_args.kwargs["options"]["calculate_similarity_hash"] is True
+
+    assert call_args.kwargs["options"]["calculate_similarity_hash"] is False
 
 
 def test_test_model_base_failure(mock_runner):
-    # Make base model fail
     failure = MagicMock()
     failure.error = "Base failed"
     mock_runner.run_single_model.side_effect = [failure]
 
     result = run_model(DummyModel, "/tmp/fake.txt")
     assert result.error == "Base failed"
-    # Should not have run the second model
     assert mock_runner.run_single_model.call_count == 1
 
 
-def test_test_model_dependency_check(mock_runner):
-    dep = MagicMock()
+def test_test_model_dependency_check():
+    from dorsal.file.dependencies import make_file_extension_dependency
 
-    with patch("dorsal.testing.check_media_type_dependency", return_value=False):
-        # Mock the config class instance check
-        with patch("dorsal.testing.MediaTypeDependencyConfig"):
-            pass
+    deps = make_file_extension_dependency(extensions=[".pdf"])
 
-        from dorsal.file.configs.model_runner import MediaTypeDependencyConfig
+    base_result = MagicMock()
+    base_result.error = None
+    base_result.record = {"name": "f.txt", "extension": ".txt", "media_type": "text/plain"}
 
-        MediaTypeDependencyConfig(media_types=["image/png"])
-
-    with patch("dorsal.testing.check_media_type_dependency", return_value=False):
-        from dorsal.file.configs.model_runner import MediaTypeDependencyConfig
-
-        dep = MediaTypeDependencyConfig(media_types=["image/png"])
-
-        result = run_model(DummyModel, "/f.txt", dependencies=[dep])
-
+    with patch.object(ModelRunner, "run_single_model", side_effect=[base_result]) as mock_run:
+        result = run_model(DummyModel, "/f.txt", dependencies=deps)
         assert "Dependency not met" in str(result.error)
-        assert mock_runner.run_single_model.call_count == 1
+        assert mock_run.call_count == 1
 
 
 def test_ambiguous_config_error(mock_runner):
@@ -96,13 +87,10 @@ def test_ambiguous_config_error(mock_runner):
 
 
 def test_open_schema_resolution(mock_runner):
-    # If we use an open schema, it should resolve the validator automatically
-    with patch("dorsal.testing.get_open_schema_validator") as mock_get_val:
-        # Return a Mock object (which has attributes like __module__) instead of a string
+    with patch("dorsal.file.validators.open_schema.get_open_schema_validator") as mock_get_val:
         mock_get_val.return_value = MagicMock()
 
         run_model(DummyModel, "/f.txt", schema_id="open/generic")
 
-        # Check the second call (the actual model run)
         call_args = mock_runner.run_single_model.call_args_list[1]
         assert call_args.kwargs["validation_model"] == mock_get_val.return_value

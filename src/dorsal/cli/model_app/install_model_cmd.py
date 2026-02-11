@@ -52,22 +52,18 @@ def install_model(
     palette = ctx.obj["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
-    # --- 0. Environment Check (Pipx isolation warning) ---
     if "pipx" in sys.prefix:
         console.print(
             f"[{palette.get('info', 'dim')}]Note: You are running inside a pipx environment.\n"
             "This plugin will be available to the CLI, but NOT to external Python scripts.[/]"
         )
 
-    # --- 1. Safety Check / Pre-flight ---
     if not yes and not force:
-        # Default for local paths
         display_meta = {"Model": target, "Source": "Local Path"}
 
         status_badge = f"[{palette.get('warning', 'bold yellow')}]Unverified[/]"
         border_style = palette.get("panel_border_warning", "yellow")
 
-        # Link style from palette (fallback to blue underline if missing)
         link_style = palette.get("link", "blue underline")
 
         if is_registry_id(target):
@@ -80,7 +76,6 @@ def install_model(
                         status_badge = f"[{palette.get('panel_border', 'bold blue')}]Verified[/]"
                         border_style = palette.get("panel_border", "blue")
 
-                    # --- UI Polish: Field Construction ---
                     dorsalhub_url = f"{WEB_URL}/models/{reg_data.namespace}/{reg_data.name}"
                     display_meta = {
                         "Model": f"{reg_data.namespace}/{reg_data.name}",
@@ -90,7 +85,6 @@ def install_model(
                     }
 
                     if reg_data.install_url:
-                        # --- PRE-FLIGHT GIT CHECK ---
                         if reg_data.install_url.startswith("git+") and not shutil.which("git"):
                             message = Text.assemble(
                                 (f"The model '{target}' requires Git to install.\n\n", "default"),
@@ -110,18 +104,15 @@ def install_model(
                                 )
                             )
                             exit_cli(code=EXIT_CODE_ERROR)
-                        # ---------------------------
 
-                        # Clean Repository Link
                         raw_url = reg_data.install_url.replace("git+", "").split("@")[0]
                         display_meta["Source Code"] = f"[{link_style} link={raw_url}]{raw_url}[/]"
 
-                    # Clean Timestamp (Feb 09, 2026)
                     if reg_data.created_at:
                         display_meta["Published"] = reg_data.created_at.date().isoformat()
 
             except AuthError:
-                raise  # Bubble up to the global handler
+                raise
 
             except Exception as e:
                 logger.debug(f"Metadata fetch failed: {e}")
@@ -139,10 +130,8 @@ def install_model(
 
                 display_meta["Warning"] = "Could not fetch remote metadata."
 
-        # Build the Review Panel
         msg_lines = []
         for k, v in display_meta.items():
-            # Align keys for cleaner look
             msg_lines.append(f"[{palette.get('key', 'dim')}]{k}:[/] {v}")
 
         if "Unverified" in status_badge:
@@ -163,7 +152,6 @@ def install_model(
             console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
             exit_cli(code=0)
 
-    # --- 2. Installation ---
     status_color = palette.get("primary_value", "bold cyan")
     with console.status(f"Installing model from [{status_color}]{target}[/]..."):
         try:
@@ -180,7 +168,6 @@ def install_model(
             console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
-    # --- 3. Success Output ---
     success_color = palette.get("primary_value", "cyan")
     success_message = f"Successfully installed [{success_color}]{package_name}[/]"
     if scope == "global":

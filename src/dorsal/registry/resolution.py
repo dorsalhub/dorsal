@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# dorsal/registry/resolution.py
-
 import logging
 import importlib.metadata
 from typing import Literal
@@ -28,6 +26,7 @@ from dorsal.session import get_shared_dorsal_client
 logger = logging.getLogger(__name__)
 
 TargetModelStrategy = Literal["registry_id", "class_name", "package"]
+
 
 def resolve_target(target: str) -> tuple[TargetModelStrategy, str]:
     """
@@ -50,7 +49,8 @@ def resolve_target(target: str) -> tuple[TargetModelStrategy, str]:
         tuple: (Strategy, package_name) e.g. ('package', 'dorsal-whisper')
     """
     raw_package_name = None
-    
+    strategy: TargetModelStrategy
+
     if is_registry_id(target):
         logger.debug(f"Resolving Registry ID: {target}")
         client = get_shared_dorsal_client()
@@ -62,10 +62,8 @@ def resolve_target(target: str) -> tuple[TargetModelStrategy, str]:
         except AuthError as e:
             raise e
         except Exception as e:
-            raise DorsalError(
-                f"Failed to resolve model '{target}' in registry: {e}"
-            ) from e
-    
+            raise DorsalError(f"Failed to resolve model '{target}' in registry: {e}") from e
+
     if not raw_package_name:
         resolved_from_config = find_package_name_by_class(target)
         if resolved_from_config:

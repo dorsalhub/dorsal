@@ -46,7 +46,6 @@ def uninstall_model(
     palette: dict[str, str] = ctx.obj["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
-    # --- 1. Confirmation ---
     if not yes:
         message = (
             f"Are you sure you want to uninstall [bold]{target}[/]?\n"
@@ -57,7 +56,6 @@ def uninstall_model(
             console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
             exit_cli(code=0)
 
-    # --- 2. Execution ---
     status_color = palette.get("primary_value", "bold cyan")
 
     with console.status(f"Uninstalling [{status_color}]{target}[/]..."):
@@ -72,7 +70,6 @@ def uninstall_model(
             console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
-    # --- 3. Success Output ---
     success_color = palette.get("primary_value", "cyan")
 
     console.print(

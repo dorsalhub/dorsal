@@ -82,7 +82,7 @@ def run_or_install_model(
 
     # 4. Execute
     runner = ModelRunner()
-    
+
     try:
         result = FILE_ANNOTATOR.annotate_file_using_pipeline_step(
             file_path=file_path,
@@ -104,7 +104,7 @@ def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
     # Strategy 1: Look in the active pipeline
     pipeline = get_model_pipeline(scope="effective")
     safe_pkg_name = canonicalize_name(package_name)
-    
+
     for step in pipeline:
         if step.package_name and canonicalize_name(step.package_name) == safe_pkg_name:
             logger.debug(f"Found existing pipeline configuration for '{package_name}'.")
@@ -131,11 +131,11 @@ def _resolve_module_from_package(package_name: str) -> str:
     """
     safe_pkg_name = canonicalize_name(package_name)
     eps = importlib.metadata.entry_points(group="dorsal.models")
-    
+
     for ep in eps:
         if ep.dist and canonicalize_name(ep.dist.name) == safe_pkg_name:
             return ep.module
-            
+
     raise DorsalError(
         f"Package '{package_name}' is installed but does not declare a 'dorsal.models' entry point.\n"
         "This package may be broken or is not a compatible Dorsal model."
@@ -149,22 +149,20 @@ def _load_package_config(module_name: str, package_name: str) -> dict[str, Any]:
     try:
         resource_path = importlib.resources.files(module_name) / "model_config.toml"
         if not resource_path.is_file():
-            raise DorsalConfigError(f"Package '{package_name}' is missing 'model_config.toml' in module '{module_name}'")
-        
+            raise DorsalConfigError(
+                f"Package '{package_name}' is missing 'model_config.toml' in module '{module_name}'"
+            )
+
         config_text = resource_path.read_text(encoding="utf-8")
         return tomllib.loads(config_text)
 
-    except (ImportError, FileNotFoundError) as e:
-        raise DorsalConfigError(f"Could not load config for '{package_name}': {e}")
-    except tomllib.TOMLDecodeError as e:
-        raise DorsalConfigError(f"Syntax error in 'model_config.toml' for '{package_name}': {e}")
+    except (ImportError, FileNotFoundError) as err:
+        raise DorsalConfigError(f"Could not load config for '{package_name}': {err}") from err
+    except tomllib.TOMLDecodeError as err:
+        raise DorsalConfigError(f"Syntax error in 'model_config.toml' for '{package_name}': {err}") from err
 
 
-def _build_pipeline_step(
-    config_data: dict[str, Any], 
-    module_name: str, 
-    package_name: str
-) -> ModelRunnerPipelineStep:
+def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_name: str) -> ModelRunnerPipelineStep:
     """
     Validates configuration data and constructs the ModelRunnerPipelineStep object.
     """
@@ -173,7 +171,7 @@ def _build_pipeline_step(
 
     if not class_name:
         raise DorsalConfigError(f"Invalid config in '{package_name}': missing required field 'model_class'")
-    
+
     if not schema_id:
         raise DorsalConfigError(f"Invalid config in '{package_name}': missing required field 'schema_id'")
 
@@ -182,7 +180,7 @@ def _build_pipeline_step(
             annotation_model=CallableImportPath(module=module_name, name=class_name),
             schema_id=schema_id,
             dependencies=config_data.get("dependencies"),
-            validation_model=None, # Inferred automatically by FILE_ANNOTATOR
+            validation_model=None,  # Inferred automatically by FILE_ANNOTATOR
             options=config_data.get("options"),
             package_name=package_name,
         )

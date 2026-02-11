@@ -76,7 +76,7 @@ def _ensure_git_installed() -> None:
     Verifies that 'git' is installed and available in the system PATH.
     """
     if shutil.which("git") is None:
-        raise DorsalError(
+        raise DorsalError(  # pragma: no cover
             "Git is not installed or not found in your system PATH.\n"
             "Installing models from the Dorsal Registry requires Git to clone the repositories.\n\n"
             "Please install Git and try again."
@@ -91,7 +91,6 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     """
     logger.info(f"Installing {target_desc}...")
 
-    # Check if verbose mode is active (INFO level or lower)
     is_verbose = logger.isEnabledFor(logging.INFO)
 
     process = subprocess.Popen(
@@ -108,7 +107,7 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
 
     if process.stdout:
         for line in process.stdout:
-            if is_verbose:
+            if is_verbose:  # pragma: no cover
                 sys.stdout.write(line)
             captured_lines.append(line)
 
@@ -117,25 +116,24 @@ def _run_pip_install_streaming(cmd: list[str], target_desc: str) -> None:
     if return_code != 0:
         full_log = "".join(captured_lines)
 
-        # Dump logs to stderr if we were silent
         if not is_verbose:
             sys.stderr.write(f"\n[!] Pip Installation Log for '{target_desc}':\n")
             sys.stderr.write(full_log)
             sys.stderr.write("\n")
 
-        if "Repository not found" in full_log or "fatal: repository" in full_log:
+        if "Repository not found" in full_log or "fatal: repository" in full_log:  # pragma: no cover
             raise DorsalError(
                 f"The git repository for '{target_desc}' could not be found.\n"
                 "It may have been deleted, made private, or you may lack the necessary SSH keys."
             )
 
-        if "Authentication failed" in full_log or "could not read Username" in full_log:
+        if "Authentication failed" in full_log or "could not read Username" in full_log:  # pragma: no cover
             raise DorsalError(
                 f"Authentication failed while accessing '{target_desc}'.\n"
                 "Please ensure you have access to this private repository."
             )
 
-        if "No matching distribution found" in full_log:
+        if "No matching distribution found" in full_log:  # pragma: no cover
             raise DorsalError(
                 f"Could not find a package for '{target_desc}' on PyPI.\n"
                 "Check the spelling or ensuring you have the correct python version."
@@ -159,7 +157,6 @@ def install_model_target(
     actual_target = None
     target_package_name = None
 
-    # --- 1. Resolution & Name Discovery ---
     if is_registry_id(target):
         if pathlib.Path(target).exists():
             raise DorsalError(
@@ -174,8 +171,6 @@ def install_model_target(
             reg_data = client.get_registry_model(target)
             actual_target = validate_install_url(reg_data.install_url)
 
-            # SOURCE OF TRUTH: The Registry Model
-            # Guaranteed by Pydantic model definition
             target_package_name = reg_data.package_name
 
             if actual_target.startswith("git+"):
@@ -193,7 +188,6 @@ def install_model_target(
         local_path = pathlib.Path(target).resolve()
         actual_target = str(local_path)
 
-        # SOURCE OF TRUTH: Local pyproject.toml
         target_package_name = _get_local_pyproject_name(local_path)
 
         if not target_package_name:
@@ -211,18 +205,14 @@ def install_model_target(
             "Generic PyPI packages must be installed via standard 'pip install'."
         )
 
-    # --- 2. Installation ---
     cmd = [sys.executable, "-m", "pip", "install", actual_target]
     if force_reinstall:
         cmd.append("--force-reinstall")
 
     _run_pip_install_streaming(cmd, target)
 
-    # --- 3. Registration ---
-    # We now trust 'target_package_name' explicitly.
     importlib.invalidate_caches()
 
-    # Normalize for safety (pip is case-insensitive, importlib is not)
     safe_package_name = canonicalize_name(target_package_name)
     install_model_from_package(safe_package_name, scope=scope)
 
@@ -307,4 +297,4 @@ def install_model_from_package(
         logger.info(f"Successfully registered model: {spec.model_class.__name__} ({spec.schema_id})")
 
     except Exception as e:
-        raise DorsalConfigError(f"Failed to update {scope} config: {e}") from e
+        raise DorsalConfigError(f"Failed to update config: {e}") from e

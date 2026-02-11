@@ -34,6 +34,7 @@ from dorsal.common.exceptions import (
     MissingHashError,
 )
 from dorsal.common.model import AnnotationModel
+from dorsal.common.validators import JsonSchemaValidator
 from dorsal.file.validators.file_record import FileRecordStrict
 from dorsal.file.configs.model_runner import (
     RunModelResult,
@@ -42,7 +43,7 @@ from dorsal.file.configs.model_runner import (
 )
 from dorsal.common.validators import JsonSchemaValidator
 
-from dorsal.file.model_runner import ModelRunner
+from dorsal.file.model_runner import ModelRunner, run_model
 
 import logging
 
@@ -517,7 +518,6 @@ class TestModelRunnerExecution:
         runner = ModelRunner(pipeline_config=pipeline_config)
         result = runner.run("/test_file.txt")
 
-        # The runner's merge logic skips results with errors or unmet dependencies.
         assert "dep/skip" not in result.annotations.model_extra
 
     def test_run_dependency_not_met_non_silent(self, mock_fs):
@@ -570,7 +570,6 @@ class TestModelRunnerExecution:
         runner = ModelRunner(pipeline_config=pipeline_config)
         result = runner.run("/test_file.txt")
 
-        # The runner's merge logic skips models where the dependency checker itself fails.
         assert "dep/checker-fail" not in result.annotations.model_extra
 
 
@@ -656,9 +655,6 @@ class MockJsonSchemaModel(AnnotationModel):
         return {"score": 100, "label": "perfect"}
 
 
-# --- Advanced Test Class ---
-
-
 class TestModelRunnerAdvanced:
     """
     Targets specific coverage gaps: file loading, JSON schema validation,
@@ -677,7 +673,6 @@ class TestModelRunnerAdvanced:
         }
 
         def mock_import_callable(path_obj):
-            # Handle dictionary lookups (used by JSON Schema loading logic)
             if isinstance(path_obj, dict):
                 return None
 
@@ -688,18 +683,14 @@ class TestModelRunnerAdvanced:
 
         mocker.patch("dorsal.file.model_runner.import_callable", side_effect=mock_import_callable)
 
-        # Mock get_json_schema_validator to return a dummy validator
         mock_validator = MagicMock(spec=JsonSchemaValidator)
         mock_validator.schema = {"version": OPEN_VALIDATION_SCHEMAS_VER}
         mocker.patch("dorsal.common.validators.json_schema.get_json_schema_validator", return_value=mock_validator)
 
-        # We mock the module-level function used by the runner
         mocker.patch(
             "dorsal.file.model_runner.json_schema_validate_records",
             return_value={"valid_records": 1, "error_details": []},
         )
-
-    # --- Pipeline Config Loading Tests (Lines 212-249) ---
 
     def test_load_config_from_valid_json_file(self, mock_fs):
         """Test loading pipeline from a valid JSON file."""
@@ -733,10 +724,7 @@ class TestModelRunnerAdvanced:
         mock_fs.create_file("/dict_config.json", contents=json.dumps({"some": "dict"}))
         with pytest.raises(ModelRunnerConfigError) as exc:
             ModelRunner(pipeline_config="/dict_config.json")
-        # The runner wraps the error, so we check for the outer wrapper message
         assert "Cannot read/parse config file" in str(exc.value)
-
-    # --- Edge Case Execution Tests ---
 
     def test_run_model_returns_none(self, mock_fs):
         """Test a model that returns None (Lines 579-592)."""
@@ -757,7 +745,6 @@ class TestModelRunnerAdvanced:
 
     def test_json_schema_validation_flow(self, mock_fs, mocker):
         """Test the JSON Schema validation branch (Lines 334-342, 632)."""
-        # Config where validation_model is a dict (Schema)
         pipeline = [
             {
                 "annotation_model": {"module": "tests.unit.test_model_runner", "name": "MockJsonSchemaModel"},
@@ -769,7 +756,6 @@ class TestModelRunnerAdvanced:
         runner = ModelRunner(pipeline_config=pipeline)
         result = runner.run("/test_file.txt")
 
-        # Access the dynamic field. Since extra="allow", it's available in model_extra.
         annotation_list = result.annotations.model_extra["test/json-schema"]
 
         assert isinstance(annotation_list, list)
@@ -778,7 +764,6 @@ class TestModelRunnerAdvanced:
     def test_linter_error_blocking(self, mock_fs, mocker):
         """Test that linter errors block result inclusion (Lines 695-704)."""
 
-        # Define a side effect that only fails for our specific test schema
         def linter_side_effect(schema_id, record, raise_on_error):
             if schema_id == "test/linter-fail":
                 raise DataQualityError("Lint failed")
@@ -790,7 +775,7 @@ class TestModelRunnerAdvanced:
             {
                 "annotation_model": {"module": "tests.unit.test_model_runner", "name": "MockSuccessAnnotationModel"},
                 "schema_id": "test/linter-fail",
-                "ignore_linter_errors": False,  # Default
+                "ignore_linter_errors": False,
             }
         ]
 
@@ -815,7 +800,6 @@ class TestModelRunnerAdvanced:
 
     def test_critical_missing_hash_in_merge(self, mock_fs, mocker):
         """Test critical failure if base model implies no BLAKE3 hash (Lines 1060-1065)."""
-        # 1. Mock the AnnotationModel output to look valid enough to run
         mocker.patch.object(
             MockBaseAnnotationModel,
             "main",
@@ -850,7 +834,7 @@ class TestModelRunnerAdvanced:
             annotation_model={"module": "tests.unit.test_model_runner", "name": "MockSuccessAnnotationModel"},
             schema_id="test/valid",
         )
-        step_config.schema_id = None  # type: ignore
+        step_config.schema_id = None
 
         runner = ModelRunner(pipeline_config=[])
         runner.pipeline = [step_config]
@@ -858,3 +842,120 @@ class TestModelRunnerAdvanced:
         result = runner.run("/test_file.txt")
 
         assert len(result.annotations.model_dump(exclude_none=True)) == 1
+
+
+class TestRunModelWrapper:
+    """
+    Tests for the isolated run_model() function.
+
+    Adopts a "Real is Better" strategy:
+    - Uses the REAL ModelRunner and run_model() logic.
+    - Uses REAL dependency injection and validation flow.
+    - Only mocks the heavy 'FileCoreAnnotationModel' to ensure tests remain
+      fast and deterministic (no real file hashing/magic detection).
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_wrapper_mocks(self, mocker):
+        """
+        Replace the heavy Base Annotation Model with our lightweight mock.
+        Also mocks the dynamic importer so the runner can 'find' our local test functions.
+        """
+        mocker.patch("dorsal.file.annotation_models.base.FileCoreAnnotationModel", MockBaseAnnotationModel)
+
+        mock_import_map = {
+            "tests.unit.test_model_runner.mock_checker_true": mock_checker_true,
+            "tests.unit.test_model_runner.mock_checker_false": mock_checker_false,
+        }
+
+        def side_effect_import(path_obj):
+            if isinstance(path_obj, dict):
+                return None
+
+            path_str = f"{path_obj.module}.{path_obj.name}"
+            if path_str in mock_import_map:
+                return mock_import_map[path_str]
+
+            import importlib
+
+            return importlib.import_module(path_obj.module)
+
+        mocker.patch("dorsal.file.model_runner.import_callable", side_effect=side_effect_import)
+
+    def test_run_model_success_e2e(self, mock_fs):
+        """Test a standard successful run with no dependencies."""
+        result = run_model(MockSuccessAnnotationModel, "/test_file.txt")
+
+        assert result.error is None
+        assert result.record == {"status": "success", "data": 42}
+        assert result.source.id == "dorsal/success-model"
+
+    def test_run_model_dependency_logic(self, mock_fs):
+        """
+        Test that dependency configuration (passed as dicts) is parsed
+        and enforced correctly by the real runner logic.
+        """
+        dep_met = {
+            "type": "media_type",
+            "checker": {"module": "tests.unit.test_model_runner", "name": "mock_checker_true"},
+        }
+        result_met = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_met])
+        assert result_met.error is None
+        assert result_met.record["data"] == 42
+        dep_unmet = {
+            "type": "media_type",
+            "checker": {"module": "tests.unit.test_model_runner", "name": "mock_checker_false"},
+            "silent": False,
+        }
+        result_strict = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_unmet])
+        assert result_strict.record is None
+        assert "Dependency not met" in result_strict.error
+
+        dep_silent = {
+            "type": "media_type",
+            "checker": {"module": "tests.unit.test_model_runner", "name": "mock_checker_false"},
+            "silent": True,
+        }
+        result_silent = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_silent])
+        assert result_silent.record is None
+        assert "Skipped: Silent Dependency not met" in result_silent.error
+
+    def test_run_model_ambiguous_config_error(self, mock_fs):
+        """Test guardrail against ambiguous 'open/' schema + custom validator."""
+        with pytest.raises(ValueError, match="Ambiguous configuration"):
+            run_model(
+                MockSuccessAnnotationModel,
+                "/test_file.txt",
+                schema_id="open/generic",
+                validation_model=MockPydanticValidator,
+            )
+
+    def test_run_model_open_schema_resolution(self, mock_fs, mocker):
+        """
+        Test that providing an 'open/' schema_id automatically attempts to
+        resolve the standard validator.
+        """
+        mock_val = MagicMock(spec=JsonSchemaValidator)
+        mock_val.schema = {"version": "1.0"}
+
+        mocker.patch("dorsal.file.validators.open_schema.get_open_schema_validator", return_value=mock_val)
+        mocker.patch("dorsal.file.model_runner.json_schema_validate_records", return_value={"valid_records": 1})
+
+        run_model(MockSuccessAnnotationModel, "/test_file.txt", schema_id="open/foobar")
+
+        from dorsal.file.validators.open_schema import get_open_schema_validator
+
+        get_open_schema_validator.assert_called_with("foobar")
+
+    def test_run_model_base_failure_handling(self, mock_fs, mocker):
+        """
+        Test that if the Base Model fails (e.g., file read error),
+        the wrapper catches it and returns a clean error result.
+        """
+        mocker.patch.object(MockBaseAnnotationModel, "main", side_effect=Exception("Disk read error"))
+
+        result = run_model(MockSuccessAnnotationModel, "/test_file.txt")
+
+        assert result.error is not None
+        assert result.name == "MockBaseAnnotationModel"
+        assert "Error executing model" in result.error

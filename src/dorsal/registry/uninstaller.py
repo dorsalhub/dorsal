@@ -50,7 +50,6 @@ def _run_pip_uninstall_streaming(package_name: str) -> bool:
 
     if process.stdout:
         for line in process.stdout:
-            # Pip outputs this specific message if the package isn't found
             if f"Skipping {package_name} as it is not installed" in line:
                 skipped = True
 
@@ -61,7 +60,6 @@ def _run_pip_uninstall_streaming(package_name: str) -> bool:
     return_code = process.wait()
 
     if return_code != 0:
-        # If pip errors out (permissions, etc), we treat it as a failure
         full_log = "".join(captured_lines)
         if not is_verbose:
             sys.stderr.write(f"\n[!] Pip Uninstall Log for '{package_name}':\n")
