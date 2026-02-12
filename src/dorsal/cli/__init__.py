@@ -185,9 +185,9 @@ app.add_typer(file_app_, name="file")
 app.add_typer(dir_app_, name="dir")
 app.add_typer(record_app_, name="record")
 app.add_typer(collection_app_, name="collection")
+app.add_typer(model_app_, name="model")
 app.add_typer(cache_app_, name="cache")
 app.add_typer(config_app_, name="config")
-app.add_typer(model_app_, name="model")
 app.add_typer(theme_app_, name="theme")
 
 

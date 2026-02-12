@@ -21,7 +21,7 @@ from dorsal.cli.model_app.uninstall_model_cmd import uninstall_model
 
 
 app = typer.Typer(
-    name="model", help="Install Annotation Models from DorsalHub or create your own.", no_args_is_help=True
+    name="model", help="Install and run Annotation Models from DorsalHub or create your own.", no_args_is_help=True
 )
 
 app.command(name="init")(init_model)
