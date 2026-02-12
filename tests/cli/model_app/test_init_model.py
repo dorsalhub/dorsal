@@ -18,22 +18,20 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-# --- Application Imports ---
+
 from dorsal.cli.model_app.init_model_cmd import init_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError
 
-# Create a test app
+
 cli_app = typer.Typer()
 
 
-# Define a callback to ensure ctx.obj is populated reliably
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
     ctx.obj = {"palette": DEFAULT_PALETTE}
 
 
-# Register the command under test
 cli_app.command(name="init")(init_model)
 
 runner = CliRunner()
@@ -44,13 +42,11 @@ def mock_init_cmd(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the `init_model` command.
     """
-    # 0. Mock the SOURCE of get_rich_console
+
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
 
-    # 1. Mock the upstream initializer (Source: dorsal/registry/initialize.py)
     mock_create_project = mocker.patch("dorsal.registry.initialize.create_new_annotation_model_project")
 
-    # Configure the return value (result object)
     mock_result = MagicMock()
     mock_result.clean_name = "receipt-scanner"
     mock_result.path = pathlib.Path("/tmp/receipt-scanner")
@@ -68,10 +64,8 @@ def test_init_model_success_default_dir(mock_rich_console, mock_init_cmd):
 
     assert result.exit_code == 0, result.output
 
-    # Verify the backend function was called with correct args
     mock_init_cmd["create_project"].assert_called_once_with(name="Receipt Scanner", target_dir=None)
 
-    # Verify Success Panel output
     assert mock_rich_console.print.called
     panel = mock_rich_console.print.call_args.args[0]
     assert "Created new model project" in panel.renderable
@@ -89,8 +83,6 @@ def test_init_model_success_explicit_dir(mock_rich_console, mock_init_cmd):
 
         assert result.exit_code == 0, result.output
 
-        # Verify call with explicit path
-        # Note: Typer converts the argument to a Path object automatically
         args = mock_init_cmd["create_project"].call_args
         assert args.kwargs["name"] == "Receipt Scanner"
         assert args.kwargs["target_dir"].name == "my_projects"
@@ -104,7 +96,6 @@ def test_init_model_dorsal_error(mock_rich_console, mock_init_cmd):
 
     assert result.exit_code != 0
 
-    # Verify error output
     assert mock_rich_console.print.called
     output_str = str(mock_rich_console.print.call_args.args[0])
     assert "Failed to create project" in output_str
@@ -119,7 +110,6 @@ def test_init_model_unexpected_error(mock_rich_console, mock_init_cmd):
 
     assert result.exit_code != 0
 
-    # Verify error output
     assert mock_rich_console.print.called
     output_str = str(mock_rich_console.print.call_args.args[0])
     assert "Unexpected Error" in output_str

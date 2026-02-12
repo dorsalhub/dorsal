@@ -95,7 +95,6 @@ def test_register_model_basic(mock_pipeline_config):
 
         mock_pipeline_config.upsert_step.assert_called_once()
 
-        # Verify validation was called
         assert step_mock.model_validate.called
         call_args = step_mock.model_validate.call_args[0][0]
         assert call_args["annotation_model"] == (DummyModel.__module__, "DummyModel")
@@ -109,18 +108,14 @@ def test_register_model_invalid_scope():
 def test_register_model_validator_types(mock_pipeline_config):
     """Tests dictionary, class, and instance validators."""
     with patch("dorsal.api.config.ModelRunnerPipelineStep"):
-        # 1. Inert Dict (missing keywords)
         with pytest.raises(ValueError, match="is inert"):
             config.register_model(DummyModel, schema_id="test/schema", validation_model={"foo": "bar"})
 
-        # 2. Valid Dict (has keywords)
         config.register_model(DummyModel, schema_id="test/schema", validation_model={"type": "object"})
 
-        # 3. Pydantic Class (Mocked check)
         with patch("dorsal.common.model.is_pydantic_model_class", return_value=True):
             config.register_model(DummyModel, schema_id="test/schema", validation_model=DummyModel)
 
-        # 4. Invalid Type
         with patch("dorsal.common.model.is_pydantic_model_class", return_value=False):
             with pytest.raises(TypeError, match="Invalid 'validation_model' type"):
                 config.register_model(DummyModel, schema_id="test/schema", validation_model="im_a_string")
@@ -129,18 +124,71 @@ def test_register_model_validator_types(mock_pipeline_config):
 def test_register_model_dependencies(mock_pipeline_config):
     """Tests dependency list processing."""
     mock_dep = MagicMock()
-    # Use a valid tag just in case
+
     mock_dep.model_dump.return_value = {"type": "media_type", "value": "video/mp4"}
 
     with (
         patch("dorsal.api.config.ModelRunnerPipelineStep"),
         patch("dorsal.common.model.is_pydantic_model_instance") as is_inst,
     ):
-        # 1. Valid dependency
         is_inst.return_value = True
         config.register_model(DummyModel, schema_id="test/schema", dependencies=[mock_dep])
 
-        # 2. Invalid dependency (Dict)
         is_inst.return_value = False
         with pytest.raises(TypeError, match="is a dict"):
             config.register_model(DummyModel, schema_id="test/schema", dependencies=[{"type": "media_type"}])
+
+
+def test_find_package_name_by_class(mock_pipeline_config):
+    """Tests resolving a class name to its package name."""
+    step_with_pkg = MagicMock()
+    step_with_pkg.annotation_model.name = "FasterWhisperTranscriber"
+    step_with_pkg.package_name = "dorsal-whisper"
+
+    step_no_pkg = MagicMock()
+    step_no_pkg.annotation_model.name = "LocalModel"
+    step_no_pkg.package_name = None
+
+    mock_pipeline_config.get_steps.return_value = [step_with_pkg, step_no_pkg]
+
+    assert config.find_package_name_by_class("FasterWhisperTranscriber") == "dorsal-whisper"
+
+    assert config.find_package_name_by_class("LocalModel") is None
+
+    assert config.find_package_name_by_class("NonExistentModel") is None
+
+
+def test_unregister_model_success(mock_pipeline_config):
+    """Tests successful removal of a model by package/module name."""
+    step = MagicMock()
+
+    step.annotation_model.module = "dorsal_whisper.model"
+    mock_pipeline_config.get_steps.return_value = [step]
+
+    config.unregister_model("dorsal-whisper", scope="project")
+
+    mock_pipeline_config.remove_step_by_index.assert_called_once_with(index=0, scope="project")
+
+
+def test_unregister_model_not_found(mock_pipeline_config):
+    """Tests that unregister_model raises KeyError when no match is found."""
+    step = MagicMock()
+    step.annotation_model.module = "dorsal.other_plugin"
+    mock_pipeline_config.get_steps.return_value = [step]
+
+    with pytest.raises(KeyError, match="Could not find model for 'missing-plugin'"):
+        config.unregister_model("missing-plugin")
+
+
+def test_unregister_model_invalid_scope():
+    """Tests unregister_model validation for the scope argument."""
+    with pytest.raises(ValueError, match="Invalid scope"):
+        config.unregister_model("any-pkg", scope="invalid_scope")
+
+
+def test_unregister_model_empty_pipeline(mock_pipeline_config):
+    """Tests unregister_model behavior when the pipeline is empty."""
+    mock_pipeline_config.get_steps.return_value = []
+
+    with pytest.raises(KeyError, match="Could not find model for 'any-pkg'"):
+        config.unregister_model("any-pkg")

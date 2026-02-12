@@ -192,7 +192,6 @@ class MockBaseAnnotationModel(AnnotationModel):
         self.file_path = file_path
 
     def main(self, **kwargs) -> dict[str, Any]:
-        # A valid base record with required hashes
         return {
             "hash": "a" * 64,
             "name": "test_file.txt",
@@ -253,7 +252,6 @@ class MockPydanticValidator(BaseModel):
     data: int
 
 
-# Mock Dependency Checkers
 def mock_checker_true(results: list[RunModelResult], config: DependencyConfig) -> bool:
     return True
 
@@ -287,9 +285,6 @@ def base_model_patch(mocker):
             schema_id="file/base",
         ),
     )
-
-
-# --- Test Classes --------------------------------------------------------------
 
 
 class TestModelRunnerInitialization:

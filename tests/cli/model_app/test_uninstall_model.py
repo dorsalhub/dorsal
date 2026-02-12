@@ -17,22 +17,20 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-# --- Application Imports ---
+
 from dorsal.cli.model_app.uninstall_model_cmd import uninstall_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError
 
-# Create a test app
+
 cli_app = typer.Typer()
 
 
-# Define a callback to ensure ctx.obj is populated reliably
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
     ctx.obj = {"palette": DEFAULT_PALETTE}
 
 
-# Register the command under test
 cli_app.command(name="uninstall")(uninstall_model)
 
 runner = CliRunner()
@@ -43,16 +41,12 @@ def mock_uninstall_cmd(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the `uninstall_model` command.
     """
-    # 0. Mock the SOURCE of get_rich_console
+
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
 
-    # 1. Mock the upstream uninstaller (Source: dorsal/registry/uninstaller.py)
-    # The command imports `uninstall_model_target` inside the function,
-    # so we must patch the upstream definition.
     mock_uninstaller = mocker.patch("dorsal.registry.uninstaller.uninstall_model_target")
     mock_uninstaller.return_value = "dorsal-gpt-neo"
 
-    # 2. Mock upstream Rich Confirm
     mock_confirm = mocker.patch("rich.prompt.Confirm.ask", return_value=True)
 
     return {
@@ -67,13 +61,10 @@ def test_uninstall_model_interactive_success(mock_rich_console, mock_uninstall_c
 
     assert result.exit_code == 0, result.output
 
-    # Should ask for confirmation
     mock_uninstall_cmd["confirm"].assert_called_once()
 
-    # Should run uninstaller with default scope
     mock_uninstall_cmd["uninstaller"].assert_called_once_with("dorsal/gpt-neo", scope="project")
 
-    # Should print success panel
     assert mock_rich_console.print.called
     panel = mock_rich_console.print.call_args_list[-1].args[0]
     assert "Successfully uninstalled" in panel.renderable
@@ -90,7 +81,6 @@ def test_uninstall_model_interactive_decline(mock_rich_console, mock_uninstall_c
     assert result.exit_code == 0, result.output
     assert "Cancelled" in str(mock_rich_console.print.call_args.args[0])
 
-    # Uninstaller should NOT be called
     mock_uninstall_cmd["uninstaller"].assert_not_called()
 
 
@@ -119,7 +109,6 @@ def test_uninstall_model_dorsal_error(mock_rich_console, mock_uninstall_cmd):
 
     assert result.exit_code != 0
 
-    # Verify error output
     assert mock_rich_console.print.called
     output_str = str(mock_rich_console.print.call_args.args[0])
     assert "Uninstall Failed" in output_str
@@ -134,7 +123,6 @@ def test_uninstall_model_unexpected_error(mock_rich_console, mock_uninstall_cmd)
 
     assert result.exit_code != 0
 
-    # Verify error output
     assert mock_rich_console.print.called
     output_str = str(mock_rich_console.print.call_args.args[0])
     assert "Unexpected Error" in output_str

@@ -18,22 +18,20 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-# --- Application Imports ---
+
 from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError, NotFoundError
 
-# Create a test app
+
 cli_app = typer.Typer()
 
 
-# Define a callback to ensure ctx.obj is populated reliably
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
     ctx.obj = {"palette": DEFAULT_PALETTE}
 
 
-# Register the command under test
 cli_app.command(name="install")(install_model)
 
 runner = CliRunner()
@@ -44,21 +42,16 @@ def mock_install_cmd(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the `install_model` command.
     """
-    # 0. Mock the console in BOTH the common cli and the checks module
+
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.cli.model_app.checks.get_rich_console", return_value=mock_rich_console)
 
-    # 1. Mock the upstream installer
     mock_installer = mocker.patch("dorsal.registry.installer.install_model_target")
     mock_installer.return_value = "dorsal-model-package"
 
-    # 2. Mock the Registry Client
-    # CRITICAL: We must patch 'get_shared_dorsal_client' in the 'checks' module
-    # because it has already imported the real function.
     mock_get_client = mocker.patch("dorsal.cli.model_app.checks.get_shared_dorsal_client")
     mock_client_instance = mock_get_client.return_value
 
-    # default registry data object
     mock_reg_data = MagicMock()
     mock_reg_data.namespace = "dorsal"
     mock_reg_data.name = "gpt-neo"
@@ -71,14 +64,10 @@ def mock_install_cmd(mocker, mock_rich_console):
 
     mock_client_instance.get_registry_model.return_value = mock_reg_data
 
-    # 3. Mock Validators IN THE CHECKS MODULE
-    # The checks module imports this function, so we must patch the reference there.
     mock_is_registry_id = mocker.patch("dorsal.cli.model_app.checks.is_registry_id", return_value=True)
 
-    # 4. Mock shutil in the checks module
     mock_shutil_which = mocker.patch("dorsal.cli.model_app.checks.shutil.which", return_value="/usr/bin/git")
 
-    # 5. Mock upstream Rich Confirm
     mock_confirm = mocker.patch("rich.prompt.Confirm.ask", return_value=True)
 
     return {
@@ -98,16 +87,12 @@ def test_install_model_basic_success(mock_rich_console, mock_install_cmd):
 
     assert result.exit_code == 0, result.output
 
-    # Should check registry
     mock_install_cmd["client"].get_registry_model.assert_called_once_with("dorsal/gpt-neo")
 
-    # Should ask for confirmation
     mock_install_cmd["confirm"].assert_called_once()
 
-    # Should run installer
     mock_install_cmd["installer"].assert_called_once_with("dorsal/gpt-neo", scope="project", force_reinstall=False)
 
-    # Should print success
     assert mock_rich_console.print.called
     assert "Successfully installed" in str(mock_rich_console.print.call_args_list[-1].args[0].renderable)
 
@@ -120,11 +105,9 @@ def test_install_model_interactive_decline(mock_rich_console, mock_install_cmd):
 
     assert result.exit_code == 0, result.output
 
-    # Ensure "Cancelled" message was printed
     assert mock_rich_console.print.called
     assert "Cancelled" in str(mock_rich_console.print.call_args_list[-1].args[0])
 
-    # Installer should NOT be called
     mock_install_cmd["installer"].assert_not_called()
 
 
@@ -156,7 +139,7 @@ def test_install_model_force_flag(mock_install_cmd):
 
 def test_install_model_missing_git(mock_rich_console, mock_install_cmd):
     """Tests that missing git dependency causes an error exit."""
-    # Simulate git missing from system
+
     mock_install_cmd["shutil_which"].return_value = None
 
     result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo"])
@@ -182,7 +165,7 @@ def test_install_model_registry_not_found(mock_rich_console, mock_install_cmd):
 
 def test_install_model_unverified_warning(mock_rich_console, mock_install_cmd):
     """Tests that unverified models trigger a safety warning in the panel."""
-    # Set model to unverified
+
     mock_install_cmd["reg_data"].is_official = False
     mock_install_cmd["reg_data"].is_verified = False
 
@@ -190,7 +173,6 @@ def test_install_model_unverified_warning(mock_rich_console, mock_install_cmd):
 
     assert mock_rich_console.print.called
 
-    # The FIRST print should be the Warning Panel
     panel = mock_rich_console.print.call_args_list[0].args[0]
     assert "Unverified" in str(panel.renderable)
     assert "Safety Warning" in str(panel.renderable)

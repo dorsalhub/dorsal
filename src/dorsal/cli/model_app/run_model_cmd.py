@@ -93,20 +93,14 @@ def run_model(
     error_console = get_error_console()
     palette = ctx.obj["palette"]
 
-    # Parse key=value options
     parsed_options = _parse_cli_options(options)
 
-    # 1. Pre-Run Safety Check
-    # We check if we need to install. If so, and we aren't in JSON mode (headless), verify safety.
     if not json_output:
         try:
             strategy, package_name = resolve_target(target)
             if not is_package_installed(package_name):
-                # Trigger shared safety logic (prints panel, asks confirmation)
                 check_and_confirm_model_install(target, palette, yes=yes)
         except Exception:
-            # If resolution fails here, we let run_or_install_model handle the error gracefully later,
-            # or it might be a network issue which run_or_install_model will also catch.
             pass
 
     if not json_output:
@@ -116,7 +110,6 @@ def run_model(
         )
 
     try:
-        # We use a status spinner only if not in JSON mode
         with (
             console.status(
                 f"[{palette.get('info', 'dim')}]Processing... (This may trigger an install)[/]",
@@ -133,7 +126,6 @@ def run_model(
                 private=private,
             )
 
-        # Handle Output
         if json_output:
             data = result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result.dict()
             console.print(json.dumps(data, indent=2, default=str, ensure_ascii=False))

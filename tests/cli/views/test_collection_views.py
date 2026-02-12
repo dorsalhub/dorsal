@@ -46,7 +46,6 @@ def test_collection_metadata_render_full(mock_collection, mock_palette):
     assert isinstance(panel, Panel)
     assert "Collection Metadata" in panel.title
 
-    # We can inspect the renderable table to verify content logic
     table = panel.renderable
 
     assert table.columns[0].style == "bold cyan"

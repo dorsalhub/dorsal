@@ -66,7 +66,6 @@ def test_create_file_info_panel_public(capsys):
         record_dict=DUMMY_FILE_RECORD, title="Test File", private=False, palette=DUMMY_PALETTE
     )
 
-    # Render it to a dummy console to trigger any Rich rendering errors
     console = Console()
     with console.capture() as capture:
         console.print(panel)
@@ -75,9 +74,9 @@ def test_create_file_info_panel_public(capsys):
     assert "Test File" in output
     assert "test_file.txt" in output
     assert "Public Record" in output
-    assert "apollo" in output  # Tag value
-    assert "page_count" in output  # PDF annotation
-    assert "manual (user_1)" in output  # Stub annotation
+    assert "apollo" in output
+    assert "page_count" in output
+    assert "manual (user_1)" in output
 
 
 def test_create_file_info_panel_private():
@@ -91,7 +90,7 @@ def test_create_file_info_panel_private():
 
     output = capture.get()
     assert "Private Record" in output
-    # Verify private styling wasn't totally ignored (indirectly via output presence)
+
     assert "Private File" in output
 
 
@@ -114,7 +113,7 @@ def test_create_file_info_panel_minimal_data():
     panel = create_file_info_panel(
         record_dict=minimal_record,
         title="Empty File",
-        private=None,  # None access
+        private=None,
         palette=DUMMY_PALETTE,
     )
     console = Console()

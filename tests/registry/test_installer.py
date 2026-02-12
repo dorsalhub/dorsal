@@ -1,3 +1,17 @@
+# Copyright 2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import sys
 import subprocess
 import logging
@@ -6,12 +20,10 @@ import pytest
 import pathlib
 import tomllib
 
-# We need the real base class for the Pydantic validation to pass
+
 from dorsal import AnnotationModel
 from dorsal.registry import installer
 from dorsal.common.exceptions import DorsalError, DorsalConfigError
-
-# --- FIXTURES ---
 
 
 @pytest.fixture
@@ -27,8 +39,8 @@ def mock_subprocess():
     """Capture pip execution to prevent actual installation."""
     with patch("subprocess.Popen") as mock_popen:
         process_mock = MagicMock()
-        process_mock.stdout = []  # Simulate no output
-        process_mock.wait.return_value = 0  # Simulate success
+        process_mock.stdout = []
+        process_mock.wait.return_value = 0
         mock_popen.return_value = process_mock
         yield mock_popen
 
@@ -38,9 +50,6 @@ def mock_register_model():
     """Mock the final step to verify what WOULD have been saved to config."""
     with patch("dorsal.registry.installer.register_model") as mock:
         yield mock
-
-
-# --- TESTS: _get_local_pyproject_name ---
 
 
 def test_get_local_pyproject_name(tmp_path):
@@ -62,12 +71,8 @@ def test_get_local_pyproject_name_malformed(tmp_path):
     p = tmp_path / "pyproject.toml"
     p.write_text("INVALID TOML [ bla bla", encoding="utf-8")
 
-    # We expect it to handle the exception gracefully and return None
     name = installer._get_local_pyproject_name(tmp_path)
     assert name is None
-
-
-# --- TESTS: _load_packaged_model_config ---
 
 
 def test_load_packaged_model_config_success(tmp_path):
@@ -77,9 +82,8 @@ def test_load_packaged_model_config_success(tmp_path):
     mock_path.is_file.return_value = True
     mock_path.read_text.return_value = 'model_class = "MyModel"\nschema_id = "test/schema"'
 
-    # Mock the traversal: files(module) / "model_config.toml"
     mock_files.return_value.joinpath.return_value = mock_path
-    # Depending on python version, it might use truediv (/)
+
     mock_files.return_value.__truediv__.return_value = mock_path
 
     with patch("importlib.resources.files", mock_files):
@@ -92,7 +96,7 @@ def test_load_packaged_model_config_missing_file():
     """Verify it returns empty dict if the file does not exist."""
     mock_files = MagicMock()
     mock_path = MagicMock()
-    mock_path.is_file.return_value = False  # File not found
+    mock_path.is_file.return_value = False
 
     mock_files.return_value.__truediv__.return_value = mock_path
 
@@ -113,7 +117,7 @@ def test_load_packaged_model_config_syntax_error():
     mock_files = MagicMock()
     mock_path = MagicMock()
     mock_path.is_file.return_value = True
-    mock_path.read_text.return_value = "invalid_toml_key = "  # Missing value
+    mock_path.read_text.return_value = "invalid_toml_key = "
 
     mock_files.return_value.__truediv__.return_value = mock_path
 
@@ -121,9 +125,6 @@ def test_load_packaged_model_config_syntax_error():
         with pytest.raises(DorsalConfigError) as exc:
             installer._load_packaged_model_config("dorsal_bad_toml")
         assert "Syntax error" in str(exc.value)
-
-
-# --- TESTS: Git & Pip Installation ---
 
 
 def test_ensure_git_installed_missing():
@@ -147,16 +148,13 @@ def test_pip_install_streaming_specific_errors(mock_subprocess, error_snippet, e
     """Verify specific pip error messages are translated to specific DorsalErrors."""
     process_mock = mock_subprocess.return_value
     process_mock.wait.return_value = 1
-    # Simulate pip output streaming to stdout (which is captured)
+
     process_mock.stdout = [f"Err: {error_snippet}\n"]
 
     with pytest.raises(DorsalError) as exc:
         installer._run_pip_install_streaming(["pip", "install"], "target")
 
     assert expected_msg in str(exc.value)
-
-
-# --- TESTS: install_model_target ---
 
 
 def test_install_registry_target_success(mock_dorsal_client, mock_subprocess):
@@ -171,24 +169,20 @@ def test_install_registry_target_success(mock_dorsal_client, mock_subprocess):
         installer.install_model_target("dorsalhub/whisper")
 
         mock_dorsal_client.get_registry_model.assert_called_with("dorsalhub/whisper")
-        # Ensure it tried to install the URL
+
         args, _ = mock_subprocess.call_args
         assert f"git+https://github.com/dorsalhub/whisper.git@{valid_sha}" in args[0]
-        # Ensure it registered the package
+
         mock_install_pkg.assert_called_with("dorsal-whisper", scope="project")
 
 
 def test_install_registry_target_ambiguous(tmp_path):
     """Fail if Registry ID matches a local directory."""
-    # Create a local directory that looks like the registry ID
+
     (tmp_path / "dorsalhub").mkdir()
     (tmp_path / "dorsalhub" / "whisper").mkdir()
 
-    # We must change cwd to tmp_path for the ambiguity check to fire on relative paths
     with patch("os.getcwd", return_value=str(tmp_path)):
-        # But wait, the code uses pathlib.Path(target).exists().
-        # If we pass "dorsalhub/whisper", it checks relative to CWD.
-        # Let's just mock pathlib.Path.exists directly for simplicity.
         with patch("pathlib.Path.exists", return_value=True):
             with pytest.raises(DorsalError) as exc:
                 installer.install_model_target("dorsalhub/whisper")
@@ -212,9 +206,6 @@ def test_install_invalid_target_format():
     assert "Invalid install target" in str(exc.value)
 
 
-# --- TESTS: install_model_from_package ---
-
-
 def test_install_from_package_missing_config(mock_register_model):
     """Fail if model_config.toml is missing from the installed package."""
     mock_ep = MagicMock()
@@ -222,11 +213,9 @@ def test_install_from_package_missing_config(mock_register_model):
     mock_ep.dist.name = "dorsal-broken"
     mock_ep.module = "dorsal_broken_module"
 
-    # Mock load to succeed
     mock_ep.load.return_value = MagicMock()
 
     with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
-        # Mock loader to return empty dict (missing file)
         with patch("dorsal.registry.installer._load_packaged_model_config", return_value={}):
             with pytest.raises(DorsalError) as exc:
                 installer.install_model_from_package("dorsal-broken")
@@ -241,7 +230,7 @@ def test_install_from_package_missing_model_class_key(mock_register_model):
     mock_ep.module = "mod"
     mock_ep.load.return_value = MagicMock()
 
-    bad_config = {"schema_id": "foo"}  # No model_class
+    bad_config = {"schema_id": "foo"}
 
     with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
         with patch("dorsal.registry.installer._load_packaged_model_config", return_value=bad_config):
@@ -257,7 +246,6 @@ def test_install_from_package_attribute_error(mock_register_model):
     mock_ep.dist.name = "dorsal-missing-attr"
     mock_ep.module = "mod"
 
-    # Module exists, but is empty (has no attributes)
     mock_module = MagicMock(spec=[])
     mock_ep.load.return_value = mock_module
 
@@ -279,7 +267,6 @@ def test_install_model_from_package_success(mock_register_model):
     mock_ep.dist.name = "dorsal-fake"
     mock_ep.module = "dorsal_fake_module"
 
-    # We must inherit from AnnotationModel
     class FakeModel(AnnotationModel):
         id = "fake/model"
         version = "0.0.1"

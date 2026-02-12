@@ -1,3 +1,17 @@
+# Copyright 2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import sys
 import subprocess
 import pytest
@@ -5,8 +19,6 @@ from unittest.mock import MagicMock, patch
 
 from dorsal.registry import uninstaller
 from dorsal.common.exceptions import DorsalError
-
-# --- FIXTURES ---
 
 
 @pytest.fixture
@@ -29,13 +41,10 @@ def mock_subprocess():
     """Mock the pip subprocess."""
     with patch("subprocess.Popen") as mock_popen:
         process_mock = MagicMock()
-        process_mock.stdout = []  # Default: empty stdout (success)
-        process_mock.wait.return_value = 0  # Default: return code 0 (success)
+        process_mock.stdout = []
+        process_mock.wait.return_value = 0
         mock_popen.return_value = process_mock
         yield mock_popen
-
-
-# --- TESTS ---
 
 
 def test_uninstall_full_success(mock_resolve_target, mock_unregister_model, mock_subprocess):
@@ -43,14 +52,12 @@ def test_uninstall_full_success(mock_resolve_target, mock_unregister_model, mock
     Scenario: The model exists in config AND is installed in pip.
     Result: Success.
     """
-    # Execution
+
     result = uninstaller.uninstall_model_target("test-model")
 
-    # Verification
     assert result == "dorsal-test-model"
     mock_unregister_model.assert_called_with(package_name="dorsal-test-model", scope="project")
 
-    # Verify pip was called
     expected_cmd = [sys.executable, "-m", "pip", "uninstall", "-y", "dorsal-test-model"]
     mock_subprocess.assert_called_with(
         expected_cmd,
@@ -68,16 +75,14 @@ def test_uninstall_config_only(mock_resolve_target, mock_unregister_model, mock_
     Scenario: The model is in config, but pip says "Skipping (not installed)".
     Result: Success (Config was cleaned up).
     """
-    # Setup Pip to report "Skipping"
+
     process_mock = mock_subprocess.return_value
     process_mock.stdout = ["Skipping dorsal-test-model as it is not installed\n"]
 
-    # Execution
     result = uninstaller.uninstall_model_target("test-model")
 
-    # Verification
     assert result == "dorsal-test-model"
-    mock_unregister_model.assert_called_once()  # Config was touched
+    mock_unregister_model.assert_called_once()
 
 
 def test_uninstall_pip_only(mock_resolve_target, mock_unregister_model, mock_subprocess):
@@ -85,15 +90,13 @@ def test_uninstall_pip_only(mock_resolve_target, mock_unregister_model, mock_sub
     Scenario: The model is NOT in config, but IS installed in pip.
     Result: Success (Package was removed).
     """
-    # Setup Config to raise KeyError (Not found)
+
     mock_unregister_model.side_effect = KeyError("Model not found")
 
-    # Execution
     result = uninstaller.uninstall_model_target("test-model")
 
-    # Verification
     assert result == "dorsal-test-model"
-    # Ensure we didn't crash on the KeyError
+
     mock_unregister_model.assert_called_once()
 
 
@@ -102,14 +105,12 @@ def test_uninstall_noop_failure(mock_resolve_target, mock_unregister_model, mock
     Scenario: Model NOT in config AND NOT installed in pip.
     Result: DorsalError (Nothing was done).
     """
-    # Setup Config to raise KeyError
+
     mock_unregister_model.side_effect = KeyError("Model not found")
 
-    # Setup Pip to report "Skipping"
     process_mock = mock_subprocess.return_value
     process_mock.stdout = ["Skipping dorsal-test-model as it is not installed\n"]
 
-    # Execution & Assertion
     with pytest.raises(DorsalError) as exc:
         uninstaller.uninstall_model_target("test-model")
 
@@ -124,15 +125,13 @@ def test_uninstall_pip_error_passthrough(mock_resolve_target, mock_unregister_mo
     """
     mock_unregister_model.side_effect = KeyError("Model not found")
 
-    # Setup Pip to fail
     process_mock = mock_subprocess.return_value
-    process_mock.wait.return_value = 1  # Error Code
+    process_mock.wait.return_value = 1
     process_mock.stdout = ["Permission denied\n"]
 
     with pytest.raises(DorsalError) as exc:
         uninstaller.uninstall_model_target("test-model")
 
-    # It should hit the "nothing done" error, because _run_pip_uninstall_streaming returns False on error
     assert "Could not find model" in str(exc.value)
 
 
@@ -140,8 +139,8 @@ def test_pip_streaming_logs_on_error(mock_subprocess, capsys):
     """
     Verify internal helper prints logs to stderr when pip fails.
     """
-    # Force quiet mode
-    uninstaller.logger.setLevel(50)  # CRITICAL
+
+    uninstaller.logger.setLevel(50)
 
     process_mock = mock_subprocess.return_value
     process_mock.wait.return_value = 1

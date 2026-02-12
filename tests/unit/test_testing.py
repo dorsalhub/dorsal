@@ -29,7 +29,6 @@ class DummyModel(AnnotationModel):
 
 @pytest.fixture
 def mock_runner():
-    # Patch ModelRunner in the module where it is instantiated
     with patch("dorsal.file.model_runner.ModelRunner") as MockRunnerCls:
         runner_instance = MockRunnerCls.return_value
 
@@ -37,11 +36,9 @@ def mock_runner():
         base_result.error = None
         base_result.record = {"hash": "123", "media_type": "text/plain", "size": 100, "name": "f.txt"}
 
-        # Setup a successful pipeline model result
         pipeline_result = MagicMock()
         pipeline_result.error = None
 
-        # configure run_single_model to return base then pipeline
         runner_instance.run_single_model.side_effect = [base_result, pipeline_result]
 
         yield runner_instance

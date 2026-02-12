@@ -282,13 +282,10 @@ def unregister_model(package_name: str, scope: Literal["project", "global"] = "p
     if scope not in ["project", "global"]:
         raise ValueError("Invalid scope. Must be one of 'project' or 'global'.")
 
-    # 1. Normalize the package name to a module-like string
-    # e.g. 'dorsal-whisper' -> 'dorsal_whisper'
     clean_name = package_name.lower().replace("-", "_")
 
     logger.info(f"Attempting to unregister package '{package_name}' (looking for module '{clean_name}')")
 
-    # 2. Get the current steps
     steps = PipelineConfig.get_steps(scope=scope)
 
     if not steps:
@@ -296,29 +293,22 @@ def unregister_model(package_name: str, scope: Literal["project", "global"] = "p
 
     found_index = -1
 
-    # 3. Search for the model
     for i, step in enumerate(steps):
         try:
-            # Safely access the module path
             module_path = step.annotation_model.module.lower()
 
-            # Debug log to see what we are comparing
             logger.debug(f"Checking step {i}: {module_path} vs {clean_name}")
 
-            # Match if the clean_name appears anywhere in the module path
-            # e.g. 'dorsal_whisper' is inside 'dorsal_whisper.model'
             if clean_name == module_path or clean_name in module_path.split("."):
                 found_index = i
                 logger.info(f"Found match at index {i}: {module_path}")
                 break
 
         except AttributeError:
-            # Fallback if the step structure is unexpected
             logger.debug(f"Skipping step {i} (invalid structure)")
             continue
 
     if found_index == -1:
-        # Include the searched items in the error for debugging
         step_modules = [s.annotation_model.module for s in steps]
         raise KeyError(
             f"Could not find model for '{package_name}' in {scope} config.\n"

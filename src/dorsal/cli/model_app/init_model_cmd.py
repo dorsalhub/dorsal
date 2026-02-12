@@ -64,7 +64,6 @@ def init_model(
         )
 
     except DorsalError as e:
-        # Use error style
         console.print(f"[{palette.get('error', 'bold red')}]Failed to create project:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:

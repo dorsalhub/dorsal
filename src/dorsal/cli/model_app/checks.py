@@ -48,14 +48,12 @@ def check_and_confirm_model_install(
 
     console = get_rich_console()
 
-    # 1. Check for pipx environment restrictions
     if "pipx" in sys.prefix:
         console.print(
             f"[{palette.get('info', 'dim')}]Note: You are running inside a pipx environment.\n"
             "The model will be available to the CLI, but NOT to external Python scripts.[/]"
         )
 
-    # 2. Build Metadata Display
     display_meta = {"Model": target, "Source": "Local Path"}
     status_badge = f"[{palette.get('warning', 'bold yellow')}]Unverified[/]"
     border_style = palette.get("panel_border_warning", "yellow")
@@ -80,7 +78,6 @@ def check_and_confirm_model_install(
                 }
 
                 if reg_data.install_url:
-                    # Git dependency check
                     if reg_data.install_url.startswith("git+") and not shutil.which("git"):
                         _handle_missing_git(palette)
 
@@ -100,7 +97,6 @@ def check_and_confirm_model_install(
                 _handle_registry_error(target, e, palette)
             display_meta["Warning"] = "Could not fetch remote metadata."
 
-    # 3. Print Information Panel
     msg_lines = []
     for k, v in display_meta.items():
         msg_lines.append(f"[{palette.get('key', 'dim')}]{k}:[/] {v}")
@@ -119,7 +115,6 @@ def check_and_confirm_model_install(
         )
     )
 
-    # 4. Prompt
     if not Confirm.ask("Do you trust this source and want to proceed?"):
         console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
         exit_cli(code=0)

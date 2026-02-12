@@ -83,7 +83,6 @@ def test_make_schema_validator_success(mock_get_validator, mock_get_schema):
 
     result = dataset_api.make_schema_validator(dataset_id)
 
-    # Assert that the helper functions were called correctly
     mock_get_schema.assert_called_once_with(dataset_id=dataset_id, api_key=None, client=None)
     mock_get_validator.assert_called_once_with(schema=schema)
     assert result == mock_validator
@@ -108,7 +107,6 @@ def test_validate_dataset_records_with_schema_dict(mock_validate, mock_get_schem
 
     summary = dataset_api.validate_dataset_records("my-org/ds", records=records, schema_dict=schema)
 
-    # Assert that the schema was NOT fetched, but validation was called
     mock_get_schema.assert_not_called()
     mock_validate.assert_called_once()
     assert summary["invalid_records"] == 0
@@ -123,7 +121,6 @@ def test_make_schema_validator_open_dataset(mock_get_open):
 
     result = dataset_api.make_schema_validator(dataset_id)
 
-    # Should call get_open_schema_validator with 'arxiv', not the full ID
     mock_get_open.assert_called_once_with("arxiv")
     assert result == mock_validator
 
@@ -133,7 +130,6 @@ def test_make_schema_validator_offline_mode(mock_offline):
     """Test that offline mode raises the correct error if schema not found locally."""
     mock_offline.return_value = True
 
-    # FIXED: Catch DorsalOfflineError specifically
     with pytest.raises(DorsalOfflineError) as exc:
         dataset_api.make_schema_validator("my-org/remote-only")
 
@@ -153,19 +149,17 @@ def test_validate_records_fetches_schema_when_missing(mock_validate, mock_get_va
 
     dataset_api.validate_dataset_records(dataset_id, records, schema_dict=None)
 
-    # Assert it actually called the API to get the schema
     mock_get_schema.assert_called_once_with(dataset_id=dataset_id, api_key=None, client=None)
-    # Assert validator was created with that fetched schema
+
     mock_get_validator.assert_called_once_with(schema=fetched_schema)
 
 
 def test_validate_records_input_guards():
     """Test input validation for dataset_id and records."""
-    # Test empty dataset ID
+
     with pytest.raises(ValueError, match="Dataset ID must be a non-empty string"):
         dataset_api.validate_dataset_records("", [{"a": 1}])
 
-    # Test records is not a list
     with pytest.raises(ValueError, match="must be a list"):
         dataset_api.validate_dataset_records("id", {"not": "a list"})
 
@@ -190,12 +184,10 @@ def test_get_dataset_schema_generic_exception(mock_shared_client):
 @patch("dorsal.api.dataset.get_json_schema_validator")
 def test_validate_records_validator_creation_error(mock_get_validator, mock_get_schema):
     """Test error handling when validator creation fails."""
-    # Simulate a valid schema fetch, but invalid validator creation
+
     mock_get_schema.return_value = {"valid": "json"}
     mock_get_validator.side_effect = ValueError("Invalid schema structure")
 
-    # The code catches ValueError and re-raises it (or ApiDataValidationError depending on path)
-    # Looking at lines 334-340, it logs and re-raises.
     with pytest.raises(ValueError, match="Invalid schema structure"):
         dataset_api.validate_dataset_records("id", [{"a": 1}], schema_dict=None)
 
@@ -207,16 +199,13 @@ def test_make_schema_validator_open_dataset_fallback(mock_get_validator, mock_ge
     """Test that if open schema lookup fails, it falls back to standard schema fetching."""
     dataset_id = "open/unknown-dataset"
 
-    # Simulate open validator failing (e.g. unknown open dataset)
     mock_get_open.side_effect = ValueError("Unknown open schema")
 
-    # Simulate successful fallback to standard remote fetch
     mock_get_schema.return_value = {"type": "object"}
     mock_get_validator.return_value = MagicMock()
 
     dataset_api.make_schema_validator(dataset_id)
 
-    # Verify it tried the open validator first
     mock_get_open.assert_called_once_with("unknown-dataset")
-    # Verify it proceeded to fetch the schema normally
+
     mock_get_schema.assert_called_once_with(dataset_id=dataset_id, api_key=None, client=None)

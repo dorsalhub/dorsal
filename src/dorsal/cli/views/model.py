@@ -103,7 +103,6 @@ def create_model_result_panel(
         content = JSON.from_data(data)
         schema_type = "Raw Output"
 
-    # --- Construct Final Panel ---
     title_style = palette.get("panel_title_success", "green")
     border_style = palette.get("panel_border_success", "green")
 
@@ -118,9 +117,6 @@ def create_model_result_panel(
         border_style=border_style,
         expand=False,
     )
-
-
-# --- Specific Renderers ---
 
 
 def _score_bar(score: float, width: int = 20) -> Bar:

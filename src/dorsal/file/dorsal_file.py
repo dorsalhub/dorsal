@@ -583,12 +583,11 @@ class DorsalFile(_DorsalFile):
             A list of FileAnnotationStub objects (for custom schemas) or Core Models.
         """
 
-        # Helper to check if a core annotation wrapper matches the user_id filter
         def _check_core_user(attr_name: str) -> bool:
             if user_id is None:
                 return True
             wrapper = getattr(self.model.annotations, attr_name, None)
-            # If we can't find the wrapper or it doesn't have a user_id, we assume mismatch if filtering is requested
+
             if not wrapper or getattr(wrapper, "user_id", None) != user_id:
                 return False
             return True
@@ -2398,7 +2397,7 @@ class LocalFile(_DorsalFile):
             timestamp=timestamp,
             camera_make=camera_make,
             camera_model=camera_model,
-            bbox=bbox,  # Passed through
+            bbox=bbox,
         )
 
         return self._add_annotation(
@@ -2488,7 +2487,7 @@ class LocalFile(_DorsalFile):
         quantile_level: float | None = None,
         interval_lower: float | None = None,
         interval_upper: float | None = None,
-        score: float | None = None,  #
+        score: float | None = None,
         timestamp: str | datetime.datetime | None = None,
         attributes: dict[str, Any] | None = None,
         source: str | None = None,

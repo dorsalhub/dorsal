@@ -18,15 +18,13 @@ import re
 
 from rich.console import Console
 
-# --- Application Imports ---
+
 from dorsal.cli.views.model import create_model_result_panel
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup, GenericFileAnnotation
 from dorsal.common.model import AnnotationModelSource
 
-# --- Helpers ---
 
-# Fix: Instantiate a concrete subclass of the AnnotationSource union
 DUMMY_SOURCE = AnnotationModelSource(id="test-model", version="1.0.0")
 
 
@@ -42,11 +40,8 @@ def render_to_string(renderable) -> str:
 
 def create_real_annotation(data: dict | None) -> Annotation:
     """Constructs a real Pydantic Annotation object."""
-    # Pydantic will automatically parse the dict into GenericFileAnnotation
+
     return Annotation(record=data, source=DUMMY_SOURCE, private=False)
-
-
-# --- Test Cases ---
 
 
 def test_render_classification():
@@ -224,7 +219,6 @@ def test_render_annotation_group():
 
 
 def test_render_fallback_raw_output():
-    # Data that doesn't match any schema
     data = {"unexpected_field": "some_value", "random": 123}
     ann = create_real_annotation(data)
     panel = create_model_result_panel(ann, "unknown-model", "test.bin", DEFAULT_PALETTE)
@@ -235,7 +229,6 @@ def test_render_fallback_raw_output():
 
 
 def test_render_empty_data():
-    # Construct an annotation where record is None
     ann = create_real_annotation(None)
     panel = create_model_result_panel(ann, "empty-model", "empty.txt", DEFAULT_PALETTE)
 
@@ -245,7 +238,6 @@ def test_render_empty_data():
 
 
 def test_panel_metadata_display():
-    # Verify target and file_name are always in the header
     data = {"vector": [1]}
     ann = create_real_annotation(data)
     panel = create_model_result_panel(ann, "TARGET_ID", "FILE_NAME.ext", DEFAULT_PALETTE)

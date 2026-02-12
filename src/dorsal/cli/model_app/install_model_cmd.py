@@ -45,7 +45,6 @@ def install_model(
     palette = ctx.obj["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
-    # Delegate safety checks and user confirmation to the shared utility
     check_and_confirm_model_install(target, palette, force=force, yes=yes)
 
     status_color = palette.get("primary_value", "bold cyan")

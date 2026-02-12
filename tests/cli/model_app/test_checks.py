@@ -29,14 +29,12 @@ def mock_checks_deps(mocker, mock_rich_console):
     Mocks backend dependencies for the model installation checks.
     Targeting patches locally within the module to prevent network leakage.
     """
-    # 0. Mock get_rich_console (used in checks.py)
+
     mocker.patch("dorsal.cli.model_app.checks.get_rich_console", return_value=mock_rich_console)
 
-    # 1. Mock the Registry Client specifically where it's imported in checks.py
     mock_get_client = mocker.patch("dorsal.cli.model_app.checks.get_shared_dorsal_client")
     mock_client_instance = mock_get_client.return_value
 
-    # Default registry data object
     mock_reg_data = MagicMock()
     mock_reg_data.namespace = "dorsal"
     mock_reg_data.name = "gpt-neo"
@@ -48,13 +46,10 @@ def mock_checks_deps(mocker, mock_rich_console):
 
     mock_client_instance.get_registry_model.return_value = mock_reg_data
 
-    # 2. Mock upstream Validators
     mock_is_registry_id = mocker.patch("dorsal.cli.model_app.checks.is_registry_id", return_value=True)
 
-    # 3. Mock shutil and system dependencies
     mock_shutil_which = mocker.patch("dorsal.cli.model_app.checks.shutil.which", return_value="/usr/bin/git")
 
-    # 4. Mock Rich Confirm
     mock_confirm = mocker.patch("dorsal.cli.model_app.checks.Confirm.ask", return_value=True)
 
     return {
@@ -70,10 +65,8 @@ def test_check_install_verified_registry_model(mock_rich_console, mock_checks_de
     """Tests check logic for a verified model from the registry."""
     check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
 
-    # Verify registry was queried
     mock_checks_deps["client"].get_registry_model.assert_called_once_with("dorsal/gpt-neo")
 
-    # Verify a Panel was printed with "Verified" badge
     assert mock_rich_console.print.called
     panel = mock_rich_console.print.call_args.args[0]
     assert "Verified" in panel.renderable
@@ -87,7 +80,6 @@ def test_check_install_unverified_warning(mock_rich_console, mock_checks_deps):
 
     check_and_confirm_model_install("user/experimental-model", DEFAULT_PALETTE)
 
-    # Verify Safety Warning logic
     panel = mock_rich_console.print.call_args.args[0]
     assert "Unverified" in panel.renderable
     assert "Safety Warning" in panel.renderable
@@ -105,7 +97,6 @@ def test_check_install_missing_git_dependency(mock_rich_console, mock_checks_dep
     """Tests handling of models requiring Git when Git is missing."""
     mock_checks_deps["shutil_which"].return_value = None
 
-    # exit_cli raises typer.Exit
     with pytest.raises(typer.Exit):
         check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
 
@@ -124,7 +115,6 @@ def test_check_install_registry_not_found(mock_rich_console, mock_checks_deps):
     with pytest.raises(typer.Exit):
         check_and_confirm_model_install("dorsal/missing", DEFAULT_PALETTE)
 
-    # Verify error message
     assert "Model 'dorsal/missing' not found in registry" in str(mock_rich_console.print.call_args.args[0])
 
 
@@ -144,6 +134,5 @@ def test_check_install_pipx_note(mock_rich_console, mock_checks_deps, mocker):
 
     check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
 
-    # Check that the pipx note was printed
     printed_text = str(mock_rich_console.print.call_args_list[0].args[0])
     assert "running inside a pipx environment" in printed_text

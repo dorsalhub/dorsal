@@ -1,4 +1,16 @@
-# dorsal/api/model.py
+# Copyright 2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import logging
 import importlib.metadata
@@ -49,7 +61,6 @@ def run_or_install_model(
     """
     logger.info(f"Requesting run for model target '{target}' on file '{file_path}'")
 
-    # 1. Resolve Identity & Auto-Install
     strategy, package_name = resolve_target(target)
 
     if not is_package_installed(package_name):
@@ -61,17 +72,13 @@ def run_or_install_model(
             except Exception as e:
                 raise DorsalError(f"Failed to auto-install model '{target}': {e}") from e
         else:
-            # We don't know where to download 'FasterWhisperTranscriber' from.
-            # We only know how to download 'owner/repo'.
             raise DorsalError(
                 f"The model '{target}' is not installed locally.\n"
                 f"To install it, please use its full Registry ID (e.g. 'owner/repo')."
             )
 
-    # 2. Get Execution Configuration
     pipeline_step = _get_execution_step(package_name)
 
-    # 3. Apply Runtime Overrides
     if options or ignore_linter_errors:
         pipeline_step = pipeline_step.model_copy(deep=True)
         if options:
@@ -79,7 +86,6 @@ def run_or_install_model(
         if ignore_linter_errors:
             pipeline_step.ignore_linter_errors = True
 
-    # 4. Execute
     runner = ModelRunner()
 
     try:
@@ -100,7 +106,7 @@ def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
     Retrieves a ModelRunnerPipelineStep for the given package.
     Checks the active pipeline first, then constructs from package metadata if missing.
     """
-    # Strategy 1: Look in the active pipeline
+
     pipeline = get_model_pipeline(scope="effective")
     safe_pkg_name = canonicalize_name(package_name)
 
@@ -109,7 +115,6 @@ def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
             logger.debug(f"Found existing pipeline configuration for '{package_name}'.")
             return step
 
-    # Strategy 2: Construct from package metadata (Ephemeral Step)
     logger.debug(f"No pipeline config found for '{package_name}'. Constructing ephemeral step from package.")
     return _construct_step_from_package(package_name)
 
@@ -179,7 +184,7 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
             annotation_model=CallableImportPath(module=module_name, name=class_name),
             schema_id=schema_id,
             dependencies=config_data.get("dependencies"),
-            validation_model=None,  # Inferred automatically by FILE_ANNOTATOR
+            validation_model=None,
             options=config_data.get("options"),
             package_name=package_name,
         )

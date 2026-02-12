@@ -1,4 +1,16 @@
-# dorsal/tests/api/test_api_model.py
+# Copyright 2025-2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import importlib.metadata
 import importlib.resources
@@ -63,9 +75,6 @@ def mock_resources_files():
         yield mock
 
 
-# --- Tests for run_or_install_model ---
-
-
 def test_run_or_install_model_happy_path_existing_pipeline(
     mock_resolve_target,
     mock_is_package_installed,
@@ -79,11 +88,9 @@ def test_run_or_install_model_happy_path_existing_pipeline(
     file_path = "/tmp/audio.mp3"
     package_name = "dorsal-whisper"
 
-    # Setup Mocks
     mock_resolve_target.return_value = ("package_name", package_name)
     mock_is_package_installed.return_value = True
 
-    # Use real ModelRunnerPipelineStep with valid schema_id
     existing_step = ModelRunnerPipelineStep(
         annotation_model=CallableImportPath(module="dorsal_whisper", name="WhisperModel"),
         schema_id="audio/transcription",
@@ -91,10 +98,8 @@ def test_run_or_install_model_happy_path_existing_pipeline(
     )
     mock_get_model_pipeline.return_value = [existing_step]
 
-    # Execute
     run_or_install_model(target, file_path)
 
-    # Assertions
     mock_install_model_target.assert_not_called()
     mock_file_annotator.annotate_file_using_pipeline_step.assert_called_once_with(
         file_path=file_path,
@@ -119,23 +124,19 @@ def test_run_or_install_model_auto_install_success(
     package_name = "dorsal-whisper"
     module_name = "dorsal_whisper"
 
-    # 1. Resolve & Install Check
     mock_resolve_target.return_value = ("registry_id", package_name)
     mock_is_package_installed.side_effect = [False, True]
 
-    # 2. Pipeline Check (Empty, forces ephemeral construction)
     mock_get_model_pipeline.return_value = []
 
-    # 3. Entry Point Resolution
     mock_ep = MagicMock()
     mock_ep.dist.name = package_name
     mock_ep.module = module_name
     mock_entry_points.return_value = [mock_ep]
 
-    # 4. Config Loading
     mock_resource_path = MagicMock()
     mock_resource_path.is_file.return_value = True
-    # Note: 'dependencies' defaults to None in Pydantic model, but explicit empty list is fine too
+
     mock_resource_path.read_text.return_value = """
         model_class = "WhisperTranscriber"
         schema_id = "audio/transcription"
@@ -143,13 +144,10 @@ def test_run_or_install_model_auto_install_success(
     """
     mock_resources_files.return_value.__truediv__.return_value = mock_resource_path
 
-    # Execute
     run_or_install_model(target, file_path)
 
-    # Assertions
     mock_install_model_target.assert_called_once_with(target)
 
-    # Verify the constructed step passed to annotator
     call_args = mock_file_annotator.annotate_file_using_pipeline_step.call_args
     assert call_args is not None
     step_arg = call_args.kwargs["pipeline_step"]
@@ -170,24 +168,20 @@ def test_run_or_install_model_runtime_options(
 
     base_step = ModelRunnerPipelineStep(
         annotation_model=CallableImportPath(module="m", name="c"),
-        schema_id="valid/schema-id",  # Needs to match ^[a-z0-9\-]{3,32}\/[a-z0-9\-]{3,32}$
+        schema_id="valid/schema-id",
         options={"lang": "en"},
         package_name="dorsal-ocr",
     )
     mock_get_model_pipeline.return_value = [base_step]
 
-    # Run with overrides
     run_or_install_model(target, "doc.pdf", options={"lang": "fr", "fast": True}, ignore_linter_errors=True)
 
-    # Verify
     call_args = mock_file_annotator.annotate_file_using_pipeline_step.call_args
     used_step = call_args.kwargs["pipeline_step"]
 
-    # Check overrides on the used step
     assert used_step.ignore_linter_errors is True
     assert used_step.options == {"lang": "fr", "fast": True}
 
-    # Verify Deep Copy: original object should remain untouched
     assert base_step.options == {"lang": "en"}
     assert base_step.ignore_linter_errors is False
 
@@ -201,7 +195,7 @@ def test_annotator_execution_failure_propagates(
 
     step = ModelRunnerPipelineStep(
         annotation_model=CallableImportPath(module="m", name="c"),
-        schema_id="valid/schema-id",  # Needs to match ^[a-z0-9\-]{3,32}\/[a-z0-9\-]{3,32}$
+        schema_id="valid/schema-id",
         package_name="dorsal-fail",
     )
     mock_get_model_pipeline.return_value = [step]
@@ -210,9 +204,6 @@ def test_annotator_execution_failure_propagates(
 
     with pytest.raises(ValueError, match="Processing failed"):
         run_or_install_model("dorsal-fail", "f.txt")
-
-
-# --- Error Handling Tests ---
 
 
 def test_run_or_install_model_auto_install_failure(
