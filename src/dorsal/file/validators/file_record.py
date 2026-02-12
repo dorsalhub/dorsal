@@ -79,8 +79,9 @@ class Annotation(BaseModel):
     """
 
     record: GenericFileAnnotation | None
-    private: bool = True
+    private: bool | None = None
     source: AnnotationSource
+    schema_id: str | None = None
     schema_version: str | None = None
     group: AnnotationGroupInfo | None = None
 
@@ -142,7 +143,7 @@ class AnnotationGroup(BaseModel):
         return self
 
     @property
-    def private(self) -> bool:
+    def private(self) -> bool | None:
         return self.annotations[0].private
 
     @property
@@ -156,30 +157,30 @@ class AnnotationGroup(BaseModel):
 
 class Annotation_Base(Annotation):
     record: FileCoreValidationModel  # type: ignore[assignment]
-    private: None = Field(default=None, exclude=True)  # type: ignore[assignment]
+    private: bool | None = Field(default=None, exclude=True)
 
 
 class Annotation_OfficeDocument(Annotation):
     record: OfficeDocumentValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_MediaInfo(Annotation):
     record: MediaInfoValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_PDF(Annotation):
     record: PDFValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
 class Annotation_Ebook(Annotation):
     record: EbookValidationModel | None = None  # type: ignore[assignment]
-    private: bool = True
+    private: bool | None = None
 
 
-CORE_MODEL_ANNOTATION_WRAPPERS: dict[str, Type[Annotation]] = {
+CORE_MODEL_ANNOTATION_WRAPPERS: dict[str | None, Type[Annotation]] = {
     "file/base": Annotation_Base,
     "file/ebook": Annotation_Ebook,
     "file/office": Annotation_OfficeDocument,
@@ -327,7 +328,7 @@ class FileTag(BaseModel):
     name: str = Field(pattern=r"^[a-zA-Z0-9\_]{3,64}$")
     value: String256 | bool | datetime.datetime | int | float
     value_code: String256 | None = None
-    private: bool
+    private: bool | None = None
     hidden: bool
     upvotes: NonNegativeInt
     downvotes: NonNegativeInt
@@ -372,7 +373,7 @@ class FileRecord(BaseModel):
 
     """
 
-    hash: SHA256Hash
+    hash: SHA256Hash | None = None
     validation_hash: Blake3Hash | None = None
     quick_hash: QuickHash | None = None
     similarity_hash: TLSHash | None = None
@@ -472,6 +473,7 @@ class FileRecordStrict(FileRecord):
     - `POST /file/public|private`
     """
 
+    hash: SHA256Hash
     validation_hash: Blake3Hash
     annotations: AnnotationsStrict
     source: Literal["disk", "cache", "dorsalhub"]
@@ -480,12 +482,9 @@ class FileRecordStrict(FileRecord):
 
 
 class FileRecordDateTime(FileRecord):
-    """A `FileRecord` with dates in the root level.
+    """A `FileRecord` with dates in the root level."""
 
-    - This format is returned by the DorsalHub API
-
-    """
-
+    hash: SHA256Hash
     all_hashes: None = Field(default=None, exclude=True)
     all_hash_ids: None = Field(default=None, exclude=True)
     date_created: AwareDatetime

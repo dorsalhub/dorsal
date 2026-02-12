@@ -131,7 +131,7 @@ class PDFAnnotationModel(AnnotationModel):
             return None
 
         if raw_metadata is None:
-            self.error = "PDF metadata could not be extracted by pypdfium2 (e.g., encrypted, corrupted, or unreadable)."
+            self.error = "PDF metadata could not be extracted by pypdfium2 (e.g., encrypted, corrupted, or unreadable)"
             logger.debug(
                 "PDFAnnotationModel: Raw metadata extraction failed for '%s'. Error message to be set: %s",
                 self.file_path,

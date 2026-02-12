@@ -1,0 +1,61 @@
+[[model_pipeline]]
+annotation_model = ["dorsal.file.annotation_models", "FileCoreAnnotationModel"]
+validation_model = ["dorsal.file.validators.base", "FileCoreValidationModelStrict"]
+schema_id = "file/base"
+
+[model_pipeline.options]
+calculate_similarity_hash = true
+
+[[model_pipeline]]
+annotation_model = ["dorsal.file.annotation_models", "MediaInfoAnnotationModel"]
+schema_id = "file/mediainfo"
+validation_model = ["dorsal.file.validators.mediainfo", "MediaInfoValidationModel"]
+
+[[model_pipeline.dependencies]]
+type = "media_type"
+include = ["audio", "image", "video", "application/vnd.rn-realmedia", "application/x-shockwave-flash"]
+exclude = ["image/svg"]
+
+[[model_pipeline]]
+annotation_model = ["dorsal.file.annotation_models", "PDFAnnotationModel"]
+schema_id = "file/pdf"
+validation_model = ["dorsal.file.validators.pdf", "PDFValidationModel"]
+
+[[model_pipeline.dependencies]]
+type = "media_type"
+include = ["application/pdf"]
+
+[[model_pipeline]]
+annotation_model = ["dorsal.file.annotation_models", "EbookAnnotationModel"]
+schema_id = "file/ebook"
+validation_model = ["dorsal.file.validators.ebook", "EbookValidationModel"]
+
+[[model_pipeline.dependencies]]
+type = "media_type"
+include = ["application/epub+zip"]
+
+[[model_pipeline]]
+annotation_model = ["dorsal.file.annotation_models", "OfficeDocumentAnnotationModel"]
+schema_id = "file/office"
+validation_model = ["dorsal.file.validators.office_document", "OfficeDocumentValidationModel"]
+
+[[model_pipeline.dependencies]]
+type = "media_type"
+include = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+
+[[model_pipeline]]
+annotation_model = ["dorsal_whisper.model", "FasterWhisperTranscriber"]
+validation_model = ["dorsal.file.validators.open_schema", "audio_transcription_validator"]
+schema_id = "open/audio-transcription"
+ignore_linter_errors = false
+deactivated = false
+package_name = "dorsal-whisper"
+
+[[model_pipeline.dependencies]]
+type = "media_type"
+checker = ["dorsal.file.configs.model_runner", "check_media_type_dependency"]
+silent = true
+include = ["video", "audio"]
+
+[model_pipeline.options]
+model_size = "base"

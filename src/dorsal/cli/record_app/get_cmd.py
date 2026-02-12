@@ -101,7 +101,7 @@ def get_file_record(
                 console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
-                    style="yellow",
+                    style=palette.get("warning", "yellow"),
                 )
 
     public_scope = None
@@ -215,4 +215,6 @@ def _save_json_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {err}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )

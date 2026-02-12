@@ -162,6 +162,14 @@ def scan_directory(
             help="Follow symlinks to scan target content vs scanning the link itself.",
         ),
     ] = True,
+    lazy: Annotated[
+        bool,
+        typer.Option(
+            "--lazy",
+            help="Start processing immediately with an indeterminate progress bar (spinner). Useful for massive directories.",
+            rich_help_panel="Scan Options",
+        ),
+    ] = False,
 ):
     """
     Scans a directory, generates metadata for all files, and displays or saves the results.
@@ -206,7 +214,7 @@ def scan_directory(
             console.print(
                 f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                 f" Please use -s (for .json) or -c (for .csv) to specify the report type.",
-                style="yellow",
+                style=palette.get("warning", "yellow"),
             )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
@@ -221,6 +229,7 @@ def scan_directory(
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
+            lazy=lazy,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")
@@ -331,7 +340,9 @@ def _save_json_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {e}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )
 
 
 def _save_csv_report(
@@ -359,7 +370,9 @@ def _save_csv_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {e}")
     except Exception as e:
         logger.error(f"Failed to save CSV report: {e}")
-        console.print(f"⚠️ Could not save CSV report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save CSV report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )
 
 
 def _print_directory_summary_panel(collection_info: dict, palette: dict):

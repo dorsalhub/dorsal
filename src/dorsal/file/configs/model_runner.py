@@ -18,15 +18,18 @@ import pathlib
 import re
 from typing import Annotated, Any, Literal, TYPE_CHECKING, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from dorsal.common import constants
 from dorsal.common.model import AnnotationModelSource
 from dorsal.common.validators import CallableImportPath, DatasetID
 from dorsal.file.annotation_models.mediainfo.config import MEDIAINFO_MEDIA_TYPES
+from dorsal.file.utils.size import parse_filesize
 from dorsal.file.validators.base import MediaTypePartString
 
 logger = logging.getLogger(__name__)
+
+MAX_DEPENDENCY_ARRAY_ITEMS = 100
 
 
 class RunModelResult(BaseModel):
@@ -91,8 +94,19 @@ class MediaTypeDependencyConfig(DependencyConfig):
     checker: CallableImportPath = CallableImportPath("dorsal.file.configs.model_runner", "check_media_type_dependency")
     silent: bool = True
     pattern: str | re.Pattern | None = None
-    include: set[MediaTypePartString] | None = None
-    exclude: set[MediaTypePartString] | None = None
+    include: set[MediaTypePartString] | None = Field(default=None, max_length=MAX_DEPENDENCY_ARRAY_ITEMS)
+    exclude: set[MediaTypePartString] | None = Field(default=None, max_length=MAX_DEPENDENCY_ARRAY_ITEMS)
+
+    @field_validator("include", "exclude", mode="before")
+    @classmethod
+    def normalize_media_types(cls, v: set[MediaTypePartString] | None) -> set[MediaTypePartString] | None:
+        if v is None:
+            return None
+        return {x.lower() for x in v}
+
+    @field_serializer("include", "exclude")
+    def serialize_sets_to_list(self, v: set[str] | None, _info) -> list[str] | None:
+        return list(v) if v is not None else None
 
 
 class FileExtensionDependencyConfig(DependencyConfig):
@@ -101,7 +115,18 @@ class FileExtensionDependencyConfig(DependencyConfig):
     type: Literal["extension"] = "extension"
     checker: CallableImportPath = CallableImportPath("dorsal.file.configs.model_runner", "check_extension_dependency")
     silent: bool = True
-    extensions: set[str]
+    extensions: set[str] = Field(max_length=MAX_DEPENDENCY_ARRAY_ITEMS)
+
+    @field_validator("extensions", mode="before")
+    @classmethod
+    def normalize_extensions(cls, v: set[str]) -> set[str]:
+        if not v:
+            return set()
+        return {f".{ext.lstrip('.').lower()}" for ext in v}
+
+    @field_serializer("extensions")
+    def serialize_extensions_to_list(self, v: set[str], _info) -> list[str]:
+        return list(v)
 
 
 class FileSizeDependencyConfig(DependencyConfig):
@@ -113,6 +138,13 @@ class FileSizeDependencyConfig(DependencyConfig):
     min_size: int | None = None
     max_size: int | None = None
 
+    @field_validator("min_size", "max_size", mode="before")
+    @classmethod
+    def parse_size_strings(cls, v) -> int | None:
+        if isinstance(v, str):
+            return parse_filesize(v)
+        return v
+
 
 class FilenameDependencyConfig(DependencyConfig):
     """This dependency configures a model to run based on the file's name."""
@@ -123,8 +155,12 @@ class FilenameDependencyConfig(DependencyConfig):
     pattern: str | re.Pattern
 
 
+DependencyType = Union[
+    MediaTypeDependencyConfig, FileExtensionDependencyConfig, FileSizeDependencyConfig, FilenameDependencyConfig
+]
+
 ModelRunnerDependencyConfig = Annotated[
-    Union[MediaTypeDependencyConfig, FileExtensionDependencyConfig, FileSizeDependencyConfig, FilenameDependencyConfig],
+    DependencyType,
     Field(discriminator="type"),
 ]
 
@@ -268,6 +304,7 @@ class ModelRunnerPipelineStep(BaseModel):
     - options: Runtime options for the model.
     - ignore_linter_errors: Skip strict linting if True.
     - deactivated: (Optional) If True, this step is skipped. Defaults to False.
+    - package_name: The installed package name (used when installing a model via registry)
     """
 
     annotation_model: CallableImportPath
@@ -277,6 +314,7 @@ class ModelRunnerPipelineStep(BaseModel):
     options: dict[str, Any] | None = None
     ignore_linter_errors: bool = False
     deactivated: bool = False
+    package_name: str | None = None
 
 
 BASE_ANNOTATION_MODEL = {

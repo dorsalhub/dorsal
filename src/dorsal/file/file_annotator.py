@@ -136,9 +136,9 @@ class FileAnnotator:
         *,
         record_data: dict[str, Any],
         wrapper_class: Type[Annotation],
-        schema_id: str,
+        schema_id: str | None,
         source: dict,
-        private: bool,
+        private: bool | None,
         schema_version: str | None = None,
         group_info: AnnotationGroupInfo | None = None,
     ) -> Annotation:
@@ -166,6 +166,7 @@ class FileAnnotator:
                 record=annotation_record,
                 private=private,
                 source=source,
+                schema_id=schema_id,
                 schema_version=schema_version,
                 group=group_info,
             )
@@ -179,10 +180,10 @@ class FileAnnotator:
         self,
         *,
         validated_annotation: dict,
-        schema_id: str,
+        schema_id: str | None,
         schema_version: str | None = None,
         source: dict,
-        private: bool,
+        private: bool | None,
         force: bool = False,
     ) -> Annotation | AnnotationGroup:
         """
@@ -268,7 +269,7 @@ class FileAnnotator:
         pipeline_step: ModelRunnerPipelineStep | dict[str, Any],
         schema_id: str | None = None,
         schema_version: str | None = None,
-        private: bool,
+        private: bool | None,
     ) -> Annotation | AnnotationGroup:
         """
         Runs an annotation model defined by a single pipeline step.
@@ -303,6 +304,7 @@ class FileAnnotator:
             )
 
         effective_schema_id = schema_id if schema_id is not None else pipeline_step_obj.schema_id
+        logger.debug("Validation schema: %s", effective_schema_id)
 
         try:
             annotator_callable = import_callable(import_path=pipeline_step_obj.annotation_model)
@@ -364,7 +366,7 @@ class FileAnnotator:
         annotation_model_cls: Type[AnnotationModel],
         schema_id: str,
         schema_version: str | None = None,
-        private: bool,
+        private: bool | None,
         options: dict | None = None,
         validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
@@ -522,7 +524,7 @@ class FileAnnotator:
         schema_version: str | None = None,
         source_id: str | None,
         validator: Type[BaseModel] | JsonSchemaValidator | None = None,
-        private: bool,
+        private: bool | None,
         ignore_linter_errors: bool = False,
         force: bool = False,
     ) -> Annotation | AnnotationGroup:

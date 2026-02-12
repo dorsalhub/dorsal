@@ -193,7 +193,7 @@ SHARDING_REGISTRY: dict[str, ShardingStrategy] = {
 }
 
 
-def process_record_for_sharding(schema_id: str, record: dict[str, Any]) -> list[dict[str, Any]]:
+def process_record_for_sharding(schema_id: str | None, record: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Checks if a record exceeds the global size limit and shards it if a strategy exists.
     """
@@ -202,12 +202,16 @@ def process_record_for_sharding(schema_id: str, record: dict[str, Any]) -> list[
     if size <= ANNOTATION_MAX_SIZE_BYTES:
         return [record]
 
+    if schema_id is None:
+        raise ValueError(
+            f"Record exceeds limit ({human_filesize(size)}) but no schema_id was provided to determine a sharding strategy."
+        )
+
     strategy = SHARDING_REGISTRY.get(schema_id)
 
-    if not strategy:
+    if strategy is None:
         raise ValueError(
-            f"Record for '{schema_id}' exceeds limit ({human_filesize(size)}) and this schema "
-            "does not support sharding. Please reduce the record size."
+            f"Record for '{schema_id}' exceeds limit ({human_filesize(size)}) and this schema does not support sharding. Please reduce the record size."
         )
 
     logger.info(

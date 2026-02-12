@@ -1,5 +1,3 @@
-# dorsal/file/validators/office_document.py
-#
 # Copyright 2025-2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -84,7 +82,6 @@ class OfficeDocumentValidationModel(BaseModel):
     This structure combines all common and format-specific metadata.
     """
 
-    # --- Core Properties (from core.xml) ---
     author: TString4096 | None = Field(
         default=None, description="The document author.", json_schema_extra={"pii_risk": True}
     )

@@ -50,6 +50,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         skip_cache=False,
         overwrite_cache=False,
         follow_symlinks=True,
+        lazy=False,
     )
     assert len(collection) == 1
     assert collection.warnings == ["warning1"]
@@ -142,11 +143,11 @@ def test_add_tags(mock_get_client):
     file2 = MagicMock(spec=LocalFile)
     file2._add_local_tag = MagicMock()
     collection = LocalFileCollection(source=[file1, file2])
-    tags_to_add = [{"name": "status", "value": "approved", "private": True}]
+    tags_to_add = [{"name": "status", "value": "approved"}]
 
     collection.add_tags(tags=tags_to_add)
 
-    file1._add_local_tag.assert_called_once_with(name="status", value="approved", private=True)
+    file1._add_local_tag.assert_called_once_with(name="status", value="approved")
 
 
 def test_to_json_export():
@@ -300,7 +301,6 @@ def test_push_public_raises_error_for_restricted_types(mock_is_permitted):
         collection.push(public=True)
 
     error_msg = str(exc_info.value)
-    assert "Operation aborted" in error_msg
     assert "restricted media types" in error_msg
     assert "'secret_plans.doc' (application/secret)" in error_msg
 

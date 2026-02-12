@@ -23,14 +23,16 @@ import json
 
 app = typer.Typer(
     name="config",
-    help="View or manage the Dorsal CLI configuration.",
+    help="View or manage Dorsal settings.",
     no_args_is_help=True,
 )
 
-theme_app = typer.Typer(name="theme", help="Manage, list, and set color themes.", no_args_is_help=True)
+theme_app = typer.Typer(name="theme", help="List and set color themes.", no_args_is_help=True)
 app.add_typer(theme_app)
 
-pipeline_app = typer.Typer(name="pipeline", help="Manage the annotation model pipeline.", no_args_is_help=True)
+pipeline_app = typer.Typer(
+    name="pipeline", help="Inspect and manage the annotation model pipeline.", no_args_is_help=True
+)
 app.add_typer(pipeline_app)
 
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.4.0"
+version = "0.5.0"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "blake3>=1.0.8",
     "langcodes[data]==3.5.0",
+    "packaging>=23.0",
     "pydantic>=2.12.1",
     "python-dateutil>=2.9.0.post0",
     "python-magic>=0.4.27; sys_platform == 'linux' or sys_platform == 'darwin'",
@@ -57,12 +58,7 @@ dorsal = "dorsal.cli:cli_app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dorsal"]
-include = [
-    "LICENSE",
-    "NOTICE",
-    "/src/dorsal/schemas/open/*.json",
-    "/src/dorsal/py.typed",
-]
+include = ["LICENSE", "NOTICE", "/src/dorsal/schemas/open/*.json", "/src/dorsal/py.typed"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/reference", "/notebooks", "/scripts", "uv.lock", ".github"]

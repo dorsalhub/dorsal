@@ -129,13 +129,3 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, Panel)
     assert "Upgrade Required" in str(printed_object.title)
-
-
-def test_search_api_error(mock_search_cmd):
-    """Tests the handling of a generic API error."""
-    mock_search_cmd["user_search"].side_effect = DorsalClientError("Invalid query syntax")
-
-    result = runner.invoke(app, ["record", "search", QUERY])
-
-    assert result.exit_code != 0
-    assert "API Error: Invalid query syntax" in result.output

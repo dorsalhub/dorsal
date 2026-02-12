@@ -125,15 +125,15 @@ class FileCoreAnnotationModel(AnnotationModel):
             follow_symlinks=self.follow_symlinks,
         )
 
-    def main(self, calculate_similarity_hash: bool = False) -> dict[str, Any] | None:
+    def main(self, calculate_hashes: bool = True, calculate_similarity_hash: bool = False) -> dict[str, Any] | None:
         """
         Main execution method for the FileCoreAnnotationModel.
 
         Orchestrates the extraction of all fundamental file metadata.
 
         Args:
-            calculate_similarity_hash: If True, the TLSH similarity hash will be
-                                       calculated and included in the results.
+            calculate_hashes: If True, the model will calculate the file hashes.
+            calculate_similarity_hash: If True, the TLSH similarity hash will be calculated and included in the results.
                                        Defaults to False.
 
         Returns:
@@ -154,18 +154,23 @@ class FileCoreAnnotationModel(AnnotationModel):
                 self.file_path,
             )
 
-            hashes = self._get_file_hashes(calculate_similarity_hash=calculate_similarity_hash)
-            primary_hash = hashes.get("SHA-256")
-            if not primary_hash:
-                self.error = "Core SHA-256 hash calculation failed."
-                logger.error(self.error + " File: '%s'", self.file_path)
-                return None
+            hashes: dict[str, str] = {}
+            primary_hash: str | None = None
+            all_hashes_list: list[dict[str, str]] | None = None
+
+            if calculate_hashes:
+                hashes = self._get_file_hashes(calculate_similarity_hash=calculate_similarity_hash)
+                primary_hash = hashes.get("SHA-256")
+
+                if not primary_hash:
+                    self.error = "Core SHA-256 hash calculation failed."
+                    logger.error(self.error + " File: '%s'", self.file_path)
+                    return None
+
+                all_hashes_list = [{"id": hash_name, "value": hash_value} for hash_name, hash_value in hashes.items()]
 
             tlsh_hash = hashes.get("TLSH")
             quick_hash = hashes.get("QUICK")
-
-            all_hashes_list = [{"id": hash_name, "value": hash_value} for hash_name, hash_value in hashes.items()]
-
             file_name = self._get_filename()
             file_extension = self._get_file_extension(file_name=file_name)
             file_size = self._get_filesize()

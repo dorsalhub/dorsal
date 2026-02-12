@@ -277,3 +277,17 @@ class FileAnnotationGroupResponse(BaseModel):
     date_created: datetime.datetime
     date_modified: datetime.datetime
     private: bool
+
+
+class RegistryModelResponse(BaseModel):
+    namespace: str
+    name: str
+    version: str
+    install_url: str
+    schema_id: str
+    description: str | None = None
+    package_name: str
+    is_official: bool = False
+    is_verified: bool = False
+    created_at: datetime.datetime | None = None
+    dependencies: list[dict[str, Any]] | None = None

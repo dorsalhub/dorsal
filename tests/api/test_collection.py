@@ -146,10 +146,8 @@ def test_add_files_to_collection_with_batching(mock_shared_client):
 
     result = collection_api.add_files_to_collection(collection_id, hashes)
 
-    # Assert that the client method was called twice
     assert mock_shared_client.add_files_to_collection.call_count == 2
 
-    # Assert the aggregated result is correct
     assert isinstance(result, AddFilesResponse)
     assert result.added_count == 3
     assert result.duplicate_count == 0
@@ -165,7 +163,7 @@ def test_add_files_to_collection_empty_list_error():
 def test_remove_files_from_collection_with_batching(mock_shared_client):
     """Test that remove_files_from_collection correctly batches hashes and aggregates results."""
     collection_id = "col_123"
-    hashes = ["a" * 64, "b" * 64, "c" * 64]  # 3 hashes to force two batches
+    hashes = ["a" * 64, "b" * 64, "c" * 64]
 
     mock_shared_client.remove_files_from_collection.side_effect = [
         RemoveFilesResponse(removed_count=2, not_found_count=0),
@@ -174,7 +172,6 @@ def test_remove_files_from_collection_with_batching(mock_shared_client):
 
     result = collection_api.remove_files_from_collection(collection_id, hashes)
 
-    # Assert that the client method was called twice with the correct batches
     expected_calls = [
         call(collection_id=collection_id, hashes=["a" * 64, "b" * 64]),
         call(collection_id=collection_id, hashes=["c" * 64]),
@@ -182,7 +179,6 @@ def test_remove_files_from_collection_with_batching(mock_shared_client):
     mock_shared_client.remove_files_from_collection.assert_has_calls(expected_calls)
     assert mock_shared_client.remove_files_from_collection.call_count == 2
 
-    # Assert the aggregated result is correct
     assert isinstance(result, RemoveFilesResponse)
     assert result.removed_count == 2
     assert result.not_found_count == 1
@@ -204,7 +200,6 @@ def test_export_collection_success(mock_get_client):
         timeout=60,
     )
 
-    # Assert that the client's orchestrator method was called with all arguments passed through
     mock_client.export_collection.assert_called_once_with(
         collection_id=collection_id,
         output_path=output_path,
@@ -219,13 +214,10 @@ def test_delete_collection_success(mock_shared_client):
     """Test a successful call to delete a single collection."""
     collection_id = "col_to_delete"
 
-    # The client method returns None on success
     mock_shared_client.delete_collections.return_value = None
 
     collection_api.delete_collection(collection_id)
 
-    # Assert that the high-level function correctly wraps the single ID in a list
-    # for the client's bulk-delete method.
     mock_shared_client.delete_collections.assert_called_once_with(collection_ids=[collection_id])
 
 
@@ -239,7 +231,7 @@ def test_delete_collection_empty_id_error(mock_shared_client):
 
 def test_list_collections_modes(mock_shared_client):
     """Test list_collections returns correct types for dict/json modes."""
-    # Setup mock response with necessary attributes for logging
+
     mock_pagination = MagicMock()
     mock_pagination.current_page = 1
     mock_pagination.page_count = 1
@@ -247,20 +239,16 @@ def test_list_collections_modes(mock_shared_client):
     mock_response = MockModel({"records": []}, pagination=mock_pagination, records=[])
     mock_shared_client.list_collections.return_value = mock_response
 
-    # Test 'dict' mode
     res_dict = collection_api.list_collections(mode="dict")
     assert isinstance(res_dict, dict)
     assert res_dict == {"records": []}
 
-    # Test 'json' mode
     res_json = collection_api.list_collections(mode="json")
     assert isinstance(res_json, str)
     assert "records" in res_json
 
-    # Test Invalid mode
-    # Must catch DorsalError because the wrapper catches ValueError
     with pytest.raises(DorsalError, match="Invalid mode"):
-        collection_api.list_collections(mode="invalid")  # type: ignore
+        collection_api.list_collections(mode="invalid")
 
 
 def test_update_collection_modes(mock_shared_client):
@@ -268,20 +256,14 @@ def test_update_collection_modes(mock_shared_client):
     mock_response = MockModel({"id": "123", "name": "Updated"})
     mock_shared_client.update_collection.return_value = mock_response
 
-    # Test 'dict' mode
     res_dict = collection_api.update_collection("123", name="n", mode="dict")
     assert isinstance(res_dict, dict)
 
-    # Test 'json' mode
     res_json = collection_api.update_collection("123", name="n", mode="json")
     assert isinstance(res_json, str)
 
-    # Test Invalid mode
     with pytest.raises(DorsalError, match="Invalid mode"):
-        collection_api.update_collection("123", name="n", mode="invalid")  # type: ignore
-
-
-# --- 2. Error Handling Tests ---
+        collection_api.update_collection("123", name="n", mode="invalid")
 
 
 @pytest.mark.parametrize(
@@ -304,10 +286,9 @@ def test_api_wrappers_handle_unexpected_exceptions(mock_shared_client, function,
     are caught, logged, and re-raised as DorsalError.
     This covers the `except Exception` blocks.
     """
-    # Configure the relevant method on the mock client to raise a generic error
+
     method_name = function.__name__
 
-    # Map api function names to client method names where they differ
     if method_name == "delete_collection":
         method_name = "delete_collections"
 
@@ -317,7 +298,6 @@ def test_api_wrappers_handle_unexpected_exceptions(mock_shared_client, function,
     with pytest.raises(DorsalError) as exc:
         function(**args)
 
-    # Ensure it wrapped the original error, not just passed it through
     assert "Unexpected Boom" in str(exc.value)
     assert isinstance(exc.value, DorsalError)
 
@@ -368,4 +348,4 @@ def test_get_collection_mode_exception(mock_shared_client):
     """Test get_collection invalid mode exception."""
     mock_shared_client.get_collection.return_value = MockModel({})
     with pytest.raises(DorsalError, match="Invalid mode"):
-        collection_api.get_collection("123", mode="invalid")  # type: ignore
+        collection_api.get_collection("123", mode="invalid")

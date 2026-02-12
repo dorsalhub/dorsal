@@ -39,7 +39,7 @@ from dorsal.client import DorsalClient
 from dorsal.client.validators import FileIndexResponse
 from dorsal.common import constants
 from dorsal.common.auth import is_offline_mode
-from dorsal.common.environment import is_jupyter_environment
+from dorsal.common.environment import is_jupyter_environment, should_show_progress
 from dorsal.common.exceptions import (
     BatchSizeError,
     DorsalError,
@@ -271,10 +271,12 @@ class MetadataReader:
         recursive: bool = False,
         limit: int | None = None,
         console: Console | None = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ) -> tuple[list[FileRecordStrict], dict[str, str]]:
         """
         Scan directory, and sends each file through the ModelRunner pipeline.
@@ -286,6 +288,7 @@ class MetadataReader:
             dir_path: Path to the directory to scan.
             recursive: If True, scans subdirectories recursively. Defaults to False.
             limit: Optional. top processing files once this many unique records have been generated.
+            lazy: If True, consumes file paths via an iterator (so doesn't count files ahead of processing).
 
         Returns:
             tuple[list[FileRecordStrict], dict[str, str]]:
@@ -298,14 +301,15 @@ class MetadataReader:
             DorsalClientError: For errors scanning directory or during local processing.
         """
         logger.debug(
-            "Generating processed records from directory: '%s' (Recursive: %s, Ignore Duplicates: %s, Max: %s)",
+            "Generating processed records from directory: '%s' (Recursive: %s, Ignore Duplicates: %s, Max: %s, Lazy: %s)",
             dir_path,
             recursive,
             self._ignore_duplicates,
             limit,
+            lazy,
         )
         try:
-            file_paths = get_file_paths(dir_path=dir_path, recursive=recursive)
+            file_paths = get_file_paths(dir_path=dir_path, recursive=recursive, lazy=lazy)
         except FileNotFoundError:
             logger.error("Directory not found for generating records: %s", dir_path)
             raise
@@ -316,29 +320,41 @@ class MetadataReader:
                 original_exception=e,
             ) from e
 
-        if not file_paths:
-            logger.debug("No files found to process in directory: %s", dir_path)
-            return [], {}
-        if limit and len(file_paths) > limit:
-            error_message = f"Number of records in the directory exceeds the limit: {len(file_paths)} > {limit}"
-            raise DorsalError(error_message)
+        total_count = None
+        if isinstance(file_paths, list):
+            if not file_paths:
+                logger.debug("No files found to process in directory: %s", dir_path)
+                return [], {}
+            if limit and len(file_paths) > limit:
+                error_message = f"Number of records in the directory exceeds the limit: {len(file_paths)} > {limit}"
+                raise DorsalError(error_message)
+            total_count = len(file_paths)
+
+            logger.debug(
+                "Generating metadata for %s file(s) from directory '%s' (Max: %s).",
+                total_count,
+                dir_path,
+                limit if limit is not None else "All",
+            )
+        else:
+            logger.debug(
+                "Generating metadata from directory '%s' in LAZY mode (Max: %s).",
+                dir_path,
+                limit if limit is not None else "All",
+            )
 
         file_hash_to_path_map: dict[str, str] = {}
         records_to_index_list: list[FileRecordStrict] = []
         processed_files_summary_local: dict[str, str] = {}
 
-        logger.debug(
-            "Generating metadata for up to %s file(s) from directory '%s' (Max: %s).",
-            len(file_paths),
-            dir_path,
-            limit if limit is not None else "All",
-        )
+        should_display = should_show_progress(show_progress, console)
 
         rich_progress = None
         iterator: Iterable[str]
-        if is_jupyter_environment():
-            iterator = tqdm(file_paths, desc="Generating Metadata (Local)")
-        elif console is not None:
+
+        if should_display and is_jupyter_environment():
+            iterator = tqdm(file_paths, desc="Generating Metadata (Local)", total=total_count)
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -361,7 +377,7 @@ class MetadataReader:
                 redirect_stdout=True,
                 redirect_stderr=True,
             )
-            task_id = rich_progress.add_task("Generating Metadata", total=len(file_paths))
+            task_id = rich_progress.add_task("Generating Metadata", total=total_count)
             iterator = file_paths
         else:
             iterator = file_paths
@@ -456,6 +472,7 @@ class MetadataReader:
         fail_fast: bool = True,
         hash_to_path_map: dict[str, str] | None = None,
         console: "Console | None" = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
     ) -> dict[str, Any]:
         """
@@ -509,15 +526,16 @@ class MetadataReader:
             public,
         )
 
-        # --- Progress Bar Setup ---
+        should_display = should_show_progress(show_progress, console)
+
         rich_progress = None
         iterator: Iterable[list[FileRecordStrict]]
 
-        if is_jupyter_environment():
+        if should_display and is_jupyter_environment():
             from tqdm import tqdm
 
             iterator = tqdm(batches, desc="Pushing batches")
-        elif console:
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -547,7 +565,6 @@ class MetadataReader:
         else:
             iterator = batches
 
-        # --- Upload Loop ---
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for i, batch in enumerate(iterator):
                 batch_size = len(batch)
@@ -627,8 +644,10 @@ class MetadataReader:
         skip_cache: bool = False,
         fail_fast: bool = True,
         console: "Console | None" = None,
+        show_progress: bool | None = None,
         palette: dict | None = None,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ) -> dict:
         """Scans, processes, and indexes all files in a directory to DorsalHub.
 
@@ -676,6 +695,7 @@ class MetadataReader:
             fail_fast (bool, optional): If True, raises `BatchIndexingError`
                 immediately on batch failure. If False, records the error
                 and continues. Defaults to True.
+            lazy: If True, consumes file paths via an iterator (so doesn't count files ahead of processing).
 
         Returns:
             dict: A summary dictionary detailing the results.
@@ -704,8 +724,10 @@ class MetadataReader:
             limit=None,
             skip_cache=skip_cache,
             console=console,
+            show_progress=show_progress,
             palette=palette,
             follow_symlinks=follow_symlinks,
+            lazy=lazy,
         )
 
         if not records_to_index_list:
@@ -828,11 +850,13 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: Literal[False] = False,
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ) -> list[LocalFile]: ...
 
     @overload
@@ -842,11 +866,13 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: Literal[True],
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ) -> tuple[list[LocalFile], list[str]]: ...
 
     def scan_directory(
@@ -855,11 +881,13 @@ class MetadataReader:
         *,
         recursive: bool = False,
         return_errors: bool = False,
+        show_progress: bool | None = None,
         console: Console | None = None,
         palette: dict | None = None,
         skip_cache: bool = False,
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
+        lazy: bool = False,
     ) -> list[LocalFile] | tuple[list[LocalFile], list[str]]:
         """Scans a directory and runs the pipeline on all found files.
 
@@ -868,11 +896,18 @@ class MetadataReader:
         and returns a list of the resulting `LocalFile` objects. This is an
         offline operation.
 
+        This method utilizes the internal `ModelRunner` instance of this
+        `MetadataReader` (via `_get_or_create_record`), ensuring that any custom
+        pipeline configuration provided during initialization is respected and
+        that initialization overhead is incurred only once, not per file.
+
         Example:
             ```python
             from dorsal.file import MetadataReader
 
-            reader = MetadataReader()
+            # Initialize with a custom pipeline if needed
+            reader = MetadataReader(model_config="my_pipeline.json")
+
             files_to_process = reader.scan_directory("path/to/images", recursive=True)
 
             print(f"Found and processed {len(files_to_process)} image files.")
@@ -882,17 +917,30 @@ class MetadataReader:
             dir_path (str): The path to the directory to scan.
             recursive (bool, optional): If True, scans all subdirectories
                 recursively. Defaults to False.
+            return_errors (bool, optional): If True, returns a tuple containing
+                the list of successfully processed files and a list of error strings.
+                Defaults to False.
+            console (Console, optional): A Rich Console instance for progress bars.
+            palette (dict, optional): A dictionary defining colors for the progress bar.
+            skip_cache (bool, optional): If True, forces reprocessing even if
+                valid cache exists. Defaults to False.
+            overwrite_cache (bool, optional): If True, updates the cache with
+                new results. Defaults to False.
+            follow_symlinks (bool, optional): If True, resolves symlinks to their
+                targets. Defaults to True.
+            lazy (bool, optional): If True, processes files via an iterator to avoid
+                scanning the entire tree before processing begins. Defaults to False.
 
         Returns:
             list[LocalFile]: initialized `LocalFile` instances.
             Or
             tuple:
             - list[LocalFile]: initialized `LocalFile` instances.
-            - list[str]: errors (for cli output).
+            - list[str]: errors (useful for CLI output/debugging).
         """
-        logger.debug("Starting directory read for: %s (Recursive: %s)", dir_path, recursive)
+        logger.debug("Starting directory read for: %s (Recursive: %s, Lazy: %s)", dir_path, recursive, lazy)
         try:
-            file_paths = get_file_paths(dir_path=dir_path, recursive=recursive)
+            file_paths = get_file_paths(dir_path=dir_path, recursive=recursive, lazy=lazy)
         except FileNotFoundError:
             logger.error("Directory not found: %s", dir_path)
             raise
@@ -903,19 +951,27 @@ class MetadataReader:
                 original_exception=e,
             ) from e
 
-        if not file_paths:
-            logger.debug("No files found to read in directory: %s", dir_path)
-            return ([], []) if return_errors else []
+        total_count = None
+        if isinstance(file_paths, list):
+            if not file_paths:
+                logger.debug("No files found to read in directory: %s", dir_path)
+                return ([], []) if return_errors else []
+            total_count = len(file_paths)
+            logger.debug("Found %d file(s). Processing with local models...", total_count)
+        else:
+            logger.debug("Processing files in LAZY mode (unknown total count)...")
 
         local_files: list[LocalFile] = []
         warnings: list[str] = []
-        logger.debug("Found %d file(s). Processing with local models...", len(file_paths))
+
+        should_display = should_show_progress(show_progress, console)
 
         rich_progress = None
         iterator: Iterable[str]
-        if is_jupyter_environment():
-            iterator = tqdm(file_paths, desc="Processing Files")
-        elif console is not None:
+
+        if should_display and is_jupyter_environment():
+            iterator = tqdm(file_paths, desc="Processing Files", total=total_count)
+        elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
@@ -939,7 +995,7 @@ class MetadataReader:
                 redirect_stdout=True,
                 redirect_stderr=True,
             )
-            task_id = rich_progress.add_task("Processing files", total=len(file_paths))
+            task_id = rich_progress.add_task("Processing files", total=total_count)
             iterator = file_paths
         else:
             iterator = file_paths
@@ -947,14 +1003,31 @@ class MetadataReader:
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for file_path in iterator:
                 try:
-                    local_file_obj = self._file_class(
-                        file_path=file_path,
-                        client=self._client_instance,
-                        use_cache=not skip_cache,
-                        offline=self.offline,
+                    processing_path = file_path
+                    if follow_symlinks:
+                        try:
+                            path_obj = pathlib.Path(file_path)
+                            resolved = path_obj.resolve()
+                            if resolved.exists():
+                                processing_path = str(resolved)
+                        except (OSError, RuntimeError) as err:
+                            logger.debug("Failed to resolve symlink during scan: %s - %s", file_path, err)
+                            pass
+
+                    record = self._get_or_create_record(
+                        file_path=processing_path,
+                        skip_cache=skip_cache,
                         overwrite_cache=overwrite_cache,
                         follow_symlinks=follow_symlinks,
                     )
+
+                    local_file_obj = self._file_class(
+                        file_path=file_path,
+                        client=self._client_instance,
+                        offline=self.offline,
+                        _file_record=record,
+                    )
+
                     local_files.append(local_file_obj)
                 except Exception as e:
                     msg = f"Skipping '{os.path.basename(file_path)}' due to processing error: {e}"

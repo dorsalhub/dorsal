@@ -23,7 +23,7 @@ from dorsal.cli.cache_app.show_cache_cmd import show_cache
 from dorsal.cli.cache_app.export_cmd import export_cache_cmd
 
 
-app = typer.Typer(name="cache", help="""Commands to manage the local cache.""", no_args_is_help=True)
+app = typer.Typer(name="cache", help="Manage local cache settings.", no_args_is_help=True)
 
 app.command(name="build")(build_cache)
 app.command(name="clear")(clear_cache)

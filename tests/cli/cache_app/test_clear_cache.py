@@ -63,13 +63,13 @@ def test_clear_cache_with_confirmation_yes(mock_rich_console, mock_clear_cache_c
     assert "Cache cleared successfully" in success_msg
 
 
-def test_clear_cache_aborted(mock_rich_console, mock_clear_cache_cmd):
-    """Tests aborting the clear command by answering 'n' to the prompt."""
+def test_clear_cache_cancelled(mock_rich_console, mock_clear_cache_cmd):
+    """Tests cancelling the clear command by answering 'n' to the prompt."""
     result = runner.invoke(app, ["cache", "clear"], input="n\n")
 
     assert result.exit_code == 0
-    aborted_msg = mock_rich_console.print.call_args.args[0]
-    assert "Cache clearing aborted" in aborted_msg
+    cancelled_msg = mock_rich_console.print.call_args.args[0]
+    assert "Cache clearing cancelled" in cancelled_msg
 
     mock_clear_cache_cmd["cache_instance"].clear.assert_not_called()
     mock_clear_cache_cmd["clear_shared_cache"].assert_not_called()

@@ -28,6 +28,7 @@ EXIT_CODE_SUCCESS = 0
 EXIT_CODE_ERROR = 1
 
 _console_instance: Console | None = None
+_error_console_instance: Console | None = None
 
 
 def get_rich_console() -> Console:
@@ -36,6 +37,14 @@ def get_rich_console() -> Console:
     if _console_instance is None:
         _console_instance = Console()
     return _console_instance
+
+
+def get_error_console() -> Console:
+    """Returns a shared Console instance bound to stderr for diagnostic output."""
+    global _error_console_instance
+    if _error_console_instance is None:
+        _error_console_instance = Console(stderr=True)
+    return _error_console_instance
 
 
 def exit_cli(code: int = EXIT_CODE_SUCCESS, message: str | None = None) -> NoReturn:

@@ -15,7 +15,7 @@
 
 import typer
 import json
-from typing import Annotated, Optional
+from typing import Annotated
 from rich.panel import Panel
 from rich.text import Text
 import logging

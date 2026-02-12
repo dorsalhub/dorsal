@@ -27,7 +27,7 @@ from typing import Annotated, Optional
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(name="auth", help="Manage authentication and user sessions.", no_args_is_help=True)
+app = typer.Typer(name="auth", help="Manage DorsalHub API Key authentication.", no_args_is_help=True)
 
 
 def _display_user_info(user_info: dict, title: str, palette: dict, console: Console):
@@ -163,14 +163,6 @@ def login(
 @app.command()
 def logout(
     ctx: typer.Context,
-    force: Annotated[
-        bool,
-        typer.Option(
-            "--force",
-            "-f",
-            help="Required to confirm the deletion of a global API key.",
-        ),
-    ] = False,
 ):
     """
     Log out by removing the API key from the local configuration.
@@ -206,13 +198,6 @@ def logout(
 
         if active_source == APIKeySource.NONE:
             console.print("You are not currently logged in.")
-            return exit_cli()
-
-        if active_source == APIKeySource.GLOBAL and not force:
-            console.print(f"[{palette['warning']}]Warning:[/] You are using a global API key.")
-            console.print("Logging out will remove it and affect all your projects.")
-            console.print("\nTo confirm, run the command again with the --force flag:")
-            console.print(f"  [{palette['primary_value']}]dorsal auth logout --force[/]")
             return exit_cli()
 
         key_was_removed = remove_api_key(scope=active_source)

@@ -118,6 +118,7 @@ def test_scan_dir_success_default(mock_rich_console, mock_scan_dir_cmd, mock_exi
         use_cache=False,
         overwrite_cache=False,
         follow_symlinks=True,
+        lazy=False,
     )
 
     # Verify Summary Panel was printed
@@ -226,7 +227,14 @@ def test_scan_dir_recursive_flag(mock_rich_console, mock_scan_dir_cmd):
 
     assert result.exit_code == 0
     mock_scan_dir_cmd["collection_class"].assert_called_once_with(
-        source=ANY, console=ANY, palette=ANY, recursive=True, use_cache=ANY, overwrite_cache=ANY, follow_symlinks=ANY
+        source=ANY,
+        console=ANY,
+        palette=ANY,
+        recursive=True,
+        use_cache=ANY,
+        overwrite_cache=ANY,
+        follow_symlinks=ANY,
+        lazy=ANY,
     )
 
 

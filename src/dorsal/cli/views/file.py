@@ -164,13 +164,16 @@ def create_file_info_panel(
     if access_text:
         file_info_table.add_row("Access:", access_text)
     if local_info.get("is_symlink"):
-        file_info_table.add_row("Type:", Text("Symbolic Link", style="cyan italic"))
+        link_style = f"{palette['primary_value']} italic"
+        target_style = palette["primary_value"]
+
+        file_info_table.add_row("Type:", Text("Symbolic Link", style=link_style))
 
         if local_info.get("full_path"):
             file_info_table.add_row("Link Path:", escape(local_info["full_path"]))
 
         target = local_info.get("symlink_target", "Unknown")
-        file_info_table.add_row("Target:", Text(target, style="cyan"))
+        file_info_table.add_row("Target:", Text(target, style=target_style))
 
     elif local_info.get("full_path"):
         file_info_table.add_row("Full Path:", escape(local_info["full_path"]))

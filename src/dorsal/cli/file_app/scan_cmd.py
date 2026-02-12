@@ -146,6 +146,8 @@ def scan_file(
         )
 
     console = get_rich_console()
+    palette = ctx.obj.get("palette", {})
+
     if output_path and not (save or report):
         if str(output_path).lower().endswith(".json"):
             save = True
@@ -155,7 +157,7 @@ def scan_file(
             console.print(
                 f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified, but no report"
                 f" type was requested. (Did you forget --save or --report?)",
-                style="yellow",
+                style=palette.get("warning", "yellow"),
             )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
@@ -259,7 +261,7 @@ def _save_json_report(
         console.print(
             "⚠️ [yellow]Warning:[/] Both --save and --report are specified, but --output"
             " is a single file. Reports may overwrite each other.",
-            style="yellow",
+            style=palette.get("warning", "yellow"),
         )
 
     final_path = _get_final_path(original_path, output_path, ".json")
@@ -273,7 +275,9 @@ def _save_json_report(
             console.print(f"✅ JSON report saved to: [{palette.get('primary_value')}]{final_path}[/]")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style="yellow")
+        console.print(
+            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+        )
 
 
 def _save_html_report(
@@ -299,4 +303,4 @@ def _save_html_report(
 
     except Exception as e:
         logger.error(f"Failed to generate HTML report: {e}")
-        console.print(f"⚠️ Could not generate HTML report. Error: {e}", style="yellow")
+        console.print(f"⚠️ Could not generate HTML report. Error: {e}", style=palette.get("warning", "yellow"))

@@ -47,9 +47,12 @@ class AnnotationModel:
         size (int | None): The file size in bytes.
         hash (str | None): The SHA-256 hash of the file.
         name (str | None): The filename (e.g., 'report.pdf').
+        requires_hashes (bool): Defaults to `False`. Set to `True` if this model accesses one or more of the hash attributes
+            (`hash`, `similarity_hash` and/or `quick_hash`) at run-time
         follow_symlinks (bool): Defaults to `True`.
             - **True (Target Mode):** This model analyzes the file content. If path is a symlink, the link is resolved to its target.
             - **False (Link Mode):** Trust the path provided, even if it is a symlink. Useful if you *want* to analyse symbolic links.
+
 
     ### 2. The Output Contract (Return Values)
     Your subclass must implement the `main()` method, which must return:
@@ -72,6 +75,7 @@ class AnnotationModel:
     id: str
     version: str | None = None
     variant: str | None = None
+    requires_hashes: bool = False
     follow_symlinks: bool = True
 
     file_path: str

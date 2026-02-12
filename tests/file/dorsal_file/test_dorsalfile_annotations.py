@@ -60,7 +60,7 @@ def test_annotate_using_pipeline_step_success(mock_annotator, mock_local_file):
 
     mock_annotator.annotate_file_using_pipeline_step.return_value = mock_annotation
 
-    mock_local_file._annotate_using_pipeline_step(pipeline_step_config=step_config, private=True)
+    mock_local_file._annotate_using_pipeline_step(pipeline_step_config=step_config)
 
     assert getattr(mock_local_file.model.annotations, "test/schema") == [mock_annotation]
 
@@ -70,7 +70,7 @@ def test_annotate_using_pipeline_step_invalid_schema(mock_local_file):
 
     with pytest.raises(ValidationError):
         mock_local_file._annotate_using_pipeline_step(
-            pipeline_step_config={"schema_id": "bad_id", "annotation_model": ("a", "b")}, private=True
+            pipeline_step_config={"schema_id": "bad_id", "annotation_model": ("a", "b")}
         )
 
 
@@ -94,7 +94,6 @@ def test_annotate_model_validator_success(mock_annotator, mock_local_file):
 
     mock_local_file._annotate_using_model_and_validator(
         schema_id="test/manual",
-        private=False,
         annotation_model=dummy_model_cls,
         validation_model=dummy_validator,
         overwrite=True,
@@ -114,9 +113,7 @@ def test_annotate_model_validator_failure(mock_annotator, mock_local_file):
     dummy_model.__name__ = "DummyModel"
 
     with pytest.raises(FileAnnotatorError):
-        mock_local_file._annotate_using_model_and_validator(
-            schema_id="test/fail", private=True, annotation_model=dummy_model
-        )
+        mock_local_file._annotate_using_model_and_validator(schema_id="test/fail", annotation_model=dummy_model)
 
 
 def test_remove_annotation_missing(mock_local_file):

@@ -126,4 +126,4 @@ def make_file_report(
 
             webbrowser.open(f"file://{final_output_path.resolve()}")
         except Exception as err:
-            console.print(f"⚠️  Could not automatically open the report: {err}", style="yellow")
+            console.print(f"⚠️  Could not automatically open the report: {err}", style=palette.get("warning", "yellow"))

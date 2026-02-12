@@ -21,7 +21,7 @@ from dorsal.cli.dir_app.duplicates_dir_cmd import duplicates_dir
 
 app = typer.Typer(
     name="dir",
-    help="Commands to manage local files and directories.",
+    help="Scan, manage and index local files and directories.",
     no_args_is_help=True,
 )
 

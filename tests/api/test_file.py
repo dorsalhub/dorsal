@@ -68,7 +68,7 @@ def mock_cache():
     """Mocks the get_shared_cache function."""
     with patch("dorsal.session.get_shared_cache") as mock_get:
         mock_cache_instance = MagicMock()
-        # Simulate cache miss by default
+
         mock_cache_instance.get_hash.return_value = None
         mock_get.return_value = mock_cache_instance
         yield mock_cache_instance
@@ -129,26 +129,21 @@ def mock_metadata_reader():
 _DUMMY_CLIENT = MagicMock()
 _DUMMY_SHA256 = "a" * 64
 
-# --- Tests for identify_file ---
-
 
 def test_identify_file_success_sha256(mock_shared_client, tmp_path):
     """Test identifying a file successfully using its SHA-256 hash."""
-    # Setup a fake file
+
     file = tmp_path / "test.txt"
     file.write_text("content")
 
-    # Configure the mock client
     expected_record = MockFileRecord(
         hash_value="ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73",
         name="test.txt",
     )
     mock_shared_client.download_file_record.return_value = expected_record
 
-    # Call the function under test
     result = file_api.identify_file(str(file), quick=False)
 
-    # Assertions
     mock_shared_client.download_file_record.assert_called_once()
     assert "SHA-256:" in mock_shared_client.download_file_record.call_args[1]["hash_string"]
     assert result.hash == expected_record.hash
@@ -156,11 +151,10 @@ def test_identify_file_success_sha256(mock_shared_client, tmp_path):
 
 def test_identify_file_quick_hash_fallback(mock_shared_client, tmp_path):
     """Test that identify_file falls back to SHA-256 if a quick hash is not found."""
-    # Setup a fake large file
-    file = tmp_path / "large_file.bin"
-    file.write_bytes(b"\0" * (32 * 1024 * 1024))  # 32MB file
 
-    # Configure the mock to fail on quick hash and succeed on SHA-256
+    file = tmp_path / "large_file.bin"
+    file.write_bytes(b"\0" * (32 * 1024 * 1024))
+
     sha256_record = MockFileRecord(hash_value="...", name="large_file.bin")
     mock_shared_client.download_file_record.side_effect = [
         NotFoundError("Quick hash not found", request_url="http://dorsalhub.test/missing-thing"),
@@ -195,9 +189,6 @@ def test_identify_file_os_error_raises_file_not_found(mock_read_api_key):
         file_api.identify_file("path/to/non_existent_file.txt")
 
 
-# --- Tests for get_dorsal_file_record ---
-
-
 def test_get_dorsal_file_record_success(mock_shared_client):
     """Test a successful agnostic search for a file record."""
     hash_str = "some_hash"
@@ -225,7 +216,7 @@ def test_get_dorsal_file_record_modes(mock_shared_client, mode, expected_type):
 @patch("dorsal.client.DorsalClient")
 def test_get_dorsal_file_record_with_api_key(mock_client_class, mock_shared_client):
     """Test that providing an api_key creates a temporary client."""
-    # This test ensures the shared client is NOT used if an API key is passed.
+
     mock_temp_client = MagicMock()
     mock_client_class.return_value = mock_temp_client
 
@@ -244,7 +235,6 @@ def test_delete_dorsal_file_record_success(mock_shared_client):
 
     result = file_api._delete_dorsal_file_record(file_hash)
 
-    # Assert it calls the new granular client method with default 'all' parameters
     mock_shared_client.delete_file.assert_called_once_with(
         file_hash=file_hash, record="all", tags="all", annotations="all"
     )
@@ -253,7 +243,7 @@ def test_delete_dorsal_file_record_success(mock_shared_client):
 
 def test_delete_dorsal_file_record_invalid_hash():
     """Test that _delete_dorsal_file_record raises ValueError for an invalid hash."""
-    # Match the updated error message which now uses "file_hash"
+
     with pytest.raises(ValueError, match="file_hash must be a valid SHA-256 hash"):
         file_api._delete_dorsal_file_record("not-a-hash")
 
@@ -285,7 +275,6 @@ def test_add_tag_to_file_success(mock_shared_client):
 
     result = file_api.add_tag_to_file(file_hash, tag_name, tag_value, public=False)
 
-    # Assert that the client method was called with a correctly constructed NewFileTag object
     mock_shared_client.add_tags_to_file.assert_called_once()
     call_args = mock_shared_client.add_tags_to_file.call_args[1]
     assert call_args["file_hash"] == file_hash
@@ -319,7 +308,6 @@ def test_remove_tag_from_file_success(mock_shared_client):
     file_hash = _DUMMY_SHA256
     tag_id = "t_12345"
 
-    # The client method returns None on success
     mock_shared_client.delete_tag.return_value = None
 
     result = file_api.remove_tag_from_file(file_hash, tag_id)
@@ -334,7 +322,6 @@ def test_search_user_files_success(mock_get_reader, mock_pagination_json):
     mock_client = MagicMock()
     mock_get_reader.return_value._client = mock_client
 
-    # Create a mock response object that the client would return
     mock_pagination = mock_pagination_json
     mock_response = FileSearchResponse(api_version="1.0", pagination=mock_pagination, results=[], errors=[])
     mock_client.search_files.return_value = mock_response
@@ -342,7 +329,6 @@ def test_search_user_files_success(mock_get_reader, mock_pagination_json):
     query = "extension:pdf"
     result = file_api.search_user_files(query)
 
-    # Assert that the client's search method was called with scope='user'
     mock_client.search_files.assert_called_once()
     call_args = mock_client.search_files.call_args[1]
     assert call_args["q"] == query
@@ -363,7 +349,6 @@ def test_search_global_files_success(mock_get_reader, mock_pagination_json):
     query = "tag:research"
     result = file_api.search_global_files(query)
 
-    # Assert that the client's search method was called with scope='global'
     mock_client.search_files.assert_called_once()
     call_args = mock_client.search_files.call_args[1]
     assert call_args["q"] == query
@@ -379,7 +364,6 @@ def test_scan_file_success(mock_metadata_reader):
 
     result = file_api.scan_file(file_path, use_cache=False)
 
-    # Assert that the reader was called with the right parameters
     mock_metadata_reader.scan_file.assert_called_once_with(file_path=file_path, skip_cache=True, follow_symlinks=True)
     assert result == mock_local_file
 
@@ -392,7 +376,6 @@ def test_scan_directory_success(mock_metadata_reader):
 
     result = file_api.scan_directory(dir_path, recursive=True, use_cache=True)
 
-    # Assert the reader was called with the correct parameters
     mock_metadata_reader.scan_directory.assert_called_once_with(
         dir_path=dir_path, recursive=True, skip_cache=False, follow_symlinks=True
     )
@@ -424,7 +407,7 @@ def test_find_duplicates_success(fs):
     """Test finding duplicate files in a directory.
     'fs' is a fixture provided by the pyfakefs library.
     """
-    # Create a fake directory structure with duplicate files
+
     fs.create_file("/test/unique1.txt", contents="abc")
     fs.create_file("/test/duplicate1.txt", contents="12345")
     fs.create_dir("/test/subdir")
@@ -442,7 +425,6 @@ def test_find_duplicates_success(fs):
     assert duplicate_set["count"] == 2
     assert duplicate_set["hash"] == correct_hash
 
-    # Normalize expected paths to be OS-agnostic
     expected_paths = {
         os.path.normpath("/test/duplicate1.txt"),
         os.path.normpath("/test/subdir/duplicate2.txt"),
@@ -461,10 +443,10 @@ def test_find_duplicates_no_results(fs):
 
 def test_get_directory_info_success(fs):
     """Test getting a statistical summary of a directory."""
-    fs.create_file("/test/file1.txt", contents="a" * 100)  # 100 bytes
-    fs.create_file("/test/file2.bin", contents="b" * 200)  # 200 bytes
+    fs.create_file("/test/file1.txt", contents="a" * 100)
+    fs.create_file("/test/file2.bin", contents="b" * 200)
     fs.create_dir("/test/subdir")
-    fs.create_file("/test/subdir/file3.txt", contents="c" * 50)  # 50 bytes
+    fs.create_file("/test/subdir/file3.txt", contents="c" * 50)
 
     result = file_api.get_directory_info("/test", recursive=True)
 
@@ -473,7 +455,6 @@ def test_get_directory_info_success(fs):
     assert overall["total_dirs"] == 1
     assert overall["total_size"] == 350
 
-    # Normalize paths for assertion
     assert overall["largest_file"]["path"] == os.path.normpath("/test/file2.bin")
     assert overall["smallest_file"]["path"] == os.path.normpath("/test/subdir/file3.txt")
     assert len(result["by_type"]) > 0
@@ -482,15 +463,13 @@ def test_get_directory_info_success(fs):
 @patch("dorsal.api.file.resolve_template_path")
 def test_generate_html_file_report_success(mock_resolve, mock_jinja_env, mock_metadata_reader, tmp_path):
     """Test generating a file report with mocked Jinja2."""
-    # Setup
+
     file_path = tmp_path / "report_target.txt"
     output_path = tmp_path / "report.html"
     file_path.write_text("data")
 
-    # Mock the Resolve Path to return dummy values
     mock_resolve.return_value = (pathlib.Path("default.html"), "/templates/base")
 
-    # Mock the scan_file result
     mock_local_file = MagicMock()
     mock_local_file._file_path = str(file_path)
     mock_local_file.date_created = datetime.datetime.now()
@@ -517,17 +496,13 @@ def test_generate_html_directory_report_success(mock_panel_config, mock_resolve,
     dir_path.mkdir()
     output_path = tmp_path / "dashboard.html"
 
-    # Mock Panel Config
     mock_panel_config.return_value = {"overview": True, "duplicates": False}
 
-    # Mock Template Resolution
     mock_resolve.return_value = (pathlib.Path("dashboard.html"), "/templates/base")
 
-    # Mock Collection
     mock_collection = MagicMock()
     mock_collection.to_dict.return_value = {"files": []}
 
-    # Mock the Report Data Generators
     with patch.dict("dorsal.file.utils.reports.REPORT_DATA_GENERATORS", {"overview": lambda c: "overview_data"}):
         html_out = file_api.generate_html_directory_report(
             str(dir_path), local_collection=mock_collection, output_path=str(output_path)
@@ -536,7 +511,6 @@ def test_generate_html_directory_report_success(mock_panel_config, mock_resolve,
     assert html_out is None
     assert output_path.exists()
 
-    # Verify context
     call_args = mock_jinja_env.return_value.get_template.return_value.render.call_args
     context = call_args[0][0]
     assert context["report_title"] == "Directory Report: assets"
@@ -560,18 +534,14 @@ def test_get_directory_info_detailed_metrics(fs):
     os.utime("/data/old.txt", (now - 1000, now - 1000))
     os.utime("/data/new.txt", (now, now))
 
-    # Run the analysis
     with patch("dorsal.api.file.get_media_type", side_effect=lambda p, e: "text/plain"):
         result = file_api.get_directory_info("/data", recursive=False, media_type=True)
 
     overall = result["overall"]
 
-    # Permission checks
     assert overall["permissions"]["executable"] >= 1
     assert overall["permissions"]["read_only"] >= 1
 
-    # Date checks
-    # Use normpath to handle Windows backslashes vs Linux forward slashes
     assert overall["newest_mod_file"]["path"] == os.path.normpath("/data/new.txt")
     assert overall["oldest_mod_file"]["path"] == os.path.normpath("/data/old.txt")
 
@@ -583,17 +553,15 @@ def test_get_directory_info_progress_integration(fs):
 
     mock_console = MagicMock()
 
-    # We need to patch the _create_rich_progress helper
     with patch("dorsal.api.file._create_rich_progress") as mock_create_progress:
         mock_progress_instance = MagicMock()
         mock_create_progress.return_value = mock_progress_instance
 
         file_api.get_directory_info("/data", progress_console=mock_console)
 
-        # Verify progress bar was created and advanced
         mock_create_progress.assert_called_once()
         mock_progress_instance.add_task.assert_called()
-        # Should update for the 2 files
+
         assert mock_progress_instance.update.call_count >= 2
 
 
@@ -611,7 +579,6 @@ def test_find_duplicates_quick_internal_logic(fs):
 
     mock_cache = MagicMock()
 
-    # define logic for cache.get_hash
     def mock_get_hash(path, hash_function):
         if "cached.txt" in path and hash_function == "QUICK":
             return "cached_hash_val"
@@ -624,10 +591,7 @@ def test_find_duplicates_quick_internal_logic(fs):
         patch("dorsal.api.file.get_quick_hash") as mock_quick,
         patch("dorsal.api.file.get_sha256_hash") as mock_sha,
     ):
-        # Logic:
-        # - /cached.txt: handled by cache side_effect above.
-        # - /quick.txt: get_quick_hash returns value.
-        # - /fallback.txt: get_quick_hash returns None -> calls get_sha256_hash.
+
         def quick_side_effect(path, **kwargs):
             if "quick.txt" in str(path):
                 return "quick_hash_val"
@@ -636,20 +600,14 @@ def test_find_duplicates_quick_internal_logic(fs):
         mock_quick.side_effect = quick_side_effect
         mock_sha.return_value = "sha_fallback_val"
 
-        # Call the public wrapper with mode='quick' to trigger the internal function
         result = file_api.find_duplicates("/", mode="quick", use_cache=True)
 
-    # 1. Cache was queried (Line ~1813)
     assert mock_cache.get_hash.called
 
-    # 2. Quick hash calculated for quick.txt and fallback.txt (Line ~1823)
-    # (cached.txt skipped this)
     assert mock_quick.call_count == 2
 
-    # 3. SHA fallback called ONLY for fallback.txt (Line ~1841)
     assert mock_sha.call_count == 1
 
-    # 4. Check we got the cache hit recorded
     assert result["hashes_from_cache"] == 1
 
 
@@ -666,23 +624,19 @@ def test_generate_html_directory_report_panels(mock_panel_config, mock_resolve, 
     dir_path.mkdir()
     output_path = tmp_path / "report.html"
 
-    # Setup Config: 1 valid panel, 1 invalid panel
     mock_panel_config.return_value = {"overview": True, "missing_panel": True}
 
-    # Mock Template stuff to pass checks
     mock_resolve.return_value = (pathlib.Path("default.html"), "/templates/base")
 
     mock_collection = MagicMock()
     mock_collection.to_dict.return_value = {"files": []}
 
-    # Only define 'overview' in the generator map
     fake_generators = {"overview": lambda c: "data"}
 
     with (
         patch.dict("dorsal.file.utils.reports.REPORT_DATA_GENERATORS", fake_generators),
         patch("jinja2.Environment") as mock_env,
     ):
-        # Setup template mock
         mock_template = MagicMock()
         mock_template.render.return_value = "<html></html>"
         mock_env.return_value.get_template.return_value = mock_template
@@ -691,11 +645,8 @@ def test_generate_html_directory_report_panels(mock_panel_config, mock_resolve, 
             str(dir_path), local_collection=mock_collection, output_path=str(output_path)
         )
 
-        # Verify context passed to render
         call_args = mock_template.render.call_args
         context = call_args[0][0]
 
-        # We expect only 1 panel in the final context (overview),
-        # because 'missing_panel' should have triggered the warning path and been skipped.
         assert len(context["panels"]) == 1
         assert context["panels"][0]["id"] == "overview"

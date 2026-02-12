@@ -119,6 +119,7 @@ API_ENDPOINT_EXPORT = "v1/export"
 API_ENDPOINT_FILES = "v1/files"
 API_ENDPOINT_FILE_SEARCH = "v1/files/search"
 API_ENDPOINT_NAMESPACES = "v1/namespaces"
+API_ENDPOINT_REGISTRY = "v1/registry"
 API_ENDPOINT_FILE_TAG_VALIDATION = "v1/files/tags/validate"
 API_ENDPOINT_USER_CHECK_FILES_INDEXED = "v1/users/files-indexed"
 

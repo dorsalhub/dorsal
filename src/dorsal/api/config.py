@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 from typing import Literal, Type, Any, cast
+
+from packaging.utils import canonicalize_name
 
 from dorsal.common.auth import (
     get_api_key_details,
@@ -28,6 +31,8 @@ from dorsal.common.validators import JsonSchemaValidator
 from dorsal.file.configs.model_runner import ModelRunnerDependencyConfig
 from dorsal.file.pipeline_config import PipelineConfig
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_summary() -> dict[str, Any]:
@@ -129,12 +134,29 @@ def deactivate_model_by_name(name: str, scope: Literal["project", "global"] = "p
     PipelineConfig.set_step_status_by_name(name=name, active=False, scope=scope)
 
 
+def find_package_name_by_class(class_name: str, scope: Literal["project", "global"] = "project") -> str | None:
+    """
+    Resolves a Model Class Name (e.g. 'FasterWhisperTranscriber') to its  package name (e.g. 'dorsal-whisper')
+    """
+    steps = PipelineConfig.get_steps(scope=scope)
+
+    for step in steps:
+        if step.annotation_model.name == class_name:
+            if step.package_name:
+                return step.package_name
+
+            return None
+
+    return None
+
+
 def register_model(
     annotation_model: Type[AnnotationModel],
     schema_id: str,
     validation_model: dict | Type[Any] | JsonSchemaValidator | None = None,
     dependencies: list[ModelRunnerDependencyConfig] | ModelRunnerDependencyConfig | None = None,
     options: dict | None = None,
+    package_name: str | None = None,
     overwrite: bool = False,
     *,
     scope: Literal["project", "global"] = "project",
@@ -226,6 +248,7 @@ def register_model(
             "dependencies": effective_dependencies_dicts if effective_dependencies_dicts else None,
             "validation_model": validation_model_config,
             "options": options,
+            "package_name": package_name,
         }.items()
         if v is not None
     }
@@ -240,3 +263,61 @@ def register_model(
         PipelineConfig.upsert_step(step_data=toml_safe_step_data, overwrite=overwrite, scope=scope)
     except Exception as e:
         raise DorsalConfigError(f"Failed to register model in {scope} config: {e}") from e
+
+
+def unregister_model(package_name: str, scope: Literal["project", "global"] = "project") -> None:
+    """
+    Removes a model configuration from the pipeline.
+
+    Args:
+        package_name: The package name of the model (e.g., 'dorsal-whisper').
+        scope: The config scope to modify ('project' or 'global').
+
+    Raises:
+        KeyError: If the model is not found in the specified scope.
+        DorsalConfigError: If writing to the config file fails.
+    """
+    from dorsal.common.exceptions import DorsalConfigError
+
+    if scope not in ["project", "global"]:
+        raise ValueError("Invalid scope. Must be one of 'project' or 'global'.")
+
+    clean_name = package_name.lower().replace("-", "_")
+
+    logger.info(f"Attempting to unregister package '{package_name}' (looking for module '{clean_name}')")
+
+    steps = PipelineConfig.get_steps(scope=scope)
+
+    if not steps:
+        logger.warning(f"No pipeline steps found in {scope} scope. Config might be empty.")
+
+    found_index = -1
+
+    for i, step in enumerate(steps):
+        try:
+            module_path = step.annotation_model.module.lower()
+
+            logger.debug(f"Checking step {i}: {module_path} vs {clean_name}")
+
+            if clean_name == module_path or clean_name in module_path.split("."):
+                found_index = i
+                logger.info(f"Found match at index {i}: {module_path}")
+                break
+
+        except AttributeError:
+            logger.debug(f"Skipping step {i} (invalid structure)")
+            continue
+
+    if found_index == -1:
+        step_modules = [s.annotation_model.module for s in steps]
+        raise KeyError(
+            f"Could not find model for '{package_name}' in {scope} config.\n"
+            f"Looked for module matching: '{clean_name}'\n"
+            f"Available modules: {step_modules}"
+        )
+
+    try:
+        PipelineConfig.remove_step_by_index(index=found_index, scope=scope)
+        logger.info(f"Removed step {found_index} from {scope} config.")
+    except Exception as e:
+        raise DorsalConfigError(f"Failed to unregister model '{package_name}' from {scope} config: {e}") from e

@@ -126,7 +126,7 @@ def search_and_display(
                 console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
-                    style="yellow",
+                    style=palette.get("warning", "yellow"),
                 )
 
     if not query:
@@ -166,7 +166,7 @@ def search_and_display(
 
         search_caption = (
             f"Search powered by DorsalHub Search {response.api_version}. "
-            f"For search syntax, visit: https://docs.dorsalhub.com/search"
+            f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
         table = Table(
@@ -250,7 +250,7 @@ def search_and_display(
             upgrade_message = Text.assemble(
                 ("The 'global' search scope is a premium feature.\n\n", "default"),
                 ("To find out more, or to upgrade your account, visit:\n", "default"),
-                ("https://dorsalhub.com/pricing", "underline blue"),
+                ("https://dorsalhub.com/pricing", palette.get("link", "blue underline")),
                 style=palette.get("text_default", "default"),
             )
 
@@ -262,10 +262,5 @@ def search_and_display(
                 padding=(1, 2),
             )
             console.print(panel)
-    except DorsalClientError as err:
-        exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {err}")
     except typer.Exit:
         raise
-    except Exception as err:
-        logging.getLogger(__name__).exception("CLI 'search' command failed.")
-        exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
