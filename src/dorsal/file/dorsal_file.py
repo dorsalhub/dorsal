@@ -1308,46 +1308,6 @@ class LocalFile(_DorsalFile):
             follow_symlinks=follow_symlinks,
         )
 
-    def _resolve_privacy(self, public: bool) -> None:
-        """
-        Resolves 'agnostic' (None) privacy fields to concrete booleans
-        based on the push intent.
-        """
-        from dorsal.file.validators.file_record import AnnotationsStrict, Annotation, AnnotationGroup
-
-        target_privacy = not public
-
-        for tag in self.model.tags:
-            if tag.private is None:
-                tag.private = target_privacy
-
-        def _update_item_privacy(item: Any):
-            if isinstance(item, AnnotationGroup):
-                for sub_ann in item.annotations:
-                    if sub_ann.private is None:
-                        sub_ann.private = target_privacy
-            elif isinstance(item, Annotation):
-                if item.private is None:
-                    item.private = target_privacy
-
-        if self.model.annotations:
-            for field_name in AnnotationsStrict.model_fields:
-                ann_entry = getattr(self.model.annotations, field_name)
-                if not ann_entry:
-                    continue
-
-                if isinstance(ann_entry, list):
-                    for item in ann_entry:
-                        _update_item_privacy(item)
-                else:
-                    _update_item_privacy(ann_entry)
-
-            if self.model.annotations.__pydantic_extra__:
-                for _key, value in self.model.annotations.__pydantic_extra__.items():
-                    items = value if isinstance(value, list) else [value]
-                    for item in items:
-                        _update_item_privacy(item)
-
     @classmethod
     def from_json(cls, path: str | pathlib.Path, check_file_exists: bool = False) -> "LocalFile":
         """Factory method: Instantiates a LocalFile from a JSON File Record."""
