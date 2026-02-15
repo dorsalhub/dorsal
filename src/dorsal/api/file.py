@@ -2364,6 +2364,9 @@ def get_file_annotation(
     Returns:
         The fully hydrated annotation in the requested format.
     """
+    if mode not in ("pydantic", "dict", "json"):
+        raise ValueError(f"Invalid mode: '{mode}'.")
+
     from dorsal.session import get_shared_dorsal_client
     from dorsal.client import DorsalClient
 
@@ -2382,8 +2385,6 @@ def get_file_annotation(
             return annotation.model_dump(mode="json", by_alias=True, exclude_none=True)
         if mode == "json":
             return annotation.model_dump_json(indent=2, by_alias=True, exclude_none=True)
-
-        raise ValueError(f"Invalid mode: '{mode}'.")
 
     except DorsalClientError as err:
         if isinstance(getattr(err, "original_exception", None), NotFoundError):
@@ -2446,12 +2447,14 @@ def get_latest_file_annotation(
         mode (Literal["pydantic", "dict", "json"]): The desired return format.
         api_key (str, optional): An API key for this request.
     """
+    if mode not in ("pydantic", "dict", "json"):
+        raise ValueError(f"Invalid mode: '{mode}'.")
+
     from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub
     from dorsal.session import get_shared_dorsal_client
 
     if api_key:
         from dorsal.client import DorsalClient
-
         effective_client = DorsalClient(api_key=api_key)
     else:
         effective_client = get_shared_dorsal_client()
@@ -2475,8 +2478,6 @@ def get_latest_file_annotation(
             return hydrated_data.model_dump(mode="json", by_alias=True, exclude_none=True)
         if mode == "json":
             return hydrated_data.model_dump_json(indent=2, by_alias=True, exclude_none=True)
-
-        raise ValueError(f"Invalid mode: '{mode}'.")
 
     except DorsalClientError:
         raise
