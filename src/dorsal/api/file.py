@@ -291,9 +291,17 @@ def identify_file(
         return file_record
 
     except DorsalClientError as err:
-        if isinstance(err.original_exception, NotFoundError):
+        if isinstance(getattr(err, "original_exception", None), NotFoundError):
             hash_key = secure_hash_key or "the file's hash"
-            err.message = f"No file record was found on DorsalHub matching {hash_key}."
+            new_msg = f"No file record was found on DorsalHub matching {hash_key}."
+            logger.debug("A client error occurred during identify_file for '%s': %s", file_path, new_msg)
+
+            raise DorsalClientError(
+                message=new_msg,
+                request_url=getattr(err, "request_url", None),
+                original_exception=err.original_exception,
+            ) from err
+
         logger.debug("A client error occurred during identify_file for '%s': %s", file_path, err)
         raise
     except (FileNotFoundError, ValueError) as err:
@@ -432,8 +440,20 @@ def get_dorsal_file_record(
         )
         raise
     except DorsalClientError as err:
-        if isinstance(err.original_exception, NotFoundError):
-            err.message = f"File not found in '{search_strategy}' scope for hash '{cleaned_hash_string}'."
+        if isinstance(getattr(err, "original_exception", None), NotFoundError):
+            new_msg = f"File not found in '{search_strategy}' scope for hash '{cleaned_hash_string}'."
+            logger.warning(
+                "DorsalClientError during get_dorsal_file_record (hash: '%s', search: %s, %s): %s",
+                hash_string,
+                search_strategy,
+                log_message_context,
+                new_msg,
+            )
+            raise DorsalClientError(
+                message=new_msg,
+                request_url=getattr(err, "request_url", None),
+                original_exception=err.original_exception,
+            ) from err
 
         logger.warning(
             "DorsalClientError during get_dorsal_file_record (hash: '%s', search: %s, %s): %s",
@@ -2366,8 +2386,12 @@ def get_file_annotation(
         raise ValueError(f"Invalid mode: '{mode}'.")
 
     except DorsalClientError as err:
-        if isinstance(err.original_exception, NotFoundError):
-            err.message = f"Annotation '{annotation_id}' not found for file '{hash_string}'."
+        if isinstance(getattr(err, "original_exception", None), NotFoundError):
+            raise DorsalClientError(
+                message=f"Annotation '{annotation_id}' not found for file '{hash_string}'.",
+                request_url=getattr(err, "request_url", None),
+                original_exception=err.original_exception,
+            ) from err
         raise
     except Exception as err:
         raise DorsalError(f"Unexpected error fetching annotation '{annotation_id}': {err}") from err

@@ -18,6 +18,7 @@ import hashlib
 import pathlib
 from unittest.mock import patch, MagicMock, call
 import os
+import uuid
 
 import pytest
 import tomlkit
@@ -30,14 +31,23 @@ from dorsal.common.exceptions import (
     NotFoundError,
     ConflictError,
 )
-from dorsal.common.model import AnnotationModel
+from dorsal.common.model import AnnotationModel, AnnotationModelSource
 from dorsal.common.validators import Pagination
 from dorsal.client.validators import (
     FileDeleteResponse,
     FileIndexResponse,
     FileTagResponse,
 )
-from dorsal.file.validators.file_record import FileSearchResponse, NewFileTag
+from dorsal.file.validators.base import FileCoreValidationModel
+from dorsal.file.validators.file_record import (
+    FileRecordDateTime,
+    FileSearchResponse,
+    Annotations,
+    Annotation_Base,
+    AnnotationStub,
+    GenericFileAnnotation,
+    NewFileTag,
+)
 
 
 class MockFileRecord:
@@ -650,3 +660,114 @@ def test_generate_html_directory_report_panels(mock_panel_config, mock_resolve, 
 
         assert len(context["panels"]) == 1
         assert context["panels"][0]["id"] == "overview"
+
+
+@pytest.fixture
+def dummy_file_record_dt_with_stubs() -> FileRecordDateTime:
+    """Provides a valid FileRecordDateTime populated with a custom AnnotationStub."""
+    base_record = FileCoreValidationModel(
+        hash="a" * 64, name="test.txt", extension=".txt", size=100, media_type="text/plain"
+    )
+    file_base = Annotation_Base(
+        record=base_record, source=AnnotationModelSource(type="Model", id="file/base", version="1.0.0")
+    )
+    annotations = Annotations(file_base=file_base)
+
+    # Inject a custom open schema stub
+    stub = AnnotationStub(
+        hash="a" * 64,
+        id=uuid.uuid4(),
+        source=AnnotationModelSource(type="Model", id="custom_model"),
+        user_id=1,
+        date_modified=datetime.datetime.now(datetime.UTC),
+    )
+
+    # Pydantic extra allows dynamic schema IDs
+    annotations.__pydantic_extra__ = {"open/custom": [stub]}
+
+    return FileRecordDateTime(
+        hash="a" * 64,
+        date_created=datetime.datetime.now(datetime.UTC),
+        date_modified=datetime.datetime.now(datetime.UTC),
+        annotations=annotations,
+    )
+
+
+def test_get_file_annotation_success(mock_shared_client):
+    """Test directly fetching a specific annotation by ID."""
+    # Use GenericFileAnnotation as a stand-in for a real response model
+    dummy_response = GenericFileAnnotation(custom_field="hydrated_data")
+    mock_shared_client.get_file_annotation.return_value = dummy_response
+
+    result = file_api.get_file_annotation(hash_string="a" * 64, annotation_id="123")
+
+    mock_shared_client.get_file_annotation.assert_called_once_with(file_hash="a" * 64, annotation_id="123")
+    assert result == dummy_response
+
+
+def test_get_file_annotation_not_found(mock_shared_client):
+    """Test that a 404 is caught and wrapped with a clear error message."""
+    mock_not_found = NotFoundError(message="404", request_url="http://test")
+    wrapped_error = DorsalClientError(message="API Error", original_exception=mock_not_found)
+
+    mock_shared_client.get_file_annotation.side_effect = wrapped_error
+
+    with pytest.raises(DorsalClientError, match="Annotation '123' not found for file"):
+        file_api.get_file_annotation(hash_string="a" * 64, annotation_id="123")
+
+
+def test_get_latest_file_annotation_success(mock_shared_client, dummy_file_record_dt_with_stubs):
+    """Test retrieving and automatically hydrating the latest annotation."""
+    # 1. Mock the DorsalFile initialization (fetching the file record)
+    mock_shared_client.download_file_record.return_value = dummy_file_record_dt_with_stubs
+
+    # 2. Mock the stub hydration (fetching the actual annotation)
+    dummy_hydrated = GenericFileAnnotation(custom_data="full_content")
+    mock_shared_client.get_file_annotation.return_value = dummy_hydrated
+
+    result = file_api.get_latest_file_annotation(hash_string="a" * 64, schema_id="open/custom")
+
+    # Assert both network calls were made seamlessly under the hood
+    mock_shared_client.download_file_record.assert_called_once()
+    mock_shared_client.get_file_annotation.assert_called_once()
+    assert result == dummy_hydrated
+
+
+def test_get_latest_file_annotation_formatting(mock_shared_client, dummy_file_record_dt_with_stubs):
+    """Test that the hydrated data respects the 'mode' formatting argument."""
+    mock_shared_client.download_file_record.return_value = dummy_file_record_dt_with_stubs
+
+    dummy_hydrated = GenericFileAnnotation(custom_data="full_content")
+    mock_shared_client.get_file_annotation.return_value = dummy_hydrated
+
+    # Test dictionary formatting
+    result_dict = file_api.get_latest_file_annotation(hash_string="a" * 64, schema_id="open/custom", mode="dict")
+    assert isinstance(result_dict, dict)
+    assert result_dict["custom_data"] == "full_content"
+
+
+def test_get_latest_file_annotation_not_found(mock_shared_client, dummy_file_record_dt_with_stubs):
+    """Test behavior when the requested schema doesn't exist on the file."""
+    mock_shared_client.download_file_record.return_value = dummy_file_record_dt_with_stubs
+
+    with pytest.raises(NotFoundError, match="No annotations found for schema 'open/missing'"):
+        file_api.get_latest_file_annotation(hash_string="a" * 64, schema_id="open/missing")
+
+
+def test_get_file_annotations_summary(mock_shared_client, dummy_file_record_dt_with_stubs):
+    """Test retrieving a lightweight summary list of stubs."""
+    mock_shared_client.download_file_record.return_value = dummy_file_record_dt_with_stubs
+
+    result = file_api.get_file_annotations_summary(hash_string="a" * 64, schema_id="open/custom")
+
+    assert isinstance(result, list)
+    assert len(result) == 1
+
+    # Assert it returned the unhydrated summary dict from the stub
+    stub_summary = result[0]
+    assert "id" in stub_summary
+    assert "source" in stub_summary
+    assert "url" in stub_summary
+
+    # Ensure it didn't trigger a network call to hydrate
+    mock_shared_client.get_file_annotation.assert_not_called()
