@@ -141,10 +141,25 @@ class FileAnnotationStub:
             DorsalClientError: If the API call fails for any reason.
 
         """
+        from dorsal.common.exceptions import NotFoundError as DorsalClientNotFoundError
+
         client = self._parent._client or get_shared_dorsal_client()
         if self._parent.hash is None:
             raise DorsalError(f"Invalid `DorsalFile` instance: {str(self._parent)}")
-        return client.get_file_annotation(file_hash=self._parent.hash, annotation_id=str(self.id))
+
+        try:
+            return client.get_file_annotation(file_hash=self._parent.hash, annotation_id=str(self.id))
+        except DorsalClientNotFoundError as err:
+            error_msg = (
+                f"Annotation '{self.id}' could not be found on DorsalHub. "
+                f"If this annotation was recently deleted, your local file record may be stale. "
+                f"Try calling `refresh()` on the parent DorsalFile object to sync its state."
+            )
+            logger.warning(error_msg)
+
+            raise DorsalClientError(
+                message=error_msg, request_url=getattr(err, "request_url", None), original_exception=err
+            ) from err
 
     def __repr__(self) -> str:
         return f"<FileAnnotationStub id='{self.id}'>"
@@ -643,6 +658,48 @@ class DorsalFile(_DorsalFile):
             user_id = client.user_id
 
         return self.get_annotations(schema_id=schema_id, user_id=user_id)
+
+    def get_latest_annotation(
+        self,
+        schema_id: str,
+        source_id: str | None = None,
+        user_id: int | None = None,
+    ) -> (
+        FileAnnotationStub
+        | PDFValidationModel
+        | MediaInfoValidationModel
+        | EbookValidationModel
+        | OfficeDocumentValidationModel
+        | None
+    ):
+        """
+        Retrieves the single latest annotation for this file by schema_id.
+
+        This method sorts results by `date_modified` (descending) and returns the most recent one.
+
+        Args:
+            schema_id: The unique identifier of the dataset/schema.
+            source_id: Optional. Filter by source ID before determining the latest.
+            user_id: Optional. Filter annotations by the creator's User ID.
+
+        Returns:
+            The latest matching annotation/stub, or None if no matches found.
+        """
+        results = self.get_annotations(schema_id=schema_id, source_id=source_id, user_id=user_id)
+
+        if not results:
+            return None
+
+        try:
+            sorted_results = sorted(
+                results,
+                key=lambda x: getattr(x, "date_modified", datetime.datetime.min),
+                reverse=True,
+            )
+            return sorted_results[0]
+        except Exception as err:  # pragma: no cover
+            logger.warning("Failed to sort by date_modified - %s", err)
+            return results[0]
 
     def set_validation_hash(self, validation_hash: str) -> None:
         """Sets the BLAKE3 validation hash, potentially upgrading the model.

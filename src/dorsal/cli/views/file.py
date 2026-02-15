@@ -44,18 +44,20 @@ def _get_max_key_width(data: Dict, indent_level: int = 0, display_fields: set | 
     return max_width
 
 
-def _build_dynamic_table(
-    table: Table, data: Any, level: int = 0, is_stub: bool = False, display_fields: set | None = None
+def _build_annotation_table(
+    key: str,
+    table: Table,
+    data: dict | list[dict],
+    level: int = 0,
+    is_stub: bool = False,
+    display_fields: set | None = None,
 ):
-    """
-    Recursively builds a rich Table from nested dictionaries or lists.
-    Renders annotation stubs in a simplified format.
-    """
+    """Recursive. Renders annotation stubs in a simplified format."""
     indent = "  " * level
 
     if isinstance(data, dict):
         if is_stub:
-            source = data.get("source", {})
+            source: dict = data.get("source", {})
             source_type = source.get("type", "none")
             source_id = source.get("id", "none")
 
@@ -63,6 +65,10 @@ def _build_dynamic_table(
             if date_mod := data.get("date_modified"):
                 dt_obj = datetime.datetime.fromisoformat(date_mod.replace("Z", "+00:00"))
                 table.add_row(f"{indent}Modified:", dt_obj.strftime("%Y-%m-%d %H:%M"))
+
+            annotation_id = data.get("id")
+            if annotation_id:
+                table.add_row(f"{indent}ID:", annotation_id)
 
             if data.get("url") and data.get("id"):
                 file_hash = data["url"].split("/")[2]
@@ -84,7 +90,7 @@ def _build_dynamic_table(
 
                 if isinstance(value, dict):
                     table.add_row(key_text, "")
-                    _build_dynamic_table(table, value, level + 1, display_fields=display_fields)
+                    _build_annotation_table(key, table, value, level + 1, display_fields=display_fields)
 
                 elif isinstance(value, list):
                     if all(not isinstance(item, (dict, list)) for item in value):
@@ -92,14 +98,14 @@ def _build_dynamic_table(
                         table.add_row(key_text, value_str)
                     else:
                         table.add_row(key_text, "")
-                        _build_dynamic_table(table, value, level + 1, display_fields=display_fields)
+                        _build_annotation_table(key, table, value, level + 1, display_fields=display_fields)
 
                 else:
                     table.add_row(key_text, str(value))
 
     elif isinstance(data, list):
         for item in data:
-            _build_dynamic_table(table, item, level, is_stub=is_stub, display_fields=display_fields)
+            _build_annotation_table(key, table, item, level, is_stub=is_stub, display_fields=display_fields)
 
 
 def create_file_info_panel(
@@ -230,7 +236,9 @@ def create_file_info_panel(
             title_part = key.split("/")[-1]
             anno_title = f"{title_part.replace('_', ' ').title()} Info"
 
-            renderables.append(Text.from_markup(f"[{palette['section_title']}]📊 {anno_title}[/]"))
+            renderables.append(
+                Text.from_markup(f"[{palette['section_title']}]✏️ {anno_title}[/][{palette['key']}] → {key}[/]")
+            )
 
             if is_stub:
                 for i, item in enumerate(items_to_render):
@@ -243,7 +251,7 @@ def create_file_info_panel(
                     annotation_table = Table.grid(padding=(0, 1, 0, 2), expand=False)
                     annotation_table.add_column(style=palette["key"], justify="right", width=12)
                     annotation_table.add_column(style=palette["primary_value"])
-                    _build_dynamic_table(table=annotation_table, data=item, is_stub=True)
+                    _build_annotation_table(key=key, table=annotation_table, data=item, is_stub=True)
                     renderables.append(annotation_table)
             else:
                 record_to_render = items_to_render[0].get("record", items_to_render[0])
@@ -255,7 +263,9 @@ def create_file_info_panel(
                 annotation_table = Table(box=None, show_header=False, padding=(0, 1))
                 annotation_table.add_column(style=palette["key"], justify="right", min_width=max_width + 2)
                 annotation_table.add_column(style=palette["primary_value"])
-                _build_dynamic_table(table=annotation_table, data=record_to_render, display_fields=display_fields)
+                _build_annotation_table(
+                    key=key, table=annotation_table, data=record_to_render, display_fields=display_fields
+                )
                 renderables.append(annotation_table)
 
             renderables.append(Text(""))

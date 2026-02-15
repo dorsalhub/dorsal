@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from rich.progress import Progress
     from dorsal.client import DorsalClient
     from dorsal.client.validators import (
+        FileAnnotationResponse,
         FileDeleteResponse,
         FileIndexResponse,
         FileTagResponse,
@@ -102,6 +103,9 @@ __all__ = [
     "make_media_type_dependency",
     "make_file_size_dependency",
     "make_file_name_dependency",
+    "get_file_annotation",
+    "get_latest_file_annotation",
+    "get_file_annotations_summary",
 ]
 
 logger = logging.getLogger(__name__)
@@ -2289,3 +2293,196 @@ def generate_html_directory_report(
         if isinstance(e, (DorsalError, FileNotFoundError)):
             raise
         raise DorsalError(f"Could not generate HTML dashboard for {dir_path}: {e}") from e
+
+
+@overload
+def get_file_annotation(
+    hash_string: str,
+    annotation_id: str,
+    *,
+    mode: Literal["pydantic"],
+    api_key: str | None = None,
+) -> "FileAnnotationResponse": ...
+
+
+@overload
+def get_file_annotation(
+    hash_string: str,
+    annotation_id: str,
+    *,
+    mode: Literal["dict"],
+    api_key: str | None = None,
+) -> dict[str, Any]: ...
+
+
+@overload
+def get_file_annotation(
+    hash_string: str,
+    annotation_id: str,
+    *,
+    mode: Literal["json"],
+    api_key: str | None = None,
+) -> str: ...
+
+
+def get_file_annotation(
+    hash_string: str,
+    annotation_id: str,
+    *,
+    mode: Literal["pydantic", "dict", "json"] = "pydantic",
+    api_key: str | None = None,
+) -> "FileAnnotationResponse | dict[str, Any] | str":
+    """
+    Fetches a specific, fully-hydrated annotation from DorsalHub by its exact ID.
+
+    Args:
+        hash_string (str): The hash of the file record.
+        annotation_id (str): The specific 24-character UUID of the annotation.
+        mode (Literal["pydantic", "dict", "json"]): The desired return format.
+        api_key (str, optional): An API key for this request.
+
+    Returns:
+        The fully hydrated annotation in the requested format.
+    """
+    from dorsal.session import get_shared_dorsal_client
+    from dorsal.client import DorsalClient
+
+    effective_client: DorsalClient = get_shared_dorsal_client()
+    if api_key:
+        effective_client = DorsalClient(api_key=api_key)
+
+    logger.debug("Fetching exact annotation '%s' for file '%s'", annotation_id, hash_string)
+
+    try:
+        annotation = effective_client.get_file_annotation(file_hash=hash_string, annotation_id=annotation_id)
+
+        if mode == "pydantic":
+            return annotation
+        if mode == "dict":
+            return annotation.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if mode == "json":
+            return annotation.model_dump_json(indent=2, by_alias=True, exclude_none=True)
+
+        raise ValueError(f"Invalid mode: '{mode}'.")
+
+    except DorsalClientError as err:
+        if isinstance(err.original_exception, NotFoundError):
+            err.message = f"Annotation '{annotation_id}' not found for file '{hash_string}'."
+        raise
+    except Exception as err:
+        raise DorsalError(f"Unexpected error fetching annotation '{annotation_id}': {err}") from err
+
+
+@overload
+def get_latest_file_annotation(
+    hash_string: str,
+    schema_id: str,
+    *,
+    mode: Literal["pydantic"],
+    api_key: str | None = None,
+) -> "FileAnnotationResponse | Any": ...
+
+
+@overload
+def get_latest_file_annotation(
+    hash_string: str,
+    schema_id: str,
+    *,
+    mode: Literal["dict"],
+    api_key: str | None = None,
+) -> dict[str, Any]: ...
+
+
+@overload
+def get_latest_file_annotation(
+    hash_string: str,
+    schema_id: str,
+    *,
+    mode: Literal["json"],
+    api_key: str | None = None,
+) -> str: ...
+
+
+def get_latest_file_annotation(
+    hash_string: str,
+    schema_id: str,
+    *,
+    mode: Literal["pydantic", "dict", "json"] = "pydantic",
+    api_key: str | None = None,
+) -> "BaseModel | dict[str, Any] | str":
+    """
+    Fetches the single most recent annotation for a given schema ID.
+
+    This function automatically hydrates the remote annotation data so you
+    don't have to manually download it.
+
+    Args:
+        hash_string (str): The hash of the file record.
+        schema_id (str): The schema identifier (e.g., 'open/classification').
+        mode (Literal["pydantic", "dict", "json"]): The desired return format.
+        api_key (str, optional): An API key for this request.
+    """
+    from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub
+    from dorsal.session import get_shared_dorsal_client
+
+    if api_key:
+        from dorsal.client import DorsalClient
+
+        effective_client = DorsalClient(api_key=api_key)
+    else:
+        effective_client = get_shared_dorsal_client()
+
+    try:
+        d_file = DorsalFile(hash_string, client=effective_client)
+        stub = d_file.get_latest_annotation(schema_id=schema_id)
+
+        if not stub:
+            raise NotFoundError(f"No annotations found for schema '{schema_id}' on file '{hash_string}'.")
+
+        hydrated_data: BaseModel
+        if isinstance(stub, FileAnnotationStub):
+            hydrated_data = stub.download()
+        else:
+            hydrated_data = stub
+
+        if mode == "pydantic":
+            return hydrated_data
+        if mode == "dict":
+            return hydrated_data.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if mode == "json":
+            return hydrated_data.model_dump_json(indent=2, by_alias=True, exclude_none=True)
+
+        raise ValueError(f"Invalid mode: '{mode}'.")
+
+    except DorsalClientError:
+        raise
+    except Exception as err:
+        raise DorsalError(f"Unexpected error fetching latest '{schema_id}' annotation: {err}") from err
+
+
+def get_file_annotations_summary(
+    hash_string: str,
+    schema_id: str,
+    *,
+    api_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Retrieves a lightweight summary of all annotations for a given schema.
+
+    This returns unhydrated metadata (ID, source, dates). To get the full
+    content of a specific annotation, pass its ID to `get_file_annotation`.
+    """
+    from dorsal.file.dorsal_file import DorsalFile
+    from dorsal.session import get_shared_dorsal_client
+
+    if api_key:
+        from dorsal.client import DorsalClient
+
+        client = DorsalClient(api_key=api_key)
+    else:
+        client = get_shared_dorsal_client()
+
+    d_file = DorsalFile(hash_string, client=client)
+    stubs = d_file.get_annotations(schema_id=schema_id)
+
+    return [stub.summary() if hasattr(stub, "summary") else stub.model_dump(mode="json") for stub in stubs]

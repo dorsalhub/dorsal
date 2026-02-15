@@ -34,6 +34,8 @@ from dorsal.cli.config_app import theme_app as theme_app_
 from dorsal.cli.search_app import search_and_display
 from dorsal.cli.file_app.identify_cmd import identify_file_cmd
 from dorsal.cli.record_app.search_cmd import search_record
+from dorsal.cli.model_app.install_model_cmd import install_model
+from dorsal.cli.model_app.run_model_cmd import run_model
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +181,8 @@ def id_alias(
 
 
 app.command(name="search", help="Search DorsalHub file metadata.")(search_record)
+app.command(name="install")(install_model)
+app.command(name="run")(run_model)
 
 app.add_typer(auth_app_, name="auth")
 app.add_typer(file_app_, name="file")

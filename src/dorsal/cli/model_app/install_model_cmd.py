@@ -30,7 +30,7 @@ def install_model(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip the safety confirmation prompt.")] = False,
 ):
     """
-    Install a model from the Registry, Git, or a local folder.
+    Install a model from DorsalHub or a local folder.
 
     This command runs `pip install` and then automatically registers the model
     into your dorsal.toml configuration.
