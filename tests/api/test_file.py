@@ -776,6 +776,7 @@ def test_get_file_annotations_summary(mock_shared_client, dummy_file_record_dt_w
 
 # --- Unhappy paths for identify_file ---
 
+
 @patch("dorsal.api.file.get_sha256_hash")
 def test_identify_file_quick_hash_collision(mock_sha256, mock_shared_client, tmp_path):
     """Test that a ConflictError on a quick hash falls back to SHA-256."""
@@ -783,7 +784,7 @@ def test_identify_file_quick_hash_collision(mock_sha256, mock_shared_client, tmp
     file.write_bytes(b"\0" * (32 * 1024 * 1024))  # 32 MiB file to trigger quick hash
 
     expected_record = MockFileRecord(hash_value="sha256-hash-value", name="large_file.bin")
-    
+
     # First call (QUICK) raises ConflictError, second call (SHA-256) succeeds
     mock_shared_client.download_file_record.side_effect = [
         ConflictError("Collision detected"),
@@ -825,6 +826,7 @@ def test_identify_file_unexpected_error(mock_shared_client, tmp_path):
 
 # --- Unhappy paths for get_dorsal_file_record ---
 
+
 @pytest.mark.parametrize("invalid_hash", ["", "   ", None])
 def test_get_dorsal_file_record_empty_hash(invalid_hash, mock_shared_client):
     """Test that empty or whitespace-only hashes raise a ValueError."""
@@ -837,7 +839,7 @@ def test_get_dorsal_file_record_not_found(mock_shared_client):
     """Test that NotFoundError is caught and context is added to the message."""
     mock_not_found = NotFoundError(message="Original 404", request_url="http://test")
     wrapped_error = DorsalClientError(message="API Error", original_exception=mock_not_found)
-    
+
     mock_shared_client.download_file_record.side_effect = wrapped_error
 
     with pytest.raises(DorsalClientError, match="File not found in 'Agnostic.*' scope for hash 'missing_hash'"):
@@ -861,6 +863,7 @@ def test_get_dorsal_file_record_invalid_mode(mock_shared_client):
 
 
 # --- Unhappy paths for get_file_annotation ---
+
 
 def test_get_file_annotation_generic_client_error(mock_shared_client):
     """Test that a non-404 DorsalClientError is re-raised directly."""
@@ -889,6 +892,7 @@ def test_get_file_annotation_invalid_mode(mock_shared_client):
 
 # --- Unhappy paths for get_latest_file_annotation ---
 
+
 @patch("dorsal.file.dorsal_file.DorsalFile")
 def test_get_latest_file_annotation_generic_client_error(mock_dorsal_file_cls, mock_shared_client):
     """Test that DorsalClientError propagates up."""
@@ -913,7 +917,7 @@ def test_get_latest_file_annotation_unexpected_error(mock_dorsal_file_cls, mock_
 def test_get_latest_file_annotation_invalid_mode(mock_dorsal_file_cls, mock_shared_client):
     """Test that an invalid mode raises a ValueError."""
     mock_instance = mock_dorsal_file_cls.return_value
-    
+
     # We just need it to return something truthy to pass the 404 check
     mock_instance.get_latest_annotation.return_value = GenericFileAnnotation()
 

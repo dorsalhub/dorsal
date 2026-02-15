@@ -2455,6 +2455,7 @@ def get_latest_file_annotation(
 
     if api_key:
         from dorsal.client import DorsalClient
+
         effective_client = DorsalClient(api_key=api_key)
     else:
         effective_client = get_shared_dorsal_client()
