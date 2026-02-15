@@ -15,7 +15,8 @@
 import datetime
 import pytest
 from rich.console import Console
-from dorsal.cli.views.file import create_file_info_panel
+from rich.table import Table
+from dorsal.cli.views.file import create_file_info_panel, _build_annotation_table
 
 DUMMY_FILE_RECORD = {
     "hash": "a" * 64,
@@ -122,3 +123,126 @@ def test_create_file_info_panel_minimal_data():
     output = capture.get()
     assert "SHA-256" in output
     assert "No tags found" in output
+
+
+def _render_table_to_string(table: Table) -> str:
+    """Helper to render a Rich Table to a string for assertion."""
+    console = Console()
+    with console.capture() as capture:
+        console.print(table)
+    return capture.get()
+
+
+def test_build_annotation_table_stub_full():
+    """Test stub rendering with all expected fields."""
+    table = Table()
+    table.add_column("Key")
+    table.add_column("Value")
+
+    stub_data = {
+        "source": {"type": "manual", "id": "user_42"},
+        "date_modified": "2024-05-20T14:30:00Z",
+        "id": "anno_123",
+        "url": "api/v1/somehash/annotations",
+    }
+
+    _build_annotation_table("test_key", table, stub_data, is_stub=True)
+    output = _render_table_to_string(table)
+
+    assert "manual (user_42)" in output
+    assert "2024-05-20 14:30" in output
+    assert "anno_123" in output
+    assert "dorsal annotation get somehash anno_123" in output
+
+
+def test_build_annotation_table_stub_minimal():
+    """Test stub rendering with missing optional fields."""
+    table = Table()
+    table.add_column("Key")
+    table.add_column("Value")
+
+    stub_data = {}
+
+    _build_annotation_table("test_key", table, stub_data, is_stub=True)
+    output = _render_table_to_string(table)
+
+    assert "none (none)" in output
+    assert "Modified" not in output
+    assert "To View" not in output
+
+
+def test_build_annotation_table_dict_logic():
+    """Test nested dicts, lists, skipped keys, and empty values."""
+    table = Table()
+    table.add_column("Key")
+    table.add_column("Value")
+
+    data = {
+        "file_hash": "this_should_be_skipped",
+        "empty_string": "",
+        "none_value": None,
+        "empty_list": [],
+        "simple_key": "simple_value",
+        "nested_dict": {"inner_key": "inner_value"},
+        "simple_list": [1, 2, "three"],
+        "complex_list": [{"list_dict_key": "val1"}, {"list_dict_key2": "val2"}],
+    }
+
+    _build_annotation_table("test_key", table, data, is_stub=False)
+    output = _render_table_to_string(table)
+
+    assert "this_should_be_skipped" not in output
+    assert "empty_string" not in output
+    assert "none_value" not in output
+    assert "empty_list" not in output
+
+    assert "simple_key:" in output
+    assert "simple_value" in output
+
+    assert "nested_dict:" in output
+    assert "inner_key:" in output
+    assert "inner_value" in output
+
+    assert "simple_list:" in output
+    assert "1, 2, three" in output
+
+    assert "complex_list:" in output
+    assert "list_dict_key:" in output
+    assert "val1" in output
+    assert "list_dict_key2:" in output
+    assert "val2" in output
+
+
+def test_build_annotation_table_display_fields():
+    """Test that display_fields correctly filters out unwanted keys recursively."""
+    table = Table()
+    table.add_column("Key")
+    table.add_column("Value")
+
+    data = {"keep_me": "yes", "drop_me": "no", "nested": {"keep_inner": "yes", "drop_inner": "no"}}
+
+    _build_annotation_table("test_key", table, data, is_stub=False, display_fields={"keep_me", "nested", "keep_inner"})
+    output = _render_table_to_string(table)
+
+    assert "keep_me:" in output
+    assert "drop_me:" not in output
+    assert "nested:" in output
+    assert "keep_inner:" in output
+    assert "drop_inner:" not in output
+
+
+def test_build_annotation_table_list_root():
+    """Test when the root data passed in is a list instead of a dict."""
+    table = Table()
+    table.add_column("Key")
+    table.add_column("Value")
+
+    data = [{"root_list_item1": "valA"}, {"root_list_item2": "valB"}]
+
+    _build_annotation_table("test_key", table, data, is_stub=False)
+    output = _render_table_to_string(table)
+
+    assert "root_list_item1:" in output
+    assert "valA" in output
+    assert "root_list_item2:" in output
+    assert "valB" in output

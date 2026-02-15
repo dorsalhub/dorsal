@@ -383,6 +383,7 @@ def get_dorsal_file_record(
 
     """
     from dorsal.session import get_shared_dorsal_client
+    from dorsal.client import DorsalClient
 
     if public is True:
         private = False
@@ -398,8 +399,6 @@ def get_dorsal_file_record(
 
     effective_client = get_shared_dorsal_client()
     if api_key:
-        from dorsal.client import DorsalClient
-
         log_message_context = "using temporary client with provided API key"
         effective_client = DorsalClient(api_key=api_key)
 
@@ -1052,11 +1051,10 @@ def add_tag_to_file(
     """
     from dorsal.session import get_shared_dorsal_client
     from dorsal.file.validators.file_record import NewFileTag
+    from dorsal.client import DorsalClient
 
     effective_client = get_shared_dorsal_client()
     if api_key:
-        from dorsal.client import DorsalClient
-
         effective_client = DorsalClient(api_key=api_key)
 
     try:
@@ -1077,11 +1075,10 @@ def remove_tag_from_file(hash_string: str, tag_id: str, api_key: str | None = No
         api_key (str, optional): An API key for this request.
     """
     from dorsal.session import get_shared_dorsal_client
+    from dorsal.client import DorsalClient
 
     effective_client = get_shared_dorsal_client()
     if api_key:
-        from dorsal.client import DorsalClient
-
         effective_client = DorsalClient(api_key=api_key)
 
     try:
@@ -2452,10 +2449,9 @@ def get_latest_file_annotation(
 
     from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub
     from dorsal.session import get_shared_dorsal_client
+    from dorsal.client import DorsalClient
 
     if api_key:
-        from dorsal.client import DorsalClient
-
         effective_client = DorsalClient(api_key=api_key)
     else:
         effective_client = get_shared_dorsal_client()
@@ -2500,10 +2496,9 @@ def get_file_annotations_summary(
     """
     from dorsal.file.dorsal_file import DorsalFile
     from dorsal.session import get_shared_dorsal_client
+    from dorsal.client import DorsalClient
 
     if api_key:
-        from dorsal.client import DorsalClient
-
         client = DorsalClient(api_key=api_key)
     else:
         client = get_shared_dorsal_client()
