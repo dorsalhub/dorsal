@@ -88,6 +88,10 @@ exclude = ["dist/", "build/", "venv/", ".venv/"]
 mypy_path = "src"
 warn_unreachable = true
 
+[[tool.mypy.overrides]]
+module = "dorsal_adapters.*"
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
     "black>=24.10.0",

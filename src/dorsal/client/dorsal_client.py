@@ -128,9 +128,6 @@ class DorsalClientSession(requests.Session):
         return super().send(request, *args, **kwargs)
 
 
-print("Look at me too! I'm also being imported for no good reason!")
-
-
 class DorsalClient:
     """The low-level client for interacting with the DorsalHub API.
 

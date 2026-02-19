@@ -66,9 +66,6 @@ def make_dorsalhub_file_url(file_hash: str) -> str:
     return f"{base}/file/{f_hash}"
 
 
-print("Look at me! I'm being imported for no good reason!")
-
-
 class MetadataReader:
     """A high-level utility for processing local files and indexing metadata.
 
