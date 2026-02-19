@@ -61,9 +61,9 @@ def mock_scan_cmd(mocker):
     mock_save_json = mocker.patch("dorsal.cli.file_app.scan_cmd._save_json_report")
     mock_save_html = mocker.patch("dorsal.cli.file_app.scan_cmd._save_html_report")
 
-    mock_create_panel = mocker.patch("dorsal.cli.file_app.scan_cmd.create_file_info_panel")
+    mock_create_panel = mocker.patch("dorsal.cli.views.file.create_file_info_panel")
 
-    mock_local_file_class = mocker.patch("dorsal.cli.file_app.scan_cmd.LocalFile")
+    mock_local_file_class = mocker.patch("dorsal.file.dorsal_file.LocalFile")
     mock_instance = mock_local_file_class.return_value
 
     mock_instance.to_dict.return_value = MOCK_FILE_RECORD
@@ -87,7 +87,7 @@ def test_scan_file_success_panel_output(mock_rich_console, mock_scan_cmd):
 
     assert result.exit_code == 0, result.output
     mock_scan_cmd["local_file_class"].assert_called_once_with(
-        file_path=str(pathlib.Path(TEST_FILE_PATH)), use_cache=False, overwrite_cache=False, follow_symlinks=True
+        file_path=str(pathlib.Path(TEST_FILE_PATH)), use_cache=True, overwrite_cache=False, follow_symlinks=True
     )
 
     # In interactive mode, no report should be saved
@@ -253,7 +253,7 @@ def test_save_json_report_os_error(mock_open, mock_mkdir, mock_rich_console, cap
     assert "Failed to save JSON report" in caplog.text
 
 
-@patch("dorsal.cli.file_app.scan_cmd.generate_html_file_report")
+@patch("dorsal.api.file.generate_html_file_report")
 def test_save_html_report_success(mock_generate_html, mock_rich_console, mocker):
     """Tests that the HTML report is generated and saved correctly."""
     mock_local_file = MagicMock()

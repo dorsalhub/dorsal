@@ -50,9 +50,11 @@ MOCK_DUPLICATES_RESULT = {
 @pytest.fixture
 def mock_duplicates_cmd(mocker):
     """Mocks backend dependencies for the `dir duplicates` command."""
+    import dorsal.api.file
+
     mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=True)
 
-    mock_find_dupes = mocker.patch.object(duplicates_dir_cmd, "find_duplicates", return_value=MOCK_DUPLICATES_RESULT)
+    mock_find_dupes = mocker.patch.object(dorsal.api.file, "find_duplicates", return_value=MOCK_DUPLICATES_RESULT)
 
     mock_save_report = mocker.patch.object(duplicates_dir_cmd, "_save_duplicates_report")
 

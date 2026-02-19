@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Union, List
+from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -24,41 +25,56 @@ from rich.bar import Bar
 from rich.rule import Rule
 from rich.json import JSON
 
-from dorsal.file.validators.file_record import Annotation, AnnotationGroup
+if TYPE_CHECKING:
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
+    from dorsal.client.validators import FileAnnotationResponse, FileAnnotationGroupResponse
 
 
 def create_model_result_panel(
-    result: Union[Annotation, AnnotationGroup],
+    result: Annotation | AnnotationGroup | FileAnnotationResponse | FileAnnotationGroupResponse,
     target: str,
     file_name: str,
-    palette: Dict[str, str],
+    palette: dict[str, str],
 ) -> Panel:
     """
     Dispatcher that renders a rich Panel for a model run result.
     """
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
+    from dorsal.client.validators import FileAnnotationResponse, FileAnnotationGroupResponse
 
+    data: dict[str, Any] | None = None
+    group_info = ""
+
+    # 1. Safely and strictly extract data as a dictionary depending on the response model
     if isinstance(result, AnnotationGroup):
-        record = result.annotations[0].record
+        if result.annotations and result.annotations[0].record:
+            data = result.annotations[0].record.model_dump()
         group_info = f" (Group of {len(result.annotations)})"
-    else:
-        record = result.record
-        group_info = ""
 
-    data: Union[Dict[str, Any], None] = None
+    elif isinstance(result, FileAnnotationGroupResponse):
+        if result.group.annotations and result.group.annotations[0].record:
+            data = result.group.annotations[0].record.model_dump()
+        group_info = f" (Group of {len(result.group.annotations)})"
 
-    if record is not None:
-        data = record.model_dump()
+    elif isinstance(result, FileAnnotationResponse):
+        data = result.record
+
+    elif isinstance(result, Annotation):
+        if result.record:
+            data = result.record.model_dump()
 
     content: RenderableType
     schema_type: str
 
-    if data is None:
+    # 2. Handle missing data
+    if not data:
         return Panel(
             Text("No record data returned.", style=palette.get("error", "red")),
             title=f"[{palette.get('panel_title_error', 'red')}]✨ Empty Result{group_info}[/]",
             border_style=palette.get("panel_border_error", "red"),
         )
 
+    # 3. Route to the correct renderer
     if "vector" in data:
         content = _render_embedding(data, palette)
         schema_type = "Embedding"
@@ -125,7 +141,7 @@ def _score_bar(score: float, width: int = 20) -> Bar:
     return Bar(size=width, begin=0, end=score, color=color, bgcolor="bright_black")
 
 
-def _render_classification(data: Dict, palette: Dict) -> RenderableType:
+def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     table = Table(box=None, padding=(0, 2), show_header=True)
     table.add_column("Label", style="bold white")
     table.add_column("Score", justify="right")
@@ -140,14 +156,14 @@ def _render_classification(data: Dict, palette: Dict) -> RenderableType:
     if len(labels) > 10:
         table.add_row(f"... and {len(labels) - 10} more", "", "")
 
-    meta: List[RenderableType] = []
+    meta: list[RenderableType] = []
     if desc := data.get("score_explanation"):
         meta.append(Text(f"Score: {desc}", style="dim italic"))
 
     return Group(table, *meta)
 
 
-def _render_object_detection(data: Dict, palette: Dict) -> RenderableType:
+def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     objects = data.get("objects", [])
 
     table = Table(box=None, padding=(0, 2), show_header=True)
@@ -167,7 +183,7 @@ def _render_object_detection(data: Dict, palette: Dict) -> RenderableType:
     return Group(Text(f"Found {len(objects)} objects.", style=palette.get("info", "white")), Text(""), table)
 
 
-def _render_entity_extraction(data: Dict, palette: Dict) -> RenderableType:
+def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     entities = data.get("entities", [])
 
     table = Table(box=None, padding=(0, 2), show_header=True)
@@ -183,8 +199,8 @@ def _render_entity_extraction(data: Dict, palette: Dict) -> RenderableType:
     return Group(Text(f"Extracted {len(entities)} entities.", style=palette.get("info", "white")), Text(""), table)
 
 
-def _render_audio_transcription(data: Dict, palette: Dict) -> RenderableType:
-    renderables: List[RenderableType] = []
+def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+    renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
     info_grid.add_column(style="dim")
@@ -221,8 +237,8 @@ def _render_audio_transcription(data: Dict, palette: Dict) -> RenderableType:
     return Group(*renderables)
 
 
-def _render_llm_output(data: Dict, palette: Dict) -> RenderableType:
-    renderables: List[RenderableType] = []
+def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+    renderables: list[RenderableType] = []
 
     model_name = data.get("model", "Unknown Model")
     renderables.append(Text(f"Model: {model_name}", style="bold cyan"))
@@ -234,10 +250,10 @@ def _render_llm_output(data: Dict, palette: Dict) -> RenderableType:
 
     response = data.get("response_data", "")
     response_render: RenderableType
-    if response.strip().startswith("{") or response.strip().startswith("["):
+    if isinstance(response, str) and (response.strip().startswith("{") or response.strip().startswith("[")):
         response_render = Syntax(response, "json", word_wrap=True)
     else:
-        response_render = Text(response)
+        response_render = Text(str(response))
 
     renderables.append(Panel(response_render, title="Response", border_style="green"))
 
@@ -249,7 +265,7 @@ def _render_llm_output(data: Dict, palette: Dict) -> RenderableType:
     return Group(*renderables)
 
 
-def _render_embedding(data: Dict, palette: Dict) -> RenderableType:
+def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     vector = data.get("vector", [])
     dim = len(vector)
 
@@ -269,17 +285,17 @@ def _render_embedding(data: Dict, palette: Dict) -> RenderableType:
     return Group(grid, Text(""), Panel(vec_preview, title="Vector Data", border_style="dim"))
 
 
-def _render_document_extraction(data: Dict, palette: Dict) -> RenderableType:
+def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     blocks = data.get("blocks", [])
 
-    stats: Dict[str, int] = {}
+    stats: dict[str, int] = {}
     for b in blocks:
         btype = b.get("block_type", "unknown")
         stats[btype] = stats.get(btype, 0) + 1
 
     summary = ", ".join(f"{k}: {v}" for k, v in stats.items())
 
-    renderables: List[RenderableType] = [
+    renderables: list[RenderableType] = [
         Text(f"Extraction Type: {data.get('extraction_type')}", style="bold"),
         Text(f"Summary: {summary}", style="dim"),
         Text(""),
@@ -301,7 +317,7 @@ def _render_document_extraction(data: Dict, palette: Dict) -> RenderableType:
     return Group(*renderables)
 
 
-def _render_geolocation(data: Dict, palette: Dict) -> RenderableType:
+def _render_geolocation(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     geo = data.get("geometry", {})
     props = data.get("properties", {})
 
@@ -316,7 +332,7 @@ def _render_geolocation(data: Dict, palette: Dict) -> RenderableType:
     grid.add_row("Coordinates", str(coords))
 
     if props:
-        renderables: List[RenderableType] = [grid, Rule(style="dim"), Text("Properties", style="bold")]
+        renderables: list[RenderableType] = [grid, Rule(style="dim"), Text("Properties", style="bold")]
         for k, v in props.items():
             if v:
                 renderables.append(Text(f"{k}: {v}"))
@@ -325,7 +341,7 @@ def _render_geolocation(data: Dict, palette: Dict) -> RenderableType:
     return grid
 
 
-def _render_regression(data: Dict, palette: Dict) -> RenderableType:
+def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     points = data.get("points", [])
     target = data.get("target", "Unknown Target")
     unit = data.get("unit", "")
@@ -349,7 +365,7 @@ def _render_regression(data: Dict, palette: Dict) -> RenderableType:
     return Group(Text(f"Regression Target: {target}", style="bold"), Text(""), table)
 
 
-def _render_generic(data: Dict, palette: Dict) -> RenderableType:
+def _render_generic(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     kv_data = data.get("data", {})
     desc = data.get("description", "Generic Data")
 

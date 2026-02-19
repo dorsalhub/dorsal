@@ -31,6 +31,7 @@ from dorsal.cli.model_app import app as model_app_
 from dorsal.cli.record_app import app as record_app_
 from dorsal.cli.collection_app import app as collection_app_
 from dorsal.cli.config_app import theme_app as theme_app_
+from dorsal.cli.annotation_app import app as annotation_app_
 from dorsal.cli.search_app import search_and_display
 from dorsal.cli.file_app.identify_cmd import identify_file_cmd
 from dorsal.cli.record_app.search_cmd import search_record
@@ -186,6 +187,7 @@ app.command(name="run")(run_model)
 
 app.add_typer(auth_app_, name="auth")
 app.add_typer(file_app_, name="file")
+app.add_typer(annotation_app_, name="annotation")
 app.add_typer(dir_app_, name="dir")
 app.add_typer(record_app_, name="record")
 app.add_typer(collection_app_, name="collection")

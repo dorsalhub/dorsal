@@ -28,7 +28,6 @@ from rich.markup import escape
 from rich.text import Text
 import logging
 
-from dorsal.file.utils.size import human_filesize
 from dorsal.common import constants
 
 if TYPE_CHECKING:
@@ -378,6 +377,7 @@ def _save_csv_report(
 def _print_directory_summary_panel(collection_info: dict, palette: dict):
     """Prints a rich summary panel of the directory's contents."""
     from dorsal.common.cli import get_rich_console
+    from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
 
@@ -433,6 +433,7 @@ def _print_file_details_table(
 ):
     """Prints a rich, detailed table of individual files to the console."""
     from dorsal.common.cli import get_rich_console
+    from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
 

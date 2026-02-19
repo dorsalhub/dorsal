@@ -24,7 +24,7 @@ from rich.text import Text
 from rich.markup import escape
 
 from dorsal.common.literals import MiB
-from dorsal.file.utils.quick_hasher import QuickHasher
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ def hash_file(
         exit_cli,
     )
     from dorsal.file.hash_reader import HASH_READER
+    from dorsal.file.utils.quick_hasher import QuickHasher
 
     console = get_rich_console()
     palette = ctx.obj["palette"]

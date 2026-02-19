@@ -44,8 +44,7 @@ def run_or_install_model(
     private: bool = False,
 ) -> Annotation | AnnotationGroup:
     """
-    Resolves a model reference, auto-installs it if necessary (and if remote),
-    and executes it on a local file.
+    Resolve a model, installs if necessary, and execute it on a local file.
 
     Args:
         target: A Registry ID ('dorsalhub/whisper'), Package Name ('dorsal-whisper'),
@@ -102,10 +101,7 @@ def run_or_install_model(
 
 
 def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
-    """
-    Retrieves a ModelRunnerPipelineStep for the given package.
-    Checks the active pipeline first, then constructs from package metadata if missing.
-    """
+    """Retrieves ModelRunnerPipelineStep for the given package."""
 
     pipeline = get_model_pipeline(scope="effective")
     safe_pkg_name = canonicalize_name(package_name)
@@ -120,19 +116,14 @@ def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
 
 
 def _construct_step_from_package(package_name: str) -> ModelRunnerPipelineStep:
-    """
-    Orchestrates the construction of a pipeline step from an installed package.
-    """
+    """Orchestrate construction of a pipeline step from an installed package."""
     module_name = _resolve_module_from_package(package_name)
     config_data = _load_package_config(module_name, package_name)
     return _build_pipeline_step(config_data, module_name, package_name)
 
 
 def _resolve_module_from_package(package_name: str) -> str:
-    """
-    Resolves the Python module name for a package by inspecting 'dorsal.models' entry points.
-    Strictly enforces that the package must have a valid entry point.
-    """
+    """Resolve module name for a package by inspecting 'dorsal.models' entry points."""
     safe_pkg_name = canonicalize_name(package_name)
     eps = importlib.metadata.entry_points(group="dorsal.models")
 
@@ -147,9 +138,7 @@ def _resolve_module_from_package(package_name: str) -> str:
 
 
 def _load_package_config(module_name: str, package_name: str) -> dict[str, Any]:
-    """
-    Loads and parses the 'model_config.toml' file from the package's module resources.
-    """
+    """Load and parse 'model_config.toml' from the package's module resources."""
     try:
         resource_path = importlib.resources.files(module_name) / "model_config.toml"
         if not resource_path.is_file():
@@ -167,9 +156,7 @@ def _load_package_config(module_name: str, package_name: str) -> dict[str, Any]:
 
 
 def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_name: str) -> ModelRunnerPipelineStep:
-    """
-    Validates configuration data and constructs the ModelRunnerPipelineStep object.
-    """
+    """Validate configuration data and constructs the ModelRunnerPipelineStep object."""
     class_name = config_data.get("model_class")
     schema_id = config_data.get("schema_id")
 

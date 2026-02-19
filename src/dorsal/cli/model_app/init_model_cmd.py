@@ -14,8 +14,7 @@
 
 import logging
 import pathlib
-import re
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 

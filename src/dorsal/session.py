@@ -14,17 +14,17 @@
 
 from __future__ import annotations
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from dorsal.client.dorsal_client import DorsalClient
 from dorsal.common.auth import is_offline_mode
 from dorsal.common.exceptions import DorsalOfflineError
-from dorsal.file.cache.dorsal_cache import DorsalCache
-from dorsal.file.cache.config import get_cache_compression, get_cache_enabled
 
 logger = logging.getLogger(__name__)
 
+# Hide heavy client/cache/model imports from the runtime
 if TYPE_CHECKING:
+    from dorsal.client.dorsal_client import DorsalClient
+    from dorsal.file.cache.dorsal_cache import DorsalCache
     from dorsal.file.metadata_reader import MetadataReader
 
 _DORSAL_CLIENT: DorsalClient | None = None
@@ -39,7 +39,6 @@ def get_shared_dorsal_client(api_key: str | None = None) -> DorsalClient:
 
     Note: when passed, 'api_key' only used if shared client instance does not already exist. so if
           overriding API Key is the goal, pass it directly to the DorsalClient method as well.
-
     """
     if is_offline_mode():
         raise DorsalOfflineError(
@@ -48,6 +47,8 @@ def get_shared_dorsal_client(api_key: str | None = None) -> DorsalClient:
         )
     global _DORSAL_CLIENT
     if _DORSAL_CLIENT is None:
+        from dorsal.client.dorsal_client import DorsalClient
+
         logger.debug("Initializing shared DorsalClient instance")
         _DORSAL_CLIENT = DorsalClient(api_key=api_key)
     elif api_key is not None and _DORSAL_CLIENT.api_key != api_key:
@@ -83,6 +84,10 @@ def set_shared_cache(cache: DorsalCache) -> None:
 def get_shared_cache() -> DorsalCache:
     global _DORSAL_CACHE
     if _DORSAL_CACHE is None:
+        # Deferred imports
+        from dorsal.file.cache.dorsal_cache import DorsalCache
+        from dorsal.file.cache.config import get_cache_compression
+
         _DORSAL_CACHE = DorsalCache(use_compression=get_cache_compression())
     return _DORSAL_CACHE
 
@@ -111,6 +116,7 @@ def get_metadata_reader() -> MetadataReader:
     Returns:
         MetadataReader: The shared `MetadataReader` instance.
     """
+    # Deferred import
     from dorsal.file.metadata_reader import MetadataReader
 
     global _METADATA_READER

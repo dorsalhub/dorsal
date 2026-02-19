@@ -25,7 +25,6 @@ from rich.markup import escape
 import typer
 
 from dorsal.common import constants
-from dorsal.file.utils.size import human_filesize
 
 if TYPE_CHECKING:
     from dorsal.api.file import _DirectoryInfoResult
@@ -99,6 +98,7 @@ def info_directory(
     """
     from dorsal.api.file import get_directory_info
     from dorsal.common.cli import EXIT_CODE_ERROR, get_rich_console, exit_cli
+    from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
     palette = ctx.obj["palette"]

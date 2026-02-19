@@ -17,15 +17,8 @@ import pathlib
 import datetime
 from typing_extensions import Annotated, Optional
 
-from dorsal.common import constants
-from dorsal.common.cli import (
-    EXIT_CODE_ERROR,
-    get_rich_console,
-    exit_cli,
-    determine_use_cache_value,
-)
+
 from dorsal.common.exceptions import DorsalError
-from dorsal.api.file import generate_html_file_report
 
 
 def make_file_report(
@@ -83,6 +76,15 @@ def make_file_report(
     """
     Generates a self-contained, interactive HTML report for a single file.
     """
+    from dorsal.api.file import generate_html_file_report
+    from dorsal.common import constants
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        exit_cli,
+        determine_use_cache_value,
+    )
+
     if use_cache and skip_cache:
         exit_cli(
             code=EXIT_CODE_ERROR,

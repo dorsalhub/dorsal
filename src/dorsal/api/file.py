@@ -2375,7 +2375,6 @@ def get_file_annotation(
 
     try:
         annotation = effective_client.get_file_annotation(file_hash=hash_string, annotation_id=annotation_id)
-
         if mode == "pydantic":
             return annotation
         if mode == "dict":
@@ -2507,3 +2506,99 @@ def get_file_annotations_summary(
     stubs = d_file.get_annotations(schema_id=schema_id)
 
     return [stub.summary() if hasattr(stub, "summary") else stub.model_dump(mode="json") for stub in stubs]
+
+
+@overload
+def list_file_annotations(
+    hash_string: str,
+    *,
+    mode: Literal["pydantic"],
+    api_key: str | None = None,
+) -> dict[str, Any]: ...
+
+
+@overload
+def list_file_annotations(
+    hash_string: str,
+    *,
+    mode: Literal["dict"],
+    api_key: str | None = None,
+) -> dict[str, Any]: ...
+
+
+@overload
+def list_file_annotations(
+    hash_string: str,
+    *,
+    mode: Literal["json"],
+    api_key: str | None = None,
+) -> str: ...
+
+
+def list_file_annotations(
+    hash_string: str,
+    *,
+    mode: Literal["pydantic", "dict", "json"] = "pydantic",
+    api_key: str | None = None,
+) -> dict[str, Any] | str:
+    """
+    Retrieves all annotations attached to a file record on DorsalHub.
+
+    This function extracts the complete dictionary of annotations associated with
+    the given file hash. Multi-value annotations are returned as lightweight stubs,
+    while core/scalar annotations are returned as full records.
+
+    Example:
+        ```python
+        from dorsal.api import list_file_annotations
+
+        # Fetch all annotations as a dictionary
+        annotations = list_file_annotations("88ca4a65bb...", mode="dict")
+
+        for schema_id, items in annotations.items():
+            if isinstance(items, list):
+                print(f"Schema {schema_id} has {len(items)} stubs.")
+                for stub in items:
+                    print(f" - ID: {stub['id']}")
+        ```
+
+    Args:
+        hash_string (str): The hash of the file record.
+        mode (Literal["pydantic", "dict", "json"]): The desired return format.
+            Defaults to "pydantic".
+        api_key (str, optional): An API key for this request.
+
+    Returns:
+        Union[dict, str]: The file's annotations in the requested format.
+
+    Raises:
+        DorsalClientError: For API errors (e.g., file not found).
+        DorsalError: For other unexpected library errors.
+    """
+    import json
+
+    if mode not in ("pydantic", "dict", "json"):
+        raise ValueError(f"Invalid mode: '{mode}'.")
+
+    logger.debug("Listing annotations for file '%s' (mode=%s)", hash_string, mode)
+
+    try:
+        file_record = get_dorsal_file_record(hash_string=hash_string, mode="pydantic", api_key=api_key)
+
+        annotations = getattr(file_record, "annotations", {}) or {}
+
+        if mode == "pydantic":
+            return annotations
+
+        dict_record = file_record.model_dump(mode="json", by_alias=True, exclude_none=True)
+        dict_annotations = dict_record.get("annotations", {})
+
+        if mode == "dict":
+            return dict_annotations
+
+        if mode == "json":
+            return json.dumps(dict_annotations, indent=2, default=str, ensure_ascii=False)
+
+    except Exception as err:
+        logger.exception("Unexpected error listing annotations for file '%s' - %s", hash_string, err)
+        raise
