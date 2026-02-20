@@ -61,7 +61,7 @@ def test_get_annotation_success(mock_rich_console, mock_get_deps):
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="pydantic")
     mock_get_deps["panel"].assert_called_once_with(
-        result=mock_result, target="AudioTranscription", file_name="ID: uuid-1234", palette=DEFAULT_PALETTE
+        result=mock_result, title="AudioTranscription", file_name="ID: uuid-1234", palette=DEFAULT_PALETTE
     )
     assert mock_rich_console.print.called
 

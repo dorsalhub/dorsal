@@ -65,7 +65,7 @@ def get_annotation(
             schema_id = getattr(hydrated, "schema_id", "Annotation")
 
         panel = create_model_result_panel(
-            result=hydrated, target=schema_id, file_name=f"ID: {annotation_id}", palette=palette
+            result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", palette=palette
         )
         console.print(panel)
     except typer.Exit:

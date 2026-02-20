@@ -38,10 +38,9 @@ def render_to_string(renderable) -> str:
     return console.file.getvalue()
 
 
-def create_real_annotation(data: dict | None) -> Annotation:
+def create_real_annotation(data: dict | None, schema_id: str = "") -> Annotation:
     """Constructs a real Pydantic Annotation object."""
-
-    return Annotation(record=data, source=DUMMY_SOURCE, private=False)
+    return Annotation(record=data, source=DUMMY_SOURCE, private=False, schema_id=schema_id)
 
 
 def test_render_classification():
@@ -53,7 +52,7 @@ def test_render_classification():
             {"label": "negative", "score": 0.01},
         ],
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/classification")
     panel = create_model_result_panel(ann, "sentiment-model", "test.txt", DEFAULT_PALETTE)
 
     output = render_to_string(panel)
@@ -69,7 +68,7 @@ def test_render_llm_output():
         "response_data": "The answer is 4.",
         "generation_metadata": {"usage": {"total_tokens": 10, "prompt_tokens": 5, "completion_tokens": 5}},
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/llm-output")
     panel = create_model_result_panel(ann, "llm-task", "query.txt", DEFAULT_PALETTE)
 
     output = render_to_string(panel)
@@ -85,7 +84,7 @@ def test_render_entity_extraction():
             {"label": "GPE", "text": "London", "score": 0.85},
         ]
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/entity-extraction")
     panel = create_model_result_panel(ann, "ner-model", "doc.pdf", DEFAULT_PALETTE)
 
     output = render_to_string(panel)
@@ -107,7 +106,7 @@ def test_render_object_detection():
         ],
         "unit": "px",
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/object-detection")
     panel = create_model_result_panel(ann, "yolo", "image.jpg", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -121,7 +120,7 @@ def test_render_embedding():
         "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
         "target": "document_content",
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/embedding")
     panel = create_model_result_panel(ann, "embedder", "data.json", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -136,7 +135,7 @@ def test_render_audio_transcription():
         "text": "Hello world.",
         "segments": [{"start_time": 0.0, "end_time": 1.5, "text": "Hello", "speaker": {"id": "spk1", "name": "Alice"}}],
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/audio-transcription")
     panel = create_model_result_panel(ann, "whisper", "audio.mp3", DEFAULT_PALETTE)
 
     output = render_to_string(panel)
@@ -153,7 +152,7 @@ def test_render_document_extraction():
             {"block_type": "text", "text": "Paragraph 2", "page_number": 1, "id": "uuid-2"},
         ],
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/document-extraction")
     panel = create_model_result_panel(ann, "ocr", "scan.pdf", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -168,7 +167,7 @@ def test_render_regression():
         "unit": "C",
         "points": [{"value": 22.5, "timestamp": "2026-01-01T12:00:00Z", "statistic": "mean"}],
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/regression")
     panel = create_model_result_panel(ann, "weather-model", "sensor.log", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -183,7 +182,7 @@ def test_render_geolocation():
         "geometry": {"type": "Point", "coordinates": [-0.1278, 51.5074]},
         "properties": {"city": "London", "country": "UK"},
     }
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/geolocation")
     panel = create_model_result_panel(ann, "geocoder", "loc.txt", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -194,7 +193,7 @@ def test_render_geolocation():
 
 def test_render_generic():
     data = {"description": "Custom Statistics", "data": {"mean": 10, "std": 2, "count": 100}}
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/generic")
     panel = create_model_result_panel(ann, "stat-model", "data.csv", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -207,8 +206,9 @@ def test_render_generic():
 def test_render_annotation_group():
     data1 = {"vector": [1, 2]}
     data2 = {"vector": [3, 4]}
-    ann1 = create_real_annotation(data1)
-    ann2 = create_real_annotation(data2)
+    # Give the items the exact schema ID so the dispatcher recognizes the group type
+    ann1 = create_real_annotation(data1, schema_id="open/embedding")
+    ann2 = create_real_annotation(data2, schema_id="open/embedding")
     group = AnnotationGroup(annotations=[ann1, ann2])
 
     panel = create_model_result_panel(group, "multi-embed", "file.txt", DEFAULT_PALETTE)
@@ -220,7 +220,7 @@ def test_render_annotation_group():
 
 def test_render_fallback_raw_output():
     data = {"unexpected_field": "some_value", "random": 123}
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="unknown/schema")
     panel = create_model_result_panel(ann, "unknown-model", "test.bin", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -229,7 +229,7 @@ def test_render_fallback_raw_output():
 
 
 def test_render_empty_data():
-    ann = create_real_annotation(None)
+    ann = create_real_annotation(None, schema_id="open/generic")
     panel = create_model_result_panel(ann, "empty-model", "empty.txt", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -239,7 +239,7 @@ def test_render_empty_data():
 
 def test_panel_metadata_display():
     data = {"vector": [1]}
-    ann = create_real_annotation(data)
+    ann = create_real_annotation(data, schema_id="open/embedding")
     panel = create_model_result_panel(ann, "TARGET_ID", "FILE_NAME.ext", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
@@ -260,8 +260,8 @@ def test_render_arxiv():
         "journal_ref": "Journal of Feline AI",
         "license": "CC-BY-SA 4.0",
     }
-    ann = create_real_annotation(data)
-    panel = create_model_result_panel(ann, "dorsal/arxiv", "paper.pdf", DEFAULT_PALETTE)
+    ann = create_real_annotation(data, schema_id="dorsal/arxiv")
+    panel = create_model_result_panel(ann, "arxiv-fetcher", "paper.pdf", DEFAULT_PALETTE)
 
     output = normalize_ws(render_to_string(panel))
     assert "ArXiv Record Result" in str(panel.title)

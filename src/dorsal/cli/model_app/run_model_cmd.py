@@ -181,7 +181,7 @@ def run_model(
                 exit_cli(code=EXIT_CODE_ERROR)
             return
         else:
-            panel = create_model_result_panel(result=result, target=target, file_name=file_path.name, palette=palette)
+            panel = create_model_result_panel(result=result, title=target, file_name=file_path.name, palette=palette)
             console.print(panel)
 
     except (DorsalError, AuthError) as e:
