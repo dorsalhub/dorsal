@@ -17,9 +17,10 @@ import pytest
 import dorsal
 import dorsal.file
 
+
 def test_dorsal_init_lazy_load_branches():
     """Forces execution of every branch in dorsal.__init__.__getattr__"""
-    
+
     expected_attributes = [
         "LocalFile",
         "DorsalFile",
@@ -30,7 +31,7 @@ def test_dorsal_init_lazy_load_branches():
         "DorsalClient",
         "AnnotationModel",
     ]
-    
+
     # Hit every successful if/elif branch directly
     for attr in expected_attributes:
         loaded_obj = dorsal.__getattr__(attr)
@@ -40,14 +41,14 @@ def test_dorsal_init_lazy_load_branches():
     # Hit the AttributeError fallback
     with pytest.raises(AttributeError, match="has no attribute 'this_definitely_does_not_exist'"):
         dorsal.__getattr__("this_definitely_does_not_exist")
-        
+
     # Cover the __dir__ block
     assert "LocalFile" in dorsal.__dir__()
 
 
 def test_dorsal_file_init_lazy_load_branches():
     """Forces execution of every branch in dorsal.file.__init__.__getattr__"""
-    
+
     expected_attributes = [
         "ModelRunner",
         "MetadataReader",
@@ -62,7 +63,7 @@ def test_dorsal_file_init_lazy_load_branches():
         "index_directory",
         "generate_html_file_report",
     ]
-    
+
     # Hit every successful if/elif branch directly
     for attr in expected_attributes:
         loaded_obj = dorsal.file.__getattr__(attr)
@@ -72,6 +73,6 @@ def test_dorsal_file_init_lazy_load_branches():
     # Hit the AttributeError fallback
     with pytest.raises(AttributeError, match="has no attribute 'this_definitely_does_not_exist'"):
         dorsal.file.__getattr__("this_definitely_does_not_exist")
-        
+
     # Cover the __dir__ block
     assert "scan_file" in dorsal.file.__dir__()
