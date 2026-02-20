@@ -11,24 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import logging
 import typer
 import pathlib
 import datetime
 import json
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Optional, TYPE_CHECKING
 
 from dorsal.common import constants
-from dorsal.cli.views.file import create_file_info_panel
-from dorsal.common.cli import (
-    exit_cli,
-    EXIT_CODE_ERROR,
-    get_rich_console,
-    determine_use_cache_value,
-)
-from dorsal.file.dorsal_file import LocalFile
-from dorsal.api.file import generate_html_file_report
+
+if TYPE_CHECKING:
+    from dorsal.file.dorsal_file import LocalFile
+
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +123,15 @@ def scan_file(
     """
     Scans and displays the full metadata for a file, with options to save reports.
     """
+    from dorsal.cli.views.file import create_file_info_panel
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        determine_use_cache_value,
+    )
+    from dorsal.file.dorsal_file import LocalFile
+
     if use_cache and skip_cache:
         exit_cli(
             code=EXIT_CODE_ERROR,
@@ -254,6 +259,8 @@ def _save_json_report(
     palette: dict,
 ):
     """Saves the JSON scan report to a specified or default path."""
+    from dorsal.common.cli import get_rich_console
+
     console = get_rich_console()
 
     num_reports = ctx.params.get("save", 0) + ctx.params.get("report", 0)
@@ -288,6 +295,11 @@ def _save_html_report(
     template: str,
 ):
     """Handles the logic for generating and saving the HTML report."""
+    from dorsal.cli.views.file import create_file_info_panel
+    from dorsal.common.cli import get_rich_console
+    from dorsal.file.dorsal_file import LocalFile
+    from dorsal.api.file import generate_html_file_report
+
     console = get_rich_console()
     final_path = _get_final_path(original_path, output_path, ".html")
 

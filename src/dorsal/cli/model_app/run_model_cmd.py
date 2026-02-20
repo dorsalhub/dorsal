@@ -72,6 +72,15 @@ def run_model(
             rich_help_panel="Output Options",
         ),
     ] = False,
+    export_format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--export",
+            "-e",
+            help="Export the result to a specific format (e.g., 'srt', 'vtt', 'md').",
+            rich_help_panel="Output Options",
+        ),
+    ] = None,
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Skip the safety confirmation prompt if installation is required.")
     ] = False,
@@ -88,10 +97,11 @@ def run_model(
     from dorsal.cli.views.model import create_model_result_panel
     from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette = ctx.obj["palette"]
+    palette: dict[str, str] = ctx.obj["palette"]
 
     parsed_options = _parse_cli_options(options)
 
@@ -100,10 +110,12 @@ def run_model(
             strategy, package_name = resolve_target(target)
             if not is_package_installed(package_name):
                 check_and_confirm_model_install(target, palette, yes=yes)
+        except typer.Exit:
+            raise
         except Exception:
             pass
 
-    if not json_output:
+    if not (json_output or export_format):
         console.print(
             f"Running model [{palette.get('primary_value', 'cyan')}]{target}[/] "
             f"on [{palette.get('primary_value', 'cyan')}]{file_path.name}[/]..."
@@ -115,10 +127,10 @@ def run_model(
                 f"[{palette.get('info', 'dim')}]Processing... (This may trigger an install)[/]",
                 spinner="dots",
             )
-            if not json_output
+            if not (json_output or export_format)
             else _DummyContext()
         ):
-            result = run_or_install_model(
+            result: Any | AnnotationGroup | Annotation = run_or_install_model(
                 target=target,
                 file_path=str(file_path),
                 options=parsed_options,
@@ -129,8 +141,47 @@ def run_model(
         if json_output:
             data = result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result.dict()
             console.print(json.dumps(data, indent=2, default=str, ensure_ascii=False))
+        elif export_format:
+            try:
+                from dorsal_adapters.registry import get_adapter
+            except ImportError:
+                error_console.print(
+                    f"[{palette.get('warning', 'red')}]Error:[/] The 'dorsalhub-adapters' package is required for format exports."
+                )
+                error_console.print(
+                    f"Install it via: [{palette.get('primary_value', 'cyan')}]pip install dorsalhub-adapters[/]"
+                )
+                exit_cli(code=EXIT_CODE_ERROR)
+
+            if isinstance(result, AnnotationGroup):
+                from dorsal.file.sharding import reassemble_record
+
+                _, record_dict = reassemble_record(result)
+                schema_id = result.annotations[0].schema_id
+            elif isinstance(result, Annotation):
+                schema_id = result.schema_id
+                record_dict = result.record.model_dump(exclude_none=True) if result.record else {}
+            else:
+                error_console.print(
+                    f"[{palette.get('warning', 'red')}]Error:[/] Unexpected return type from model: {type(result).__name__}"
+                )
+                exit_cli(code=EXIT_CODE_ERROR)
+
+            if not schema_id:
+                error_console.print(
+                    f"[{palette.get('warning', 'red')}]Error:[/] The model result does not contain a valid schema_id."
+                )
+                exit_cli(code=EXIT_CODE_ERROR)
+
+            try:
+                adapter = get_adapter(schema_id, export_format)
+                print(adapter.export(record_dict), end="")
+            except ValueError as e:
+                error_console.print(f"[{palette.get('warning', 'red')}]Export Error:[/] {e}")
+                exit_cli(code=EXIT_CODE_ERROR)
+            return
         else:
-            panel = create_model_result_panel(result=result, target=target, file_name=file_path.name, palette=palette)
+            panel = create_model_result_panel(result=result, title=target, file_name=file_path.name, palette=palette)
             console.print(panel)
 
     except (DorsalError, AuthError) as e:
@@ -140,6 +191,9 @@ def run_model(
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Run Failed:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
+
+    except typer.Exit:
+        raise
 
     except Exception as e:
         logger.exception("Unexpected error during model run")

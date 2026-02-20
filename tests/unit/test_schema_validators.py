@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import json
 import os
 import pytest
@@ -36,21 +37,18 @@ from dorsal.file.schemas import (
 
 
 def test_build_classification_record():
-    # Happy path
     rec = build_classification_record(labels=["cat"], score_explanation="AI")
     assert rec["labels"][0]["label"] == "cat"
     assert rec["score_explanation"] == "AI"
 
-    # Mixed types
     rec = build_classification_record(labels=[{"label": "dog", "score": 0.9}])
     assert rec["labels"][0]["score"] == 0.9
 
-    # Invalid type
     with pytest.raises(TypeError):
-        build_classification_record(labels="not a list")  # type: ignore
+        build_classification_record(labels="not a list")
 
     with pytest.raises(TypeError):
-        build_classification_record(labels=[123])  # type: ignore
+        build_classification_record(labels=[123])
 
 
 def test_build_embedding_record():
@@ -60,11 +58,9 @@ def test_build_embedding_record():
 
 
 def test_build_llm_output_record():
-    # Dictionary serialization
     rec = build_llm_output_record(model="gpt", response_data={"foo": "bar"})
     assert '{"foo": "bar"}' in rec["response_data"]
 
-    # Failure to serialize
     with pytest.raises(TypeError):
         build_llm_output_record(model="g", response_data={"bad": object()})
 
@@ -82,65 +78,63 @@ def test_build_transcription_record():
 
 
 def test_build_generic_record():
-    # Valid
     rec = build_generic_record(description="desc", data={"key": 1, "valid": True})
     assert rec["data"]["key"] == 1
 
-    # Invalid nesting
     with pytest.raises(TypeError):
-        build_generic_record(description="d", data={"nested": {"a": 1}})  # type: ignore
-
-
-# --- 2. Schemas Tests ---
+        build_generic_record(description="d", data={"nested": {"a": 1}})
 
 
 @patch("dorsal.file.schemas.importlib.resources.files")
 def test_get_open_schema(mock_files):
-    mock_file = MagicMock()
     expected_schema = {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
-    mock_file.read_text.return_value = json.dumps(expected_schema)
-    mock_files.return_value.joinpath.return_value = mock_file
+
+    class FakePath:
+        def __truediv__(self, other):
+            return self
+
+        def read_text(self, encoding="utf-8"):
+            return json.dumps(expected_schema)
+
+    mock_files.return_value = FakePath()
 
     schema = get_open_schema("generic")
     assert schema == {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
 
     with pytest.raises(ValueError):
-        get_open_schema("invalid_name")  # type: ignore
+        get_open_schema("invalid_name")
 
-    mock_files.return_value.joinpath.side_effect = FileNotFoundError
+    class BadVersionPath:
+        def __truediv__(self, other):
+            return self
 
+        def read_text(self, encoding="utf-8"):
+            return json.dumps({"type": "object", "version": "99.9.9"})
+
+    mock_files.return_value = BadVersionPath()
     _load_schema_from_package.cache_clear()
 
     with pytest.raises(RuntimeError, match="Critical Package Integrity Error"):
         get_open_schema("generic")
 
 
-# --- 3. Open Schema Validator Tests ---
-
-
 @patch("dorsal.file.validators.open_schema.get_open_schema")
 @patch("dorsal.file.validators.open_schema.get_json_schema_validator")
 def test_get_open_schema_validator(mock_get_validator, mock_get_schema):
-    # Setup
     open_schema_module._build_and_cache_validator.cache_clear()
     mock_get_schema.return_value = {"mock": "schema"}
     mock_get_validator.return_value = "MockValidatorInstance"
 
-    # Test valid retrieval
     val = get_open_schema_validator("generic")
     assert val == "MockValidatorInstance"
-    mock_get_schema.assert_called_with("generic")
+    mock_get_schema.assert_called_with("generic", version=OPEN_VALIDATION_SCHEMAS_VER)
 
-    # Test unknown name
     with pytest.raises(ValueError):
-        get_open_schema_validator("bad_name")  # type: ignore
+        get_open_schema_validator("bad_name")
 
-    # Test module level getattr (lazy loading)
-    # e.g. from dorsal.file.validators.open_schema import generic_validator
     val_lazy = open_schema_module.__getattr__("generic_validator")
     assert val_lazy == "MockValidatorInstance"
 
-    # Test invalid module attr
     with pytest.raises(AttributeError):
         open_schema_module.__getattr__("random_attribute")
 
@@ -186,7 +180,7 @@ def test_get_open_schema_override_missing_file(tmp_path):
 
     try:
         with patch.dict(os.environ, {ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR: str(tmp_path)}):
-            with pytest.raises(ValueError, match="not found in override dir"):
+            with pytest.raises(FileNotFoundError, match="Override schema not found at"):
                 get_open_schema("generic")
     finally:
         _load_schema_from_package.cache_clear()

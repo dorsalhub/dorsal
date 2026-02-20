@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from dorsal.common.exceptions import AuthError
-from dorsal.file.cache.config import get_cache_enabled
+
 import typer
 
 
@@ -65,6 +65,8 @@ def exit_cli(code: int = EXIT_CODE_SUCCESS, message: str | None = None) -> NoRet
 
 
 def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
+    from dorsal.file.cache.config import get_cache_enabled
+
     use_cache_choice = None
     if use_cache:
         use_cache_choice = True

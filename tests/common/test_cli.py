@@ -59,7 +59,7 @@ def test_exit_cli_no_message(mock_secho):
         (False, False, None),
     ],
 )
-@patch("dorsal.common.cli.get_cache_enabled")
+@patch("dorsal.file.cache.config.get_cache_enabled")
 def test_determine_use_cache_value(mock_get_cache_enabled, use_cache_flag, skip_cache_flag, expected_arg):
     """Test the logic for resolving cache flags."""
     mock_get_cache_enabled.side_effect = lambda use_cache: use_cache

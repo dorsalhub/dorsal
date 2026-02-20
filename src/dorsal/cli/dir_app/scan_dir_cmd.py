@@ -28,7 +28,6 @@ from rich.markup import escape
 from rich.text import Text
 import logging
 
-from dorsal.file.utils.size import human_filesize
 from dorsal.common import constants
 
 if TYPE_CHECKING:
@@ -266,7 +265,7 @@ def scan_directory(
     )
 
     console.print(
-        f"✨ Found and processed [{palette['success']}]{len(collection)}[/] file(s) in [{palette['primary_value']}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+        f"Found and processed [{palette['success']}]{len(collection)}[/] file(s) in [{palette['primary_value']}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
     )
 
     if collection.warnings:
@@ -378,6 +377,7 @@ def _save_csv_report(
 def _print_directory_summary_panel(collection_info: dict, palette: dict):
     """Prints a rich summary panel of the directory's contents."""
     from dorsal.common.cli import get_rich_console
+    from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
 
@@ -433,6 +433,7 @@ def _print_file_details_table(
 ):
     """Prints a rich, detailed table of individual files to the console."""
     from dorsal.common.cli import get_rich_console
+    from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
 

@@ -16,6 +16,7 @@ import os
 import struct
 import hashlib
 import logging
+import functools
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +77,18 @@ def _initialize_predictable_numbers(base_dir: str) -> list[int]:
     return predictable_list
 
 
-try:
-    current_script_dir = os.path.dirname(os.path.abspath(__file__))
-    predictable_numbers = _initialize_predictable_numbers(base_dir=current_script_dir)
-except (FileNotFoundError, ValueError, TypeError) as err:
-    logger.critical("Failed to initialize predictable numbers: %s", err)
-    raise RuntimeError("Critical data for sampling is missing or corrupt.") from err
-except Exception:
-    logger.exception("An unexpected error occurred during predictable numbers initialization.")
-    raise
+@functools.cache
+def get_predictable_numbers() -> list[int]:
+    """
+    Lazily loads and caches the predictable numbers.
+    The file I/O and hashing will only happen on the first call.
+    """
+    try:
+        current_script_dir = os.path.dirname(os.path.abspath(__file__))
+        return _initialize_predictable_numbers(base_dir=current_script_dir)
+    except (FileNotFoundError, ValueError, TypeError) as err:
+        logger.critical("Failed to initialize predictable numbers: %s", err)
+        raise RuntimeError("Critical data for sampling is missing or corrupt.") from err
+    except Exception:
+        logger.exception("An unexpected error occurred during predictable numbers initialization.")
+        raise

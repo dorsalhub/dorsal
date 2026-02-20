@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import uuid
 from typing import Annotated
 
 from dorsal.file.utils.hashes import RX_HEX_64, RX_TLSH
@@ -42,3 +43,19 @@ def validate_tlsh(value: str) -> str:
 
 
 TLSHash = Annotated[str, AfterValidator(validate_tlsh)]
+
+
+def validate_uuid4(value: str) -> str:
+    """Return lowercased UUID4 string or raise."""
+    try:
+        parsed_uuid = uuid.UUID(str(value))
+    except ValueError as err:
+        raise ValueError(f"Invalid UUID string: '{value}'") from err
+
+    if parsed_uuid.version != 4:
+        raise ValueError(f"Invalid UUID version: {parsed_uuid.version}. Expected version 4.")
+
+    return str(parsed_uuid)
+
+
+UUID4String = Annotated[str, AfterValidator(validate_uuid4)]

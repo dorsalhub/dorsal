@@ -170,6 +170,7 @@ class DorsalClient:
     _default_identity = "dorsal.DorsalClient"
     _user_id: int | None = None
 
+    _annotations_endpoint = constants.API_ENDPOINT_ANNOTATIONS
     _collections_endpoint = constants.API_ENDPOINT_COLLECTIONS
     _export_endpoint = constants.API_ENDPOINT_EXPORT
     _files_endpoint = constants.API_ENDPOINT_FILES
@@ -461,8 +462,12 @@ class DorsalClient:
         return f"{self.base_url}/{self._files_endpoint}/{file_hash.strip('/')}/annotations/{namespace.strip('/')}/{name.strip('/')}"
 
     def _make_get_file_annotation_url(self, file_hash: str, annotation_id: str) -> str:
-        """Constructs the URL for retrieving a specific file annotation."""
+        """Constructs the URL for retrieving a specific file annotation. Includes file hash."""
         return f"{self.base_url}/{self._files_endpoint}/{file_hash.strip('/')}/annotations/{annotation_id.strip('/')}"
+
+    def _make_get_annotation_url(self, annotation_id: str) -> str:
+        """Constructs the URL for retrieving a specific file annotation."""
+        return f"{self.base_url}/{self._annotations_endpoint.strip('/')}/{annotation_id.strip('/')}"
 
     def _make_delete_file_annotation_url(self, file_hash: str, annotation_id: str) -> str:
         """Constructs the URL for deleting a specific file annotation."""
@@ -3233,85 +3238,26 @@ class DorsalClient:
                 original_exception=err,
             ) from err
 
-    def get_file_annotation(
-        self, *, file_hash: str, annotation_id: str, api_key: str | None = None
-    ) -> "FileAnnotationResponse":
-        """
-        Retrieves a single annotation by its ID.
-
-        **Automatic Reassembly:**
-        If the requested annotation was "sharded" (split into multiple chunks due to
-        size limits) during upload, this method automatically fetches the group container,
-        reassembles the chunks in the correct order, and returns the fully merged record.
-
-        This process is transparent: the returned object is indistinguishable from
-        a standard atomic annotation.
-
-        Args:
-            file_hash (str): The SHA-256 hash of the file the annotation belongs to.
-            annotation_id (str): The unique ID of the annotation to retrieve.
-            api_key (str | None): An API key for this request, overriding the
-                client's default.
-
-        Returns:
-            FileAnnotationResponse: The full, detailed annotation record.
-
-        Raises:
-            DorsalClientError: For client-side validation errors.
-            NotFoundError: If the file or annotation is not found, or if you
-                lack permission to view it.
-            ApiDataValidationError: If the response cannot be validated or reassembled.
-            APIError: For any other unhandled API error.
-        """
+    def _parse_annotation_response(self, response: requests.Response, target_url: str) -> "FileAnnotationResponse":
+        """Helper to parse annotation responses and transparently reassemble sharded groups."""
         from dorsal.client.validators import FileAnnotationResponse
-        from dorsal.file.validators.file_record import AnnotationGroup
-
-        logger.debug(
-            "Client: get_file_annotation called for hash '%s', annotation_id '%s'.",
-            file_hash,
-            annotation_id,
-        )
-        try:
-            validated_hash = validate_hex64(file_hash)
-        except ValueError as err:
-            raise DorsalClientError(f"Invalid SHA-256 hash provided: '{file_hash}'") from err
-
-        if not annotation_id or not isinstance(annotation_id, str):
-            raise DorsalClientError("annotation_id must be a non-empty string.")
-
-        target_url = self._make_get_file_annotation_url(validated_hash, annotation_id)
-
-        try:
-            headers = self._make_request_headers(api_key=api_key)
-            response = self.session.get(
-                url=target_url,
-                allow_redirects=False,
-                timeout=self.timeout,
-                headers=headers,
-            )
-            self.last_response = response
-        except requests.exceptions.RequestException as err:
-            raise NetworkError("An unexpected error occurred during the HTTP request.", target_url, err) from err
-
-        if response.status_code != 200:
-            self._handle_api_error(response)
 
         try:
             json_response = response.json()
 
+            # Handle sharded annotation groups
             if json_response.get("group"):
                 try:
                     from dorsal.file.sharding import reassemble_record
                     from dorsal.client.validators import FileAnnotationGroupResponse
 
                     group_response_obj = FileAnnotationGroupResponse(**json_response)
-
                     schema_id, unified_record = reassemble_record(group_response_obj.group)
 
                     logger.debug(
-                        "Transparently reassembled %d chunks for annotation %s (Schema: %s).",
+                        "Reassembled %d chunks for annotation %s (Schema: %s).",
                         len(group_response_obj.group.annotations),
-                        annotation_id,
+                        group_response_obj.annotation_id,
                         schema_id,
                     )
 
@@ -3342,6 +3288,7 @@ class DorsalClient:
                         original_exception=err,
                     ) from err
 
+            # Handle standard atomic annotations
             return FileAnnotationResponse(**json_response)
 
         except (json.JSONDecodeError, PydanticValidationError) as err:
@@ -3350,6 +3297,78 @@ class DorsalClient:
                 request_url=target_url,
                 original_exception=err,
             ) from err
+
+    def get_file_annotation(
+        self, *, annotation_id: str, file_hash: str | None = None, api_key: str | None = None
+    ) -> "FileAnnotationResponse":
+        """
+        Retrieves a single annotation by its exact ID.
+
+        **Retrieval Modes:**
+        - **Global (Default):** If `file_hash` is omitted, the annotation is retrieved globally
+          using only its ID. This is fast and allows retrieval without knowing the parent file.
+        - **Contextual:** If `file_hash` is provided, the server enforces strict parent-child
+          integrity, validating that the annotation truly belongs to the specified file before returning it.
+
+        **Automatic Reassembly:**
+        If the requested annotation was "sharded" (split into multiple chunks due to
+        size limits) during upload, this method automatically fetches the group container,
+        reassembles the chunks in the correct order, and returns the fully merged record.
+
+        This process is transparent: the returned object is indistinguishable from
+        a standard atomic annotation.
+
+        Args:
+            annotation_id (str): The unique ID of the annotation to retrieve.
+            file_hash (str | None): The SHA-256 hash of the file the annotation belongs to.
+                If provided, enforces strict parent-child validation.
+            api_key (str | None): An API key for this request, overriding the
+                client's default.
+
+        Returns:
+            FileAnnotationResponse: The full, detailed annotation record.
+
+        Raises:
+            DorsalClientError: For client-side validation errors (e.g., invalid format).
+            NotFoundError: If the file or annotation is not found, if you
+                lack permission to view it, or if it doesn't match the provided file hash.
+            ApiDataValidationError: If the response cannot be validated or reassembled.
+            APIError: For any other unhandled API error.
+        """
+        logger.debug(
+            "Client: get_file_annotation called for annotation_id '%s', file_hash '%s'.",
+            annotation_id,
+            file_hash,
+        )
+
+        if not annotation_id or not isinstance(annotation_id, str):
+            raise DorsalClientError("annotation_id must be a non-empty string.")
+
+        if file_hash:
+            try:
+                validated_hash = validate_hex64(file_hash)
+            except ValueError as err:
+                raise DorsalClientError(f"Invalid SHA-256 hash provided: '{file_hash}'") from err
+            target_url = self._make_get_file_annotation_url(validated_hash, annotation_id)
+        else:
+            target_url = self._make_get_annotation_url(annotation_id)
+
+        try:
+            headers = self._make_request_headers(api_key=api_key)
+            response = self.session.get(
+                url=target_url,
+                allow_redirects=False,
+                timeout=self.timeout,
+                headers=headers,
+            )
+            self.last_response = response
+        except requests.exceptions.RequestException as err:
+            raise NetworkError("An unexpected error occurred during the HTTP request.", target_url, err) from err
+
+        if response.status_code != 200:
+            self._handle_api_error(response)
+
+        return self._parse_annotation_response(response, target_url)
 
     def delete_file_annotation(self, *, file_hash: str, annotation_id: str, api_key: str | None = None) -> None:
         """

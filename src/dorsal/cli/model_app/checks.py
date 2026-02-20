@@ -22,11 +22,6 @@ from rich.prompt import Confirm
 from rich.text import Text
 import typer
 
-from dorsal.common.constants import WEB_URL
-from dorsal.common.exceptions import NotFoundError, AuthError
-from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
-from dorsal.session import get_shared_dorsal_client
-from dorsal.registry.validators import is_registry_id
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +38,12 @@ def check_and_confirm_model_install(
         force: If True, skips checks (assumes user knows what they are doing).
         yes: If True, skips interactive confirmation.
     """
+    from dorsal.common.constants import WEB_URL
+    from dorsal.common.exceptions import AuthError
+    from dorsal.common.cli import exit_cli, get_rich_console
+    from dorsal.session import get_shared_dorsal_client
+    from dorsal.registry.validators import is_registry_id
+
     if force or yes:
         return
 
@@ -121,6 +122,8 @@ def check_and_confirm_model_install(
 
 
 def _handle_missing_git(palette: Dict[str, str]):
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+
     console = get_rich_console()
     message = Text.assemble(
         ("This model requires Git to install.\n\n", "default"),
@@ -142,6 +145,9 @@ def _handle_missing_git(palette: Dict[str, str]):
 
 
 def _handle_registry_error(target: str, e: Exception, palette: Dict[str, str]):
+    from dorsal.common.exceptions import NotFoundError
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+
     console = get_rich_console()
     if isinstance(e, NotFoundError) or "404" in str(e):
         console.print(f"[{palette.get('error', 'bold red')}]Error: Model '{target}' not found in registry.[/]")

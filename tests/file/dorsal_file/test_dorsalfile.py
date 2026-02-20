@@ -17,8 +17,9 @@ from unittest.mock import patch, MagicMock
 import datetime
 
 from dorsal.client.validators import FileDeleteResponse
-from dorsal.file.dorsal_file import DorsalFile
+from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub
 from dorsal.file.validators.file_record import (
+    AnnotationSource,
     FileRecordDateTime,
     FileRecordStrict,
     NewFileTag,
@@ -26,6 +27,7 @@ from dorsal.file.validators.file_record import (
 )
 from dorsal.common.exceptions import (
     DorsalClientError,
+    NotFoundError,
     DorsalError,
     TaggingError,
     AuthError,
@@ -450,3 +452,133 @@ def test_dorsal_file_add_tags_bulk_invalid_data(mock_dorsal_client, mock_file_re
     # Act & Assert
     with pytest.raises(ValueError, match="Invalid tag data provided in bulk update"):
         df.add_tags(public={"bad_value": {"nested": "dict_not_allowed"}})
+
+
+def test_file_annotation_stub_download_success(mock_dorsal_client, mock_file_record_dt_json):
+    """Test successful hydration of an annotation stub."""
+    # Arrange
+    initial_record = FileRecordDateTime(**mock_file_record_dt_json)
+    df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
+
+    mock_stub_data = MagicMock()
+    mock_stub_data.id = "3f00c942-f543-4bb5-a6b9-8f4585411571"
+    mock_stub_data.hash = df.hash
+
+    stub = FileAnnotationStub(stub=mock_stub_data, parent_file=df)
+
+    mock_response = MagicMock()
+    mock_dorsal_client.get_file_annotation.return_value = mock_response
+
+    # Act
+    result = stub.download()
+
+    # Assert
+    mock_dorsal_client.get_file_annotation.assert_called_once_with(file_hash=df.hash, annotation_id=str(stub.id))
+    assert result == mock_response
+
+
+def test_file_annotation_stub_not_found_prompts_refresh(mock_dorsal_client, mock_file_record_dt_json):
+    """Test that a missing stub raises a descriptive error prompting a refresh."""
+    # Arrange
+    initial_record = FileRecordDateTime(**mock_file_record_dt_json)
+    df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
+
+    mock_stub_data = MagicMock()
+    mock_stub_data.id = "deleted-annotation-id"
+    stub = FileAnnotationStub(stub=mock_stub_data, parent_file=df)
+
+    # Force the client to raise a NotFoundError (simulating a deleted annotation)
+    mock_error = NotFoundError(message="Not found", request_url="http://test")
+    mock_dorsal_client.get_file_annotation.side_effect = mock_error
+
+    # Act & Assert
+    with pytest.raises(DorsalClientError, match="could not be found on DorsalHub"):
+        stub.download()
+
+
+# --- Tests for DorsalFile Annotation Getters ---
+
+
+@pytest.fixture
+def populated_dorsal_file(mock_dorsal_client, mock_file_record_dt_json):
+    """Helper fixture providing a DorsalFile populated with fake stubs."""
+    df = DorsalFile.from_record(FileRecordDateTime(**mock_file_record_dt_json), client=mock_dorsal_client)
+
+    now = datetime.datetime.now(datetime.UTC)
+
+    # Stub 1 (Alice, Source A, Newest)
+    stub1 = MagicMock(spec=FileAnnotationStub)
+    stub1.source = MagicMock()
+    stub1.source.id = "Source_A"
+    stub1.user_id = 100
+    stub1.date_modified = now
+
+    # Stub 2 (Bob, Source B, Oldest)
+    stub2 = MagicMock(spec=FileAnnotationStub)
+    stub2.source = MagicMock()
+    stub2.source.id = "Source_B"
+    stub2.user_id = 200
+    stub2.date_modified = now - datetime.timedelta(days=2)
+
+    # Stub 3 (Alice, Source A, Middle)
+    stub3 = MagicMock(spec=FileAnnotationStub)
+    stub3.source = MagicMock()
+    stub3.source.id = "Source_A"
+    stub3.user_id = 100
+    stub3.date_modified = now - datetime.timedelta(days=1)
+
+    df.annotation_stubs = {"open/test-schema": [stub1, stub2, stub3]}
+    return df
+
+
+def test_dorsal_file_get_annotations_filters(populated_dorsal_file):
+    """Test filtering stubs by schema, source_id, and user_id."""
+    df = populated_dorsal_file
+
+    # 1. Filter by schema only
+    all_stubs = df.get_annotations("open/test-schema")
+    assert len(all_stubs) == 3
+
+    # 2. Filter by source_id
+    source_a_stubs = df.get_annotations("open/test-schema", source_id="Source_A")
+    assert len(source_a_stubs) == 2
+
+    # 3. Filter by user_id
+    bob_stubs = df.get_annotations("open/test-schema", user_id=200)
+    assert len(bob_stubs) == 1
+    assert bob_stubs[0].user_id == 200
+
+    # 4. Filter by schema that doesn't exist
+    missing_stubs = df.get_annotations("open/missing")
+    assert len(missing_stubs) == 0
+
+
+def test_dorsal_file_get_latest_annotation(populated_dorsal_file):
+    """Test retrieving the most recently modified stub."""
+    df = populated_dorsal_file
+
+    # Should get Stub 1 (the newest one)
+    latest = df.get_latest_annotation("open/test-schema")
+    assert latest is not None
+    assert latest.user_id == 100
+    assert latest.source.id == "Source_A"
+
+    # Should get Stub 2 (the only one from Source B)
+    latest_source_b = df.get_latest_annotation("open/test-schema", source_id="Source_B")
+    assert latest_source_b is not None
+    assert latest_source_b.user_id == 200
+
+
+def test_dorsal_file_get_user_annotations(populated_dorsal_file, mock_dorsal_client):
+    """Test retrieving annotations by user, falling back to the client's user_id."""
+    df = populated_dorsal_file
+
+    # 1. Explicit user ID passed
+    alice_stubs = df.get_user_annotations("open/test-schema", user_id=100)
+    assert len(alice_stubs) == 2
+
+    # 2. No user ID passed, fallback to client
+    mock_dorsal_client.user_id = 200
+    client_stubs = df.get_user_annotations("open/test-schema")
+    assert len(client_stubs) == 1
+    assert client_stubs[0].user_id == 200

@@ -30,9 +30,9 @@ def mock_checks_deps(mocker, mock_rich_console):
     Targeting patches locally within the module to prevent network leakage.
     """
 
-    mocker.patch("dorsal.cli.model_app.checks.get_rich_console", return_value=mock_rich_console)
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
 
-    mock_get_client = mocker.patch("dorsal.cli.model_app.checks.get_shared_dorsal_client")
+    mock_get_client = mocker.patch("dorsal.session.get_shared_dorsal_client")
     mock_client_instance = mock_get_client.return_value
 
     mock_reg_data = MagicMock()
@@ -46,7 +46,7 @@ def mock_checks_deps(mocker, mock_rich_console):
 
     mock_client_instance.get_registry_model.return_value = mock_reg_data
 
-    mock_is_registry_id = mocker.patch("dorsal.cli.model_app.checks.is_registry_id", return_value=True)
+    mock_is_registry_id = mocker.patch("dorsal.registry.validators.is_registry_id", return_value=True)
 
     mock_shutil_which = mocker.patch("dorsal.cli.model_app.checks.shutil.which", return_value="/usr/bin/git")
 

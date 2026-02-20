@@ -114,6 +114,7 @@ DOCS_URL_API_ERRORS_VALIDATION: str = f"{WEB_URL}/reference/exceptions/"
 DOCS_URL_DORSAL_FILE_TAGS: str = f"{WEB_URL}/reference/tags"
 
 # == API ==
+API_ENDPOINT_ANNOTATIONS = "v1/annotations"
 API_ENDPOINT_COLLECTIONS = "v1/collections"
 API_ENDPOINT_EXPORT = "v1/export"
 API_ENDPOINT_FILES = "v1/files"

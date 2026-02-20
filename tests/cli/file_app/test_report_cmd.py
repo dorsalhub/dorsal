@@ -45,9 +45,9 @@ def test_report_success_default(runner, test_app, tmp_path, mocker):
     target_file = tmp_path / "data.csv"
     target_file.write_text("content")
 
-    mock_generate = mocker.patch("dorsal.cli.file_app.report_cmd.generate_html_file_report")
-    mock_console = mocker.patch("dorsal.cli.file_app.report_cmd.get_rich_console")
-    mocker.patch("dorsal.cli.file_app.report_cmd.determine_use_cache_value", return_value=True)
+    mock_generate = mocker.patch("dorsal.api.file.generate_html_file_report")
+    mock_console = mocker.patch("dorsal.common.cli.get_rich_console")
+    mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=True)
 
     result = runner.invoke(test_app, ["report", str(target_file)])
 
@@ -83,8 +83,8 @@ def test_report_custom_output_directory(runner, test_app, tmp_path, mocker):
     output_dir = tmp_path / "reports"
     output_dir.mkdir()
 
-    mock_generate = mocker.patch("dorsal.cli.file_app.report_cmd.generate_html_file_report")
-    mocker.patch("dorsal.cli.file_app.report_cmd.get_rich_console")
+    mock_generate = mocker.patch("dorsal.api.file.generate_html_file_report")
+    mocker.patch("dorsal.common.cli.get_rich_console")
 
     result = runner.invoke(test_app, ["report", str(target_file), "--output", str(output_dir)])
 
@@ -102,10 +102,8 @@ def test_report_api_error_handling(runner, test_app, tmp_path, mocker):
     target_file = tmp_path / "corrupt.file"
     target_file.touch()
 
-    mocker.patch(
-        "dorsal.cli.file_app.report_cmd.generate_html_file_report", side_effect=DorsalError("File is encrypted")
-    )
-    mocker.patch("dorsal.cli.file_app.report_cmd.get_rich_console")
+    mocker.patch("dorsal.api.file.generate_html_file_report", side_effect=DorsalError("File is encrypted"))
+    mocker.patch("dorsal.common.cli.get_rich_console")
 
     result = runner.invoke(test_app, ["report", str(target_file)])
 
@@ -122,10 +120,10 @@ def test_report_unexpected_error(runner, test_app, tmp_path, mocker):
     target_file.touch()
 
     mocker.patch(
-        "dorsal.cli.file_app.report_cmd.generate_html_file_report",
+        "dorsal.api.file.generate_html_file_report",
         side_effect=ValueError("Something went really wrong"),
     )
-    mocker.patch("dorsal.cli.file_app.report_cmd.get_rich_console")
+    mocker.patch("dorsal.common.cli.get_rich_console")
 
     result = runner.invoke(test_app, ["report", str(target_file)])
 
@@ -137,8 +135,8 @@ def test_report_open_in_browser(runner, test_app, tmp_path, mocker):
     target_file = tmp_path / "viz.data"
     target_file.touch()
 
-    mocker.patch("dorsal.cli.file_app.report_cmd.generate_html_file_report")
-    mocker.patch("dorsal.cli.file_app.report_cmd.get_rich_console")
+    mocker.patch("dorsal.api.file.generate_html_file_report")
+    mocker.patch("dorsal.common.cli.get_rich_console")
 
     mock_browser = mocker.patch("webbrowser.open")
 

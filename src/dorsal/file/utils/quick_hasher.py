@@ -28,7 +28,7 @@ from dorsal.common.exceptions import (
 )
 from dorsal.file.configs.hasher import file_size_chunks
 from dorsal.file.configs.sampling import PREDICTABLE_COUNT
-from dorsal.file.utils.sampling import reservoir_sample_r
+
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,8 @@ class QuickHasher:
         self, file_size: int, num_chunks_to_sample: int, total_chunks_in_file: int
     ) -> list[int]:
         """Generate a deterministic, sorted list of chunk indices to sample."""
+        from dorsal.file.utils.sampling import reservoir_sample_r
+
         if total_chunks_in_file == 0:
             logger.debug(
                 "Total chunks in file is 0 (file size %d, chunk_size %d). No chunks to sample.",

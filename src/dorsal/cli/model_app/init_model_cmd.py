@@ -14,8 +14,7 @@
 
 import logging
 import pathlib
-import re
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -57,7 +56,7 @@ def init_model(
                 f"To install it for testing:\n"
                 f"  $ cd {result.clean_name}\n"
                 f"  $ pip install -e .",
-                title="✨ Model Initialized",
+                title="Model Initialized",
                 border_style=palette.get("panel_border_success", "green"),
                 title_align="left",
             )

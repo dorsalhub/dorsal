@@ -71,8 +71,6 @@ JSON_SCHEMA_CONSTRAINT_KEYWORDS = {
     "contentSchema",
 }
 
-logger.debug("JsonSchemaValidator configured using jsonschema-rs backend.")
-
 if TYPE_CHECKING:
     from jsonschema_rs import Validator as JsonSchemaRustValidator
 

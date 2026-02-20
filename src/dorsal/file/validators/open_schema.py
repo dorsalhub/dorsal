@@ -16,6 +16,7 @@ import logging
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
 from dorsal.common.validators.json_schema import (
     JsonSchemaValidator,
     get_json_schema_validator,
@@ -36,39 +37,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_VALIDATOR_LOOKUP = {}
-
-for schema_id in OPEN_SCHEMA_NAME_MAP:
-    clean_name = schema_id.replace("-", "_")
-    _VALIDATOR_LOOKUP[clean_name] = schema_id
-    _VALIDATOR_LOOKUP[f"{clean_name}_validator"] = schema_id
+_VALIDATOR_LOOKUP = {schema_id.replace("-", "_"): schema_id for schema_id in OPEN_SCHEMA_NAME_MAP}
+_VALIDATOR_LOOKUP.update({f"{k}_validator": v for k, v in _VALIDATOR_LOOKUP.items()})
 
 
 @lru_cache(maxsize=None)
-def _build_and_cache_validator(schema_name: OpenSchemaName) -> JsonSchemaValidator:
+def _build_and_cache_validator(schema_name: OpenSchemaName, version: str) -> JsonSchemaValidator:
     """Internal helper to build and cache the validator on demand."""
     logger.debug("Building and caching validator for open schema: '%s'", schema_name)
     try:
-        schema_dict = get_open_schema(schema_name)
+        schema_dict = get_open_schema(schema_name, version=version)
         return get_json_schema_validator(schema_dict)
     except Exception as e:
-        logger.error("Failed to build lazy-loaded validator for '%s': %s", schema_name, e)
-        raise RuntimeError(f"Failed to build validator for '{schema_name}'") from e
+        logger.error("Failed to build validator for '%s' v%s: %s", schema_name, version, e)
+        raise RuntimeError(f"Failed to build validator for '{schema_name}' v{version}") from e
 
 
-def get_open_schema_validator(name: OpenSchemaName) -> JsonSchemaValidator:
-    """Gets the pre-built, cached JsonSchemaValidator instance for a Dorsal 'open/' schema by its short name."""
+def get_open_schema_validator(name: OpenSchemaName, version: str = OPEN_VALIDATION_SCHEMAS_VER) -> JsonSchemaValidator:
+    """Gets the pre-built, cached JsonSchemaValidator instance for a specific version."""
     if name not in OPEN_SCHEMA_NAME_MAP:
         raise ValueError(f"Unknown schema name: '{name}'.")
-    return _build_and_cache_validator(name)
+    return _build_and_cache_validator(name, version)
 
 
 def __getattr__(name: str) -> JsonSchemaValidator:
-    """Called by Python when a module attribute is not found."""
-    schema_name = _VALIDATOR_LOOKUP.get(name)
+    """Provides access to validators using the default library version."""
+    schema_id = _VALIDATOR_LOOKUP.get(name)
 
-    if schema_name:
-        return _build_and_cache_validator(schema_name)
+    if schema_id:
+        return _build_and_cache_validator(schema_id, OPEN_VALIDATION_SCHEMAS_VER)
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
@@ -80,6 +77,4 @@ def __dir__() -> list[str]:
     return list(globals().keys()) + list(_VALIDATOR_LOOKUP.keys())
 
 
-__all__ = list(_VALIDATOR_LOOKUP.keys()) + [
-    "get_open_schema_validator",
-]
+__all__ = list(_VALIDATOR_LOOKUP.keys()) + ["get_open_schema_validator"]

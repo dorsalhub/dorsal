@@ -19,7 +19,7 @@ from typing import Any, Iterable, TypeVar
 
 
 from .predictable import Predictable
-from ..configs.sampling import predictable_numbers
+from ..configs.sampling import get_predictable_numbers  # , predictable_numbers
 
 EOI = object
 
@@ -56,7 +56,7 @@ def reservoir_sample_r(iterable: Iterable[T_co], k: int, seed: int) -> list[T_co
     if len(reservoir) < k:
         return reservoir
 
-    png = Predictable(sequence=predictable_numbers, seed=seed)
+    png = Predictable(sequence=get_predictable_numbers(), seed=seed)
     for i, item in enumerate(it, start=k):
         j = png.randrange(0, i + 1)
         if j < k:

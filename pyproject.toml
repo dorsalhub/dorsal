@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.5.0"
+version = "0.6.0"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -87,6 +87,10 @@ plugins = "pydantic.mypy"
 exclude = ["dist/", "build/", "venv/", ".venv/"]
 mypy_path = "src"
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "dorsal_adapters.*"
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

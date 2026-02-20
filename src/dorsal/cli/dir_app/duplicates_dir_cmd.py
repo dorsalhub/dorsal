@@ -25,15 +25,6 @@ from rich.table import Table
 from rich.markup import escape
 import typer
 
-from dorsal.api.file import find_duplicates
-from dorsal.common.cli import (
-    EXIT_CODE_ERROR,
-    get_rich_console,
-    exit_cli,
-    determine_use_cache_value,
-)
-from dorsal.common import constants
-
 logger = logging.getLogger(__name__)
 
 
@@ -161,6 +152,14 @@ def duplicates_dir(
     """
     Finds and reports files with identical content hashes.
     """
+    from dorsal.api.file import find_duplicates
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        exit_cli,
+        determine_use_cache_value,
+    )
+
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
     progress_console = None if json_output else console
@@ -200,7 +199,7 @@ def duplicates_dir(
         mode = "sha256"
 
     if not json_output:
-        console.print(f"✨ Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
+        console.print(f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
         if mode == "quick":
             console.print(
                 f"[{palette['info']}]Mode: Quick Hash. Results are based on file sampling and may contain rare false positives.[/]"
@@ -329,6 +328,7 @@ def _sanitize_path_for_filename(path: str) -> str:
 
 def _get_final_path(source_path: pathlib.Path, output_path: Optional[pathlib.Path], suffix: str) -> pathlib.Path:
     """Helper to determine the final save path for a report."""
+    from dorsal.common import constants
 
     if output_path:
         if output_path.is_dir():
@@ -350,6 +350,8 @@ def _save_duplicates_report(
     json_output: bool,
     original_path: pathlib.Path,
 ):
+    from dorsal.common.cli import get_rich_console
+
     console = get_rich_console()
 
     save_path = _get_final_path(original_path, output_path, ".json")
