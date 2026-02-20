@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.6.0"
+version = "0.6.1"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,9 @@ tlsh = ["py-tlsh>=4.7.2"]
 
 pandas = ["pandas>=2.0.0"]
 
-all = ["dorsalhub[tlsh]", "dorsalhub[pandas]"]
+adapters = ["dorsalhub-adapters>=0.1.0"]
+
+all = ["dorsalhub[tlsh]", "dorsalhub[pandas]", "dorsalhub[adapters]"]
 
 [project.urls]
 "Homepage" = "https://dorsalhub.com"
@@ -58,7 +60,12 @@ dorsal = "dorsal.cli:cli_app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dorsal"]
-include = ["LICENSE", "NOTICE", "/src/dorsal/schemas/open/*.json", "/src/dorsal/py.typed"]
+include = [
+    "LICENSE",
+    "NOTICE",
+    "/src/dorsal/schemas/open/*.json",
+    "/src/dorsal/py.typed",
+]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/reference", "/notebooks", "/scripts", "uv.lock", ".github"]
@@ -88,13 +95,10 @@ exclude = ["dist/", "build/", "venv/", ".venv/"]
 mypy_path = "src"
 warn_unreachable = true
 
-[[tool.mypy.overrides]]
-module = "dorsal_adapters.*"
-ignore_missing_imports = true
-
 [dependency-groups]
 dev = [
     "black>=24.10.0",
+    "dorsalhub-adapters>=0.1.0",
     "mypy>=1.15.0",
     "pandas>=2.3.1",
     "pyfakefs>=5.9.2",

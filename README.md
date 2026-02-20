@@ -48,6 +48,12 @@ Dorsal is available on pypi as `dorsalhub`.
 pip install dorsalhub
 ```
 
+If you plan to export model outputs to specific file formats (like SRT or VTT subtitles), install the `adapters` extra:
+
+```bash
+pip install dorsalhub[adapters]
+```
+
 ## Authentication
 
 To sync metadata records with DorsalHub, authenticate with an API Key (generate one on your DorsalHub settings page).
@@ -115,6 +121,20 @@ Sync the metadata record to DorsalHub. By default, this creates a **private** re
 
 ```bash
 dorsal file push "docs/PDFSPEC.pdf"
+```
+
+### 3. Run Annotation Models
+
+You can install and run annotation models from the CLI:
+
+```bash
+dorsal model run dorsalhub/dorsal-whisper "path/to/audio_file.mp3"
+```
+
+You can also export to any format supported by [Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):
+
+```bash
+dorsal model run dorsalhub/dorsal-whisper "path/to/video.mp4" --export=srt > video.srt
 ```
 
 -----
