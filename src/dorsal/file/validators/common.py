@@ -51,10 +51,10 @@ def validate_uuid4(value: str) -> str:
         parsed_uuid = uuid.UUID(str(value))
     except ValueError as err:
         raise ValueError(f"Invalid UUID string: '{value}'") from err
-    
+
     if parsed_uuid.version != 4:
         raise ValueError(f"Invalid UUID version: {parsed_uuid.version}. Expected version 4.")
-        
+
     return str(parsed_uuid)
 
 

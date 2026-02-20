@@ -2321,6 +2321,7 @@ def get_file_annotation(
     api_key: str | None = None,
 ) -> "FileAnnotationResponse": ...
 
+
 @overload
 def get_file_annotation(
     annotation_id: str,
@@ -2330,6 +2331,7 @@ def get_file_annotation(
     api_key: str | None = None,
 ) -> dict[str, Any]: ...
 
+
 @overload
 def get_file_annotation(
     annotation_id: str,
@@ -2338,6 +2340,7 @@ def get_file_annotation(
     mode: Literal["json"],
     api_key: str | None = None,
 ) -> str: ...
+
 
 def get_file_annotation(
     annotation_id: str,
@@ -2371,10 +2374,7 @@ def get_file_annotation(
     logger.debug("Fetching exact annotation '%s' (file_hash: '%s')", annotation_id, hash_string)
 
     try:
-        annotation = effective_client.get_file_annotation(
-            annotation_id=annotation_id, 
-            file_hash=hash_string
-        )
+        annotation = effective_client.get_file_annotation(annotation_id=annotation_id, file_hash=hash_string)
         if mode == "pydantic":
             return annotation
         if mode == "dict":

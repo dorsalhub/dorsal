@@ -44,7 +44,6 @@ def create_model_result_panel(
     data: dict[str, Any] | None = None
     group_info = ""
 
-    
     if isinstance(result, AnnotationGroup):
         if result.annotations and result.annotations[0].record:
             data = result.annotations[0].record.model_dump()
@@ -65,7 +64,6 @@ def create_model_result_panel(
     content: RenderableType
     schema_type: str
 
-    
     if not data:
         return Panel(
             Text("No record data returned.", style=palette.get("error", "red")),
@@ -73,7 +71,6 @@ def create_model_result_panel(
             border_style=palette.get("panel_border_error", "red"),
         )
 
-    
     if target == "dorsal/arxiv":
         content = _render_arxiv(data, palette)
         schema_type = "ArXiv Record"
@@ -129,8 +126,7 @@ def create_model_result_panel(
     header.add_column(justify="left")
     header.add_column(justify="right")
     header.add_row(
-        Text(target, style=palette.get("section_title", "bold")), 
-        Text(f"{file_name}", style=palette.get("info", "dim"))
+        Text(target, style=palette.get("section_title", "bold")), Text(f"{file_name}", style=palette.get("info", "dim"))
     )
 
     return Panel(
@@ -170,13 +166,11 @@ def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
 def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     renderables: list[RenderableType] = []
 
-    
     title = data.get("title", "Untitled")
     title = " ".join(title.split())
     arxiv_id = data.get("arxiv_id", "Unknown ID")
     version = data.get("version", "")
-    
-    
+
     if version:
         version_str = version if version.startswith("v") else f"v{version}"
         id_str = f"{arxiv_id} ({version_str})"
@@ -186,27 +180,23 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableTy
     renderables.append(Text(title, style=palette.get("section_title", "bold")))
     renderables.append(Text(id_str, style=palette.get("info", "dim")))
 
-    
     authors = data.get("authors", [])
     if authors:
-        
         renderables.append(Text(", ".join(authors), style=f"{palette.get('primary_value_alt', 'cyan')} italic"))
 
-    renderables.append(Text(""))  
+    renderables.append(Text(""))
 
-    
     abstract = data.get("abstract", "")
     if abstract:
         renderables.append(
             Panel(
-                abstract, 
-                title=f"[{palette.get('panel_title_info', 'dim')}]Abstract[/]", 
-                border_style=palette.get("panel_border_info", "dim")
+                abstract,
+                title=f"[{palette.get('panel_title_info', 'dim')}]Abstract[/]",
+                border_style=palette.get("panel_border_info", "dim"),
             )
         )
-        renderables.append(Text(""))  
+        renderables.append(Text(""))
 
-    
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style=palette.get("key", "dim"))
     grid.add_column(style=palette.get("primary_value", "default"))
@@ -300,9 +290,9 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -
     if full_text := data.get("text"):
         renderables.append(
             Panel(
-                full_text, 
-                title=f"[{palette.get('panel_title_info', 'dim')}]Full Transcription[/]", 
-                border_style=palette.get("panel_border_info", "dim")
+                full_text,
+                title=f"[{palette.get('panel_title_info', 'dim')}]Full Transcription[/]",
+                border_style=palette.get("panel_border_info", "dim"),
             )
         )
         renderables.append(Text(""))
@@ -341,10 +331,10 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> Rendera
         prompt = prompt[:200] + "..."
     renderables.append(
         Panel(
-            prompt, 
-            title=f"[{palette.get('panel_title_info', 'dim')}]Input Prompt[/]", 
-            border_style=palette.get("panel_border_info", "dim"), 
-            height=5
+            prompt,
+            title=f"[{palette.get('panel_title_info', 'dim')}]Input Prompt[/]",
+            border_style=palette.get("panel_border_info", "dim"),
+            height=5,
         )
     )
 
@@ -357,9 +347,9 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> Rendera
 
     renderables.append(
         Panel(
-            response_render, 
-            title=f"[{palette.get('panel_title_success', 'bold green')}]Response[/]", 
-            border_style=palette.get("panel_border_success", "green")
+            response_render,
+            title=f"[{palette.get('panel_title_success', 'bold green')}]Response[/]",
+            border_style=palette.get("panel_border_success", "green"),
         )
     )
 
@@ -389,13 +379,13 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> Renderab
     grid.add_row("Target", str(data.get("target", "None")))
 
     return Group(
-        grid, 
-        Text(""), 
+        grid,
+        Text(""),
         Panel(
-            vec_preview, 
-            title=f"[{palette.get('panel_title_info', 'dim')}]Vector Data[/]", 
-            border_style=palette.get("panel_border_info", "dim")
-        )
+            vec_preview,
+            title=f"[{palette.get('panel_title_info', 'dim')}]Vector Data[/]",
+            border_style=palette.get("panel_border_info", "dim"),
+        ),
     )
 
 
@@ -447,9 +437,9 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str]) -> Render
 
     if props:
         renderables: list[RenderableType] = [
-            grid, 
-            Rule(style=palette.get("info", "dim")), 
-            Text("Properties", style=palette.get("section_title", "bold"))
+            grid,
+            Rule(style=palette.get("info", "dim")),
+            Text("Properties", style=palette.get("section_title", "bold")),
         ]
         for k, v in props.items():
             if v:

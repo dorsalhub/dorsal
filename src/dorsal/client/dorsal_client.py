@@ -3241,7 +3241,7 @@ class DorsalClient:
     def _parse_annotation_response(self, response: requests.Response, target_url: str) -> "FileAnnotationResponse":
         """Helper to parse annotation responses and transparently reassemble sharded groups."""
         from dorsal.client.validators import FileAnnotationResponse
-        
+
         try:
             json_response = response.json()
 
@@ -3305,9 +3305,9 @@ class DorsalClient:
         Retrieves a single annotation by its exact ID.
 
         **Retrieval Modes:**
-        - **Global (Default):** If `file_hash` is omitted, the annotation is retrieved globally 
+        - **Global (Default):** If `file_hash` is omitted, the annotation is retrieved globally
           using only its ID. This is fast and allows retrieval without knowing the parent file.
-        - **Contextual:** If `file_hash` is provided, the server enforces strict parent-child 
+        - **Contextual:** If `file_hash` is provided, the server enforces strict parent-child
           integrity, validating that the annotation truly belongs to the specified file before returning it.
 
         **Automatic Reassembly:**
@@ -3320,7 +3320,7 @@ class DorsalClient:
 
         Args:
             annotation_id (str): The unique ID of the annotation to retrieve.
-            file_hash (str | None): The SHA-256 hash of the file the annotation belongs to. 
+            file_hash (str | None): The SHA-256 hash of the file the annotation belongs to.
                 If provided, enforces strict parent-child validation.
             api_key (str | None): An API key for this request, overriding the
                 client's default.
