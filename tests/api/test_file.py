@@ -871,7 +871,7 @@ def test_get_file_annotation_generic_client_error(mock_shared_client):
     mock_shared_client.get_file_annotation.side_effect = DorsalClientError("Permission Denied")
 
     with pytest.raises(DorsalClientError, match="Permission Denied"):
-        file_api.get_file_annotation("hash_abc", "anno_123")
+        file_api.get_file_annotation("anno_123", "hash_abc")
 
 
 def test_get_file_annotation_unexpected_error(mock_shared_client):
@@ -879,15 +879,14 @@ def test_get_file_annotation_unexpected_error(mock_shared_client):
     mock_shared_client.get_file_annotation.side_effect = Exception("System fault")
 
     with pytest.raises(DorsalError, match="Unexpected error fetching annotation 'anno_123'"):
-        file_api.get_file_annotation("hash_abc", "anno_123")
-
+        file_api.get_file_annotation("anno_123", "hash_abc")
 
 def test_get_file_annotation_invalid_mode(mock_shared_client):
     """Test that an invalid mode raises a ValueError."""
     mock_shared_client.get_file_annotation.return_value = GenericFileAnnotation()
 
     with pytest.raises(ValueError, match="Invalid mode: 'yaml'"):
-        file_api.get_file_annotation("hash_abc", "anno_123", mode="yaml")  # type: ignore
+        file_api.get_file_annotation("anno_123", "hash_abc", mode="yaml")  # type: ignore
 
 
 # --- Unhappy paths for get_latest_file_annotation ---

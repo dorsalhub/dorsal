@@ -2314,47 +2314,44 @@ def generate_html_directory_report(
 
 @overload
 def get_file_annotation(
-    hash_string: str,
     annotation_id: str,
+    hash_string: str | None = None,
     *,
     mode: Literal["pydantic"],
     api_key: str | None = None,
 ) -> "FileAnnotationResponse": ...
 
-
 @overload
 def get_file_annotation(
-    hash_string: str,
     annotation_id: str,
+    hash_string: str | None = None,
     *,
     mode: Literal["dict"],
     api_key: str | None = None,
 ) -> dict[str, Any]: ...
 
-
 @overload
 def get_file_annotation(
-    hash_string: str,
     annotation_id: str,
+    hash_string: str | None = None,
     *,
     mode: Literal["json"],
     api_key: str | None = None,
 ) -> str: ...
 
-
 def get_file_annotation(
-    hash_string: str,
     annotation_id: str,
+    hash_string: str | None = None,
     *,
     mode: Literal["pydantic", "dict", "json"] = "pydantic",
     api_key: str | None = None,
 ) -> "FileAnnotationResponse | dict[str, Any] | str":
     """
-    Fetches a specific, fully-hydrated annotation from DorsalHub by its exact ID.
+    Fetches a specific, fully-hydrated annotation from DorsalHub by its ID.
 
     Args:
-        hash_string (str): The hash of the file record.
         annotation_id (str): The specific 24-character UUID of the annotation.
+        hash_string (str, optional): The hash of the file record. If provided, enforces parent-child validation.
         mode (Literal["pydantic", "dict", "json"]): The desired return format.
         api_key (str, optional): An API key for this request.
 
@@ -2371,10 +2368,13 @@ def get_file_annotation(
     if api_key:
         effective_client = DorsalClient(api_key=api_key)
 
-    logger.debug("Fetching exact annotation '%s' for file '%s'", annotation_id, hash_string)
+    logger.debug("Fetching exact annotation '%s' (file_hash: '%s')", annotation_id, hash_string)
 
     try:
-        annotation = effective_client.get_file_annotation(file_hash=hash_string, annotation_id=annotation_id)
+        annotation = effective_client.get_file_annotation(
+            annotation_id=annotation_id, 
+            file_hash=hash_string
+        )
         if mode == "pydantic":
             return annotation
         if mode == "dict":
@@ -2384,8 +2384,11 @@ def get_file_annotation(
 
     except DorsalClientError as err:
         if isinstance(getattr(err, "original_exception", None), NotFoundError):
+            msg = f"Annotation '{annotation_id}' not found."
+            if hash_string:
+                msg = f"Annotation '{annotation_id}' not found for file '{hash_string}'."
             raise DorsalClientError(
-                message=f"Annotation '{annotation_id}' not found for file '{hash_string}'.",
+                message=msg,
                 request_url=getattr(err, "request_url", None),
                 original_exception=err.original_exception,
             ) from err
@@ -2456,8 +2459,8 @@ def get_latest_file_annotation(
         effective_client = get_shared_dorsal_client()
 
     try:
-        d_file = DorsalFile(hash_string, client=effective_client)
-        stub = d_file.get_latest_annotation(schema_id=schema_id)
+        df = DorsalFile(hash_string, client=effective_client)
+        stub = df.get_latest_annotation(schema_id=schema_id)
 
         if not stub:
             raise NotFoundError(f"No annotations found for schema '{schema_id}' on file '{hash_string}'.")

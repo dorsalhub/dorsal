@@ -33,7 +33,6 @@ class _DummyContext:
 
 def get_annotation(
     ctx: typer.Context,
-    file_hash: Annotated[str, typer.Argument(help="The SHA-256 hash of the file.")],
     annotation_id: Annotated[str, typer.Argument(help="The UUID of the annotation to hydrate.")],
     json_output: Annotated[
         bool,
@@ -53,17 +52,16 @@ def get_annotation(
 
     try:
         with (
-            console.status(f"[{palette.get('info', 'dim')}]Hydrating annotation...[/]")
+            console.status(f"[{palette.get('info', 'dim')}]Downloading annotation...[/]")
             if not json_output
             else _DummyContext()
         ):
             if json_output:
-                json_str = get_file_annotation(file_hash, annotation_id, mode="json")
+                json_str = get_file_annotation(annotation_id, mode="json")
                 console.print(json_str)
                 return
 
-            hydrated = get_file_annotation(file_hash, annotation_id, mode="pydantic")
-
+            hydrated = get_file_annotation(annotation_id, mode="pydantic")
             schema_id = getattr(hydrated, "schema_id", "Annotation")
 
         panel = create_model_result_panel(

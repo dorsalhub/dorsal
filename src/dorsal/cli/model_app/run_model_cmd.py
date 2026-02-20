@@ -110,6 +110,8 @@ def run_model(
             strategy, package_name = resolve_target(target)
             if not is_package_installed(package_name):
                 check_and_confirm_model_install(target, palette, yes=yes)
+        except (typer.Exit):
+            raise
         except Exception:
             pass
 

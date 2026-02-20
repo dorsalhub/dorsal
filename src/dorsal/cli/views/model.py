@@ -20,7 +20,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.syntax import Syntax
-from rich.tree import Tree
 from rich.bar import Bar
 from rich.rule import Rule
 from rich.json import JSON
@@ -45,7 +44,7 @@ def create_model_result_panel(
     data: dict[str, Any] | None = None
     group_info = ""
 
-    # 1. Safely and strictly extract data as a dictionary depending on the response model
+    
     if isinstance(result, AnnotationGroup):
         if result.annotations and result.annotations[0].record:
             data = result.annotations[0].record.model_dump()
@@ -66,16 +65,20 @@ def create_model_result_panel(
     content: RenderableType
     schema_type: str
 
-    # 2. Handle missing data
+    
     if not data:
         return Panel(
             Text("No record data returned.", style=palette.get("error", "red")),
-            title=f"[{palette.get('panel_title_error', 'red')}]✨ Empty Result{group_info}[/]",
+            title=f"[{palette.get('panel_title_error', 'red')}] Empty Result{group_info}[/]",
             border_style=palette.get("panel_border_error", "red"),
         )
 
-    # 3. Route to the correct renderer
-    if "vector" in data:
+    
+    if target == "dorsal/arxiv":
+        content = _render_arxiv(data, palette)
+        schema_type = "ArXiv Record"
+
+    elif "vector" in data:
         content = _render_embedding(data, palette)
         schema_type = "Embedding"
 
@@ -125,40 +128,124 @@ def create_model_result_panel(
     header = Table.grid(expand=True)
     header.add_column(justify="left")
     header.add_column(justify="right")
-    header.add_row(f"[bold]{target}[/]", f"📄 [dim]{file_name}[/]")
+    header.add_row(
+        Text(target, style=palette.get("section_title", "bold")), 
+        Text(f"{file_name}", style=palette.get("info", "dim"))
+    )
 
     return Panel(
         Group(header, Rule(style=palette.get("info", "dim")), Text(""), content),
-        title=f"[{title_style}]✨ {schema_type} Result{group_info}[/]",
+        title=f"[{title_style}]{schema_type} Result{group_info}[/]",
         border_style=border_style,
         expand=False,
     )
 
 
-def _score_bar(score: float, width: int = 20) -> Bar:
-    """Helper to create a visual score bar."""
-    color = "green" if score > 0.7 else "yellow" if score > 0.4 else "red"
-    return Bar(size=width, begin=0, end=score, color=color, bgcolor="bright_black")
+def _extract_color(style_str: str, default: str) -> str:
+    """Helper to safely extract just a color name from a rich style string."""
+    if not style_str:
+        return default
+    words = style_str.replace("on ", "").split()
+    for w in reversed(words):
+        if w not in ("bold", "dim", "italic", "underline", "strike", "blink", "reverse"):
+            return w
+    return default
+
+
+def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
+    """Helper to create a visual score bar respecting the theme palette."""
+    if score > 0.7:
+        style_str = palette.get("success", "green")
+    elif score > 0.4:
+        style_str = palette.get("warning", "yellow")
+    else:
+        style_str = palette.get("error", "red")
+
+    color = _extract_color(style_str, "default")
+    bgcolor = _extract_color(palette.get("table_row_alt", "bright_black"), "black")
+
+    return Bar(size=width, begin=0, end=score, color=color, bgcolor=bgcolor)
+
+
+def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+    renderables: list[RenderableType] = []
+
+    
+    title = data.get("title", "Untitled")
+    title = " ".join(title.split())
+    arxiv_id = data.get("arxiv_id", "Unknown ID")
+    version = data.get("version", "")
+    
+    
+    if version:
+        version_str = version if version.startswith("v") else f"v{version}"
+        id_str = f"{arxiv_id} ({version_str})"
+    else:
+        id_str = arxiv_id
+
+    renderables.append(Text(title, style=palette.get("section_title", "bold")))
+    renderables.append(Text(id_str, style=palette.get("info", "dim")))
+
+    
+    authors = data.get("authors", [])
+    if authors:
+        
+        renderables.append(Text(", ".join(authors), style=f"{palette.get('primary_value_alt', 'cyan')} italic"))
+
+    renderables.append(Text(""))  
+
+    
+    abstract = data.get("abstract", "")
+    if abstract:
+        renderables.append(
+            Panel(
+                abstract, 
+                title=f"[{palette.get('panel_title_info', 'dim')}]Abstract[/]", 
+                border_style=palette.get("panel_border_info", "dim")
+            )
+        )
+        renderables.append(Text(""))  
+
+    
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style=palette.get("key", "dim"))
+    grid.add_column(style=palette.get("primary_value", "default"))
+
+    if url := data.get("url"):
+        grid.add_row("URL", Text(url, style=palette.get("link", "underline")))
+    if categories := data.get("categories"):
+        grid.add_row("Categories", ", ".join(categories))
+    if doi := data.get("doi"):
+        grid.add_row("DOI", doi)
+    if journal := data.get("journal_ref"):
+        grid.add_row("Journal", journal)
+    if license_str := data.get("license"):
+        grid.add_row("License", license_str)
+
+    if grid.row_count > 0:
+        renderables.append(grid)
+
+    return Group(*renderables)
 
 
 def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     table = Table(box=None, padding=(0, 2), show_header=True)
-    table.add_column("Label", style="bold white")
-    table.add_column("Score", justify="right")
+    table.add_column("Label", style=palette.get("table_header", "bold"))
+    table.add_column("Score", justify="right", style=palette.get("primary_value", "default"))
     table.add_column("Confidence", width=20)
 
     labels = sorted(data.get("labels", []), key=lambda x: x.get("score", 0), reverse=True)
 
     for item in labels[:10]:
         score = item.get("score", 0)
-        table.add_row(item.get("label", "Unknown"), f"{score:.4f}", _score_bar(score))
+        table.add_row(item.get("label", "Unknown"), f"{score:.4f}", _score_bar(score, palette))
 
     if len(labels) > 10:
         table.add_row(f"... and {len(labels) - 10} more", "", "")
 
     meta: list[RenderableType] = []
     if desc := data.get("score_explanation"):
-        meta.append(Text(f"Score: {desc}", style="dim italic"))
+        meta.append(Text(f"Score: {desc}", style=f"{palette.get('info', 'dim')} italic"))
 
     return Group(table, *meta)
 
@@ -167,9 +254,9 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> R
     objects = data.get("objects", [])
 
     table = Table(box=None, padding=(0, 2), show_header=True)
-    table.add_column("Label", style="bold white")
-    table.add_column("Score", justify="right")
-    table.add_column("Location")
+    table.add_column("Label", style=palette.get("table_header", "bold"))
+    table.add_column("Score", justify="right", style=palette.get("primary_value", "default"))
+    table.add_column("Location", style=palette.get("primary_value", "default"))
 
     for obj in objects[:15]:
         loc = "Unknown"
@@ -180,46 +267,52 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> R
 
         table.add_row(obj.get("label", "Unknown"), f"{obj.get('score', 0):.2f}", loc)
 
-    return Group(Text(f"Found {len(objects)} objects.", style=palette.get("info", "white")), Text(""), table)
+    return Group(Text(f"Found {len(objects)} objects.", style=palette.get("info", "dim")), Text(""), table)
 
 
 def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     entities = data.get("entities", [])
 
     table = Table(box=None, padding=(0, 2), show_header=True)
-    table.add_column("Label", style="cyan")
-    table.add_column("Text", style="bold white")
-    table.add_column("Normalized Value", style="dim")
-    table.add_column("Score", justify="right")
+    table.add_column("Label", style=palette.get("table_header", "bold"))
+    table.add_column("Text", style=palette.get("primary_value", "default"))
+    table.add_column("Normalized Value", style=palette.get("info", "dim"))
+    table.add_column("Score", justify="right", style=palette.get("primary_value", "default"))
 
     for ent in entities[:15]:
         val = str(ent.get("value")) if ent.get("value") is not None else "-"
         table.add_row(ent.get("label", "UNK"), ent.get("text", "")[:50], val[:30], f"{ent.get('score', 0):.2f}")
 
-    return Group(Text(f"Extracted {len(entities)} entities.", style=palette.get("info", "white")), Text(""), table)
+    return Group(Text(f"Extracted {len(entities)} entities.", style=palette.get("info", "dim")), Text(""), table)
 
 
 def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
-    info_grid.add_column(style="dim")
-    info_grid.add_column(style="bold")
+    info_grid.add_column(style=palette.get("key", "dim"))
+    info_grid.add_column(style=palette.get("primary_value", "bold"))
     if lang := data.get("language"):
         info_grid.add_row("Language:", lang)
     renderables.append(info_grid)
     renderables.append(Text(""))
 
     if full_text := data.get("text"):
-        renderables.append(Panel(full_text, title="Full Transcription", border_style="dim"))
+        renderables.append(
+            Panel(
+                full_text, 
+                title=f"[{palette.get('panel_title_info', 'dim')}]Full Transcription[/]", 
+                border_style=palette.get("panel_border_info", "dim")
+            )
+        )
         renderables.append(Text(""))
 
     segments = data.get("segments", [])
     if segments:
         seg_table = Table(box=None, padding=(0, 1), show_header=True)
-        seg_table.add_column("Time", style="dim")
-        seg_table.add_column("Speaker", style="cyan")
-        seg_table.add_column("Text")
+        seg_table.add_column("Time", style=palette.get("info", "dim"))
+        seg_table.add_column("Speaker", style=palette.get("table_header", "bold"))
+        seg_table.add_column("Text", style=palette.get("primary_value", "default"))
 
         for seg in segments[:10]:
             start = seg.get("start_time", 0)
@@ -232,7 +325,7 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -
 
         renderables.append(seg_table)
         if len(segments) > 10:
-            renderables.append(Text(f"... {len(segments) - 10} more segments", style="dim"))
+            renderables.append(Text(f"... {len(segments) - 10} more segments", style=palette.get("info", "dim")))
 
     return Group(*renderables)
 
@@ -241,12 +334,19 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> Rendera
     renderables: list[RenderableType] = []
 
     model_name = data.get("model", "Unknown Model")
-    renderables.append(Text(f"Model: {model_name}", style="bold cyan"))
+    renderables.append(Text(f"Model: {model_name}", style=palette.get("section_title", "bold")))
 
     prompt = data.get("prompt", "")
     if len(prompt) > 200:
         prompt = prompt[:200] + "..."
-    renderables.append(Panel(prompt, title="Input Prompt", border_style="dim", height=5))
+    renderables.append(
+        Panel(
+            prompt, 
+            title=f"[{palette.get('panel_title_info', 'dim')}]Input Prompt[/]", 
+            border_style=palette.get("panel_border_info", "dim"), 
+            height=5
+        )
+    )
 
     response = data.get("response_data", "")
     response_render: RenderableType
@@ -255,12 +355,18 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> Rendera
     else:
         response_render = Text(str(response))
 
-    renderables.append(Panel(response_render, title="Response", border_style="green"))
+    renderables.append(
+        Panel(
+            response_render, 
+            title=f"[{palette.get('panel_title_success', 'bold green')}]Response[/]", 
+            border_style=palette.get("panel_border_success", "green")
+        )
+    )
 
     if metadata := data.get("generation_metadata"):
         if usage := metadata.get("usage"):
             stats = f"Tokens: {usage.get('total_tokens')} (Prompt: {usage.get('prompt_tokens')}, Compl: {usage.get('completion_tokens')})"
-            renderables.append(Text(stats, style="dim"))
+            renderables.append(Text(stats, style=palette.get("info", "dim")))
 
     return Group(*renderables)
 
@@ -276,13 +382,21 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> Renderab
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column(style="bold")
+    grid.add_column(style=palette.get("primary_value", "bold"))
 
     grid.add_row("Model", str(data.get("model", "Unknown")))
     grid.add_row("Dimensions", str(dim))
     grid.add_row("Target", str(data.get("target", "None")))
 
-    return Group(grid, Text(""), Panel(vec_preview, title="Vector Data", border_style="dim"))
+    return Group(
+        grid, 
+        Text(""), 
+        Panel(
+            vec_preview, 
+            title=f"[{palette.get('panel_title_info', 'dim')}]Vector Data[/]", 
+            border_style=palette.get("panel_border_info", "dim")
+        )
+    )
 
 
 def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
@@ -296,8 +410,8 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -
     summary = ", ".join(f"{k}: {v}" for k, v in stats.items())
 
     renderables: list[RenderableType] = [
-        Text(f"Extraction Type: {data.get('extraction_type')}", style="bold"),
-        Text(f"Summary: {summary}", style="dim"),
+        Text(f"Extraction Type: {data.get('extraction_type')}", style=palette.get("section_title", "bold")),
+        Text(f"Summary: {summary}", style=palette.get("info", "dim")),
         Text(""),
     ]
 
@@ -306,13 +420,13 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -
         renderables.append(
             Panel(
                 b.get("text", ""),
-                title=f"Block {b.get('id', '')[:8]} (Page {b.get('page_number')})",
-                border_style="dim",
+                title=f"[{palette.get('panel_title_info', 'dim')}]Block {b.get('id', '')[:8]} (Page {b.get('page_number')})[/]",
+                border_style=palette.get("panel_border_info", "dim"),
             )
         )
 
     if len(text_blocks) > 5:
-        renderables.append(Text(f"... {len(text_blocks) - 5} more blocks", style="dim"))
+        renderables.append(Text(f"... {len(text_blocks) - 5} more blocks", style=palette.get("info", "dim")))
 
     return Group(*renderables)
 
@@ -326,16 +440,20 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str]) -> Render
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column()
+    grid.add_column(style=palette.get("primary_value", "default"))
 
     grid.add_row("Type", geo_type)
     grid.add_row("Coordinates", str(coords))
 
     if props:
-        renderables: list[RenderableType] = [grid, Rule(style="dim"), Text("Properties", style="bold")]
+        renderables: list[RenderableType] = [
+            grid, 
+            Rule(style=palette.get("info", "dim")), 
+            Text("Properties", style=palette.get("section_title", "bold"))
+        ]
         for k, v in props.items():
             if v:
-                renderables.append(Text(f"{k}: {v}"))
+                renderables.append(Text(f"{k}: {v}", style=palette.get("primary_value", "default")))
         return Group(*renderables)
 
     return grid
@@ -347,10 +465,10 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> Rendera
     unit = data.get("unit", "")
 
     table = Table(box=None, padding=(0, 2), show_header=True)
-    table.add_column("Timestamp", style="dim")
-    table.add_column(f"Value ({unit})", style="bold cyan")
-    table.add_column("Statistic")
-    table.add_column("Interval")
+    table.add_column("Timestamp", style=palette.get("info", "dim"))
+    table.add_column(f"Value ({unit})", style=palette.get("table_header", "bold"))
+    table.add_column("Statistic", style=palette.get("primary_value", "default"))
+    table.add_column("Interval", style=palette.get("primary_value", "default"))
 
     for p in points[:10]:
         val = p.get("value")
@@ -362,7 +480,7 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> Rendera
 
         table.add_row(p.get("timestamp", "-"), val_str, p.get("statistic", "point"), interval)
 
-    return Group(Text(f"Regression Target: {target}", style="bold"), Text(""), table)
+    return Group(Text(f"Regression Target: {target}", style=palette.get("section_title", "bold")), Text(""), table)
 
 
 def _render_generic(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
@@ -370,10 +488,10 @@ def _render_generic(data: dict[str, Any], palette: dict[str, str]) -> Renderable
     desc = data.get("description", "Generic Data")
 
     table = Table(box=None, padding=(0, 2))
-    table.add_column("Key", style="bold dim")
-    table.add_column("Value")
+    table.add_column("Key", style=palette.get("key", "bold dim"))
+    table.add_column("Value", style=palette.get("primary_value", "default"))
 
     for k, v in kv_data.items():
         table.add_row(k, str(v))
 
-    return Group(Text(desc, style="italic"), Text(""), table)
+    return Group(Text(desc, style=f"{palette.get('info', 'dim')} italic"), Text(""), table)

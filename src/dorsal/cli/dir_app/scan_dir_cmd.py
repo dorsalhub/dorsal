@@ -265,7 +265,7 @@ def scan_directory(
     )
 
     console.print(
-        f"✨ Found and processed [{palette['success']}]{len(collection)}[/] file(s) in [{palette['primary_value']}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+        f"Found and processed [{palette['success']}]{len(collection)}[/] file(s) in [{palette['primary_value']}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
     )
 
     if collection.warnings:

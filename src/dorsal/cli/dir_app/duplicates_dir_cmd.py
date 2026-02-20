@@ -199,7 +199,7 @@ def duplicates_dir(
         mode = "sha256"
 
     if not json_output:
-        console.print(f"✨ Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
+        console.print(f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
         if mode == "quick":
             console.print(
                 f"[{palette['info']}]Mode: Quick Hash. Results are based on file sampling and may contain rare false positives.[/]"
