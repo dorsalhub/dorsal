@@ -923,3 +923,59 @@ def test_get_latest_file_annotation_invalid_mode(mock_dorsal_file_cls, mock_shar
 
     with pytest.raises(ValueError, match="Invalid mode: 'csv'"):
         file_api.get_latest_file_annotation("hash_abc", "open/schema", mode="csv")  # type: ignore
+
+
+# --- Tests for list_file_annotations ---
+
+
+def test_list_file_annotations_invalid_mode():
+    """Test that an invalid mode raises a ValueError."""
+    with pytest.raises(ValueError, match="Invalid mode: 'xml'"):
+        file_api.list_file_annotations("abc", mode="xml")  # type: ignore
+
+
+@patch("dorsal.api.file.get_dorsal_file_record")
+def test_list_file_annotations_pydantic(mock_get_record):
+    """Test retrieving annotations as a pydantic object/dictionary directly."""
+    mock_record = MagicMock()
+    mock_record.annotations = {"AudioTranscription": [{"id": "123"}]}
+    mock_get_record.return_value = mock_record
+
+    result = file_api.list_file_annotations("hash_123", mode="pydantic")
+
+    mock_get_record.assert_called_once_with(hash_string="hash_123", mode="pydantic", api_key=None)
+    assert result == {"AudioTranscription": [{"id": "123"}]}
+
+
+@patch("dorsal.api.file.get_dorsal_file_record")
+def test_list_file_annotations_dict(mock_get_record):
+    """Test retrieving annotations as a standard dictionary via model_dump."""
+    mock_record = MagicMock()
+    # model_dump is expected to return the full record dictionary
+    mock_record.model_dump.return_value = {"annotations": {"AudioTranscription": [{"id": "123"}]}}
+    mock_get_record.return_value = mock_record
+
+    result = file_api.list_file_annotations("hash_123", mode="dict")
+    assert result == {"AudioTranscription": [{"id": "123"}]}
+
+
+@patch("dorsal.api.file.get_dorsal_file_record")
+def test_list_file_annotations_json(mock_get_record):
+    """Test retrieving annotations as a JSON string."""
+    mock_record = MagicMock()
+    mock_record.model_dump.return_value = {"annotations": {"AudioTranscription": [{"id": "123"}]}}
+    mock_get_record.return_value = mock_record
+
+    result = file_api.list_file_annotations("hash_123", mode="json")
+    assert isinstance(result, str)
+    assert '"AudioTranscription"' in result
+    assert '"123"' in result
+
+
+@patch("dorsal.api.file.get_dorsal_file_record")
+def test_list_file_annotations_exception(mock_get_record):
+    """Test that unexpected exceptions are logged and re-raised."""
+    mock_get_record.side_effect = Exception("API Offline")
+
+    with pytest.raises(Exception, match="API Offline"):
+        file_api.list_file_annotations("hash_123")
