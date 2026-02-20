@@ -258,7 +258,7 @@ def test_render_arxiv():
         "categories": ["cs.AI", "cs.CV"],
         "doi": "10.1000/xyz123",
         "journal_ref": "Journal of Feline AI",
-        "license": "CC-BY-SA 4.0"
+        "license": "CC-BY-SA 4.0",
     }
     ann = create_real_annotation(data)
     panel = create_model_result_panel(ann, "dorsal/arxiv", "paper.pdf", DEFAULT_PALETTE)
