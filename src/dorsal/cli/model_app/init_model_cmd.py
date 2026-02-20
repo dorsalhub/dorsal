@@ -55,7 +55,7 @@ def init_model(
                 f"Created new model project: [{palette.get('primary_value', 'cyan')}]{result.clean_name}[/]\n\n"
                 f"To install it for testing:\n"
                 f"  $ cd {result.clean_name}\n"
-                f"  $ pip install -e .",
+                f"  $ dorsal model install .",
                 title="Model Initialized",
                 border_style=palette.get("panel_border_success", "green"),
                 title_align="left",

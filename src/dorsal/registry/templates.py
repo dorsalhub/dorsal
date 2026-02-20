@@ -33,7 +33,7 @@ dependencies = [
 packages = ["{module_name}"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"model_config.toml" = "{module_name}/model_config.toml"
+"{module_name}/model_config.toml" = "{module_name}/model_config.toml"
 """
 
 MODEL_CONFIG_TEMPLATE = """# Dorsal Model Configuration
@@ -107,7 +107,7 @@ def test_model_integration(tmp_path):
 
     # 2. Load Registry Metadata
     root = pathlib.Path(__file__).parent.parent
-    with open(root / "model_config.toml", "rb") as f:
+    with open(root / "{module_name}" / "model_config.toml", "rb") as f:
         config = tomllib.load(f)
 
     # 3. Run Model
