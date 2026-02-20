@@ -245,3 +245,29 @@ def test_panel_metadata_display():
     output = normalize_ws(render_to_string(panel))
     assert "TARGET_ID" in output
     assert "FILE_NAME.ext" in output
+
+
+def test_render_arxiv():
+    data = {
+        "title": "   Deep Learning   \nFor Cats",
+        "arxiv_id": "2104.12345",
+        "version": "v2",
+        "authors": ["Alice Smith", "Bob Jones"],
+        "abstract": "This is a detailed abstract about cats and neural networks.",
+        "url": "https://arxiv.org/abs/2104.12345",
+        "categories": ["cs.AI", "cs.CV"],
+        "doi": "10.1000/xyz123",
+        "journal_ref": "Journal of Feline AI",
+        "license": "CC-BY-SA 4.0"
+    }
+    ann = create_real_annotation(data)
+    panel = create_model_result_panel(ann, "dorsal/arxiv", "paper.pdf", DEFAULT_PALETTE)
+
+    output = normalize_ws(render_to_string(panel))
+    assert "ArXiv Record Result" in str(panel.title)
+    assert "Deep Learning For Cats" in output
+    assert "2104.12345 (v2)" in output
+    assert "Alice Smith, Bob Jones" in output
+    assert "This is a detailed abstract" in output
+    assert "https://arxiv.org/abs/2104.12345" in output
+    assert "cs.AI, cs.CV" in output
