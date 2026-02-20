@@ -198,98 +198,74 @@ def test_run_model_unexpected_error_json_mode(mock_run_deps):
         assert "Unexpected internal error" in data["error"]
         assert "Internal crash" in data["details"]
 
+
 def test_run_model_export_success(mock_run_deps, mocker):
-    
-    
     real_record = GenericFileAnnotation(text="Transcribed string")
-    real_annotation = Annotation.model_construct(
-        record=real_record,
-        schema_id="AudioTranscription"
-    )
+    real_annotation = Annotation.model_construct(record=real_record, schema_id="AudioTranscription")
     mock_run_deps["run_logic"].return_value = real_annotation
 
-    
     mock_registry = mocker.MagicMock()
     mock_adapter = mocker.MagicMock()
     mock_adapter.export.return_value = "1\n00:00:00 --> 00:00:01\nTranscribed string"
     mock_registry.get_adapter.return_value = mock_adapter
 
-    mocker.patch.dict("sys.modules", {
-        "dorsal_adapters": mocker.MagicMock(),
-        "dorsal_adapters.registry": mock_registry
-    })
+    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
-        
+
         assert result.exit_code == 0
         assert "Transcribed string" in result.output
 
 
 def test_run_model_export_missing_adapters(mock_run_deps, mocker):
-    real_annotation = Annotation.model_construct(
-        record=GenericFileAnnotation(),
-        schema_id="AudioTranscription"
-    )
+    real_annotation = Annotation.model_construct(record=GenericFileAnnotation(), schema_id="AudioTranscription")
     mock_run_deps["run_logic"].return_value = real_annotation
 
-    
     mocker.patch.dict("sys.modules", {"dorsal_adapters.registry": None})
-    
+
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
-        
+
         assert result.exit_code != 0
         error_msg = str(mock_run_deps["error_console"].print.call_args_list[0].args[0])
         assert "dorsalhub-adapters" in error_msg
 
 
 def test_run_model_export_invalid_return_type(mock_run_deps, mocker):
-    
     mock_run_deps["run_logic"].return_value = {"bad": "data"}
-    
-    
+
     mock_registry = mocker.MagicMock()
-    mocker.patch.dict("sys.modules", {
-        "dorsal_adapters": mocker.MagicMock(),
-        "dorsal_adapters.registry": mock_registry
-    })
+    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
-        
+
         assert result.exit_code != 0
         error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
         assert "Unexpected return type" in error_msg
 
 
 def test_run_model_export_adapter_error(mock_run_deps, mocker):
-    real_annotation = Annotation.model_construct(
-        record=GenericFileAnnotation(),
-        schema_id="AudioTranscription"
-    )
+    real_annotation = Annotation.model_construct(record=GenericFileAnnotation(), schema_id="AudioTranscription")
     mock_run_deps["run_logic"].return_value = real_annotation
 
-    
     mock_registry = mocker.MagicMock()
     mock_registry.get_adapter.side_effect = ValueError("Format 'pdf' not supported")
 
-    mocker.patch.dict("sys.modules", {
-        "dorsal_adapters": mocker.MagicMock(),
-        "dorsal_adapters.registry": mock_registry
-    })
+    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "pdf"])
-        
+
         assert result.exit_code != 0
         error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
         assert "Export Error" in error_msg

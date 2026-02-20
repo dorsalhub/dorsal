@@ -24,9 +24,11 @@ from dorsal.common.exceptions import DorsalError
 
 cli_app = typer.Typer()
 
+
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
     ctx.obj = {"palette": DEFAULT_PALETTE}
+
 
 cli_app.command(name="get")(get_annotation)
 runner = CliRunner()
@@ -37,10 +39,10 @@ def mock_get_deps(mocker, mock_rich_console):
     mock_error_console = MagicMock()
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
-    
+
     mock_api_get = mocker.patch("dorsal.api.file.get_file_annotation")
     mock_panel = mocker.patch("dorsal.cli.views.model.create_model_result_panel")
-    
+
     return {
         "api_get": mock_api_get,
         "panel": mock_panel,
@@ -53,9 +55,9 @@ def test_get_annotation_success(mock_rich_console, mock_get_deps):
     mock_result.schema_id = "AudioTranscription"
     mock_get_deps["api_get"].return_value = mock_result
     mock_get_deps["panel"].return_value = "PanelOutput"
-    
+
     result = runner.invoke(cli_app, ["get", "uuid-1234"])
-    
+
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="pydantic")
     mock_get_deps["panel"].assert_called_once_with(
@@ -66,9 +68,9 @@ def test_get_annotation_success(mock_rich_console, mock_get_deps):
 
 def test_get_annotation_json(mock_rich_console, mock_get_deps):
     mock_get_deps["api_get"].return_value = '{"data": "raw"}'
-    
+
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--json"])
-    
+
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="json")
     mock_rich_console.print.assert_called_with('{"data": "raw"}')
@@ -77,9 +79,9 @@ def test_get_annotation_json(mock_rich_console, mock_get_deps):
 
 def test_get_annotation_error_panel(mock_get_deps):
     mock_get_deps["api_get"].side_effect = DorsalError("Annotation not found")
-    
+
     result = runner.invoke(cli_app, ["get", "uuid-1234"])
-    
+
     assert result.exit_code != 0
     error_msg = str(mock_get_deps["error_console"].print.call_args.args[0])
     assert "Annotation not found" in error_msg
@@ -87,9 +89,9 @@ def test_get_annotation_error_panel(mock_get_deps):
 
 def test_get_annotation_error_json(mock_get_deps):
     mock_get_deps["api_get"].side_effect = Exception("Internal crash")
-    
+
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--json"])
-    
+
     assert result.exit_code != 0
     error_json = mock_get_deps["error_console"].print.call_args.args[0]
     data = json.loads(error_json)
