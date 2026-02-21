@@ -35,7 +35,7 @@ def test_create_project_success(tmp_path):
     assert result.path == tmp_path / expected_clean_name
 
     project_root = result.path
-    module_dir = project_root / "dorsal_my_cool_scanner"
+    module_dir = project_root / "my_cool_scanner"
     tests_dir = project_root / "tests"
 
     assert project_root.exists()
@@ -43,10 +43,11 @@ def test_create_project_success(tmp_path):
     assert tests_dir.exists()
 
     assert (project_root / "pyproject.toml").exists()
-    assert (project_root / "model_config.toml").exists()
     assert (project_root / "README.md").exists()
+    assert (project_root / ".gitignore").exists()
     assert (module_dir / "__init__.py").exists()
     assert (module_dir / "model.py").exists()
+    assert (module_dir / "model_config.toml").exists()
     assert (tests_dir / "test_model.py").exists()
 
     pyproject_content = (project_root / "pyproject.toml").read_text(encoding="utf-8")
