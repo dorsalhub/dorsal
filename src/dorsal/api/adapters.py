@@ -49,8 +49,8 @@ def export_record(record: Union[dict[str, Any], BaseModel], schema_id: str, targ
 
     try:
         # Fetch the adapter and export
-        adapter = get_adapter(schema_id, target_format)  #
-        return adapter.export(record_dict)  #
+        adapter = get_adapter(schema_id, target_format)
+        return adapter.export(record_dict)
     except Exception as e:
         logger.error(f"Adapter export failed: {e}")
         raise DorsalError(f"Failed to export record to {target_format}: {e}") from e
@@ -59,4 +59,11 @@ def export_record(record: Union[dict[str, Any], BaseModel], schema_id: str, targ
 def get_supported_formats(schema_id: str) -> list[tuple[str, str]]:
     """Returns a list of (format_name, description) for all supported formats of a given schema."""
     _require_adapters()
-    return list_formats(schema_id)
+
+    try:
+        from dorsal_adapters.registry import ALIAS_MAPPING, list_formats
+
+        resolved_schema_id = ALIAS_MAPPING.get(schema_id, schema_id)
+        return list_formats(resolved_schema_id)
+    except ImportError:
+        return list_formats(schema_id)

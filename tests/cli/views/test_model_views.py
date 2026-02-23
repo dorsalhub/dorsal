@@ -271,3 +271,55 @@ def test_render_arxiv():
     assert "This is a detailed abstract" in output
     assert "https://arxiv.org/abs/2104.12345" in output
     assert "cs.AI, cs.CV" in output
+
+
+def test_render_classification_with_vocabulary():
+    """Tests classification fallback when labels are empty but vocabulary is present."""
+    data = {"target": "topic", "labels": [], "vocabulary": ["sports", "finance", "technology"]}
+    ann = create_real_annotation(data, schema_id="open/classification")  #
+    panel = create_model_result_panel(ann, "topic-model", "doc.txt", DEFAULT_PALETTE)  #
+
+    output = normalize_ws(render_to_string(panel))  #
+    assert "Classification Result" in str(panel.title)
+    assert "Vocabulary: sports, finance, technology" in output
+
+
+def test_render_classification_with_vocabulary_url():
+    """Tests classification fallback when labels and vocabulary are empty but a URL is present."""
+    data = {"target": "topic", "labels": [], "vocabulary": [], "vocabulary_url": "https://example.com/vocab.json"}
+    ann = create_real_annotation(data, schema_id="open/classification")  #
+    panel = create_model_result_panel(ann, "topic-model", "doc.txt", DEFAULT_PALETTE)  #
+
+    output = normalize_ws(render_to_string(panel))  #
+    assert "Classification Result" in str(panel.title)
+    assert "Vocabulary URL: https://example.com/vocab.json" in output
+
+
+def test_render_embedding_sparse_dict():
+    """Tests embedding rendering when the vector is a sparse dictionary."""
+    data = {
+        "model": "sparse-embedder",
+        "vector": {"dimensions": 1000, "indices": [10, 50, 99], "values": [0.5, 0.8, 0.1]},
+        "target": "text",
+    }
+    ann = create_real_annotation(data, schema_id="open/embedding")  #
+    panel = create_model_result_panel(ann, "embedder", "data.json", DEFAULT_PALETTE)  #
+
+    output = normalize_ws(render_to_string(panel))  #
+    assert "Embedding Result" in str(panel.title)
+    assert "Type Sparse Object" in output
+    assert "Dimensions 1000" in output
+    assert "Non-zero Elements 3" in output
+    assert "Indices: [10, 50, 99]" in output
+    assert "Values: [0.5, 0.8, 0.1]" in output
+
+
+def test_render_embedding_unknown_format():
+    """Tests embedding rendering when the vector format is neither a list nor a dictionary."""
+    data = {"model": "bad-embedder", "vector": "this is a string, not a valid vector"}
+    ann = create_real_annotation(data, schema_id="open/embedding")  #
+    panel = create_model_result_panel(ann, "embedder", "data.json", DEFAULT_PALETTE)  #
+
+    output = normalize_ws(render_to_string(panel))  #
+    assert "Embedding Result" in str(panel.title)
+    assert "Unknown vector format." in output

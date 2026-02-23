@@ -15,9 +15,7 @@
 import typer
 
 from dorsal.cli.adapter_app.export_cmd import export_adapter
-from dorsal.cli.model_app.install_model_cmd import install_model
-from dorsal.cli.model_app.run_model_cmd import run_model
-from dorsal.cli.model_app.uninstall_model_cmd import uninstall_model
+from dorsal.cli.adapter_app.list_cmd import list_adapters
 
 
 app = typer.Typer(
@@ -27,3 +25,4 @@ app = typer.Typer(
 )
 
 app.command(name="export")(export_adapter)
+app.command(name="list")(list_adapters)

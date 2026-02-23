@@ -67,7 +67,6 @@ def test_export_record_with_pydantic_model(mock_get_adapter):
 
     assert result == "Mocked Export String"
 
-    # Verify the model was dumped to a dictionary respecting aliases
     expected_dict = {"textField": "Hello World", "number": 42}
     mock_adapter_instance.export.assert_called_once_with(expected_dict)
 
@@ -76,7 +75,7 @@ def test_export_record_with_pydantic_model(mock_get_adapter):
 @patch("dorsal.api.adapters.get_adapter")
 def test_export_record_handles_exceptions(mock_get_adapter):
     """Test that adapter export failures are caught and wrapped in a DorsalError."""
-    # Simulate an error being raised either during adapter fetching or execution
+
     mock_get_adapter.side_effect = ValueError("Unsupported format 'fake'")
 
     with pytest.raises(DorsalError, match="Failed to export record to fake: Unsupported format 'fake'"):
@@ -84,12 +83,14 @@ def test_export_record_handles_exceptions(mock_get_adapter):
 
 
 @patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
-@patch("dorsal.api.adapters.list_formats")
-def test_get_supported_formats(mock_list_formats):
+def test_get_supported_formats():
     """Test that format listing proxies correctly to the registry."""
-    mock_list_formats.return_value = [("srt", "SubRip Text"), ("vtt", "WebVTT")]
+    mock_registry = MagicMock()
+    mock_registry.ALIAS_MAPPING = {}
+    mock_registry.list_formats.return_value = [("srt", "SubRip Text"), ("vtt", "WebVTT")]
 
-    result = get_supported_formats("test/schema")
+    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
+        result = get_supported_formats("test/schema")
 
-    assert result == [("srt", "SubRip Text"), ("vtt", "WebVTT")]
-    mock_list_formats.assert_called_once_with("test/schema")
+        assert result == [("srt", "SubRip Text"), ("vtt", "WebVTT")]
+        mock_registry.list_formats.assert_called_once_with("test/schema")
