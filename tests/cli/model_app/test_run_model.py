@@ -250,5 +250,125 @@ def test_run_model_export_adapter_error(mock_run_deps, mocker):
 
         printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
 
-        # 3. Assert our specific ValueError handler caught it and formatted it correctly
         assert any("Export Error" in msg and "Format 'pdf' not supported" in msg for msg in printed_messages)
+
+
+def test_run_model_with_output_path(mock_rich_console, mock_run_deps):
+    """Covers path resolution when using the --output flag (Snippet 1)."""
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        out_dir = pathlib.Path("custom_out")
+        out_path = out_dir / "custom_name.json"
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--output", str(out_path)])
+
+        assert result.exit_code == 0
+        assert out_dir.exists()
+        assert out_path.exists()
+
+
+def test_run_model_export_annotation_group(mock_rich_console, mock_run_deps, mocker):
+    """Covers exporting reassembled records from an AnnotationGroup (Snippet 2)."""
+    from dorsal.file.validators.file_record import AnnotationGroup, Annotation, GenericFileAnnotation
+    from dorsal.common.model import AnnotationModelSource
+
+    source_model = AnnotationModelSource(id="dorsalhub/test", version="0.1.0")
+    record = GenericFileAnnotation(text="Shard 1 text")
+
+    anno1 = Annotation.model_construct(
+        record=record, schema_id="open/audio-transcription", source=source_model, private=False, schema_version="1.0"
+    )
+    anno_group = AnnotationGroup(annotations=[anno1], group_id="test_group")
+
+    mock_run_deps["run_logic"].return_value = anno_group
+
+    mocker.patch("dorsal.file.sharding.reassemble_record", return_value=(None, {"text": "Merged text"}))
+
+    mock_registry = mocker.MagicMock()
+    mock_adapter = mocker.MagicMock()
+
+    mock_adapter.export.return_value = "Merged text"
+
+    mock_registry.get_adapter.return_value = mock_adapter
+    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.wav")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "txt"])
+
+        assert result.exit_code == 0
+        assert "Merged text" in mock_rich_console.print.call_args.args[0]
+
+
+def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
+    """Covers global unexpected error catching outside the processing loop (Snippet 3)."""
+
+    mocker.patch("rich.progress.Progress.__enter__", side_effect=Exception("Outer UI crash"))
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        assert result.exit_code != 0
+
+        error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
+        assert "Unexpected Error:" in error_msg
+        assert "Outer UI crash" in error_msg
+
+
+def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker):
+    """Covers batch processing tables, truncation, error rows, and completion messages (Snippets 4 & 6)."""
+    from rich.table import Table
+    import time
+
+    mock_run_deps["error_console"].get_time.side_effect = time.time
+
+    mock_registry = mocker.MagicMock()
+    mock_adapter = mocker.MagicMock()
+
+    mock_adapter.export.return_value = "Simulated exported text"
+
+    mock_registry.get_adapter.return_value = mock_adapter
+    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+
+    with runner.isolated_filesystem():
+        test_dir = pathlib.Path("batch_input")
+        test_dir.mkdir()
+
+        for i in range(12):
+            (test_dir / f"test_{i}.pdf").touch()
+
+        def mock_run_logic(*args, **kwargs):
+            if "test_0.pdf" in kwargs.get("file_path", ""):
+                raise Exception("Simulated inner error")
+            return mock_run_deps["result"]
+
+        mock_run_deps["run_logic"].side_effect = mock_run_logic
+
+        result = runner.invoke(
+            cli_app, ["run", "dorsal/scanner", str(test_dir), "--max-length", "10", "--export", "txt"]
+        )
+
+        assert result.exit_code == 0
+
+
+def test_run_model_single_file_inner_error_display(mock_run_deps):
+    """Covers single-file interactive display of unhandled inner loop errors (Snippet 5)."""
+    mock_run_deps["run_logic"].side_effect = Exception("Inner crash during run")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        assert result.exit_code == 0
+
+        error_calls = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("Error processing file: Inner crash during run" in msg for msg in error_calls)
