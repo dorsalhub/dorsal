@@ -47,7 +47,7 @@ def test_create_project_success(tmp_path):
     assert (project_root / ".gitignore").exists()
     assert (module_dir / "__init__.py").exists()
     assert (module_dir / "model.py").exists()
-    assert (module_dir / "model_config.toml").exists()
+    assert (project_root / "model_config.toml").exists()
     assert (tests_dir / "test_model.py").exists()
 
     pyproject_content = (project_root / "pyproject.toml").read_text(encoding="utf-8")

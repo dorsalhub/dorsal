@@ -33,7 +33,7 @@ dependencies = [
 packages = ["{module_name}"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"{module_name}/model_config.toml" = "{module_name}/model_config.toml"
+"model_config.toml" = "{module_name}/model_config.toml"
 """
 
 MODEL_CONFIG_TEMPLATE = """# Dorsal Model Configuration
@@ -45,6 +45,7 @@ model_class = "{class_name}"
 
 # The schema which validates the model output
 schema_id = "open/generic"
+schema_version = "{schema_version}"
 
 # --- DEPENDENCIES ---
 # Define when this model should run.
@@ -115,6 +116,7 @@ def test_model_integration(tmp_path):
         annotation_model={class_name},
         file_path=str(dummy_file),
         schema_id=config.get("schema_id", "open/generic"),
+        schema_version=config.get("schema_version"),
         dependencies=config.get("dependencies"),
         options=config.get("options"),
     )

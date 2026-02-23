@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.6.2"
+version = "0.7.0"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -77,6 +77,9 @@ log_cli_level = "DEBUG"
 log_format = "%(asctime)s %(levelname)s %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:install \"ipywidgets\" for Jupyter support:UserWarning:rich.live"
+]
 
 [tool.ruff]
 extend-exclude = ["*.ipynb"]

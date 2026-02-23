@@ -22,6 +22,7 @@ import sys
 from dorsal.common.exceptions import AuthError, DorsalOfflineError
 from dorsal.common.cli import get_rich_console, handle_auth_error, handle_offline_error, exit_cli, EXIT_CODE_ERROR
 from dorsal.cli.themes.palettes import get_palette
+from dorsal.cli.adapter_app import app as adapter_app_
 from dorsal.cli.cache_app import app as cache_app_
 from dorsal.cli.config_app import app as config_app_
 from dorsal.cli.auth_app import app as auth_app_
@@ -192,6 +193,7 @@ app.add_typer(dir_app_, name="dir")
 app.add_typer(record_app_, name="record")
 app.add_typer(collection_app_, name="collection")
 app.add_typer(model_app_, name="model")
+app.add_typer(adapter_app_, name="adapter")
 app.add_typer(cache_app_, name="cache")
 app.add_typer(config_app_, name="config")
 app.add_typer(theme_app_, name="theme")

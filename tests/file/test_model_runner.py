@@ -936,11 +936,16 @@ class TestRunModelWrapper:
         mocker.patch("dorsal.file.validators.open_schema.get_open_schema_validator", return_value=mock_val)
         mocker.patch("dorsal.file.model_runner.json_schema_validate_records", return_value={"valid_records": 1})
 
-        run_model(MockSuccessAnnotationModel, "/test_file.txt", schema_id="open/foobar")
+        run_model(
+            MockSuccessAnnotationModel,
+            "/test_file.txt",
+            schema_id="open/foobar",
+            schema_version=OPEN_VALIDATION_SCHEMAS_VER,
+        )
 
         from dorsal.file.validators.open_schema import get_open_schema_validator
 
-        get_open_schema_validator.assert_called_with("foobar")
+        get_open_schema_validator.assert_called_with(name="foobar", version=OPEN_VALIDATION_SCHEMAS_VER)
 
     def test_run_model_base_failure_handling(self, mock_fs, mocker):
         """

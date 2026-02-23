@@ -30,6 +30,7 @@ class ModelSpec(BaseModel):
 
     model_class: Type[AnnotationModel]
     schema_id: str
+    schema_version: str | None = None
     dependencies: list[DependencyType] | None = None
     validation_model: Any | None = None
     options: dict[str, Any] | None = None

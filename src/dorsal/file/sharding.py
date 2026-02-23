@@ -234,6 +234,9 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
     """
     from dorsal.file.validators.file_record import ShardedAnnotation
 
+    if not group.annotations:
+        raise ValueError("Cannot reassemble an empty AnnotationGroup.")
+
     try:
         chunks = [ShardedAnnotation.model_validate(ann, from_attributes=True) for ann in group.annotations]
     except PydanticValidationError as e:

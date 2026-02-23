@@ -455,13 +455,18 @@ class _BaseFileCollection:
         """Saves the collection data to a structured JSON file or returns it as a string."""
         output_data = self.to_dict(by_alias=by_alias, exclude_none=exclude_none, exclude=exclude)
 
+        def custom_encoder(obj):
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            return str(obj)
+
         if filepath:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, indent=indent, default=str)
             logger.info(f"Successfully exported {len(self)} records to {filepath}")
             return None
         else:
-            return json.dumps(output_data, indent=indent, default=str)
+            return json.dumps(output_data, indent=indent, default=custom_encoder)
 
     def to_sqlite(self, db_path: str, table_name: str = "files") -> None:
         """Exports the collection's data to a table in an SQLite database."""

@@ -87,11 +87,7 @@ def test_run_model_basic_success(mock_rich_console, mock_run_deps):
         assert result.exit_code == 0, result.output
 
         mock_run_deps["run_logic"].assert_called_once_with(
-            target="dorsal/scanner",
-            file_path=str(test_file.resolve()),
-            options={},
-            ignore_linter_errors=False,
-            private=False,
+            target="dorsal/scanner", file_path=str(test_file.resolve()), options={}, ignore_linter_errors=False
         )
 
         mock_run_deps["create_panel"].assert_called_once()
@@ -145,7 +141,7 @@ def test_run_model_json_output(mock_rich_console, mock_run_deps):
 
         json_str = mock_rich_console.print.call_args.args[0]
         data = json.loads(json_str)
-        assert data["summary"] == "Processed successfully"
+        assert data["results"][0]["summary"] == "Processed successfully"
 
 
 def test_run_model_dorsal_error_handling(mock_run_deps):
@@ -181,7 +177,7 @@ def test_run_model_dorsal_error_json_mode(mock_run_deps):
         assert data["error"] == "API Limit Reached"
 
 
-def test_run_model_unexpected_error_json_mode(mock_run_deps):
+def test_run_model_unexpected_error_json_mode(mock_rich_console, mock_run_deps):
     """Tests error reporting in JSON mode for generic exceptions."""
     mock_run_deps["run_logic"].side_effect = Exception("Internal crash")
 
@@ -191,15 +187,14 @@ def test_run_model_unexpected_error_json_mode(mock_run_deps):
 
         result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
 
-        assert result.exit_code != 0
+        assert result.exit_code == 0
 
-        error_json = mock_run_deps["error_console"].print.call_args.args[0]
+        error_json = mock_rich_console.print.call_args.args[0]
         data = json.loads(error_json)
-        assert "Unexpected internal error" in data["error"]
-        assert "Internal crash" in data["details"]
+        assert "Internal crash" in data["results"][0]["error"]
 
 
-def test_run_model_export_success(mock_run_deps, mocker):
+def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
     real_record = GenericFileAnnotation(text="Transcribed string")
     real_annotation = Annotation.model_construct(record=real_record, schema_id="AudioTranscription")
     mock_run_deps["run_logic"].return_value = real_annotation
@@ -217,7 +212,8 @@ def test_run_model_export_success(mock_run_deps, mocker):
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
 
         assert result.exit_code == 0
-        assert "Transcribed string" in result.output
+        printed_text = mock_rich_console.print.call_args.args[0]
+        assert "Transcribed string" in printed_text
 
 
 def test_run_model_export_missing_adapters(mock_run_deps, mocker):
@@ -236,22 +232,6 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker):
         assert "dorsalhub-adapters" in error_msg
 
 
-def test_run_model_export_invalid_return_type(mock_run_deps, mocker):
-    mock_run_deps["run_logic"].return_value = {"bad": "data"}
-
-    mock_registry = mocker.MagicMock()
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
-
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.wav")
-        test_file.touch()
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
-
-        assert result.exit_code != 0
-        error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
-        assert "Unexpected return type" in error_msg
-
-
 def test_run_model_export_adapter_error(mock_run_deps, mocker):
     real_annotation = Annotation.model_construct(record=GenericFileAnnotation(), schema_id="AudioTranscription")
     mock_run_deps["run_logic"].return_value = real_annotation
@@ -266,7 +246,9 @@ def test_run_model_export_adapter_error(mock_run_deps, mocker):
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "pdf"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
-        assert "Export Error" in error_msg
-        assert "Format 'pdf' not supported" in error_msg
+        assert result.exit_code == 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+
+        # 3. Assert our specific ValueError handler caught it and formatted it correctly
+        assert any("Export Error" in msg and "Format 'pdf' not supported" in msg for msg in printed_messages)

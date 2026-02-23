@@ -525,6 +525,9 @@ class ModelRunner:
             A RunModelResult object containing the model's output or an error.
         """
         from dorsal.file.configs.model_runner import RunModelResult
+        from dorsal.file.schemas import normalize_schema_id
+
+        schema_id = normalize_schema_id(schema_id)
 
         model_name = annotation_model.__name__
         result_data: dict[str, Any] = {
@@ -920,6 +923,7 @@ class ModelRunner:
                         file_path=file_path,
                         base_model_result=base_model_result,
                         schema_id=step_config.schema_id,
+                        schema_version=step_config.schema_version,
                         options=step_config.options,
                         ignore_linter_errors=step_config.ignore_linter_errors,
                         follow_symlinks=follow_symlinks,
@@ -1201,11 +1205,12 @@ def run_model(
     )
     from dorsal.file.annotation_models.base import FileCoreAnnotationModel
 
-    from dorsal.file.schemas import OpenSchemaName
+    from dorsal.file.schemas import OpenSchemaName, normalize_schema_id
 
     from dorsal.file.validators.open_schema import get_open_schema_validator
     from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
 
+    schema_id = normalize_schema_id(schema_id)
     parsed_dependencies: list[ModelRunnerDependencyConfig] = []
     schema_version = schema_version if schema_version is not None else OPEN_VALIDATION_SCHEMAS_VER
     if dependencies:
@@ -1311,7 +1316,9 @@ def run_model(
     elif schema_id and schema_id.startswith("open/"):
         schema_name = schema_id.removeprefix("open/")
         try:
-            effective_validator = get_open_schema_validator(cast(OpenSchemaName, schema_name))
+            effective_validator = get_open_schema_validator(
+                name=cast(OpenSchemaName, schema_name), version=schema_version
+            )
             logger.debug("Resolved 'schema_id' (%s) to standard validator.", schema_id)
         except (ValueError, TypeError, RuntimeError) as e:
             logger.warning(

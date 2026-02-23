@@ -139,7 +139,18 @@ def get_open_schema(name: OpenSchemaName, version: str = OPEN_VALIDATION_SCHEMAS
     return _load_schema_from_package(schema_filename, version)
 
 
+def normalize_schema_id(schema_id: str | None) -> str | None:
+    if not schema_id:
+        return schema_id
+
+    if schema_id in OPEN_SCHEMA_NAME_MAP:
+        return f"open/{schema_id}"
+
+    return schema_id
+
+
 __all__ = [
     "get_open_schema",
     "OpenSchemaName",
+    "normalize_schema_id",
 ]

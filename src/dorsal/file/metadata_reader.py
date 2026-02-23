@@ -359,16 +359,15 @@ class MetadataReader:
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
             progress_columns = (
+                SpinnerColumn(),
                 TextColumn(
-                    "[progress.description]{task.description}",
-                    style=active_palette["progress_description"],
+                    "{task.description}",
+                    style=active_palette.get("progress_description", "default"),
                 ),
-                BarColumn(bar_width=None, style=active_palette["progress_bar"]),
-                TaskProgressColumn(style=active_palette["progress_percentage"]),
+                BarColumn(complete_style=active_palette.get("progress_bar", "default")),
+                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
                 MofNCompleteColumn(),
-                TextColumn("•", style="dim"),
                 TimeElapsedColumn(),
-                TextColumn("•", style="dim"),
                 TimeRemainingColumn(),
             )
             rich_progress = Progress(
@@ -376,14 +375,19 @@ class MetadataReader:
                 console=console,
                 redirect_stdout=True,
                 redirect_stderr=True,
+                transient=True,
             )
-            task_id = rich_progress.add_task("Generating Metadata", total=total_count)
+            task_id = rich_progress.add_task("Initializing...", total=total_count)
             iterator = file_paths
         else:
             iterator = file_paths
 
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for file_path in iterator:
+                if rich_progress:
+                    filename = os.path.basename(file_path)
+                    rich_progress.update(task_id, description=f"Processing {filename}...")
+
                 if limit is not None and len(records_to_index_list) >= limit:
                     logger.debug(
                         "Reached generation limit of %d records. Stopping further local processing for '%s'.",
@@ -455,7 +459,7 @@ class MetadataReader:
                     processed_files_summary_local[file_path] = f"error_unexpected: {type(err).__name__}"
 
                 if rich_progress:
-                    rich_progress.update(task_id, advance=1)
+                    rich_progress.advance(task_id)
 
         logger.debug(
             "Completed local generation for '%s'. %d unique records generated.",
@@ -494,6 +498,7 @@ class MetadataReader:
         from dorsal.common.environment import is_jupyter_environment
         from rich.progress import (
             Progress,
+            SpinnerColumn,
             BarColumn,
             TaskProgressColumn,
             MofNCompleteColumn,
@@ -541,16 +546,15 @@ class MetadataReader:
             active_palette = palette if palette is not None else DEFAULT_PALETTE
 
             progress_columns = (
+                SpinnerColumn(),
                 TextColumn(
-                    "[progress.description]{task.description}",
+                    "{task.description}",
                     style=active_palette.get("progress_description", "default"),
                 ),
-                BarColumn(bar_width=None, style=active_palette.get("progress_bar", "default")),
+                BarColumn(complete_style=active_palette.get("progress_bar", "default")),
                 TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
                 MofNCompleteColumn(),
-                TextColumn("•", style="dim"),
                 TimeElapsedColumn(),
-                TextColumn("•", style="dim"),
                 TimeRemainingColumn(),
             )
             rich_progress = Progress(
@@ -560,7 +564,7 @@ class MetadataReader:
                 transient=True,
                 redirect_stderr=True,
             )
-            task_id = rich_progress.add_task("Pushing batches...", total=len(batches))
+            task_id = rich_progress.add_task("Initializing...", total=len(batches))
             iterator = batches
         else:
             iterator = batches
@@ -569,6 +573,9 @@ class MetadataReader:
             for i, batch in enumerate(iterator):
                 batch_size = len(batch)
                 batch_num = i + 1
+
+                if rich_progress:
+                    rich_progress.update(task_id, description=f"Pushing batch {batch_num}/{len(batches)}...")
 
                 try:
                     api_response: FileIndexResponse
@@ -631,7 +638,7 @@ class MetadataReader:
                         ) from err
 
                 if rich_progress:
-                    rich_progress.update(task_id, advance=1)
+                    rich_progress.advance(task_id)
 
         return summary
 
@@ -976,16 +983,15 @@ class MetadataReader:
 
             active_palette = palette if palette is not None else DEFAULT_PALETTE
             progress_columns = (
+                SpinnerColumn(),
                 TextColumn(
-                    "[progress.description]{task.description}",
-                    style=active_palette["progress_description"],
+                    "{task.description}",
+                    style=active_palette.get("progress_description", "default"),
                 ),
-                BarColumn(bar_width=None, style=active_palette["progress_bar"]),
-                TaskProgressColumn(style=active_palette["progress_percentage"]),
+                BarColumn(complete_style=active_palette.get("progress_bar", "default")),
+                TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
                 MofNCompleteColumn(),
-                TextColumn("•", style="dim"),
                 TimeElapsedColumn(),
-                TextColumn("•", style="dim"),
                 TimeRemainingColumn(),
             )
             rich_progress = Progress(
@@ -995,13 +1001,17 @@ class MetadataReader:
                 redirect_stdout=True,
                 redirect_stderr=True,
             )
-            task_id = rich_progress.add_task("Processing files", total=total_count)
+            task_id = rich_progress.add_task("Initializing...", total=total_count)
             iterator = file_paths
         else:
             iterator = file_paths
 
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for file_path in iterator:
+                if rich_progress:
+                    filename = os.path.basename(file_path)
+                    rich_progress.update(task_id, description=f"Processing {filename}...")
+
                 try:
                     processing_path = file_path
                     if follow_symlinks:
@@ -1035,7 +1045,7 @@ class MetadataReader:
                     warnings.append(msg)
 
                 if rich_progress:
-                    rich_progress.update(task_id, advance=1)
+                    rich_progress.advance(task_id)
 
         logger.debug(
             "Successfully processed %d files into %s objects from directory %s.",

@@ -71,10 +71,10 @@ def run_or_install_model(
             except Exception as e:
                 raise DorsalError(f"Failed to auto-install model '{target}': {e}") from e
         else:
-            raise DorsalError(
-                f"The model '{target}' is not installed locally.\n"
-                f"To install it, please use its full Registry ID (e.g. 'owner/repo')."
-            )
+            message = f"The model '{target}' is not installed locally.\n"
+            if target == ".":
+                message += "For local development, install the model before running it."
+            raise DorsalError(message)
 
     pipeline_step = _get_execution_step(package_name)
 
@@ -170,6 +170,7 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
         return ModelRunnerPipelineStep(
             annotation_model=CallableImportPath(module=module_name, name=class_name),
             schema_id=schema_id,
+            schema_version=config_data.get("schema_version"),
             dependencies=config_data.get("dependencies"),
             validation_model=None,
             options=config_data.get("options"),
