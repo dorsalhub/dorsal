@@ -113,9 +113,11 @@ def run_model(
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
     from dorsal.common.exceptions import DorsalError, AuthError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
     from dorsal.api.model import run_or_install_model
+    from dorsal.api.adapters import export_record
     from dorsal.cli.views.model import create_model_result_panel
+    from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
     from dorsal.file.validators.file_record import AnnotationGroup, Annotation
@@ -135,7 +137,7 @@ def run_model(
     error_console = get_error_console()
     palette: dict[str, str] = ctx.obj.get("palette", {})
 
-    parsed_options = _parse_cli_options(options)
+    parsed_options = parse_cli_options(options=options, palette=palette)
 
     # 1. Target Resolution & Installation
     if not (json_output or export_format):
@@ -167,7 +169,7 @@ def run_model(
 
     # 3. Execution Loop
     results_data = []
-    raw_results: list[Annotation | AnnotationGroup | None] = []
+    raw_results: list[RunModelResult | None] = []
     export_files_to_save = []
     out_dir = pathlib.Path.cwd()
     if output_path:
@@ -191,41 +193,56 @@ def run_model(
             console=error_console,
             transient=True,
         ) as progress:
-            task = progress.add_task("Initializing...", total=len(files_to_process))
+            # Overall task for batch processing (only added if multiple files)
+            overall_task = progress.add_task("Total Progress", total=len(files_to_process)) if is_batch else None
 
             for f in files_to_process:
-                progress.update(task, description=f"Processing {f.name}...")
+                # Set total=None to start indeterminate (pulsing)
+                file_task = progress.add_task(f"Processing {f.name}...", total=None)
+
+                # Define the hook to snap to percentage when real data arrives
+                def progress_hook(current: float, total: float, description: str = "", task_id=file_task):
+                    # Explicitly type as dict[str, Any] to satisfy mypy's unpacking check
+                    update_kwargs: dict[str, Any] = {"completed": current, "total": total}
+                    if description:
+                        update_kwargs["description"] = f"[{palette.get('info', 'dim')}]{description}"
+                    progress.update(task_id, **update_kwargs)
+
                 try:
-                    res: Annotation | AnnotationGroup = run_or_install_model(
+                    res: RunModelResult = run_or_install_model(
                         target=target,
                         file_path=str(f),
                         options=parsed_options,
                         ignore_linter_errors=ignore_lint,
+                        progress_callback=progress_hook,
                     )
 
                     raw_results.append(res)
+
+                    # Convert RunModelResult to dict for JSON serialization
                     res_dict = res.model_dump(exclude_none=True)
-                    res_dict = {"file_path": str(f), **res_dict}
+                    res_dict["file_path"] = str(f)
                     results_data.append(res_dict)
 
                     if export_format:
                         try:
-                            from dorsal_adapters.registry import get_adapter
+                            # If the model errored, skip export
+                            if res.error:
+                                raise ValueError(f"Cannot export due to model error: {res.error}")
 
-                            if isinstance(res, AnnotationGroup):
-                                from dorsal.file.sharding import reassemble_record
-
-                                _, record_dict = reassemble_record(res)
-                                schema_id = res.annotations[0].schema_id
-                            else:
-                                schema_id = res.schema_id
-                                record_dict = res.record.model_dump(exclude_none=True) if res.record else {}
+                            schema_id = res.schema_id
+                            record_dict = res.record or {}
 
                             if not schema_id:
                                 raise ValueError("Missing schema_id for export.")
 
-                            adapter = get_adapter(schema_id, export_format)
-                            exported_text = adapter.export(record_dict)
+                            if not record_dict:
+                                raise ValueError("No record data generated to export.")
+
+                            # Route cleanly through the unified API method
+                            exported_text = export_record(
+                                record=record_dict, schema_id=schema_id, target_format=export_format, **parsed_options
+                            )
 
                             base_name = f.stem
                             save_path = (
@@ -236,15 +253,13 @@ def run_model(
 
                             export_files_to_save.append((save_path, exported_text))
 
-                        except ImportError:
-                            error_console.print(
-                                f"[{palette.get('warning', 'yellow')}]Error:[/] 'dorsalhub-adapters' is required for exports."
-                            )
-                            exit_cli(code=EXIT_CODE_ERROR)
-                        except ValueError as err:
+                        except DorsalError as err:
                             error_console.print(
                                 f"[{palette.get('warning', 'yellow')}]Export Error on {f.name}:[/] {err}"
                             )
+                            res_dict["export_error"] = str(err)
+                        except ValueError as err:
+                            error_console.print(f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}")
                             res_dict["export_error"] = str(err)
 
                 except (DorsalError, AuthError, typer.Exit):
@@ -255,7 +270,14 @@ def run_model(
                     results_data.append({"file_path": str(f), "error": str(e)})
                     raw_results.append(None)
 
-                progress.advance(task)
+                # Force file task to 100% when done processing the file
+                progress.update(file_task, completed=100.0, total=100.0)
+
+                # Remove the completed file task so they don't stack up visually
+                progress.remove_task(file_task)
+
+                if overall_task is not None:
+                    progress.advance(overall_task)
 
     except (DorsalError, AuthError) as e:
         if json_output:
@@ -373,17 +395,3 @@ def run_model(
             error_console.print(f"\n[{palette.get('info', 'dim')}]Outputs saved successfully:\n{paths_formatted}[/]")
         else:
             error_console.print(f"\n[{palette.get('info', 'dim')}]Complete. Files saved to {out_dir.resolve()}[/]")
-
-
-def _parse_cli_options(options: Optional[List[str]]) -> dict[str, Any]:
-    if not options:
-        return {}
-
-    result = {}
-    for item in options:
-        if "=" not in item:
-            logger.warning(f"Skipping malformed option '{item}'. Must be in 'key=value' format.")
-            continue
-        key, value = item.split("=", 1)
-        result[key.strip()] = value.strip()
-    return result

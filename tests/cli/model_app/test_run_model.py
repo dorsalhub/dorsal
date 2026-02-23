@@ -16,14 +16,15 @@ import json
 import pathlib
 import pytest
 import typer
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, ANY
 from typer.testing import CliRunner
 
 
 from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError, AuthError
-from dorsal.file.validators.file_record import Annotation, GenericFileAnnotation
+from dorsal.file.configs.model_runner import RunModelResult
+from dorsal.common.model import AnnotationModelSource
 
 
 cli_app = typer.Typer()
@@ -52,9 +53,14 @@ def mock_run_deps(mocker, mock_rich_console):
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 
     mock_runner = mocker.patch("dorsal.api.model.run_or_install_model")
-    mock_result = MagicMock()
-    mock_result.model_dump.return_value = {"summary": "Processed successfully"}
-    mock_runner.return_value = mock_result
+
+    default_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        record={"summary": "Processed successfully"},
+        schema_id="mock/schema",
+    )
+    mock_runner.return_value = default_result
 
     mock_resolve = mocker.patch("dorsal.registry.resolution.resolve_target")
     mock_resolve.return_value = ("registry", "dorsal-receipt-scanner")
@@ -67,7 +73,7 @@ def mock_run_deps(mocker, mock_rich_console):
 
     return {
         "run_logic": mock_runner,
-        "result": mock_result,
+        "result": default_result,
         "resolve": mock_resolve,
         "is_installed": mock_is_installed,
         "check_safety": mock_check_safety,
@@ -87,14 +93,18 @@ def test_run_model_basic_success(mock_rich_console, mock_run_deps):
         assert result.exit_code == 0, result.output
 
         mock_run_deps["run_logic"].assert_called_once_with(
-            target="dorsal/scanner", file_path=str(test_file.resolve()), options={}, ignore_linter_errors=False
+            target="dorsal/scanner",
+            file_path=str(test_file.resolve()),
+            options={},
+            ignore_linter_errors=False,
+            progress_callback=ANY,
         )
 
         mock_run_deps["create_panel"].assert_called_once()
         assert mock_rich_console.print.called
 
 
-def test_run_model_with_options_parsing(mock_run_deps, caplog):
+def test_run_model_with_options_parsing(mock_run_deps):
     """Tests that --opt key=value pairs are parsed into a dictionary and malformed ones warned."""
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.pdf")
@@ -106,10 +116,11 @@ def test_run_model_with_options_parsing(mock_run_deps, caplog):
         )
 
         assert result.exit_code == 0
-        expected_options = {"engine": "ocr", "dpi": "300"}
+        expected_options = {"engine": "ocr", "dpi": 300}
         assert mock_run_deps["run_logic"].call_args.kwargs["options"] == expected_options
 
-        assert "Skipping malformed option 'invalid_opt'" in caplog.text
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("Skipping malformed option 'invalid_opt'" in msg for msg in printed_messages)
 
 
 def test_run_model_triggers_safety_check_when_not_installed(mock_run_deps):
@@ -141,7 +152,8 @@ def test_run_model_json_output(mock_rich_console, mock_run_deps):
 
         json_str = mock_rich_console.print.call_args.args[0]
         data = json.loads(json_str)
-        assert data["results"][0]["summary"] == "Processed successfully"
+
+        assert data["results"][0]["record"]["summary"] == "Processed successfully"
 
 
 def test_run_model_dorsal_error_handling(mock_run_deps):
@@ -195,16 +207,15 @@ def test_run_model_unexpected_error_json_mode(mock_rich_console, mock_run_deps):
 
 
 def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
-    real_record = GenericFileAnnotation(text="Transcribed string")
-    real_annotation = Annotation.model_construct(record=real_record, schema_id="AudioTranscription")
-    mock_run_deps["run_logic"].return_value = real_annotation
+    mock_result = RunModelResult(
+        name="FasterWhisperTranscriber",
+        source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
+        record={"text": "Transcribed string"},
+        schema_id="open/audio-transcription",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
 
-    mock_registry = mocker.MagicMock()
-    mock_adapter = mocker.MagicMock()
-    mock_adapter.export.return_value = "1\n00:00:00 --> 00:00:01\nTranscribed string"
-    mock_registry.get_adapter.return_value = mock_adapter
-
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+    mocker.patch("dorsal.api.adapters.export_record", return_value="1\n00:00:00 --> 00:00:01\nTranscribed string")
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
@@ -217,29 +228,43 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
 
 
 def test_run_model_export_missing_adapters(mock_run_deps, mocker):
-    real_annotation = Annotation.model_construct(record=GenericFileAnnotation(), schema_id="AudioTranscription")
-    mock_run_deps["run_logic"].return_value = real_annotation
+    mock_result = RunModelResult(
+        name="FasterWhisperTranscriber",
+        source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
+        record={"text": "Transcribed string"},
+        schema_id="open/audio-transcription",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
 
-    mocker.patch.dict("sys.modules", {"dorsal_adapters.registry": None})
+    mocker.patch(
+        "dorsal.api.adapters.export_record",
+        side_effect=DorsalError("Please pip install dorsalhub-adapters to enable exports."),
+    )
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
         result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_run_deps["error_console"].print.call_args_list[0].args[0])
-        assert "dorsalhub-adapters" in error_msg
+        assert result.exit_code == 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("dorsalhub-adapters" in msg for msg in printed_messages)
 
 
 def test_run_model_export_adapter_error(mock_run_deps, mocker):
-    real_annotation = Annotation.model_construct(record=GenericFileAnnotation(), schema_id="AudioTranscription")
-    mock_run_deps["run_logic"].return_value = real_annotation
+    mock_result = RunModelResult(
+        name="FasterWhisperTranscriber",
+        source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
+        record={"text": "Transcribed string"},
+        schema_id="open/audio-transcription",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
 
-    mock_registry = mocker.MagicMock()
-    mock_registry.get_adapter.side_effect = ValueError("Format 'pdf' not supported")
-
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+    mocker.patch(
+        "dorsal.api.adapters.export_record",
+        side_effect=DorsalError("Failed to export record to pdf: Format 'pdf' not supported"),
+    )
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
@@ -269,41 +294,6 @@ def test_run_model_with_output_path(mock_rich_console, mock_run_deps):
         assert out_path.exists()
 
 
-def test_run_model_export_annotation_group(mock_rich_console, mock_run_deps, mocker):
-    """Covers exporting reassembled records from an AnnotationGroup (Snippet 2)."""
-    from dorsal.file.validators.file_record import AnnotationGroup, Annotation, GenericFileAnnotation
-    from dorsal.common.model import AnnotationModelSource
-
-    source_model = AnnotationModelSource(id="dorsalhub/test", version="0.1.0")
-    record = GenericFileAnnotation(text="Shard 1 text")
-
-    anno1 = Annotation.model_construct(
-        record=record, schema_id="open/audio-transcription", source=source_model, private=False, schema_version="1.0"
-    )
-    anno_group = AnnotationGroup(annotations=[anno1], group_id="test_group")
-
-    mock_run_deps["run_logic"].return_value = anno_group
-
-    mocker.patch("dorsal.file.sharding.reassemble_record", return_value=(None, {"text": "Merged text"}))
-
-    mock_registry = mocker.MagicMock()
-    mock_adapter = mocker.MagicMock()
-
-    mock_adapter.export.return_value = "Merged text"
-
-    mock_registry.get_adapter.return_value = mock_adapter
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
-
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.wav")
-        test_file.touch()
-
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "txt"])
-
-        assert result.exit_code == 0
-        assert "Merged text" in mock_rich_console.print.call_args.args[0]
-
-
 def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
     """Covers global unexpected error catching outside the processing loop (Snippet 3)."""
 
@@ -324,18 +314,10 @@ def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
 
 def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker):
     """Covers batch processing tables, truncation, error rows, and completion messages (Snippets 4 & 6)."""
-    from rich.table import Table
     import time
 
     mock_run_deps["error_console"].get_time.side_effect = time.time
-
-    mock_registry = mocker.MagicMock()
-    mock_adapter = mocker.MagicMock()
-
-    mock_adapter.export.return_value = "Simulated exported text"
-
-    mock_registry.get_adapter.return_value = mock_adapter
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+    mocker.patch("dorsal.api.adapters.export_record", return_value="Simulated exported text")
 
     with runner.isolated_filesystem():
         test_dir = pathlib.Path("batch_input")

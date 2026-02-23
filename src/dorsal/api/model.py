@@ -16,16 +16,16 @@ import logging
 import importlib.metadata
 import importlib.resources
 import tomllib
-from typing import Any
+from typing import Any, Callable, cast
 
 from packaging.utils import canonicalize_name
 
 from dorsal.api.config import get_model_pipeline
 from dorsal.common.exceptions import DorsalError, DorsalConfigError
 from dorsal.common.validators import CallableImportPath
-from dorsal.file.configs.model_runner import ModelRunnerPipelineStep
+from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pipeline_step_models, RunModelResult
 from dorsal.file.file_annotator import FILE_ANNOTATOR
-from dorsal.file.model_runner import ModelRunner
+from dorsal.file.model_runner import ModelRunner, run_model
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 from dorsal.registry.installer import install_model_target
 from dorsal.registry.resolution import resolve_target, is_package_installed
@@ -41,8 +41,8 @@ def run_or_install_model(
     *,
     options: dict[str, Any] | None = None,
     ignore_linter_errors: bool = False,
-    private: bool = False,
-) -> Annotation | AnnotationGroup:
+    progress_callback: Callable[[float, float, str], None] | None = None,
+) -> RunModelResult:
     """
     Resolve a model, installs if necessary, and execute it on a local file.
 
@@ -52,8 +52,7 @@ def run_or_install_model(
         file_path: Path to the file to process.
         api_key: Optional API key.
         options: Runtime options to override the model's defaults.
-        ignore_linter_errors: If True, bypasses strict data quality checks.
-        private: Whether the resulting annotation should be marked private.
+        ignore_linter_errors: If True, bypasses data quality checks.
 
     Returns:
         Annotation | AnnotationGroup: The final, validated annotation object(s).
@@ -85,19 +84,27 @@ def run_or_install_model(
         if ignore_linter_errors:
             pipeline_step.ignore_linter_errors = True
 
-    runner = ModelRunner()
+    annotator_class, validator = resolve_pipeline_step_models(pipeline_step)
 
-    try:
-        result = FILE_ANNOTATOR.annotate_file_using_pipeline_step(
-            file_path=file_path,
-            model_runner=runner,
-            pipeline_step=pipeline_step,
-            private=private,
-        )
-        return result
-    except Exception as e:
-        logger.error(f"Failed to execute model '{target}': {e}")
-        raise
+    if pipeline_step.schema_id and pipeline_step.schema_id.startswith("open/"):
+        effective_validator = None
+    else:
+        effective_validator = validator
+
+    # 2. Delegate directly to run_model
+    run_result = run_model(
+        annotation_model=annotator_class,
+        file_path=file_path,
+        schema_id=pipeline_step.schema_id,
+        schema_version=pipeline_step.schema_version,
+        validation_model=effective_validator,
+        dependencies=pipeline_step.dependencies,
+        options=pipeline_step.options,
+        ignore_linter_errors=pipeline_step.ignore_linter_errors,
+        progress_callback=progress_callback,
+    )
+
+    return run_result
 
 
 def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:

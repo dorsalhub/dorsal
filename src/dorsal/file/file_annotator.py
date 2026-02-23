@@ -46,7 +46,7 @@ from dorsal.common.validators import (
     json_schema_validate_records,
 )
 from dorsal.file.model_runner import ModelRunner
-from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult
+from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult, resolve_pipeline_step_models
 from dorsal.file.linters import apply_linter
 from dorsal.file.sharding import process_record_for_sharding
 from dorsal.file.validators.file_record import (
@@ -84,6 +84,7 @@ class FileAnnotator:
         schema_id: str,
         options: dict | None,
         ignore_linter_errors: bool = False,
+        progress_callback: Callable[[float, float, str], None] | None = None,
     ) -> RunModelResult:
         """
         Executes a single model via the ModelRunner.
@@ -117,6 +118,7 @@ class FileAnnotator:
                 schema_id=schema_id,
                 options=options,
                 ignore_linter_errors=ignore_linter_errors,
+                progress_callback=progress_callback,
             )
             if run_model_result.error:
                 raise AnnotationExecutionError(
@@ -270,6 +272,7 @@ class FileAnnotator:
         schema_id: str | None = None,
         schema_version: str | None = None,
         private: bool | None,
+        progress_callback: Callable[[float, float, str], None] | None = None,
     ) -> Annotation | AnnotationGroup:
         """
         Runs an annotation model defined by a single pipeline step.
@@ -306,35 +309,7 @@ class FileAnnotator:
         effective_schema_id = schema_id if schema_id is not None else pipeline_step_obj.schema_id
         logger.debug("Validation schema: %s", effective_schema_id)
 
-        try:
-            annotator_callable = import_callable(import_path=pipeline_step_obj.annotation_model)
-            if not (inspect.isclass(annotator_callable) and issubclass(annotator_callable, AnnotationModel)):
-                raise TypeError(
-                    f"Imported callable '{annotator_callable.__name__}' is not a subclass of AnnotationModel."
-                )
-            annotator_class = cast(Type[AnnotationModel], annotator_callable)
-
-            validator: Type[BaseModel] | JsonSchemaValidator | None = None
-            if pipeline_step_obj.validation_model:
-                if isinstance(pipeline_step_obj.validation_model, dict):
-                    validator = get_json_schema_validator(schema=pipeline_step_obj.validation_model, strict=True)
-                else:
-                    validator_callable = import_callable(import_path=pipeline_step_obj.validation_model)
-                    if is_pydantic_model_class(validator_callable):
-                        validator = cast(Type[BaseModel], validator_callable)
-                    elif isinstance(validator_callable, JsonSchemaValidator):
-                        validator = validator_callable
-                    else:
-                        raise TypeError(
-                            f"Imported validator '{pipeline_step_obj.validation_model.name}' is not a supported type."
-                        )
-        except (ImportError, AttributeError, TypeError) as err:
-            msg = (
-                "Failed to import model/validator from config: "
-                f"{pipeline_step_obj.annotation_model.module}.{pipeline_step_obj.annotation_model.name}"
-            )
-            logger.exception("AnnotationImportError: %s.", msg)
-            raise AnnotationImportError(msg) from err
+        annotator_class, validator = resolve_pipeline_step_models(pipeline_step_obj)
 
         run_model_result = self._execute(
             model_runner=model_runner,
@@ -344,6 +319,7 @@ class FileAnnotator:
             schema_id=effective_schema_id,
             options=pipeline_step_obj.options,
             ignore_linter_errors=pipeline_step_obj.ignore_linter_errors,
+            progress_callback=progress_callback,
         )
 
         final_version = schema_version
@@ -370,6 +346,7 @@ class FileAnnotator:
         options: dict | None = None,
         validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
+        progress_callback: Callable[[float, float, str], None] | None = None,
     ) -> Annotation | AnnotationGroup:
         """
         Runs a given annotation model class directly.
@@ -414,6 +391,7 @@ class FileAnnotator:
             schema_id=schema_id,
             options=options,
             ignore_linter_errors=ignore_linter_errors,
+            progress_callback=progress_callback,
         )
 
         return self._make_annotation(
