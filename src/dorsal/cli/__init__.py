@@ -22,6 +22,7 @@ import sys
 from dorsal.common.exceptions import AuthError, DorsalOfflineError
 from dorsal.common.cli import get_rich_console, handle_auth_error, handle_offline_error, exit_cli, EXIT_CODE_ERROR
 from dorsal.cli.themes.palettes import get_palette
+from dorsal.cli.adapter_app import app as adapter_app_
 from dorsal.cli.cache_app import app as cache_app_
 from dorsal.cli.config_app import app as config_app_
 from dorsal.cli.auth_app import app as auth_app_
@@ -31,6 +32,7 @@ from dorsal.cli.model_app import app as model_app_
 from dorsal.cli.record_app import app as record_app_
 from dorsal.cli.collection_app import app as collection_app_
 from dorsal.cli.config_app import theme_app as theme_app_
+from dorsal.cli.config_app import pipeline_app as pipeline_app_
 from dorsal.cli.annotation_app import app as annotation_app_
 from dorsal.cli.search_app import search_and_display
 from dorsal.cli.file_app.identify_cmd import identify_file_cmd
@@ -192,9 +194,11 @@ app.add_typer(dir_app_, name="dir")
 app.add_typer(record_app_, name="record")
 app.add_typer(collection_app_, name="collection")
 app.add_typer(model_app_, name="model")
+app.add_typer(adapter_app_, name="adapter")
 app.add_typer(cache_app_, name="cache")
 app.add_typer(config_app_, name="config")
 app.add_typer(theme_app_, name="theme")
+app.add_typer(pipeline_app_, name="pipeline")
 
 
 def cli_app():

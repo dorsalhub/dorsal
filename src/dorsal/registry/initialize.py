@@ -16,6 +16,7 @@ import logging
 import pathlib
 import re
 
+from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
 from dorsal.common.exceptions import DorsalError
 from dorsal.registry.templates import (
     INIT_TEMPLATE,
@@ -56,7 +57,7 @@ def create_new_annotation_model_project(name: str, target_dir: pathlib.Path | No
     cwd = target_dir or pathlib.Path.cwd()
     output_dir = cwd / clean_name
     package_name = f"dorsal-{clean_name}"
-    module_name = package_name.replace("-", "_")
+    module_name = clean_name.replace("-", "_")
     entry_point_name = clean_name.replace("-", "_")
     class_name = "".join(x.title() for x in clean_name.split("-"))
 
@@ -81,9 +82,12 @@ def create_new_annotation_model_project(name: str, target_dir: pathlib.Path | No
         )
 
         (output_dir / "model_config.toml").write_text(
-            MODEL_CONFIG_TEMPLATE.format(class_name=class_name), encoding="utf-8"
+            MODEL_CONFIG_TEMPLATE.format(class_name=class_name, schema_version=OPEN_VALIDATION_SCHEMAS_VER),
+            encoding="utf-8",
         )
-        print(f"Wrote: {MODEL_CONFIG_TEMPLATE.format(class_name=class_name)}")
+        logger.debug(
+            f"Wrote: {MODEL_CONFIG_TEMPLATE.format(class_name=class_name, schema_version=OPEN_VALIDATION_SCHEMAS_VER)}"
+        )
 
         (pkg_dir / "model.py").write_text(
             MODEL_TEMPLATE.format(

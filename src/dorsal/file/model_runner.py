@@ -491,6 +491,7 @@ class ModelRunner:
         file_path: str,
         base_model_result: "RunModelResult" | None = None,
         schema_id: str | None = None,
+        schema_version: str | None = None,
         options: dict[str, Any] | None = None,
         ignore_linter_errors: bool = False,
         follow_symlinks: bool = True,
@@ -515,6 +516,7 @@ class ModelRunner:
             base_model_result: The result from the initial FileCoreAnnotationModel.
                                This is `None` only when running the base model itself.
             schema_id: The target schema ID for this annotation.
+            schema_version: The schema version for this annotation.
             options: A dictionary of options to pass to the model's `.main()` method.
             follow_symlinks: If True (default), the model will treat the path as resolving
                               to its target. If False, it may treat it as a raw node.
@@ -523,6 +525,9 @@ class ModelRunner:
             A RunModelResult object containing the model's output or an error.
         """
         from dorsal.file.configs.model_runner import RunModelResult
+        from dorsal.file.schemas import normalize_schema_id
+
+        schema_id = normalize_schema_id(schema_id)
 
         model_name = annotation_model.__name__
         result_data: dict[str, Any] = {
@@ -535,7 +540,7 @@ class ModelRunner:
             },
             "record": None,
             "schema_id": schema_id,
-            "schema_version": None,
+            "schema_version": schema_version,
             "error": None,
         }
         raw_model_output: dict[str, Any] | None = None
@@ -664,7 +669,11 @@ class ModelRunner:
                     try:
                         raise_on_linter_error = not ignore_linter_errors
 
-                        apply_linter(schema_id=schema_id, record=validated_data, raise_on_error=raise_on_linter_error)
+                        apply_linter(
+                            schema_id=schema_id,
+                            record=validated_data,
+                            raise_on_error=raise_on_linter_error,
+                        )
 
                     except DataQualityError as e:
                         logger.warning(
@@ -914,6 +923,7 @@ class ModelRunner:
                         file_path=file_path,
                         base_model_result=base_model_result,
                         schema_id=step_config.schema_id,
+                        schema_version=step_config.schema_version,
                         options=step_config.options,
                         ignore_linter_errors=step_config.ignore_linter_errors,
                         follow_symlinks=follow_symlinks,
@@ -1152,6 +1162,7 @@ def run_model(
     file_path: str,
     *,
     schema_id: str | None = None,
+    schema_version: str | None = None,
     validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
     dependencies: list[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
     options: dict[str, Any] | None = None,
@@ -1171,6 +1182,7 @@ def run_model(
         schema_id: (Optional) The target schema ID (e.g., "open/generic").
                    If this is an "open/" schema, the standard validator
                    will be used automatically.
+        schema_version: (Optional) The version of the schema to validate against. If `None` uses the default.
         validation_model: (Optional) A *custom* Pydantic model or
                           JsonSchemaValidator. This overrides the
                           automatic validator from 'schema_id'.
@@ -1186,18 +1198,21 @@ def run_model(
                     'validation_model' is also provided, as this
                     is an ambiguous configuration.
     """
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
     from dorsal.file.configs.model_runner import (
         RunModelResult,
         ModelRunnerDependencyConfig,
     )
     from dorsal.file.annotation_models.base import FileCoreAnnotationModel
 
-    from dorsal.file.schemas import OpenSchemaName
+    from dorsal.file.schemas import OpenSchemaName, normalize_schema_id
 
     from dorsal.file.validators.open_schema import get_open_schema_validator
     from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
 
+    schema_id = normalize_schema_id(schema_id)
     parsed_dependencies: list[ModelRunnerDependencyConfig] = []
+    schema_version = schema_version if schema_version is not None else OPEN_VALIDATION_SCHEMAS_VER
     if dependencies:
         try:
             raw_input = dependencies if isinstance(dependencies, list) else [dependencies]
@@ -1213,6 +1228,7 @@ def run_model(
                 ),
                 record=None,
                 schema_id=schema_id,
+                schema_version=schema_version,
                 error=f"Configuration Error: Invalid dependencies format. {e}",
             )
 
@@ -1300,7 +1316,9 @@ def run_model(
     elif schema_id and schema_id.startswith("open/"):
         schema_name = schema_id.removeprefix("open/")
         try:
-            effective_validator = get_open_schema_validator(cast(OpenSchemaName, schema_name))
+            effective_validator = get_open_schema_validator(
+                name=cast(OpenSchemaName, schema_name), version=schema_version
+            )
             logger.debug("Resolved 'schema_id' (%s) to standard validator.", schema_id)
         except (ValueError, TypeError, RuntimeError) as e:
             logger.warning(
@@ -1336,6 +1354,7 @@ def run_model(
         file_path=file_path,
         base_model_result=base_model_result,
         schema_id=schema_id,
+        schema_version=schema_version,
         options=options,
     )
 

@@ -148,9 +148,7 @@ def get_collection_overview_data(collection: "LocalFileCollection") -> dict:
                 largest_files_dist_data.append({"name": "Other", "size": other_size})
 
     timeline_data = [{"x": f.date_modified.isoformat(), "y": f.name} for f in collection.files]
-    most_recent_file = (
-        sorted(collection.files, key=lambda f: f.date_modified, reverse=True)[0] if collection.files else None
-    )
+    most_recent_file = max(collection.files, key=lambda f: f.date_modified) if collection.files else None
 
     return {
         "media_type": {

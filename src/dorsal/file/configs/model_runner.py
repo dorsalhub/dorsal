@@ -311,6 +311,7 @@ class ModelRunnerPipelineStep(BaseModel):
     dependencies: list[ModelRunnerDependencyConfig] | None = None
     validation_model: CallableImportPath | dict | None = None
     schema_id: DatasetID
+    schema_version: str | None = None
     options: dict[str, Any] | None = None
     ignore_linter_errors: bool = False
     deactivated: bool = False

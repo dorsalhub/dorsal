@@ -34,6 +34,7 @@ def create_model_result_panel(
     title: str,
     file_name: str,
     palette: dict[str, str],
+    max_length: int = 10,
 ) -> Panel:
     """
     Dispatcher that renders a rich Panel for a model run result.
@@ -78,7 +79,7 @@ def create_model_result_panel(
 
     if schema_id in RENDERER_REGISTRY:
         render_func, schema_type = RENDERER_REGISTRY[schema_id]
-        content = render_func(data, palette)
+        content = render_func(data, palette, max_length)
     else:
         content = JSON.from_data(data)
         schema_type = "Raw Output"
@@ -127,7 +128,7 @@ def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
     return Bar(size=width, begin=0, end=score, color=color, bgcolor=bgcolor)
 
 
-def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     title = data.get("title", "Untitled")
@@ -146,7 +147,12 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableTy
 
     authors = data.get("authors", [])
     if authors:
-        renderables.append(Text(", ".join(authors), style=f"{palette.get('primary_value_alt', 'cyan')} italic"))
+        # We can apply max_length to the authors list too!
+        display_authors = authors[:max_length]
+        author_str = ", ".join(display_authors)
+        if len(authors) > max_length:
+            author_str += f", ... (+{len(authors) - max_length})"
+        renderables.append(Text(author_str, style=f"{palette.get('primary_value_alt', 'cyan')} italic"))
 
     renderables.append(Text(""))
 
@@ -182,10 +188,9 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str]) -> RenderableTy
     return Group(*renderables)
 
 
-def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_classification(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
-    # 1. Top-level metadata
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style=palette.get("key", "dim"))
     grid.add_column(style=palette.get("primary_value", "bold"))
@@ -196,7 +201,6 @@ def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> Ren
     if grid.row_count > 0:
         renderables.extend([grid, Text("")])
 
-    # 2. Main data
     labels = data.get("labels", [])
     if labels:
         table = Table(box=None, padding=(0, 2), show_header=True)
@@ -205,18 +209,17 @@ def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> Ren
         table.add_column("Confidence", width=20)
 
         labels_sorted = sorted(labels, key=lambda x: x.get("score", 0), reverse=True)
-        for item in labels_sorted[:10]:
+        for item in labels_sorted[:max_length]:
             score = item.get("score", 0)
             table.add_row(item.get("label", "Unknown"), f"{score:.4f}", _score_bar(score, palette))
 
-        if len(labels_sorted) > 10:
-            table.add_row(f"... and {len(labels_sorted) - 10} more", "", "")
+        if len(labels_sorted) > max_length:
+            table.add_row(f"... and {len(labels_sorted) - max_length} more", "", "")
         renderables.append(table)
     else:
-        # Handle the conditional requirement of vocabulary if labels are empty
         vocab = data.get("vocabulary", [])
         if vocab:
-            renderables.append(Text(f"Vocabulary: {', '.join(vocab)}", style=palette.get("info", "dim")))
+            renderables.append(Text(f"Vocabulary: {', '.join(vocab[:max_length])}", style=palette.get("info", "dim")))
         elif v_url := data.get("vocabulary_url"):
             renderables.append(Text(f"Vocabulary URL: {v_url}", style=palette.get("link", "underline")))
 
@@ -226,7 +229,7 @@ def _render_classification(data: dict[str, Any], palette: dict[str, str]) -> Ren
     return Group(*renderables)
 
 
-def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -251,7 +254,7 @@ def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str]) -> 
     table.add_column("Normalized Value", style=palette.get("primary_value_alt", "yellow"))
     table.add_column("Score", justify="right", style=palette.get("primary_value", "cyan"))
 
-    for ent in entities[:15]:
+    for ent in entities[:max_length]:
         val = str(ent.get("value")) if ent.get("value") is not None else "-"
         table.add_row(
             ent.get("label", "UNK"),
@@ -265,7 +268,7 @@ def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str]) -> 
     return Group(*renderables)
 
 
-def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_object_detection(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -284,7 +287,7 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> R
     table.add_column("Score", justify="right", style=palette.get("primary_value", "cyan"))
     table.add_column("Location", style=palette.get("primary_value", "cyan"))
 
-    for obj in objects[:15]:
+    for obj in objects[:max_length]:
         loc = "Unknown"
         if box := obj.get("box"):
             loc = f"Box [x:{float(box.get('x', 0)):.1f}, y:{float(box.get('y', 0)):.1f}]"
@@ -297,7 +300,7 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str]) -> R
     return Group(*renderables)
 
 
-def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     grid = Table.grid(padding=(0, 2))
@@ -314,9 +317,9 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> Renderab
         dim = len(vector)
         grid.add_row("Type", "Dense Array")
         grid.add_row("Dimensions", str(dim))
-        vec_preview = "[" + ", ".join(f"{v:.4f}" for v in vector[:8])
-        if dim > 8:
-            vec_preview += ", ..."
+        vec_preview = "[" + ", ".join(f"{v:.4f}" for v in vector[:max_length])
+        if dim > max_length:
+            vec_preview += f", ... (+{dim - max_length} more)"
         vec_preview += "]"
     elif isinstance(vector, dict):
         dim = vector.get("dimensions", "Unknown")
@@ -324,7 +327,7 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> Renderab
         grid.add_row("Type", "Sparse Object")
         grid.add_row("Dimensions", str(dim))
         grid.add_row("Non-zero Elements", str(len(indices)))
-        vec_preview = f"Indices: {indices[:5]}...\nValues: {vector.get('values', [])[:5]}..."
+        vec_preview = f"Indices: {indices[:max_length]}...\nValues: {vector.get('values', [])[:max_length]}..."
     else:
         vec_preview = "Unknown vector format."
 
@@ -343,7 +346,7 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str]) -> Renderab
     return Group(*renderables)
 
 
-def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -381,7 +384,7 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -
         seg_table.add_column("Speaker", style=palette.get("table_header", "bold"))
         seg_table.add_column("Text", style=palette.get("primary_value", "cyan"))
 
-        for seg in segments[:10]:
+        for seg in segments[:max_length]:
             start = seg.get("start_time", 0)
             end = seg.get("end_time", 0)
             speaker_obj = seg.get("speaker", {})
@@ -390,13 +393,15 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str]) -
             seg_table.add_row(f"{start:.1f}-{end:.1f}s", speaker, seg.get("text", ""))
 
         renderables.append(seg_table)
-        if len(segments) > 10:
-            renderables.append(Text(f"... {len(segments) - 10} more segments", style=palette.get("info", "dim")))
+        if len(segments) > max_length:
+            renderables.append(
+                Text(f"... {len(segments) - max_length} more segments", style=palette.get("info", "dim"))
+            )
 
     return Group(*renderables)
 
 
-def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     blocks = data.get("blocks", [])
     stats: dict[str, int] = {}
     for b in blocks:
@@ -419,7 +424,7 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -
     renderables.extend([Text(f"Summary: {summary}", style=palette.get("info", "dim")), Text("")])
 
     text_blocks = [b for b in blocks if b.get("text")]
-    for b in text_blocks[:5]:
+    for b in text_blocks[:max_length]:
         renderables.append(
             Panel(
                 b.get("text", ""),
@@ -428,13 +433,13 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str]) -
             )
         )
 
-    if len(text_blocks) > 5:
-        renderables.append(Text(f"... {len(text_blocks) - 5} more blocks", style=palette.get("info", "dim")))
+    if len(text_blocks) > max_length:
+        renderables.append(Text(f"... {len(text_blocks) - max_length} more blocks", style=palette.get("info", "dim")))
 
     return Group(*renderables)
 
 
-def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     renderables: list[RenderableType] = []
 
     renderables.append(Text(f"Model: {data.get('model', 'Unknown Model')}", style=palette.get("section_title", "bold")))
@@ -487,7 +492,7 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str]) -> Rendera
     return Group(*renderables)
 
 
-def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_regression(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     points = data.get("points", [])
     target = data.get("target", "Unknown Target")
     unit = data.get("unit", "")
@@ -505,7 +510,7 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> Rendera
     table.add_column("Statistic", style=palette.get("primary_value", "cyan"))
     table.add_column("Interval", style=palette.get("primary_value", "cyan"))
 
-    for p in points[:10]:
+    for p in points[:max_length]:
         val = p.get("value")
         val_str = f"{val:.4f}" if isinstance(val, float) else str(val)
 
@@ -520,10 +525,14 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str]) -> Rendera
         table.add_row(p.get("timestamp", "-"), val_str, stat, interval)
 
     renderables.append(table)
+
+    if len(points) > max_length:
+        renderables.append(Text(f"... {len(points) - max_length} more points", style=palette.get("info", "dim")))
+
     return Group(*renderables)
 
 
-def _render_geolocation(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     geo = data.get("geometry") or {}
     props = data.get("properties") or {}
 
@@ -542,15 +551,24 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str]) -> Render
             Rule(style=palette.get("info", "dim")),
             Text("Properties", style=palette.get("section_title", "bold")),
         ]
-        for k, v in props.items():
+
+        # Apply max_length to properties dictionary
+        prop_items = list(props.items())
+        for k, v in prop_items[:max_length]:
             if v is not None:
                 renderables.append(Text(f"{k}: {v}", style=palette.get("primary_value", "cyan")))
+
+        if len(prop_items) > max_length:
+            renderables.append(
+                Text(f"... {len(prop_items) - max_length} more properties", style=palette.get("info", "dim"))
+            )
+
         return Group(*renderables)
 
     return grid
 
 
-def _render_generic(data: dict[str, Any], palette: dict[str, str]) -> RenderableType:
+def _render_generic(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
     kv_data = data.get("data", {})
     renderables: list[RenderableType] = [
         Text(data.get("description", "Generic Data"), style=f"{palette.get('info', 'dim')} italic")
@@ -563,10 +581,15 @@ def _render_generic(data: dict[str, Any], palette: dict[str, str]) -> Renderable
     table.add_column("Key", style=palette.get("key", "dim"))
     table.add_column("Value", style=palette.get("primary_value", "cyan"))
 
-    for k, v in kv_data.items():
+    kv_items = list(kv_data.items())
+    for k, v in kv_items[:max_length]:
         table.add_row(k, str(v))
 
     renderables.append(table)
+
+    if len(kv_items) > max_length:
+        renderables.append(Text(f"... {len(kv_items) - max_length} more properties", style=palette.get("info", "dim")))
+
     return Group(*renderables)
 
 

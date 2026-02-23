@@ -285,6 +285,7 @@ class RegistryModelResponse(BaseModel):
     version: str
     install_url: str
     schema_id: str
+    schema_version: str | None = None
     description: str | None = None
     package_name: str
     is_official: bool = False

@@ -14,6 +14,7 @@
 
 import logging
 import os
+import re
 from typing import Literal, Type, Any, cast
 
 from packaging.utils import canonicalize_name
@@ -95,6 +96,7 @@ def show_model_pipeline(scope: Literal["effective", "project", "global"] = "effe
                 "name": step.annotation_model.name,
                 "module": step.annotation_model.module,
                 "schema_id": step.schema_id,
+                "schema_version": step.schema_version,
                 "dependencies": deps_str,
             }
         )
@@ -152,7 +154,8 @@ def find_package_name_by_class(class_name: str, scope: Literal["project", "globa
 
 def register_model(
     annotation_model: Type[AnnotationModel],
-    schema_id: str,
+    schema_id: str | None = None,
+    schema_version: str | None = None,
     validation_model: dict | Type[Any] | JsonSchemaValidator | None = None,
     dependencies: list[ModelRunnerDependencyConfig] | ModelRunnerDependencyConfig | None = None,
     options: dict | None = None,
@@ -170,6 +173,8 @@ def register_model(
         JSON_SCHEMA_CONSTRAINT_KEYWORDS,
     )
     from dorsal.common.exceptions import DorsalConfigError, PydanticValidationError
+    from dorsal.file.schemas import normalize_schema_id
+    from dorsal.common.validators.schemas import is_valid_dataset_id_or_schema_id
 
     if scope not in ["project", "global"]:
         raise ValueError("Invalid scope. Must be one of 'project' or 'global'.")
@@ -200,23 +205,32 @@ def register_model(
         raise TypeError(f"Model '{model_name}' must be defined in an importable module, not the main script.")
     model_path = (model_module, model_name)
 
-    validation_model_config: tuple[str, str] | dict[str, Any] | None = None
-    is_open_schema = schema_id.startswith("open/")
-
-    if is_open_schema:
-        schema_name = schema_id.removeprefix("open/")
-        clean_name = schema_name.replace("-", "_")
-        validator_path = (
-            "dorsal.file.validators.open_schema",
-            f"{clean_name}_validator",
-        )
-        if validation_model is not None:
+    if schema_id is None:
+        if validation_model is not None and is_pydantic_model_class(validation_model):
+            class_name = validation_model.__name__
+            norm_name = re.sub(r"(?<!^)(?=[A-Z])", "-", class_name).lower()
+            schema_id = f"pydantic/{norm_name}"
+        else:
             raise ValueError(
-                f"Ambiguous configuration: You cannot provide a custom 'validation_model' when using an 'open/' schema_id ('{schema_id}')."
+                "A 'schema_id' must be provided explicitly unless a Pydantic class "
+                "is passed as the 'validation_model' (in which case it can be inferred)."
             )
-        validation_model_config = validator_path
 
-    elif validation_model is not None:
+    schema_id = normalize_schema_id(schema_id)
+
+    if not is_valid_dataset_id_or_schema_id(schema_id):
+        raise ValueError(
+            f"The schema ID '{schema_id}' is invalid. "
+            "It must consist of a namespace and a name separated by a forward slash (e.g., 'namespace/dataset-name'). "
+            "Both parts must be 3 to 32 characters long and contain only lowercase letters, numbers, and hyphens."
+        )
+
+    is_open_schema = False
+    if schema_id is not None:
+        is_open_schema = schema_id.startswith("open/")
+    validation_model_config: tuple[str, str] | dict[str, Any] | None = None
+
+    if validation_model is not None:
         if isinstance(validation_model, dict):
             if not any(key in validation_model for key in JSON_SCHEMA_CONSTRAINT_KEYWORDS):
                 raise ValueError("The provided 'validation_model' JSON Schema is inert (won't validate anything)")
@@ -240,11 +254,20 @@ def register_model(
         else:
             raise TypeError(f"Invalid 'validation_model' type ({type(validation_model)}).")
 
+    elif is_open_schema and schema_id is not None:
+        schema_name = schema_id.removeprefix("open/")
+        clean_name = schema_name.replace("-", "_")
+        validation_model_config = (
+            "dorsal.file.validators.open_schema",
+            f"{clean_name}_validator",
+        )
+
     new_step_data = {
         k: v
         for k, v in {
             "annotation_model": model_path,
             "schema_id": schema_id,
+            "schema_version": schema_version,
             "dependencies": effective_dependencies_dicts if effective_dependencies_dicts else None,
             "validation_model": validation_model_config,
             "options": options,

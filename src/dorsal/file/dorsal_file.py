@@ -693,7 +693,7 @@ class DorsalFile(_DorsalFile):
         try:
             sorted_results = sorted(
                 results,
-                key=lambda x: getattr(x, "date_modified", datetime.datetime.min),
+                key=lambda x: getattr(x, "date_modified", datetime.datetime.min.replace(tzinfo=datetime.UTC)),
                 reverse=True,
             )
             return sorted_results[0]
@@ -2133,7 +2133,7 @@ class LocalFile(_DorsalFile):
         try:
             sorted_results = sorted(
                 results,
-                key=lambda x: getattr(x, "date_modified", datetime.datetime.min),
+                key=lambda x: getattr(x, "date_modified", datetime.datetime.min.replace(tzinfo=datetime.UTC)),
                 reverse=True,
             )
             return sorted_results[0]
@@ -2713,7 +2713,12 @@ class LocalFile(_DorsalFile):
             exclude=exclude,
         )
 
-        return json.dumps(output_dict, indent=indent, default=str)
+        def custom_encoder(obj):
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            return str(obj)
+
+        return json.dumps(output_dict, indent=indent, default=custom_encoder)
 
     def save(
         self,

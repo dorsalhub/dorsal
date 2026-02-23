@@ -192,3 +192,43 @@ def test_unregister_model_empty_pipeline(mock_pipeline_config):
 
     with pytest.raises(KeyError, match="Could not find model for 'any-pkg'"):
         config.unregister_model("any-pkg")
+
+
+def test_register_model_missing_schema_id_raises_error():
+    """Tests that a ValueError is raised when schema_id is omitted and cannot be inferred."""
+    with pytest.raises(ValueError, match="A 'schema_id' must be provided explicitly"):
+        config.register_model(DummyModel, schema_id=None, validation_model=None)
+
+
+def test_register_model_infers_schema_id_from_pydantic(mock_pipeline_config):
+    """Tests that a schema_id is correctly inferred and formatted from a Pydantic class."""
+
+    class MyAwesomeValidator:
+        pass
+
+    with (
+        patch("dorsal.common.model.is_pydantic_model_class", return_value=True),
+        patch("dorsal.api.config.ModelRunnerPipelineStep") as step_mock,
+    ):
+        step_mock.model_validate.return_value.model_dump.return_value = {"valid": "data"}
+
+        config.register_model(DummyModel, schema_id=None, validation_model=MyAwesomeValidator)
+
+        call_args = step_mock.model_validate.call_args[0][0]
+
+        assert call_args["schema_id"] == "pydantic/my-awesome-validator"
+
+
+def test_register_model_infers_open_schema_validator(mock_pipeline_config):
+    """Tests that 'open/' schemas automatically map to the correct validation_model tuple."""
+    with patch("dorsal.api.config.ModelRunnerPipelineStep") as step_mock:
+        step_mock.model_validate.return_value.model_dump.return_value = {"valid": "data"}
+
+        config.register_model(DummyModel, schema_id="open/my-test-schema", validation_model=None)
+
+        call_args = step_mock.model_validate.call_args[0][0]
+
+        assert call_args["validation_model"] == (
+            "dorsal.file.validators.open_schema",
+            "my_test_schema_validator",
+        )

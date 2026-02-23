@@ -45,6 +45,7 @@ model_class = "{class_name}"
 
 # The schema which validates the model output
 schema_id = "open/generic"
+schema_version = "{schema_version}"
 
 # --- DEPENDENCIES ---
 # Define when this model should run.
@@ -107,7 +108,7 @@ def test_model_integration(tmp_path):
 
     # 2. Load Registry Metadata
     root = pathlib.Path(__file__).parent.parent
-    with open(root / "model_config.toml", "rb") as f:
+    with open(root / "{module_name}" / "model_config.toml", "rb") as f:
         config = tomllib.load(f)
 
     # 3. Run Model
@@ -115,6 +116,7 @@ def test_model_integration(tmp_path):
         annotation_model={class_name},
         file_path=str(dummy_file),
         schema_id=config.get("schema_id", "open/generic"),
+        schema_version=config.get("schema_version"),
         dependencies=config.get("dependencies"),
         options=config.get("options"),
     )

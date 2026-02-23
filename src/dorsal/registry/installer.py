@@ -51,24 +51,32 @@ def _get_local_pyproject_name(target_path: pathlib.Path) -> str | None:
 
 def _load_packaged_model_config(module_name: str) -> dict[str, Any]:
     """
-    Loads 'model_config.toml' from the installed package resources.
+    Loads 'model_config.toml' from the installed package resources or local project root.
     """
     try:
         resource_path = importlib.resources.files(module_name) / "model_config.toml"
 
-        if not resource_path.is_file():
-            return {}
-
-        content = resource_path.read_text(encoding="utf-8")
-        return tomllib.loads(content)
+        if resource_path.is_file():
+            content = resource_path.read_text(encoding="utf-8")
+            return tomllib.loads(content)
 
     except (ImportError, FileNotFoundError):
-        return {}
+        pass
     except tomllib.TOMLDecodeError as e:
         raise DorsalConfigError(f"Syntax error in '{module_name}/model_config.toml': {e}") from e
+
+    try:
+        mod = importlib.import_module(module_name)
+        mod_file = getattr(mod, "__file__", None)
+        if mod_file:
+            local_config = pathlib.Path(mod_file).parent.parent / "model_config.toml"
+            if local_config.is_file():
+                content = local_config.read_text(encoding="utf-8")
+                return tomllib.loads(content)
     except Exception as e:
-        logger.warning(f"Unexpected error loading config from {module_name}: {e}")
-        return {}
+        logger.warning(f"Unexpected error loading fallback config from {module_name}: {e}")
+
+    return {}
 
 
 def _ensure_git_installed() -> None:
@@ -274,6 +282,7 @@ def install_model_from_package(
         merged_config = {
             "model_class": model_class,
             "schema_id": toml_config.get("schema_id", "open/generic"),
+            "schema_version": toml_config.get("schema_version"),
             "dependencies": toml_config.get("dependencies"),
             "options": toml_config.get("options", {}),
         }
@@ -287,6 +296,7 @@ def install_model_from_package(
         register_model(
             annotation_model=spec.model_class,
             schema_id=spec.schema_id,
+            schema_version=spec.schema_version,
             validation_model=spec.validation_model,
             dependencies=spec.dependencies,
             options=spec.options,
