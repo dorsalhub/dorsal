@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 
 from dorsal.cli.adapter_app.export_cmd import export_adapter
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
+from dorsal.common.exceptions import DorsalError
 
 
 cli_app = typer.Typer()
@@ -46,26 +47,25 @@ def mock_export_deps(mocker, mock_rich_console):
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 
     mock_extract = mocker.patch("dorsal.cli.adapter_app.helpers.extract_records")
-
     mock_extract.return_value = [("MockSchema", {"text": "Extracted string"}, None)]
 
-    mock_registry = mocker.MagicMock()
-    mock_adapter = mocker.MagicMock()
-    mock_adapter.export.return_value = "Mocked exported format content"
-    mock_registry.get_adapter.return_value = mock_adapter
+    # MOCK UPDATE: Patch the API boundary instead of the underlying registry
+    mock_export_file = mocker.patch("dorsal.api.adapters.export_record_to_file")
+    mock_export_file.return_value = "Mocked exported format content"
 
-    mocker.patch.dict("sys.modules", {"dorsal_adapters": mocker.MagicMock(), "dorsal_adapters.registry": mock_registry})
+    mock_export_record = mocker.patch("dorsal.api.adapters.export_record")
+    mock_export_record.return_value = "Mocked exported format content"
 
     return {
         "extract": mock_extract,
-        "registry": mock_registry,
-        "adapter": mock_adapter,
+        "export_file": mock_export_file,
+        "export_record": mock_export_record,
         "error_console": mock_error_console,
     }
 
 
 def test_export_basic_success(mock_rich_console, mock_export_deps):
-    """Tests a standard single-file export to stdout and auto-save."""
+    """Tests a standard single-file export to stdout and auto-save via the API wrapper."""
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test_file.dorsal.json")
         test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
@@ -74,20 +74,36 @@ def test_export_basic_success(mock_rich_console, mock_export_deps):
 
         assert result.exit_code == 0, result.output
 
-        mock_export_deps["registry"].get_adapter.assert_called_once_with("MockSchema", "srt")
-        mock_export_deps["adapter"].export.assert_called_once_with({"text": "Extracted string"})
+        # Verify the API wrapper was called correctly
+        mock_export_deps["export_file"].assert_called_once()
+        kwargs = mock_export_deps["export_file"].call_args.kwargs
+        assert kwargs["schema_id"] == "MockSchema"
+        assert kwargs["target_format"] == "srt"
+        assert kwargs["output_path"] == pathlib.Path.cwd() / "test_file.srt"
 
         printed_text = mock_rich_console.print.call_args.args[0]
         assert "Mocked exported format content" in str(printed_text)
 
-        expected_output_file = pathlib.Path("test_file.srt")
-        assert expected_output_file.exists()
-        assert expected_output_file.read_text(encoding="utf-8") == "Mocked exported format content"
+
+def test_export_infer_format_from_output(mock_rich_console, mock_export_deps):
+    """NEW TEST: Verifies that target_format can be completely omitted if inferred from --output."""
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test_file.dorsal.json")
+        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+
+        # Omit the format argument, pass an --output with a valid extension
+        result = runner.invoke(cli_app, ["export", str(test_file), "--output", "my_custom_subs.vtt"])
+
+        assert result.exit_code == 0
+
+        # Verify it inferred "vtt" perfectly
+        kwargs = mock_export_deps["export_file"].call_args.kwargs
+        assert kwargs["target_format"] == "vtt"
+        assert kwargs["output_path"] == pathlib.Path("my_custom_subs.vtt")
 
 
 def test_export_batch_success(mock_rich_console, mock_export_deps):
     """Tests batch processing which should render a table instead of raw text."""
-
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"text": "Rec 1"}, None),
         ("MockSchema", {"text": "Rec 2"}, None),
@@ -101,8 +117,13 @@ def test_export_batch_success(mock_rich_console, mock_export_deps):
 
         assert result.exit_code == 0
 
-        assert pathlib.Path("test_file_1.md").exists()
-        assert pathlib.Path("test_file_2.md").exists()
+        # Verify the API was called twice with uniquely sequenced filenames
+        assert mock_export_deps["export_file"].call_count == 2
+        call_1_kwargs = mock_export_deps["export_file"].call_args_list[0].kwargs
+        call_2_kwargs = mock_export_deps["export_file"].call_args_list[1].kwargs
+
+        assert call_1_kwargs["output_path"].name == "test_file_1.md"
+        assert call_2_kwargs["output_path"].name == "test_file_2.md"
 
         table_call_arg = mock_rich_console.print.call_args.args[0]
         assert type(table_call_arg).__name__ == "Table"
@@ -138,9 +159,12 @@ def test_export_validation_error(mock_export_deps):
         assert "Missing schema information" in error_msg
 
 
-def test_export_missing_adapters_package(mocker, mock_export_deps):
+def test_export_missing_adapters_package(mock_export_deps):
     """Tests graceful failure when the optional dorsalhub-adapters is missing."""
-    mocker.patch.dict("sys.modules", {"dorsal_adapters.registry": None})
+    # Simulate the API raising the missing dependency error
+    mock_export_deps["export_file"].side_effect = DorsalError(
+        "Please pip install dorsalhub-adapters to enable exports."
+    )
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.json")
@@ -150,12 +174,12 @@ def test_export_missing_adapters_package(mocker, mock_export_deps):
 
         assert result.exit_code != 0
         error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "'dorsalhub-adapters' package is not installed" in error_msg
+        assert "dorsalhub-adapters" in error_msg
 
 
 def test_export_adapter_runtime_error(mock_export_deps):
     """Tests handling when a specific adapter fails to process the record."""
-    mock_export_deps["adapter"].export.side_effect = Exception("Format constraint violated")
+    mock_export_deps["export_file"].side_effect = Exception("Format constraint violated")
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.json")
@@ -170,7 +194,7 @@ def test_export_adapter_runtime_error(mock_export_deps):
 
 
 def test_export_no_save_flag(mock_export_deps):
-    """Tests that the --no-save flag successfully suppresses file writing."""
+    """Tests that the --no-save flag routes to export_record instead of export_record_to_file."""
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.json")
         test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
@@ -179,8 +203,9 @@ def test_export_no_save_flag(mock_export_deps):
 
         assert result.exit_code == 0
 
-        assert test_file.exists()
-        assert not pathlib.Path("test.srt").exists()
+        # Verify export_file was NEVER called, and export_record was used instead
+        mock_export_deps["export_file"].assert_not_called()
+        mock_export_deps["export_record"].assert_called_once()
 
 
 def test_export_schema_override_passed_down(mock_export_deps):
@@ -204,7 +229,7 @@ def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps):
         ("MockSchema", {"text": "Rec 2"}, None),
     ]
 
-    mock_export_deps["adapter"].export.side_effect = ["Mocked success content", Exception("Simulated batch failure")]
+    mock_export_deps["export_file"].side_effect = ["Mocked success content", Exception("Simulated batch failure")]
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test_batch.dorsal.json")
@@ -213,9 +238,7 @@ def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps):
         result = runner.invoke(cli_app, ["export", str(test_file), "md"])
 
         assert result.exit_code == 0
-
-        assert pathlib.Path("test_batch_1.md").exists()
-        assert not pathlib.Path("test_batch_2.md").exists()
+        assert mock_export_deps["export_file"].call_count == 2
 
         table_call_arg = mock_rich_console.print.call_args.args[0]
         assert type(table_call_arg).__name__ == "Table"
@@ -238,26 +261,25 @@ def test_export_with_orig_file_path(mock_export_deps):
 
         assert result.exit_code == 0
 
-        assert pathlib.Path("my_custom_image_name.srt").exists()
-        assert not pathlib.Path("generic_wrapper.srt").exists()
+        # Verify the custom file name was passed down correctly
+        kwargs = mock_export_deps["export_file"].call_args.kwargs
+        assert kwargs["output_path"].name == "my_custom_image_name.srt"
 
 
-def test_export_file_write_failure(mocker, mock_export_deps):
+def test_export_usage_error_no_format_or_output(mock_export_deps):
     """
-    Tests the exception handler for when writing the final output file to disk fails.
+    NEW TEST: Tests the usage error check if the user omits the format AND
+    doesn't provide an --output flag that can be inferred.
     """
-    mock_export_deps["extract"].return_value = [("MockSchema", {"text": "Rec"}, None)]
-
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.json")
         test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
 
-        mocker.patch("pathlib.Path.write_text", side_effect=PermissionError("Access denied to disk"))
-
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+        # No format provided, no --output provided
+        result = runner.invoke(cli_app, ["export", str(test_file)])
 
         assert result.exit_code != 0
 
         error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Failed to write output file" in error_msg
-        assert "Access denied to disk" in error_msg
+        assert "Usage Error" in error_msg
+        assert "target_format" in error_msg
