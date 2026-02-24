@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import typer
 
 from dorsal.common import cli
@@ -25,7 +25,6 @@ def test_exit_cli_success_with_message(mock_secho):
     with pytest.raises(typer.Exit) as excinfo:
         cli.exit_cli(code=0, message="Operation successful.")
 
-    # Check that the exception has the correct exit code
     assert excinfo.value.exit_code == 0
     mock_secho.assert_called_once_with("Operation successful.", err=True)
 
@@ -67,3 +66,75 @@ def test_determine_use_cache_value(mock_get_cache_enabled, use_cache_flag, skip_
     cli.determine_use_cache_value(use_cache=use_cache_flag, skip_cache=skip_cache_flag)
 
     mock_get_cache_enabled.assert_called_once_with(use_cache=expected_arg)
+
+
+def test_parse_cli_options_empty():
+    """Test that empty or None options return an empty dictionary."""
+    assert cli.parse_cli_options(None, {}) == {}
+    assert cli.parse_cli_options([], {}) == {}
+
+
+@patch("dorsal.common.cli.get_error_console")
+def test_parse_cli_options_malformed(mock_get_error_console):
+    """Test that options missing an '=' sign are skipped and a warning is printed."""
+    mock_console = MagicMock()
+    mock_get_error_console.return_value = mock_console
+
+    options = ["valid=true", "invalid_no_equals"]
+    palette = {"panel_title_warning": "yellow"}
+
+    result = cli.parse_cli_options(options, palette)
+
+    assert result == {"valid": True}
+    mock_console.print.assert_called_once()
+    assert "Skipping malformed option 'invalid_no_equals'" in mock_console.print.call_args[0][0]
+
+
+def test_parse_cli_options_basic_types():
+    """Test parsing of standard types: booleans, nulls, ints, floats, and strings."""
+    options = [
+        "is_true=true",
+        "is_yes=yes",
+        "is_false=false",
+        "is_no=no",
+        "is_null=null",
+        "is_none=none",
+        "integer=42",
+        "floating=3.14",
+        "string=hello world",
+        "mixed_case_bool=TrUe",
+    ]
+
+    expected = {
+        "is_true": True,
+        "is_yes": True,
+        "is_false": False,
+        "is_no": False,
+        "is_null": None,
+        "is_none": None,
+        "integer": 42,
+        "floating": 3.14,
+        "string": "hello world",
+        "mixed_case_bool": True,
+    }
+
+    assert cli.parse_cli_options(options, {}) == expected
+
+
+def test_parse_cli_options_json_structures():
+    """Test parsing of JSON dictionaries and arrays, including fallbacks for invalid JSON."""
+    options = [
+        'vad_filter={"threshold": 0.8, "min_speech_duration_ms": 250}',
+        'array_val=[1, 2, "three"]',
+        'invalid_json={"missing_bracket": true',
+        "not_quite_json={just some text}",
+    ]
+
+    expected = {
+        "vad_filter": {"threshold": 0.8, "min_speech_duration_ms": 250},
+        "array_val": [1, 2, "three"],
+        "invalid_json": '{"missing_bracket": true',
+        "not_quite_json": "{just some text}",
+    }
+
+    assert cli.parse_cli_options(options, {}) == expected
