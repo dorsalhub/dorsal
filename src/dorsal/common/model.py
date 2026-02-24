@@ -89,6 +89,8 @@ class AnnotationModel:
     similarity_hash: str | None
     quick_hash: str | None
 
+    _progress_callback: Callable[[float, float, str], None] | None = None
+
     def __init_subclass__(cls, **kwargs):
         """Sets 'id' and 'version' if they are not provided."""
         super().__init_subclass__(**kwargs)
@@ -126,6 +128,7 @@ class AnnotationModel:
         self.hash: str | None = None
         self.similarity_hash: str | None = None
         self.quick_hash: str | None = None
+        self._progress_callback = None
 
     def set_error(self, message: str, level: int = logging.DEBUG):
         """
@@ -153,6 +156,11 @@ class AnnotationModel:
             self.file_path,
             message,
         )
+
+    def update_progress(self, current: float, total: float, description: str = "") -> None:
+        """Generic hook for models to report intra-task progress."""
+        if self._progress_callback:
+            self._progress_callback(current, total, description)
 
     def main(self, *args, **kwargs) -> dict | None:
         """

@@ -166,7 +166,9 @@ def test_annotate_direct_bad_model_class(annotator, mock_runner):
 
 def test_annotate_pipeline_step_dict_success(annotator, mock_runner, mocker):
     mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
-    mocker.patch("dorsal.file.file_annotator.import_callable", return_value=MockAnnotationModel)
+
+    # Updated mock to intercept the new resolution function
+    mocker.patch("dorsal.file.file_annotator.resolve_pipeline_step_models", return_value=(MockAnnotationModel, None))
 
     step_config = {
         "annotation_model": {"module": "some.module", "name": "ModelClass"},
@@ -183,7 +185,11 @@ def test_annotate_pipeline_step_dict_success(annotator, mock_runner, mocker):
 
 
 def test_annotate_pipeline_import_error(annotator, mock_runner, mocker):
-    mocker.patch("dorsal.file.file_annotator.import_callable", side_effect=ImportError("No module named foo"))
+    # Updated mock to throw the expected AnnotationImportError
+    mocker.patch(
+        "dorsal.file.file_annotator.resolve_pipeline_step_models",
+        side_effect=AnnotationImportError("Failed to import model/validator"),
+    )
 
     cip = CallableImportPath(module="foo", name="Bar")
     step = ModelRunnerPipelineStep(annotation_model=cip, schema_id="test/schema")
@@ -196,9 +202,12 @@ def test_annotate_pipeline_import_error(annotator, mock_runner, mocker):
 
 
 def test_annotate_pipeline_type_error(annotator, mock_runner, mocker):
-    mocker.patch("dorsal.file.file_annotator.import_callable", return_value=BadModelNoId)
+    # Updated mock to throw the expected AnnotationImportError
+    mocker.patch(
+        "dorsal.file.file_annotator.resolve_pipeline_step_models",
+        side_effect=AnnotationImportError("Failed to import model/validator"),
+    )
 
-    # Use CallableImportPath object
     cip = CallableImportPath(module="foo", name="Bad")
     step = ModelRunnerPipelineStep(annotation_model=cip, schema_id="test/schema")
 
