@@ -34,12 +34,12 @@ def export_adapter(
             help="Path to the Dorsal JSON output or raw record JSON.",
         ),
     ],
-    format: Annotated[
-        str,
+    target_format: Annotated[
+        Optional[str],
         typer.Argument(
-            help="The target format to export to (e.g., 'srt', 'vtt', 'md').",
+            help="The target format to export to (e.g., 'srt', 'vtt'). Optional if inferred from --output.",
         ),
-    ],
+    ] = None,
     schema_id: Annotated[
         Optional[str],
         typer.Option(
@@ -69,39 +69,41 @@ def export_adapter(
     """
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
     from dorsal.cli.adapter_app.helpers import extract_records
+    from dorsal.api.adapters import export_record, export_record_to_file
     from rich.table import Table
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj.get("palette", {})
+    palette: dict[str, str] = ctx.obj.get("palette", {}) if ctx.obj else {}
 
-    # 1. Read JSON
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Invalid JSON file:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    # 2. Extract Schema and Records
     try:
         records_to_process = extract_records(data, schema_override=schema_id)
     except ValueError as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Validation Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    # 3. Process via Adapters
-    try:
-        from dorsal_adapters.registry import get_adapter
-    except ImportError:
-        error_console.print(
-            f"[{palette.get('error', 'bold red')}]Error:[/] 'dorsalhub-adapters' package is not installed."
-        )
-        exit_cli(code=EXIT_CODE_ERROR)
+    resolved_format = target_format
+    if not resolved_format:
+        if output_path and not output_path.is_dir() and output_path.suffix:
+            resolved_format = output_path.suffix.lstrip(".")
+        else:
+            error_console.print(
+                f"[{palette.get('error', 'bold red')}]Usage Error:[/] You must provide a "
+                "'target_format' argument (e.g., 'srt') unless an '--output' file path "
+                "with an extension is provided."
+            )
+            exit_cli(code=EXIT_CODE_ERROR)
 
     is_batch = len(records_to_process) > 1
-    export_files_to_save = []
     terminal_outputs = []
     results_data = []
+    saved_paths_msg = []
 
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
 
@@ -119,17 +121,24 @@ def export_adapter(
             if is_batch:
                 base_name = f"{base_name}_{i + 1}"
 
+        if output_path and not output_path.is_dir() and not is_batch:
+            save_path = output_path
+        else:
+            save_path = out_dir / f"{base_name}.{resolved_format}"
+
         try:
-            adapter = get_adapter(current_schema_id, format)
-            exported_text = adapter.export(record)
+            if no_save:
+                exported_text = export_record(record, current_schema_id, target_format=resolved_format)
+            else:
+                exported_text = export_record_to_file(
+                    record=record, output_path=save_path, schema_id=current_schema_id, target_format=resolved_format
+                )
+                saved_paths_msg.append(str(save_path.resolve()))
+
             terminal_outputs.append(exported_text)
-
-            # If user explicitly passed a single output file path and it's not a batch, use it.
-            save_path = output_path if output_path and not is_batch else out_dir / f"{base_name}.{format}"
-
-            export_files_to_save.append((save_path, exported_text))
-
-            results_data.append({"input_name": input_name, "status": "Success", "output_name": save_path.name})
+            results_data.append(
+                {"input_name": input_name, "status": "Success", "output_name": save_path.name if not no_save else "-"}
+            )
         except Exception as e:
             logger.exception("Adapter export failed.")
             results_data.append({"input_name": input_name, "status": "Error", "error": str(e)})
@@ -139,27 +148,13 @@ def export_adapter(
                 )
                 exit_cli(code=EXIT_CODE_ERROR)
 
-    # 4. Auto-Save Logic
-    saved_paths_msg = []
-    if not no_save:
-        for path, text in export_files_to_save:
-            try:
-                path.write_text(text, encoding="utf-8")
-                saved_paths_msg.append(str(path.resolve()))
-            except Exception as e:
-                error_console.print(f"\n[{palette.get('error', 'bold red')}]Failed to write output file:[/] {e}")
-                exit_cli(code=EXIT_CODE_ERROR)
-
-    # 5. Output to Terminal
     if not is_batch:
-        # For single files, print to stdout so users can pipe the result
         console.print(terminal_outputs[0], end="")
         if not no_save and saved_paths_msg:
             error_console.print(
                 f"\n[{palette.get('info', 'dim')}]Outputs saved successfully:\n  ↳ {saved_paths_msg[0]}[/]"
             )
     else:
-        # For batches, render the summary table instead of printing a giant text block
         table = Table(
             title=f"[{palette.get('panel_title', 'bold')}]Export Results: {file_path.name}[/]",
             header_style=palette.get("table_header", "bold blue"),
@@ -168,7 +163,7 @@ def export_adapter(
         table.add_column("Status")
 
         if not no_save:
-            table.add_column(f"{format.upper()} Output")
+            table.add_column(f"{resolved_format.upper()} Output")
 
         for item in results_data:
             row = []

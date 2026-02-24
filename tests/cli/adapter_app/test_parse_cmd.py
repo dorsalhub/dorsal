@@ -46,7 +46,7 @@ def mock_parse_deps(mocker):
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 
-    mock_parse_api = mocker.patch("dorsal.api.adapters.parse_file")
+    mock_parse_api = mocker.patch("dorsal.api.adapters.parse_file_from_path")
     mock_parse_api.return_value = {
         "producer": "mock-adapter",
         "text": "Hello world",
@@ -61,32 +61,44 @@ def mock_parse_deps(mocker):
 
 
 def test_parse_cmd_success(mock_parse_deps):
-    """Tests standard successful file parsing and saving."""
+    """Tests standard successful file parsing and saving with an explicit format."""
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.srt")
         test_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello world", encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "srt"])
+        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "--format", "srt"])
 
         assert result.exit_code == 0
 
-        # Check that the API was called correctly
         mock_parse_deps["parse_api"].assert_called_once()
         kwargs = mock_parse_deps["parse_api"].call_args.kwargs
         assert kwargs["schema_id"] == "open/audio-transcription"
         assert kwargs["source_format"] == "srt"
 
-        # Check standard out output
         printed_json = mock_parse_deps["rich_console"].print.call_args.args[0]
         data = json.loads(printed_json)
         assert data["schema_id"] == "open/audio-transcription"
         assert data["record"]["text"] == "Hello world"
 
-        # Check auto-save functionality
         expected_save_path = pathlib.Path.cwd() / "test.dorsal.json"
         assert expected_save_path.exists()
         saved_data = json.loads(expected_save_path.read_text(encoding="utf-8"))
         assert saved_data["record"]["text"] == "Hello world"
+
+
+def test_parse_cmd_infer_format(mock_parse_deps):
+    """Tests that omitting the format flag correctly relies on the API's inference."""
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.srt")
+        test_file.write_text("mock content", encoding="utf-8")
+
+        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription"])
+
+        assert result.exit_code == 0
+
+        mock_parse_deps["parse_api"].assert_called_once()
+        kwargs = mock_parse_deps["parse_api"].call_args.kwargs
+        assert kwargs.get("source_format") is None
 
 
 def test_parse_cmd_with_options(mock_parse_deps):
@@ -97,12 +109,21 @@ def test_parse_cmd_with_options(mock_parse_deps):
 
         result = runner.invoke(
             cli_app,
-            ["parse", str(test_file), "open/document-extraction", "txt", "--opt", "strict=true", "-o", "chunk=5"],
+            [
+                "parse",
+                str(test_file),
+                "open/document-extraction",
+                "--format",
+                "txt",
+                "--opt",
+                "strict=true",
+                "-o",
+                "chunk=5",
+            ],
         )
 
         assert result.exit_code == 0
 
-        # Verify options were parsed into correct types and passed to parse_file
         kwargs = mock_parse_deps["parse_api"].call_args.kwargs
         assert kwargs["strict"] is True
         assert kwargs["chunk"] == 5
@@ -114,15 +135,15 @@ def test_parse_cmd_no_save_flag(mock_parse_deps):
         test_file = pathlib.Path("test.vtt")
         test_file.write_text("WEBVTT\n\nHello", encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "vtt", "--no-save"])
+        result = runner.invoke(
+            cli_app, ["parse", str(test_file), "open/audio-transcription", "--format", "vtt", "--no-save"]
+        )
 
         assert result.exit_code == 0
 
-        # Verify no file was created
         expected_save_path = pathlib.Path.cwd() / "test.dorsal.json"
         assert not expected_save_path.exists()
 
-        # The JSON should still be printed to stdout
         assert mock_parse_deps["rich_console"].print.called
 
 
@@ -134,7 +155,7 @@ def test_parse_cmd_missing_adapters(mock_parse_deps, mocker):
         test_file = pathlib.Path("test.srt")
         test_file.write_text("mock content", encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "srt"])
+        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "--format", "srt"])
 
         assert result.exit_code != 0
         error_msg = str(mock_parse_deps["error_console"].print.call_args.args[0])
@@ -150,7 +171,9 @@ def test_parse_cmd_dorsal_error(mock_parse_deps):
         test_file = pathlib.Path("test.fake")
         test_file.write_text("mock content", encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "fake_format"])
+        result = runner.invoke(
+            cli_app, ["parse", str(test_file), "open/audio-transcription", "--format", "fake_format"]
+        )
 
         assert result.exit_code != 0
         error_msg = str(mock_parse_deps["error_console"].print.call_args.args[0])

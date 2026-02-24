@@ -40,12 +40,14 @@ def parse_adapter(
             help="The target Dorsal schema ID to parse into (e.g., 'open/audio-transcription').",
         ),
     ],
-    format: Annotated[
-        str,
-        typer.Argument(
-            help="The format of the source file (e.g., 'srt', 'vtt', 'txt').",
+    source_format: Annotated[
+        Optional[str],
+        typer.Option(
+            "--format",
+            "-f",
+            help="The format of the source file (e.g., 'srt', 'vtt'). Inferred from extension if omitted.",
         ),
-    ],
+    ] = None,
     options: Annotated[
         Optional[List[str]],
         typer.Option(
@@ -75,7 +77,7 @@ def parse_adapter(
     """
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
     from dorsal.common.exceptions import DorsalError
-    from dorsal.api.adapters import parse_file
+    from dorsal.api.adapters import parse_file_from_path
 
     console = get_rich_console()
     error_console = get_error_console()
@@ -83,11 +85,10 @@ def parse_adapter(
 
     parsed_options = parse_cli_options(options=options, palette=palette)
 
-    # 1. Parse the File
     try:
-        # We pass the file stream directly; parse_file smartly routes it
-        with open(file_path, "r", encoding="utf-8") as fp:
-            record_dict = parse_file(content=fp, schema_id=schema_id, source_format=format, **parsed_options)
+        record_dict = parse_file_from_path(
+            file_path=file_path, schema_id=schema_id, source_format=source_format, **parsed_options
+        )
     except DorsalError as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Parse Failed:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
@@ -96,14 +97,12 @@ def parse_adapter(
         error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    # 2. Construct Dorsal Payload Wrapper
     final_payload = {
         "schema_id": schema_id,
         "file_path": str(file_path.resolve()),
         "record": record_dict,
     }
 
-    # 3. Auto-Save Logic
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
     save_path = output_path if output_path and not output_path.is_dir() else out_dir / f"{file_path.stem}.dorsal.json"
 
@@ -117,7 +116,6 @@ def parse_adapter(
             error_console.print(f"\n[{palette.get('error', 'bold red')}]Failed to write output file:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
-    # 4. Output to Terminal
     console.print(json.dumps(final_payload, indent=2, ensure_ascii=False))
 
     if not no_save and saved_path_msg:
