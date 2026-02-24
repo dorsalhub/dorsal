@@ -25,7 +25,6 @@ def test_exit_cli_success_with_message(mock_secho):
     with pytest.raises(typer.Exit) as excinfo:
         cli.exit_cli(code=0, message="Operation successful.")
 
-    # Check that the exception has the correct exit code
     assert excinfo.value.exit_code == 0
     mock_secho.assert_called_once_with("Operation successful.", err=True)
 
@@ -67,9 +66,6 @@ def test_determine_use_cache_value(mock_get_cache_enabled, use_cache_flag, skip_
     cli.determine_use_cache_value(use_cache=use_cache_flag, skip_cache=skip_cache_flag)
 
     mock_get_cache_enabled.assert_called_once_with(use_cache=expected_arg)
-
-
-# --- New Tests for parse_cli_options ---
 
 
 def test_parse_cli_options_empty():
@@ -137,8 +133,8 @@ def test_parse_cli_options_json_structures():
     expected = {
         "vad_filter": {"threshold": 0.8, "min_speech_duration_ms": 250},
         "array_val": [1, 2, "three"],
-        "invalid_json": '{"missing_bracket": true',  # Falls back to string
-        "not_quite_json": "{just some text}",  # Falls back to string
+        "invalid_json": '{"missing_bracket": true',
+        "not_quite_json": "{just some text}",
     }
 
     assert cli.parse_cli_options(options, {}) == expected
