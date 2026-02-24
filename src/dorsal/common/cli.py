@@ -189,12 +189,19 @@ def parse_cli_options(options: Sequence[str] | None, palette: dict) -> dict[str,
         elif val_lower in ("null", "none"):
             result[key] = None
         else:
+            if (value.startswith("{") and value.endswith("}")) or (value.startswith("[") and value.endswith("]")):
+                try:
+                    result[key] = json.loads(value)
+                    continue
+                except json.JSONDecodeError:
+                    pass
+
             try:
                 if "." in value:
                     result[key] = float(value)
                 else:
                     result[key] = int(value)
             except ValueError:
-                result[key] = value  # Keep as string
+                result[key] = value
 
     return result
