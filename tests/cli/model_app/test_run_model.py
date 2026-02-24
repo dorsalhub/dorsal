@@ -15,10 +15,11 @@
 import json
 import pathlib
 import pytest
-import typer
+import time
 from unittest.mock import MagicMock, ANY
 from typer.testing import CliRunner
 
+import typer
 
 from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
@@ -314,7 +315,6 @@ def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
 
 def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker):
     """Covers batch processing tables, truncation, error rows, and completion messages (Snippets 4 & 6)."""
-    import time
 
     mock_run_deps["error_console"].get_time.side_effect = time.time
     mocker.patch("dorsal.api.adapters.export_record", return_value="Simulated exported text")
@@ -354,3 +354,77 @@ def test_run_model_single_file_inner_error_display(mock_run_deps):
 
         error_calls = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
         assert any("Error processing file: Inner crash during run" in msg for msg in error_calls)
+
+
+def test_run_model_progress_hook_coverage(mock_run_deps):
+    """Tests the inner progress_hook function with and without descriptions."""
+
+    mock_run_deps["error_console"].get_time.side_effect = time.time
+
+    def mock_run_with_progress(*args, **kwargs):
+        cb = kwargs.get("progress_callback")
+        if cb:
+            cb(10.0, 100.0)
+            cb(50.0, 100.0, "Downloading model weights...")
+        return mock_run_deps["result"]
+
+    mock_run_deps["run_logic"].side_effect = mock_run_with_progress
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        assert result.exit_code == 0
+
+        mock_run_deps["run_logic"].assert_called_once()
+
+
+def test_run_model_export_model_error_validation(mock_run_deps):
+    """Tests that exporting fails gracefully if the model returned an error state."""
+
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        record={"summary": "Partial output"},
+        schema_id="mock/schema",
+        error="Inference failed halfway.",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+
+        assert result.exit_code == 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("Data Error on test.pdf" in msg for msg in printed_messages)
+        assert any("Cannot export due to model error: Inference failed halfway." in msg for msg in printed_messages)
+
+
+def test_run_model_export_missing_schema_id(mock_run_deps):
+    """Tests that exporting fails gracefully if the result lacks a schema_id."""
+
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        record={"summary": "Processed successfully"},
+        schema_id=None,
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+
+        assert result.exit_code == 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("Data Error on test.pdf" in msg for msg in printed_messages)
+        assert any("Missing schema_id for export." in msg for msg in printed_messages)
