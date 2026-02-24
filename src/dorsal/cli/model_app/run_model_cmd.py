@@ -33,7 +33,7 @@ def run_model(
         typer.Argument(
             exists=True,
             file_okay=True,
-            dir_okay=True,  # Supports directories for batch processing
+            dir_okay=True,
             readable=True,
             resolve_path=True,
             help="Path to the file or directory to process.",
@@ -46,6 +46,14 @@ def run_model(
             "-o",
             help="Runtime options in 'key=value' format. Can be used multiple times.",
             rich_help_panel="Model Configuration",
+        ),
+    ] = None,
+    export_options: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--export-opt",
+            help="Export options in 'key=value' format. Can be used multiple times.",
+            rich_help_panel="Output Options",
         ),
     ] = None,
     ignore_lint: Annotated[
@@ -138,8 +146,8 @@ def run_model(
     palette: dict[str, str] = ctx.obj.get("palette", {})
 
     parsed_options = parse_cli_options(options=options, palette=palette)
+    parsed_export_options = parse_cli_options(options=export_options, palette=palette)
 
-    # 1. Target Resolution & Installation
     if not (json_output or export_format):
         try:
             strategy, package_name = resolve_target(target)
@@ -150,7 +158,6 @@ def run_model(
         except Exception:
             pass
 
-    # 2. Gather files for batch or single processing
     files_to_process = [f for f in file_path.iterdir() if f.is_file()] if file_path.is_dir() else [file_path]
     is_batch = len(files_to_process) > 1
 
@@ -167,7 +174,6 @@ def run_model(
         )
         error_console.print(msg)
 
-    # 3. Execution Loop
     results_data = []
     raw_results: list[RunModelResult | None] = []
     export_files_to_save = []
@@ -181,7 +187,6 @@ def run_model(
         out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Progress bar configuration (transient=True so it disappears when done)
         with Progress(
             SpinnerColumn(),
             TextColumn(f"[{palette.get('info', 'dim')}]{{task.description}}"),
@@ -193,16 +198,13 @@ def run_model(
             console=error_console,
             transient=True,
         ) as progress:
-            # Overall task for batch processing (only added if multiple files)
             overall_task = progress.add_task("Total Progress", total=len(files_to_process)) if is_batch else None
 
             for f in files_to_process:
-                # Set total=None to start indeterminate (pulsing)
                 file_task = progress.add_task(f"Processing {f.name}...", total=None)
 
-                # Define the hook to snap to percentage when real data arrives
                 def progress_hook(current: float, total: float, description: str = "", task_id=file_task):
-                    # Explicitly type as dict[str, Any] to satisfy mypy's unpacking check
+
                     update_kwargs: dict[str, Any] = {"completed": current, "total": total}
                     if description:
                         update_kwargs["description"] = f"[{palette.get('info', 'dim')}]{description}"
@@ -219,14 +221,12 @@ def run_model(
 
                     raw_results.append(res)
 
-                    # Convert RunModelResult to dict for JSON serialization
                     res_dict = res.model_dump(exclude_none=True)
                     res_dict["file_path"] = str(f)
                     results_data.append(res_dict)
 
                     if export_format:
                         try:
-                            # If the model errored, skip export
                             if res.error:
                                 raise ValueError(f"Cannot export due to model error: {res.error}")
 
@@ -239,9 +239,11 @@ def run_model(
                             if not record_dict:
                                 raise ValueError("No record data generated to export.")
 
-                            # Route cleanly through the unified API method
                             exported_text = export_record(
-                                record=record_dict, schema_id=schema_id, target_format=export_format, **parsed_options
+                                record=record_dict,
+                                schema_id=schema_id,
+                                target_format=export_format,
+                                **parsed_export_options,
                             )
 
                             base_name = f.stem
@@ -270,10 +272,8 @@ def run_model(
                     results_data.append({"file_path": str(f), "error": str(e)})
                     raw_results.append(None)
 
-                # Force file task to 100% when done processing the file
                 progress.update(file_task, completed=100.0, total=100.0)
 
-                # Remove the completed file task so they don't stack up visually
                 progress.remove_task(file_task)
 
                 if overall_task is not None:
@@ -297,7 +297,6 @@ def run_model(
 
     final_json_data = {"results": results_data}
 
-    # 4. Auto-Save Logic
     saved_paths_msg = []
     if not no_save:
         if output_path and not is_batch and not export_format:
@@ -314,7 +313,6 @@ def run_model(
                 path.write_text(text, encoding="utf-8")
                 saved_paths_msg.append(str(path))
 
-    # 5. Terminal Display Logic
     if export_format and not is_batch:
         for _, text in export_files_to_save:
             console.print(text, end="")

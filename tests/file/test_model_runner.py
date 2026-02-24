@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 
 from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
 from dorsal.common.exceptions import (
+    AnnotationImportError,
     BaseModelProcessingError,
     DependencyNotMetError,
     MissingHashError,
@@ -40,6 +41,7 @@ from dorsal.file.configs.model_runner import (
     RunModelResult,
     ModelRunnerPipelineStep,
     DependencyConfig,
+    resolve_pipeline_step_models,
 )
 from dorsal.common.validators import JsonSchemaValidator
 
@@ -959,3 +961,134 @@ class TestRunModelWrapper:
         assert result.error is not None
         assert result.name == "MockBaseAnnotationModel"
         assert "Error executing model" in result.error
+
+
+class TestResolvePipelineStepModels:
+    """Complete coverage for the resolve_pipeline_step_models function."""
+
+    def test_success_no_validator(self, mocker):
+        """Path 1: Success with no validator model specified."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "MockSuccessAnnotationModel"},
+            schema_id="test/schema",
+        )
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", return_value=MockSuccessAnnotationModel)
+
+        annotator, validator = resolve_pipeline_step_models(step)
+
+        assert annotator is MockSuccessAnnotationModel
+        assert validator is None
+
+    def test_success_dict_validator(self, mocker):
+        """Path 2: Success when validation_model is a raw dictionary (JSON schema)."""
+        schema_dict = {"type": "object", "properties": {"a": {"type": "string"}}}
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "MockSuccessAnnotationModel"},
+            validation_model=schema_dict,
+            schema_id="test/schema",
+        )
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", return_value=MockSuccessAnnotationModel)
+        mock_get_validator = mocker.patch(
+            "dorsal.file.configs.model_runner.get_json_schema_validator", return_value="mock_validator_instance"
+        )
+
+        annotator, validator = resolve_pipeline_step_models(step)
+
+        assert annotator is MockSuccessAnnotationModel
+        assert validator == "mock_validator_instance"
+        mock_get_validator.assert_called_once_with(schema=schema_dict, strict=True)
+
+    def test_success_pydantic_validator(self, mocker):
+        """Path 3: Success when validation_model imports as a Pydantic model class."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "MockSuccessAnnotationModel"},
+            validation_model={"module": "test.module", "name": "MockPydanticValidator"},
+            schema_id="test/schema",
+        )
+
+        def mock_import(import_path):
+            if import_path.name == "MockSuccessAnnotationModel":
+                return MockSuccessAnnotationModel
+            if import_path.name == "MockPydanticValidator":
+                return MockPydanticValidator
+            raise ImportError
+
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", side_effect=mock_import)
+
+        annotator, validator = resolve_pipeline_step_models(step)
+
+        assert annotator is MockSuccessAnnotationModel
+        assert validator is MockPydanticValidator
+
+    def test_success_jsonschema_validator_instance(self, mocker):
+        """Path 4: Success when validation_model imports as a JsonSchemaValidator instance."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "MockSuccessAnnotationModel"},
+            validation_model={"module": "test.module", "name": "MockJsonSchemaValidator"},
+            schema_id="test/schema",
+        )
+        mock_json_validator = MagicMock(spec=JsonSchemaValidator)
+
+        def mock_import(import_path):
+            if import_path.name == "MockSuccessAnnotationModel":
+                return MockSuccessAnnotationModel
+            if import_path.name == "MockJsonSchemaValidator":
+                return mock_json_validator
+            raise ImportError
+
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", side_effect=mock_import)
+
+        annotator, validator = resolve_pipeline_step_models(step)
+
+        assert annotator is MockSuccessAnnotationModel
+        assert validator is mock_json_validator
+
+    def test_failure_annotation_model_import_error(self, mocker):
+        """Path 5: Raises AnnotationImportError if the base import fails."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "invalid.module", "name": "MissingModel"},
+            schema_id="test/schema",
+        )
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", side_effect=ImportError("Cannot import"))
+
+        with pytest.raises(AnnotationImportError) as exc_info:
+            resolve_pipeline_step_models(step)
+
+        assert "Failed to import model/validator from config: invalid.module.MissingModel" in str(exc_info.value)
+
+    def test_failure_annotation_model_wrong_type(self, mocker):
+        """Path 6: Raises AnnotationImportError if the imported object is not an AnnotationModel."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "NotAModel"},
+            schema_id="test/schema",
+        )
+        # Mocking import to return a standard function instead of an AnnotationModel class
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", return_value=lambda x: x)
+
+        with pytest.raises(AnnotationImportError) as exc_info:
+            resolve_pipeline_step_models(step)
+
+        # The underlying TypeError should be captured as the cause
+        assert "not a subclass of AnnotationModel" in str(exc_info.value.__cause__)
+
+    def test_failure_validation_model_wrong_type(self, mocker):
+        """Path 7: Raises AnnotationImportError if validation model is neither Pydantic nor JsonSchemaValidator."""
+        step = ModelRunnerPipelineStep(
+            annotation_model={"module": "test.module", "name": "MockSuccessAnnotationModel"},
+            validation_model={"module": "test.module", "name": "BadValidator"},
+            schema_id="test/schema",
+        )
+
+        def mock_import(import_path):
+            if import_path.name == "MockSuccessAnnotationModel":
+                return MockSuccessAnnotationModel
+            if import_path.name == "BadValidator":
+                return lambda x: x  # Invalid validator type
+            raise ImportError
+
+        mocker.patch("dorsal.file.configs.model_runner.import_callable", side_effect=mock_import)
+
+        with pytest.raises(AnnotationImportError) as exc_info:
+            resolve_pipeline_step_models(step)
+
+        assert "Imported validator is not a supported type" in str(exc_info.value.__cause__)
