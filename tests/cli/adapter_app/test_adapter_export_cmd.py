@@ -49,7 +49,6 @@ def mock_export_deps(mocker, mock_rich_console):
     mock_extract = mocker.patch("dorsal.cli.adapter_app.helpers.extract_records")
     mock_extract.return_value = [("MockSchema", {"text": "Extracted string"}, None)]
 
-    # MOCK UPDATE: Patch the API boundary instead of the underlying registry
     mock_export_file = mocker.patch("dorsal.api.adapters.export_record_to_file")
     mock_export_file.return_value = "Mocked exported format content"
 
@@ -74,7 +73,6 @@ def test_export_basic_success(mock_rich_console, mock_export_deps):
 
         assert result.exit_code == 0, result.output
 
-        # Verify the API wrapper was called correctly
         mock_export_deps["export_file"].assert_called_once()
         kwargs = mock_export_deps["export_file"].call_args.kwargs
         assert kwargs["schema_id"] == "MockSchema"
@@ -91,12 +89,10 @@ def test_export_infer_format_from_output(mock_rich_console, mock_export_deps):
         test_file = pathlib.Path("test_file.dorsal.json")
         test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        # Omit the format argument, pass an --output with a valid extension
         result = runner.invoke(cli_app, ["export", str(test_file), "--output", "my_custom_subs.vtt"])
 
         assert result.exit_code == 0
 
-        # Verify it inferred "vtt" perfectly
         kwargs = mock_export_deps["export_file"].call_args.kwargs
         assert kwargs["target_format"] == "vtt"
         assert kwargs["output_path"] == pathlib.Path("my_custom_subs.vtt")
@@ -117,7 +113,6 @@ def test_export_batch_success(mock_rich_console, mock_export_deps):
 
         assert result.exit_code == 0
 
-        # Verify the API was called twice with uniquely sequenced filenames
         assert mock_export_deps["export_file"].call_count == 2
         call_1_kwargs = mock_export_deps["export_file"].call_args_list[0].kwargs
         call_2_kwargs = mock_export_deps["export_file"].call_args_list[1].kwargs
@@ -161,7 +156,7 @@ def test_export_validation_error(mock_export_deps):
 
 def test_export_missing_adapters_package(mock_export_deps):
     """Tests graceful failure when the optional dorsalhub-adapters is missing."""
-    # Simulate the API raising the missing dependency error
+
     mock_export_deps["export_file"].side_effect = DorsalError(
         "Please pip install dorsalhub-adapters to enable exports."
     )
@@ -203,7 +198,6 @@ def test_export_no_save_flag(mock_export_deps):
 
         assert result.exit_code == 0
 
-        # Verify export_file was NEVER called, and export_record was used instead
         mock_export_deps["export_file"].assert_not_called()
         mock_export_deps["export_record"].assert_called_once()
 
@@ -261,7 +255,6 @@ def test_export_with_orig_file_path(mock_export_deps):
 
         assert result.exit_code == 0
 
-        # Verify the custom file name was passed down correctly
         kwargs = mock_export_deps["export_file"].call_args.kwargs
         assert kwargs["output_path"].name == "my_custom_image_name.srt"
 
@@ -275,7 +268,6 @@ def test_export_usage_error_no_format_or_output(mock_export_deps):
         test_file = pathlib.Path("test.json")
         test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
 
-        # No format provided, no --output provided
         result = runner.invoke(cli_app, ["export", str(test_file)])
 
         assert result.exit_code != 0

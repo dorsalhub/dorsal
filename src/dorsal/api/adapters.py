@@ -67,7 +67,6 @@ def export_record_to_file(
 
     path_obj = Path(output_path)
 
-    # Infer format if not explicitly provided
     resolved_format = target_format
     if not resolved_format:
         suffix = path_obj.suffix.lstrip(".")
@@ -80,7 +79,6 @@ def export_record_to_file(
 
     logger.debug(f"Attempting to export '{schema_id}' to file '{path_obj.name}' as '{resolved_format}'.")
 
-    # Rely on export_record to do the conversion and adapter routing
     exported_text = export_record(record, schema_id=schema_id, target_format=resolved_format, **kwargs)
 
     try:
@@ -92,6 +90,7 @@ def export_record_to_file(
         raise DorsalError(f"Failed to write exported text to file {path_obj}: {e}") from e
 
     return exported_text
+
 
 def parse_file(content: str | bytes | IO[Any], schema_id: str, source_format: str, **kwargs: Any) -> dict[str, Any]:
     """Parses a file-like object or string into a validated JSON record using Dorsal Adapters."""
@@ -126,7 +125,6 @@ def parse_file_from_path(
     if not path_obj.is_file():
         raise DorsalError(f"Provided path is not a valid file or does not exist: {path_obj}")
 
-    # Infer format if not explicitly provided
     resolved_format = source_format
     if not resolved_format:
         suffix = path_obj.suffix.lstrip(".")
@@ -143,7 +141,6 @@ def parse_file_from_path(
         with open(path_obj, "r", encoding="utf-8") as fp:
             return parse_file(content=fp, schema_id=schema_id, source_format=resolved_format, **kwargs)
     except DorsalError:
-        # Re-raise DorsalErrors directly to preserve their specific messaging
         raise
     except Exception as e:
         logger.error(f"Failed to read or parse file {path_obj}: {e}")
