@@ -15,7 +15,7 @@
 import logging
 import json
 from pathlib import Path
-from typing import Any, IO
+from typing import Any, Union
 
 from dorsal.common.exceptions import DorsalError
 from pydantic import BaseModel
@@ -35,10 +35,11 @@ def _require_adapters() -> None:
         raise DorsalError("Please pip install dorsalhub-adapters to enable exports.")
 
 
-def export_record(record: dict[str, Any] | BaseModel, schema_id: str, target_format: str, **kwargs: Any) -> str:
+def export_record(record: Union[dict[str, Any], BaseModel], schema_id: str, target_format: str) -> str:
     """Exports a validated JSON record to a standard format using Dorsal Adapters."""
     _require_adapters()
 
+    # Normalize Pydantic models to dicts if necessary
     if isinstance(record, BaseModel):
         record_dict = record.model_dump(mode="json", by_alias=True)
     else:
@@ -49,27 +50,10 @@ def export_record(record: dict[str, Any] | BaseModel, schema_id: str, target_for
     try:
         # Fetch the adapter and export
         adapter = get_adapter(schema_id, target_format)
-        return adapter.export(record_dict, **kwargs)
+        return adapter.export(record_dict)
     except Exception as e:
         logger.error(f"Adapter export failed: {e}")
         raise DorsalError(f"Failed to export record to {target_format}: {e}") from e
-
-
-def parse_file(content: str | bytes | IO[Any], schema_id: str, source_format: str, **kwargs: Any) -> dict[str, Any]:
-    """Parses a file-like object or string into a validated JSON record using Dorsal Adapters."""
-    _require_adapters()
-
-    logger.debug(f"Attempting to parse '{source_format}' into '{schema_id}'.")
-
-    try:
-        adapter = get_adapter(schema_id, source_format)
-        if isinstance(content, (str, bytes)):
-            return adapter.parse(content, **kwargs)
-        return adapter.parse_file(content, **kwargs)
-
-    except Exception as e:
-        logger.error(f"Adapter parse failed: {e}")
-        raise DorsalError(f"Failed to parse record from {source_format}: {e}") from e
 
 
 def get_supported_formats(schema_id: str) -> list[tuple[str, str]]:

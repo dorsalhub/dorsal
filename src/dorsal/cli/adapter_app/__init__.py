@@ -16,7 +16,6 @@ import typer
 
 from dorsal.cli.adapter_app.export_cmd import export_adapter
 from dorsal.cli.adapter_app.list_cmd import list_adapters
-from dorsal.cli.adapter_app.parse_cmd import parse_adapter
 
 
 app = typer.Typer(
@@ -27,4 +26,3 @@ app = typer.Typer(
 
 app.command(name="export")(export_adapter)
 app.command(name="list")(list_adapters)
-app.command(name="parse")(parse_adapter)

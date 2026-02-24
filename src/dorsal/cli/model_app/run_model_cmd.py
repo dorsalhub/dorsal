@@ -33,7 +33,7 @@ def run_model(
         typer.Argument(
             exists=True,
             file_okay=True,
-            dir_okay=True,
+            dir_okay=True,  # Supports directories for batch processing
             readable=True,
             resolve_path=True,
             help="Path to the file or directory to process.",
@@ -46,14 +46,6 @@ def run_model(
             "-o",
             help="Runtime options in 'key=value' format. Can be used multiple times.",
             rich_help_panel="Model Configuration",
-        ),
-    ] = None,
-    export_options: Annotated[
-        Optional[List[str]],
-        typer.Option(
-            "--export-opt",
-            help="Export options in 'key=value' format. Can be used multiple times.",
-            rich_help_panel="Output Options",
         ),
     ] = None,
     ignore_lint: Annotated[
@@ -121,11 +113,9 @@ def run_model(
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
     from dorsal.common.exceptions import DorsalError, AuthError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
     from dorsal.api.model import run_or_install_model
-    from dorsal.api.adapters import export_record
     from dorsal.cli.views.model import create_model_result_panel
-    from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
     from dorsal.file.validators.file_record import AnnotationGroup, Annotation
@@ -145,9 +135,9 @@ def run_model(
     error_console = get_error_console()
     palette: dict[str, str] = ctx.obj.get("palette", {})
 
-    parsed_options = parse_cli_options(options=options, palette=palette)
-    parsed_export_options = parse_cli_options(options=export_options, palette=palette)
+    parsed_options = _parse_cli_options(options)
 
+    # 1. Target Resolution & Installation
     if not (json_output or export_format):
         try:
             strategy, package_name = resolve_target(target)
@@ -158,6 +148,7 @@ def run_model(
         except Exception:
             pass
 
+    # 2. Gather files for batch or single processing
     files_to_process = [f for f in file_path.iterdir() if f.is_file()] if file_path.is_dir() else [file_path]
     is_batch = len(files_to_process) > 1
 
@@ -174,8 +165,9 @@ def run_model(
         )
         error_console.print(msg)
 
+    # 3. Execution Loop
     results_data = []
-    raw_results: list[RunModelResult | None] = []
+    raw_results: list[Annotation | AnnotationGroup | None] = []
     export_files_to_save = []
     out_dir = pathlib.Path.cwd()
     if output_path:
@@ -187,6 +179,7 @@ def run_model(
         out_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        # Progress bar configuration (transient=True so it disappears when done)
         with Progress(
             SpinnerColumn(),
             TextColumn(f"[{palette.get('info', 'dim')}]{{task.description}}"),
@@ -198,53 +191,41 @@ def run_model(
             console=error_console,
             transient=True,
         ) as progress:
-            overall_task = progress.add_task("Total Progress", total=len(files_to_process)) if is_batch else None
+            task = progress.add_task("Initializing...", total=len(files_to_process))
 
             for f in files_to_process:
-                file_task = progress.add_task(f"Processing {f.name}...", total=None)
-
-                def progress_hook(current: float, total: float, description: str = "", task_id=file_task):
-
-                    update_kwargs: dict[str, Any] = {"completed": current, "total": total}
-                    if description:
-                        update_kwargs["description"] = f"[{palette.get('info', 'dim')}]{description}"
-                    progress.update(task_id, **update_kwargs)
-
+                progress.update(task, description=f"Processing {f.name}...")
                 try:
-                    res: RunModelResult = run_or_install_model(
+                    res: Annotation | AnnotationGroup = run_or_install_model(
                         target=target,
                         file_path=str(f),
                         options=parsed_options,
                         ignore_linter_errors=ignore_lint,
-                        progress_callback=progress_hook,
                     )
 
                     raw_results.append(res)
-
                     res_dict = res.model_dump(exclude_none=True)
-                    res_dict["file_path"] = str(f)
+                    res_dict = {"file_path": str(f), **res_dict}
                     results_data.append(res_dict)
 
                     if export_format:
                         try:
-                            if res.error:
-                                raise ValueError(f"Cannot export due to model error: {res.error}")
+                            from dorsal_adapters.registry import get_adapter
 
-                            schema_id = res.schema_id
-                            record_dict = res.record or {}
+                            if isinstance(res, AnnotationGroup):
+                                from dorsal.file.sharding import reassemble_record
+
+                                _, record_dict = reassemble_record(res)
+                                schema_id = res.annotations[0].schema_id
+                            else:
+                                schema_id = res.schema_id
+                                record_dict = res.record.model_dump(exclude_none=True) if res.record else {}
 
                             if not schema_id:
                                 raise ValueError("Missing schema_id for export.")
 
-                            if not record_dict:
-                                raise ValueError("No record data generated to export.")
-
-                            exported_text = export_record(
-                                record=record_dict,
-                                schema_id=schema_id,
-                                target_format=export_format,
-                                **parsed_export_options,
-                            )
+                            adapter = get_adapter(schema_id, export_format)
+                            exported_text = adapter.export(record_dict)
 
                             base_name = f.stem
                             save_path = (
@@ -255,13 +236,15 @@ def run_model(
 
                             export_files_to_save.append((save_path, exported_text))
 
-                        except DorsalError as err:
+                        except ImportError:
+                            error_console.print(
+                                f"[{palette.get('warning', 'yellow')}]Error:[/] 'dorsalhub-adapters' is required for exports."
+                            )
+                            exit_cli(code=EXIT_CODE_ERROR)
+                        except ValueError as err:
                             error_console.print(
                                 f"[{palette.get('warning', 'yellow')}]Export Error on {f.name}:[/] {err}"
                             )
-                            res_dict["export_error"] = str(err)
-                        except ValueError as err:
-                            error_console.print(f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}")
                             res_dict["export_error"] = str(err)
 
                 except (DorsalError, AuthError, typer.Exit):
@@ -272,12 +255,7 @@ def run_model(
                     results_data.append({"file_path": str(f), "error": str(e)})
                     raw_results.append(None)
 
-                progress.update(file_task, completed=100.0, total=100.0)
-
-                progress.remove_task(file_task)
-
-                if overall_task is not None:
-                    progress.advance(overall_task)
+                progress.advance(task)
 
     except (DorsalError, AuthError) as e:
         if json_output:
@@ -297,6 +275,7 @@ def run_model(
 
     final_json_data = {"results": results_data}
 
+    # 4. Auto-Save Logic
     saved_paths_msg = []
     if not no_save:
         if output_path and not is_batch and not export_format:
@@ -313,6 +292,7 @@ def run_model(
                 path.write_text(text, encoding="utf-8")
                 saved_paths_msg.append(str(path))
 
+    # 5. Terminal Display Logic
     if export_format and not is_batch:
         for _, text in export_files_to_save:
             console.print(text, end="")
@@ -393,3 +373,17 @@ def run_model(
             error_console.print(f"\n[{palette.get('info', 'dim')}]Outputs saved successfully:\n{paths_formatted}[/]")
         else:
             error_console.print(f"\n[{palette.get('info', 'dim')}]Complete. Files saved to {out_dir.resolve()}[/]")
+
+
+def _parse_cli_options(options: Optional[List[str]]) -> dict[str, Any]:
+    if not options:
+        return {}
+
+    result = {}
+    for item in options:
+        if "=" not in item:
+            logger.warning(f"Skipping malformed option '{item}'. Must be in 'key=value' format.")
+            continue
+        key, value = item.split("=", 1)
+        result[key.strip()] = value.strip()
+    return result

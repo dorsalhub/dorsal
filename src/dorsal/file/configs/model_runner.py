@@ -16,21 +16,13 @@ import json
 import logging
 import pathlib
 import re
-from typing import Annotated, Any, Literal, Type, TYPE_CHECKING, Union, cast
-import inspect
+from typing import Annotated, Any, Literal, TYPE_CHECKING, Union
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from dorsal.common import constants
-from dorsal.common.exceptions import AnnotationImportError
-from dorsal.common.model import AnnotationModelSource, AnnotationModel, is_pydantic_model_class
-from dorsal.common.validators import (
-    CallableImportPath,
-    DatasetID,
-    import_callable,
-    JsonSchemaValidator,
-    get_json_schema_validator,
-)
+from dorsal.common.model import AnnotationModelSource
+from dorsal.common.validators import CallableImportPath, DatasetID
 from dorsal.file.annotation_models.mediainfo.config import MEDIAINFO_MEDIA_TYPES
 from dorsal.file.utils.size import parse_filesize
 from dorsal.file.validators.base import MediaTypePartString
@@ -335,39 +327,3 @@ BASE_ANNOTATION_MODEL = {
     "schema_id": constants.FILE_BASE_ANNOTATION_SCHEMA,
     "options": {"calculate_similarity_hash": True},
 }
-
-
-def resolve_pipeline_step_models(
-    pipeline_step_obj: "ModelRunnerPipelineStep",
-) -> tuple[Type[AnnotationModel], Type[BaseModel] | JsonSchemaValidator | None]:
-    """
-    Resolves the callable model and validator classes from a pipeline step config.
-    """
-    try:
-        annotator_callable = import_callable(import_path=pipeline_step_obj.annotation_model)
-        if not (inspect.isclass(annotator_callable) and issubclass(annotator_callable, AnnotationModel)):
-            raise TypeError(f"Imported callable '{annotator_callable.__name__}' is not a subclass of AnnotationModel.")
-        annotator_class = cast(Type[AnnotationModel], annotator_callable)
-
-        validator: Type[BaseModel] | JsonSchemaValidator | None = None
-        if pipeline_step_obj.validation_model:
-            if isinstance(pipeline_step_obj.validation_model, dict):
-                validator = get_json_schema_validator(schema=pipeline_step_obj.validation_model, strict=True)
-            else:
-                validator_callable = import_callable(import_path=pipeline_step_obj.validation_model)
-                if is_pydantic_model_class(validator_callable):
-                    validator = cast(Type[BaseModel], validator_callable)
-                elif isinstance(validator_callable, JsonSchemaValidator):
-                    validator = validator_callable
-                else:
-                    raise TypeError("Imported validator is not a supported type.")
-
-        return annotator_class, validator
-
-    except (ImportError, AttributeError, TypeError) as err:
-        msg = (
-            "Failed to import model/validator from config: "
-            f"{pipeline_step_obj.annotation_model.module}.{pipeline_step_obj.annotation_model.name}"
-        )
-        logger.exception("AnnotationImportError: %s.", msg)
-        raise AnnotationImportError(msg) from err

@@ -106,6 +106,7 @@ def export_adapter(
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
 
     for i, (current_schema_id, record, orig_file_path) in enumerate(records_to_process):
+        # Resolve display name for the input
         if orig_file_path:
             input_name = pathlib.Path(orig_file_path).name
             base_name = pathlib.Path(orig_file_path).stem

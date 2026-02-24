@@ -52,15 +52,14 @@ def mock_get_model_pipeline():
 
 
 @pytest.fixture
-def mock_resolve_pipeline_step_models():
-    with patch("dorsal.api.model.resolve_pipeline_step_models") as mock:
-        mock.return_value = (MagicMock(__name__="MockAnnotator"), MagicMock(__name__="MockValidator"))
+def mock_file_annotator():
+    with patch("dorsal.api.model.FILE_ANNOTATOR") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_run_model():
-    with patch("dorsal.api.model.run_model") as mock:
+def mock_model_runner():
+    with patch("dorsal.api.model.ModelRunner") as mock:
         yield mock
 
 
@@ -80,8 +79,8 @@ def test_run_or_install_model_happy_path_existing_pipeline(
     mock_resolve_target,
     mock_is_package_installed,
     mock_get_model_pipeline,
-    mock_resolve_pipeline_step_models,
-    mock_run_model,
+    mock_file_annotator,
+    mock_model_runner,
     mock_install_model_target,
 ):
     """Test running a model that is installed and exists in the active pipeline."""
@@ -99,24 +98,14 @@ def test_run_or_install_model_happy_path_existing_pipeline(
     )
     mock_get_model_pipeline.return_value = [existing_step]
 
-    mock_annotator = MagicMock()
-    mock_validator = MagicMock()
-    mock_resolve_pipeline_step_models.return_value = (mock_annotator, mock_validator)
-
     run_or_install_model(target, file_path)
 
     mock_install_model_target.assert_not_called()
-
-    mock_run_model.assert_called_once_with(
-        annotation_model=mock_annotator,
+    mock_file_annotator.annotate_file_using_pipeline_step.assert_called_once_with(
         file_path=file_path,
-        schema_id=existing_step.schema_id,
-        schema_version=existing_step.schema_version,
-        validation_model=mock_validator,
-        dependencies=existing_step.dependencies,
-        options=existing_step.options,
-        ignore_linter_errors=existing_step.ignore_linter_errors,
-        progress_callback=None,
+        model_runner=mock_model_runner.return_value,
+        pipeline_step=existing_step,
+        private=False,
     )
 
 
@@ -127,8 +116,7 @@ def test_run_or_install_model_auto_install_success(
     mock_get_model_pipeline,
     mock_entry_points,
     mock_resources_files,
-    mock_resolve_pipeline_step_models,
-    mock_run_model,
+    mock_file_annotator,
 ):
     """Test auto-installing a missing model, then constructing its step from metadata."""
     target = "dorsalhub/whisper"
@@ -160,24 +148,18 @@ def test_run_or_install_model_auto_install_success(
 
     mock_install_model_target.assert_called_once_with(target)
 
-    call_args = mock_resolve_pipeline_step_models.call_args
+    call_args = mock_file_annotator.annotate_file_using_pipeline_step.call_args
     assert call_args is not None
-    step_arg = call_args.args[0]
+    step_arg = call_args.kwargs["pipeline_step"]
 
     assert isinstance(step_arg, ModelRunnerPipelineStep)
     assert step_arg.annotation_model.name == "WhisperTranscriber"
     assert step_arg.schema_id == "audio/transcription"
     assert step_arg.package_name == package_name
 
-    mock_run_model.assert_called_once()
-
 
 def test_run_or_install_model_runtime_options(
-    mock_resolve_target,
-    mock_is_package_installed,
-    mock_get_model_pipeline,
-    mock_resolve_pipeline_step_models,
-    mock_run_model,
+    mock_resolve_target, mock_is_package_installed, mock_get_model_pipeline, mock_file_annotator
 ):
     """Test applying runtime options and linter flags."""
     target = "dorsal-ocr"
@@ -194,18 +176,18 @@ def test_run_or_install_model_runtime_options(
 
     run_or_install_model(target, "doc.pdf", options={"lang": "fr", "fast": True}, ignore_linter_errors=True)
 
-    call_args = mock_run_model.call_args
+    call_args = mock_file_annotator.annotate_file_using_pipeline_step.call_args
+    used_step = call_args.kwargs["pipeline_step"]
 
-    assert call_args.kwargs["options"] == {"lang": "fr", "fast": True}
-    assert call_args.kwargs["ignore_linter_errors"] is True
+    assert used_step.ignore_linter_errors is True
+    assert used_step.options == {"lang": "fr", "fast": True}
+
+    assert base_step.options == {"lang": "en"}
+    assert base_step.ignore_linter_errors is False
 
 
 def test_annotator_execution_failure_propagates(
-    mock_resolve_target,
-    mock_is_package_installed,
-    mock_get_model_pipeline,
-    mock_resolve_pipeline_step_models,
-    mock_run_model,
+    mock_resolve_target, mock_is_package_installed, mock_get_model_pipeline, mock_file_annotator
 ):
     """Test that exceptions raised during annotation are propagated."""
     mock_resolve_target.return_value = ("package_name", "dorsal-fail")
@@ -218,7 +200,7 @@ def test_annotator_execution_failure_propagates(
     )
     mock_get_model_pipeline.return_value = [step]
 
-    mock_run_model.side_effect = ValueError("Processing failed")
+    mock_file_annotator.annotate_file_using_pipeline_step.side_effect = ValueError("Processing failed")
 
     with pytest.raises(ValueError, match="Processing failed"):
         run_or_install_model("dorsal-fail", "f.txt")

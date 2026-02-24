@@ -14,7 +14,7 @@
 
 import json
 import sys
-from typing import Any, NoReturn, Sequence
+from typing import NoReturn
 
 from rich.console import Console
 from rich.panel import Panel
@@ -159,42 +159,3 @@ def handle_offline_error(e: Exception, console: Console, palette: dict):
             border_style=palette["panel_border_info"],
         )
     )
-
-
-def parse_cli_options(options: Sequence[str] | None, palette: dict) -> dict[str, Any]:
-    """Parses a sequence of 'key=value' strings into a dictionary."""
-    if not options:
-        return {}
-
-    result: dict[str, Any] = {}
-    error_console = get_error_console()
-
-    for item in options:
-        if "=" not in item:
-            error_console.print(
-                f"[{palette.get('panel_title_warning')}]Warning:[/] Skipping malformed option '{item}'."
-                "Must be in 'key=value' format."
-            )
-            continue
-
-        key, value = item.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-
-        val_lower = value.lower()
-        if val_lower in ("true", "yes"):
-            result[key] = True
-        elif val_lower in ("false", "no"):
-            result[key] = False
-        elif val_lower in ("null", "none"):
-            result[key] = None
-        else:
-            try:
-                if "." in value:
-                    result[key] = float(value)
-                else:
-                    result[key] = int(value)
-            except ValueError:
-                result[key] = value  # Keep as string
-
-    return result

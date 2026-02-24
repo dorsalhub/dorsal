@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from __future__ import annotations
-import logging
 from typing import Any, TYPE_CHECKING
 
 from rich.console import Group, RenderableType
@@ -26,14 +25,12 @@ from rich.rule import Rule
 from rich.json import JSON
 
 if TYPE_CHECKING:
-    from dorsal.file.configs.model_runner import RunModelResult
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
     from dorsal.client.validators import FileAnnotationResponse, FileAnnotationGroupResponse
-
-logger = logging.getLogger(__name__)
 
 
 def create_model_result_panel(
-    result: "RunModelResult | FileAnnotationResponse | FileAnnotationGroupResponse",
+    result: Annotation | AnnotationGroup | FileAnnotationResponse | FileAnnotationGroupResponse,
     title: str,
     file_name: str,
     palette: dict[str, str],
@@ -42,37 +39,35 @@ def create_model_result_panel(
     """
     Dispatcher that renders a rich Panel for a model run result.
     """
-    from dorsal.file.configs.model_runner import RunModelResult
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
     from dorsal.client.validators import FileAnnotationResponse, FileAnnotationGroupResponse
-
-    logger.debug(f"Rendering model result panel for '{file_name}' (Target: {title})")
-    logger.debug(f"Result object type: {type(result).__name__}")
 
     data: dict[str, Any] | None = None
     group_info = ""
     schema_id = ""
 
-    if isinstance(result, RunModelResult):
-        logger.debug("Extracting record directly from RunModelResult")
-        data = result.record
-        schema_id = getattr(result, "schema_id", "") or ""
+    if isinstance(result, AnnotationGroup):
+        if result.annotations and result.annotations[0].record:
+            data = result.annotations[0].record.model_dump()
+            schema_id = getattr(result.annotations[0], "schema_id", "")
+        group_info = f" (Group of {len(result.annotations)})"
 
     elif isinstance(result, FileAnnotationGroupResponse):
-        logger.debug("Extracting record from FileAnnotationGroupResponse")
         if result.group.annotations and result.group.annotations[0].record:
             data = result.group.annotations[0].record.model_dump()
             schema_id = getattr(result.group.annotations[0], "schema_id", "")
         group_info = f" (Group of {len(result.group.annotations)})"
 
     elif isinstance(result, FileAnnotationResponse):
-        logger.debug("Extracting record from FileAnnotationResponse")
         data = result.record
         schema_id = getattr(result, "schema_id", "")
 
-    logger.debug(f"Extracted schema_id: '{schema_id}'")
+    elif isinstance(result, Annotation):
+        if result.record:
+            data = result.record.model_dump()
+        schema_id = getattr(result, "schema_id", "")
 
     if not data:
-        logger.debug("No record data found in result. Returning Empty Result panel.")
         return Panel(
             Text("No record data returned.", style=palette.get("error", "red")),
             title=f"[{palette.get('panel_title_error', 'red')}] Empty Result{group_info}[/]",
@@ -83,11 +78,9 @@ def create_model_result_panel(
     schema_type: str
 
     if schema_id in RENDERER_REGISTRY:
-        logger.debug(f"Found specific renderer for schema_id '{schema_id}' in RENDERER_REGISTRY.")
         render_func, schema_type = RENDERER_REGISTRY[schema_id]
         content = render_func(data, palette, max_length)
     else:
-        logger.debug(f"No specific renderer found for schema_id '{schema_id}'. Falling back to Raw JSON Output.")
         content = JSON.from_data(data)
         schema_type = "Raw Output"
 
@@ -101,7 +94,6 @@ def create_model_result_panel(
         Text(title, style=palette.get("section_title", "bold")), Text(f"{file_name}", style=palette.get("info", "dim"))
     )
 
-    logger.debug("Successfully constructed Panel layout.")
     return Panel(
         Group(header, Rule(style=palette.get("info", "dim")), Text(""), content),
         title=f"[{title_style}]{schema_type} Result{group_info}[/]",
@@ -137,7 +129,6 @@ def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
 
 
 def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_arxiv")
     renderables: list[RenderableType] = []
 
     title = data.get("title", "Untitled")
@@ -198,7 +189,6 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int
 
 
 def _render_classification(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_classification")
     renderables: list[RenderableType] = []
 
     grid = Table.grid(padding=(0, 2))
@@ -240,7 +230,6 @@ def _render_classification(data: dict[str, Any], palette: dict[str, str], max_le
 
 
 def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_entity_extraction")
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -280,7 +269,6 @@ def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str], max
 
 
 def _render_object_detection(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_object_detection")
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -313,7 +301,6 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str], max_
 
 
 def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_embedding")
     renderables: list[RenderableType] = []
 
     grid = Table.grid(padding=(0, 2))
@@ -360,7 +347,6 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length:
 
 
 def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_audio_transcription")
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -416,7 +402,6 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], m
 
 
 def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_document_extraction")
     blocks = data.get("blocks", [])
     stats: dict[str, int] = {}
     for b in blocks:
@@ -455,7 +440,6 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], m
 
 
 def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_llm_output")
     renderables: list[RenderableType] = []
 
     renderables.append(Text(f"Model: {data.get('model', 'Unknown Model')}", style=palette.get("section_title", "bold")))
@@ -509,7 +493,6 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length
 
 
 def _render_regression(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_regression")
     points = data.get("points", [])
     target = data.get("target", "Unknown Target")
     unit = data.get("unit", "")
@@ -550,7 +533,6 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str], max_length
 
 
 def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_geolocation")
     geo = data.get("geometry") or {}
     props = data.get("properties") or {}
 
@@ -587,7 +569,6 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_lengt
 
 
 def _render_generic(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
-    logger.debug("Executing _render_generic")
     kv_data = data.get("data", {})
     renderables: list[RenderableType] = [
         Text(data.get("description", "Generic Data"), style=f"{palette.get('info', 'dim')} italic")

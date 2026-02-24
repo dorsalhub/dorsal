@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, NamedTuple, Sequence, Type, TYPE_CHECKING, TypeVar, cast
+from typing import Any, NamedTuple, Type, TYPE_CHECKING, TypeVar, cast, Callable
 
 from pydantic import BaseModel, Field, ConfigDict, TypeAdapter, ValidationInfo, field_validator
 
@@ -495,7 +495,6 @@ class ModelRunner:
         options: dict[str, Any] | None = None,
         ignore_linter_errors: bool = False,
         follow_symlinks: bool = True,
-        progress_callback: Callable[[float, float, str], None] | None = None,
     ) -> "RunModelResult":
         """
         Runs a single annotation model and validates its output.
@@ -553,8 +552,6 @@ class ModelRunner:
             annotation_model_instance = annotation_model(file_path=file_path)  # type: ignore[call-arg]
 
             annotation_model_instance.follow_symlinks = follow_symlinks
-
-            annotation_model_instance._progress_callback = progress_callback
 
             if base_model_result and base_model_result.record:
                 for key, value in base_model_result.record.items():
@@ -1167,11 +1164,9 @@ def run_model(
     schema_id: str | None = None,
     schema_version: str | None = None,
     validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
-    dependencies: Sequence[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
+    dependencies: list[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
     options: dict[str, Any] | None = None,
     debug: bool = False,
-    ignore_linter_errors: bool = False,
-    progress_callback: Callable[[float, float, str], None] | None = None,
 ) -> RunModelResult:
     """
     Execute a single AnnotationModel in isolation.
@@ -1220,7 +1215,7 @@ def run_model(
     schema_version = schema_version if schema_version is not None else OPEN_VALIDATION_SCHEMAS_VER
     if dependencies:
         try:
-            raw_input = dependencies if isinstance(dependencies, (list, tuple)) else [dependencies]
+            raw_input = dependencies if isinstance(dependencies, list) else [dependencies]
             adapter = TypeAdapter(list[ModelRunnerDependencyConfig])
             parsed_dependencies = adapter.validate_python(raw_input)
         except Exception as e:
@@ -1361,8 +1356,6 @@ def run_model(
         schema_id=schema_id,
         schema_version=schema_version,
         options=options,
-        ignore_linter_errors=ignore_linter_errors,
-        progress_callback=progress_callback,
     )
 
     return my_model_result
