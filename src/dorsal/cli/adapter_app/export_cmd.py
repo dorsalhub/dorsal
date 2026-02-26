@@ -69,7 +69,7 @@ def export_adapter(
     """
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
     from dorsal.cli.adapter_app.helpers import extract_records
-    from dorsal.api.adapters import export_record, export_record_to_file
+    from dorsal.api.adapters import export_record, export_record_to_file, get_format_extension
     from rich.table import Table
 
     console = get_rich_console()
@@ -124,7 +124,8 @@ def export_adapter(
         if output_path and not output_path.is_dir() and not is_batch:
             save_path = output_path
         else:
-            save_path = out_dir / f"{base_name}.{resolved_format}"
+            ext = get_format_extension(current_schema_id, resolved_format)
+            save_path = out_dir / f"{base_name}.{ext}"
 
         try:
             if no_save:

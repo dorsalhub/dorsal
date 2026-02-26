@@ -356,7 +356,7 @@ toml = [
 
 [[package]]
 name = "dorsalhub"
-version = "0.8.2"
+version = "0.8.3"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },
@@ -416,7 +416,7 @@ requires-dist = [
     { name = "dorsalhub", extras = ["adapters"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["pandas"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["tlsh"], marker = "extra == 'all'" },
-    { name = "dorsalhub-adapters", marker = "extra == 'adapters'", specifier = ">=0.1.0" },
+    { name = "dorsalhub-adapters", marker = "extra == 'adapters'", specifier = ">=0.2.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema-rs", specifier = ">=0.38.1" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },
@@ -440,7 +440,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=24.10.0" },
-    { name = "dorsalhub-adapters", specifier = ">=0.1.0" },
+    { name = "dorsalhub-adapters", specifier = ">=0.2.0" },
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "pyfakefs", specifier = ">=5.9.2" },
@@ -455,15 +455,15 @@ dev = [
 
 [[package]]
 name = "dorsalhub-adapters"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "srt" },
     { name = "webvtt-py" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/6e/d14e55400ae86835c4dc9fb0e70bdbea7f8431ae04e5e29bf3049d773c81/dorsalhub_adapters-0.1.0.tar.gz", hash = "sha256:d795b58ad1c4f6f8d681a070700e5e7a3c8a70828faed090a2abe90438925d0e", size = 1332919 }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/e8/9a54670da1034d4d80fffc7d7d68ac1e6cb066b9f3a1913f3e0fe96a9a3c/dorsalhub_adapters-0.2.0.tar.gz", hash = "sha256:c91e911181cbb5c07321c3178004710f42aec04d5f4918e70fa4985449853eac", size = 37629 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/fd/a8ed9fd36d002da2687494e1b689347f0c15234bc70366d2a1489c48781c/dorsalhub_adapters-0.1.0-py3-none-any.whl", hash = "sha256:02d51e30f742986928376415e6661d50b315e873a5f9ea48887da2bf62bffe23", size = 18818 },
+    { url = "https://files.pythonhosted.org/packages/6e/65/80ac85176c7b22e71803bae14c89cc9b551c5032f3dd669a6926b1b454b1/dorsalhub_adapters-0.2.0-py3-none-any.whl", hash = "sha256:279ab20265b49a190ed708ba6e1e55b9088318d6304f79dcc215fa18c2acd927", size = 39090 },
 ]
 
 [[package]]

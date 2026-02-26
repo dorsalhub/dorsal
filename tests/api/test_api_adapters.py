@@ -24,6 +24,7 @@ from dorsal.api.adapters import (
     parse_file,
     parse_file_from_path,
     get_supported_formats,
+    get_format_extension,
 )
 from dorsal.common.exceptions import DorsalError
 
@@ -46,6 +47,9 @@ def test_missing_adapters_package():
 
     with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
         get_supported_formats(schema_id="test/schema")
+
+    with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
+        get_format_extension(schema_id="test/schema", target_format="txt")
 
 
 @patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
@@ -253,3 +257,34 @@ def test_get_supported_formats():
 
         assert result == [("srt", "SubRip Text"), ("vtt", "WebVTT")]
         mock_registry.list_formats.assert_called_once_with("test/schema")
+
+
+@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
+def test_get_format_extension_success():
+    """Test that get_format_extension successfully retrieves the custom extension string."""
+    mock_registry = MagicMock()
+    mock_adapter = MagicMock()
+    mock_adapter.extension = "hocr.html"
+    mock_registry.get_adapter.return_value = mock_adapter
+
+    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
+        result = get_format_extension("test/schema", "hocr")
+
+        assert result == "hocr.html"
+        mock_registry.get_adapter.assert_called_once_with("test/schema", "hocr")
+
+
+@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
+@patch("dorsal.api.adapters.logger")
+def test_get_format_extension_fallback(mock_logger):
+    """Test that get_format_extension safely falls back to target_format on exception."""
+    mock_registry = MagicMock()
+    mock_registry.get_adapter.side_effect = ValueError("Adapter not found")
+
+    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
+        result = get_format_extension("test/schema", "fake_format")
+
+        assert result == "fake_format"
+
+        mock_logger.warning.assert_called_once()
+        assert "Adapter not found for schema" in mock_logger.warning.call_args[0][0]
