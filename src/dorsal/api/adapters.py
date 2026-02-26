@@ -35,6 +35,25 @@ def _require_adapters() -> None:
         raise DorsalError("Please pip install dorsalhub-adapters to enable exports.")
 
 
+def get_format_extension(schema_id: str, target_format: str) -> str:
+    """Retrieves the correct file extension for a specific format adapter."""
+    _require_adapters()
+    try:
+        from dorsal_adapters.registry import get_adapter
+
+        adapter = get_adapter(schema_id, target_format)
+        return adapter.extension
+    except Exception as err:
+        logger.warning(
+            "Adapter not found for schema %s, format %s. Defaulting to %s. Full error: %s",
+            schema_id,
+            target_format,
+            target_format,
+            err,
+        )
+        return target_format
+
+
 def export_record(record: dict[str, Any] | BaseModel, schema_id: str, target_format: str, **kwargs: Any) -> str:
     """Exports a validated JSON record to a standard format using Dorsal Adapters."""
     _require_adapters()

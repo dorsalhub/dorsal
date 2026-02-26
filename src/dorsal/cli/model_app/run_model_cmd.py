@@ -123,7 +123,7 @@ def run_model(
     from dorsal.common.exceptions import DorsalError, AuthError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
     from dorsal.api.model import run_or_install_model
-    from dorsal.api.adapters import export_record
+    from dorsal.api.adapters import export_record, get_format_extension
     from dorsal.cli.views.model import create_model_result_panel
     from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.registry.resolution import resolve_target, is_package_installed
@@ -246,12 +246,9 @@ def run_model(
                                 **parsed_export_options,
                             )
 
+                            ext = get_format_extension(schema_id, export_format)
                             base_name = f.stem
-                            save_path = (
-                                output_path
-                                if output_path and not is_batch
-                                else out_dir / f"{base_name}.{export_format}"
-                            )
+                            save_path = output_path if output_path and not is_batch else out_dir / f"{base_name}.{ext}"
 
                             export_files_to_save.append((save_path, exported_text))
 
