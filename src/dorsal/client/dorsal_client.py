@@ -207,11 +207,10 @@ class DorsalClient:
         self.last_response: requests.Response | None = None
         self.last_request: requests.Request | None = None
         logger.debug(
-            "DorsalClient initialized successfully. Base URL: '%s', Identity: '%s'. API key configured: %s (DEBUG ONLY: %s)",
+            "DorsalClient initialized successfully. Base URL: '%s', Identity: '%s'. API key configured: %s ",
             self.base_url,
             self.identity,
             ("Yes" if self.api_key else "No (will use session headers if previously set, or fail if auth needed)"),
-            self.api_key,
         )
 
     @property

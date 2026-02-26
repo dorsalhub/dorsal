@@ -356,10 +356,11 @@ toml = [
 
 [[package]]
 name = "dorsalhub"
-version = "0.8.3"
+version = "0.8.4"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },
+    { name = "dorsalhub-adapters" },
     { name = "jinja2" },
     { name = "jsonschema-rs" },
     { name = "langcodes" },
@@ -379,11 +380,7 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-adapters = [
-    { name = "dorsalhub-adapters" },
-]
 all = [
-    { name = "dorsalhub-adapters" },
     { name = "pandas" },
     { name = "py-tlsh" },
 ]
@@ -397,7 +394,6 @@ tlsh = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
-    { name = "dorsalhub-adapters" },
     { name = "mypy" },
     { name = "pandas" },
     { name = "pyfakefs" },
@@ -413,10 +409,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
-    { name = "dorsalhub", extras = ["adapters"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["pandas"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["tlsh"], marker = "extra == 'all'" },
-    { name = "dorsalhub-adapters", marker = "extra == 'adapters'", specifier = ">=0.2.0" },
+    { name = "dorsalhub-adapters", specifier = ">=0.2.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema-rs", specifier = ">=0.38.1" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },
@@ -440,7 +435,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=24.10.0" },
-    { name = "dorsalhub-adapters", specifier = ">=0.2.0" },
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "pyfakefs", specifier = ">=5.9.2" },
