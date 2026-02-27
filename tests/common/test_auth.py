@@ -33,7 +33,7 @@ def test_get_api_key_from_env(mock_getenv):
 @patch("dorsal.common.auth.load_config")
 def test_get_api_key_from_config(mock_load_config):
     """Test retrieving the API key from the config file."""
-    # Mock the return value of load_config
+
     mock_load_config.return_value = (
         {constants.CONFIG_SECTION_AUTH: {constants.CONFIG_OPTION_API_KEY: "config_key_456"}},
         "/fake/path/dorsal.toml",
@@ -57,13 +57,12 @@ def test_get_email_from_config(mock_load_config):
 @patch("dorsal.common.auth.get_api_key_from_env")
 def test_get_api_key_details(mock_from_env, mock_from_project, mock_from_global, mock_global_path):
     """Test the logic for determining the source of the API key."""
-    # Case 1: Key is from environment variable
+
     mock_from_env.return_value = "env_key"
     details = auth.get_api_key_details()
     assert details["source"] == auth.APIKeySource.ENV
     assert details["value"] == "env_key"
 
-    # Case 2: Key is from project config file
     mock_from_env.return_value = None
     proj_path = str(Path("/proj/dorsal.toml"))
     mock_from_project.return_value = ({"auth": {"api_key": "project_key"}}, proj_path)
@@ -71,9 +70,8 @@ def test_get_api_key_details(mock_from_env, mock_from_project, mock_from_global,
     details = auth.get_api_key_details()
     assert details["source"] == auth.APIKeySource.PROJECT
     assert details["value"] == "project_key"
-    assert details["path"] == proj_path  # Assert against the OS-agnostic string
+    assert details["path"] == proj_path
 
-    # Case 3: Key is from global config file
     mock_from_project.return_value = ({}, None)
 
     global_path = str(Path("/global/dorsal.toml"))
@@ -90,18 +88,15 @@ def test_get_api_key_details(mock_from_env, mock_from_project, mock_from_global,
 @patch("dorsal.common.auth.load_config")
 def test_read_api_key_precedence(mock_load_config, mock_project_config, mock_from_env):
     """Test the order of precedence for reading the API key."""
-    # 1. Argument has highest precedence
+
     assert auth.read_api_key(api_key="arg_key") == "arg_key"
 
-    # 2. Environment variable is next
     mock_from_env.return_value = "env_key"
     assert auth.read_api_key() == "env_key"
 
-    # 3. Config file is last
-    # Reset mocks to simulate no environment variable being found
     mock_from_env.return_value = None
-    mock_project_config.return_value = ({}, None)  # Simulate no project config
-    mock_load_config.return_value = (  # Simulate a global config with a key
+    mock_project_config.return_value = ({}, None)
+    mock_load_config.return_value = (
         {"auth": {"api_key": "config_key"}},
         "/fake/path/dorsal.toml",
     )
@@ -109,11 +104,10 @@ def test_read_api_key_precedence(mock_load_config, mock_project_config, mock_fro
 
 
 def test_read_api_key_not_found():
-    """Test that AuthError is raised if no key is found."""
+    """Test that None is returned if no key is found."""
     with patch.dict(os.environ, {}):
         with patch("dorsal.common.auth.get_api_key_details", return_value={"value": None}):
-            with pytest.raises(AuthError):
-                auth.read_api_key()
+            assert auth.read_api_key() is None
 
 
 @patch("dorsal.common.auth.set_config_value")
@@ -129,7 +123,6 @@ def test_write_auth_config(mock_set_config):
 
     mock_set_config.reset_mock()
 
-    # Test with explicit global scope
     auth.write_auth_config(api_key="global_key", email="global@email.com", scope="global")
     expected_global_calls = [
         call(section="auth", option="api_key", value="global_key", scope="global"),
@@ -141,13 +134,12 @@ def test_write_auth_config(mock_set_config):
 @patch("dorsal.common.auth.remove_config_value")
 def test_remove_api_key(mock_remove_config):
     """Test removing the api_key from a specified config scope."""
-    # Test removing from project scope
+
     auth.remove_api_key(scope=auth.APIKeySource.PROJECT)
     mock_remove_config.assert_called_with(
         section=constants.CONFIG_SECTION_AUTH, option=constants.CONFIG_OPTION_API_KEY, scope="project"
     )
 
-    # Test removing from global scope
     auth.remove_api_key(scope=auth.APIKeySource.GLOBAL)
     mock_remove_config.assert_called_with(
         section=constants.CONFIG_SECTION_AUTH, option=constants.CONFIG_OPTION_API_KEY, scope="global"
