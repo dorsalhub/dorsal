@@ -245,12 +245,13 @@ class DorsalClient:
 
         return dorsal_user_agent
 
-    def _make_request_headers(self, api_key: str | None = None) -> dict:
+    def _make_request_headers(self, api_key: str | None = None, require_auth: bool = True) -> dict:
         dorsal_user_agent = self._make_user_agent()
         dorsal_user_agent_string = json.dumps(dorsal_user_agent)
         user_agent_string = f"Dorsal/{__version__} Python Client"
         api_key = api_key if api_key is not None else self.api_key
-        if not api_key:
+
+        if require_auth and not api_key:
             raise AuthError("API Key is missing.")
 
         headers = {
@@ -258,14 +259,16 @@ class DorsalClient:
             "Accept": "application/json",
             "User-Agent": user_agent_string,
             "X-Dorsal-User-Agent": dorsal_user_agent_string,
-            "Authorization": f"Bearer {api_key}",
         }
+
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         return headers
 
     def _build_requests_session(self):
         session = DorsalClientSession()
-        session.headers.update(self._make_request_headers())
+        session.headers.update(self._make_request_headers(require_auth=False))
 
         retry_strategy = Retry(
             total=constants.API_MAX_RETRIES,
@@ -3287,7 +3290,6 @@ class DorsalClient:
                         original_exception=err,
                     ) from err
 
-            # Handle standard atomic annotations
             return FileAnnotationResponse(**json_response)
 
         except (json.JSONDecodeError, PydanticValidationError) as err:
@@ -3473,8 +3475,6 @@ class DorsalClient:
         from dorsal.client.validators import RegistryModelResponse
 
         if "/" not in model_identifier:
-            # We enforce namespacing for registry lookups.
-            # Single words (e.g. 'whisper') are treated as PyPI packages by the caller.
             raise DorsalClientError(f"Invalid registry ID '{model_identifier}'. Expected format 'namespace/name'.")
 
         namespace, name = model_identifier.split("/", 1)
@@ -3484,7 +3484,9 @@ class DorsalClient:
         logger.debug("Resolving registry model: %s", target_url)
 
         try:
-            response = self.session.get(url=target_url, timeout=self.timeout, headers=self._make_request_headers())
+            response = self.session.get(
+                url=target_url, timeout=self.timeout, headers=self._make_request_headers(require_auth=False)
+            )
             self.last_response = response
         except requests.exceptions.RequestException as err:
             logger.exception("Registry lookup failed for %s", target_url)
