@@ -28,9 +28,39 @@
   </a>
 </p>
 
-**Dorsal** is a Python library and command line tool for **generating, validating, and managing structured file metadata**.
+**Dorsal** is an extensible, local-first framework and command line tool for **generating, validating, and managing structured file metadata**.
 
-Dorsal has a fully configurable local metadata extraction pipeline. Metadata records can be exported to file or synced to **[DorsalHub](https://dorsalhub.com)** - a private-by-default platform for searching and tagging file metadata.
+Dorsal provides configurable extraction and annotation pipelines for files.
+
+### Annotation Models
+
+Annotation Models are **plug and play** packages for Dorsal which perform **file extraction**, **annotation** or **conversion**.
+
+[Explore](https://dorsalhub.com/models/explore) the models available on [dorsalhub.com](https://dorsalhub.com) or follow a [tutorial to build your own](https://docs.dorsalhub.com/python/hello-word/).
+
+You can run and install models directly from the command line:
+
+#### Whisper example
+
+```console
+$ dorsal run dorsalhub/whisper /home/video/test.mkv --export=srt
+1
+00:00:01,970 --> 00:00:05,970
+You might be wondering how I ended up in this situation.
+
+2
+00:00:05,970 --> 00:00:08,970
+Yeah that's me. A young subtitle.
+
+3
+00:00:08,970 --> 00:00:18,590
+Little did I know what life had in store for me.
+
+
+Outputs saved successfully:
+  ↳ /home/user/sandbox/test.dorsal.json
+  ↳ /home/user/sandbox/test.srt
+```
 
 ### Dorsal is...
 
@@ -122,14 +152,54 @@ dorsal file push "docs/PDFSPEC.pdf"
 You can install and run annotation models from the CLI:
 
 ```bash
-dorsal model run dorsalhub/dorsal-whisper "path/to/audio_file.mp3"
+dorsal run dorsalhub/pdf-extractor "path/to/document.pdf"
 ```
 
 You can also export to any format supported by [Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):
 
 ```bash
-dorsal model run dorsalhub/dorsal-whisper "path/to/video.mp4" --export=srt > video.srt
+dorsal run dorsalhub/pdf-extractor "path/to/document.pdf" --export=html
 ```
+
+### 4. Parse, Validate, and Export
+
+Dorsal has two companion libraries to handle data structure and interoperability:
+
+* **[Open Validation Schemas](https://github.com/dorsalhub/open-validation-schemas):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
+
+* **[Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):** A bundled utility that converts between strictly validated JSON records and standard file formats.
+
+**Example: Parse a standard file into a validated JSON record:**
+
+```bash
+$ dorsal adapter parse OSR_uk_000_0020_8k.srt audio-transcription
+```
+
+**Example: List available export formats for a schema:**
+
+```bash
+$ dorsal adapter list open/document-extraction
+```
+
+#### Supported Export Formats
+
+You can currently export validated records into the following formats:
+
+**Document Extraction** (`open/document-extraction`):
+
+- Markdown (`.md`)
+- HTML (`.html`)
+- hOCR (`.hocr.html`)
+- TSV (`.tsv`)
+- Plain Text (`.txt`)
+
+**Audio Transcription** (`open/audio-transcription`):
+
+- SRT (`.srt`)
+- WebVTT (`.vtt`)
+- Markdown (`.md`)
+- TSV (`.tsv`)
+- Plain Text (`.txt`)
 
 -----
 
@@ -189,6 +259,7 @@ generate_html_directory_report(
 )
 ```
 
+
 -----
 
 ## Custom Annotation Models
@@ -213,7 +284,6 @@ class HelloWord(AnnotationModel):
         data = {str(i+1): v[0] for i, v in enumerate(Counter(words).most_common(5))}
         
         return build_generic_record(
-            file_hash=self.hash,
             description="Top 5 most common words",
             data=data
         )
@@ -225,7 +295,7 @@ result = run_model(
     schema_id="open/generic"
 )
 
-assert result.error is None
+assert not result.error
 ```
 
 You can add it to Dorsal's local file metadata extraction pipeline:
