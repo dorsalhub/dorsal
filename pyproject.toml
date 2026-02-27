@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.8.4"
+version = "0.8.5"
 description = "Dorsal is a local-first metadata generation and management toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "blake3>=1.0.8",
-    "dorsalhub-adapters>=0.2.0",
+    "dorsalhub-adapters>=0.3.0",
     "langcodes[data]==3.5.0",
     "packaging>=23.0",
     "pydantic>=2.12.1",
