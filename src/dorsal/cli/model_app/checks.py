@@ -40,17 +40,17 @@ def check_and_confirm_model_install(
     """
     from dorsal.common.constants import WEB_URL
     from dorsal.common.exceptions import AuthError
-    from dorsal.common.cli import exit_cli, get_rich_console
+    from dorsal.common.cli import exit_cli, get_error_console
     from dorsal.session import get_shared_dorsal_client
     from dorsal.registry.validators import is_registry_id
 
     if force or yes:
         return
 
-    console = get_rich_console()
+    error_console = get_error_console()
 
     if "pipx" in sys.prefix:
-        console.print(
+        error_console.print(
             f"[{palette.get('info', 'dim')}]Note: You are running inside a pipx environment.\n"
             "The model will be available to the CLI, but NOT to external Python scripts.[/]"
         )
@@ -62,7 +62,7 @@ def check_and_confirm_model_install(
 
     if is_registry_id(target):
         try:
-            with console.status(f"[{palette.get('info', 'dim')}]Fetching model details...[/]"):
+            with error_console.status(f"[{palette.get('info', 'dim')}]Fetching model details...[/]"):
                 client = get_shared_dorsal_client()
                 reg_data = client.get_registry_model(target)
 
@@ -103,11 +103,10 @@ def check_and_confirm_model_install(
         msg_lines.append(f"[{palette.get('key', 'dim')}]{k}:[/] {v}")
 
     if "Unverified" in status_badge:
-        msg_lines.append(f"\n[{palette.get('warning', 'bold yellow')}]⚠️ Safety Warning[/]")
-        msg_lines.append("You are about to install executable code from an unverified source.")
+        msg_lines.append("\nYou are about to install executable code from an unverified source.")
         msg_lines.append("Please review the source above before proceeding.")
 
-    console.print(
+    error_console.print(
         Panel(
             "\n".join(msg_lines),
             title=f"[{palette.get('panel_title_warning', 'bold yellow')}]Model Info[/]",
@@ -116,15 +115,15 @@ def check_and_confirm_model_install(
         )
     )
 
-    if not Confirm.ask("Do you trust this source and want to proceed?"):
-        console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
+    if not Confirm.ask("Do you trust this source and want to proceed?", console=error_console):
+        error_console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
         exit_cli(code=0)
 
 
 def _handle_missing_git(palette: Dict[str, str]):
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
 
-    console = get_rich_console()
+    error_console = get_error_console()
     message = Text.assemble(
         ("This model requires Git to install.\n\n", "default"),
         ("Dorsal could not find the ", "default"),
@@ -133,7 +132,7 @@ def _handle_missing_git(palette: Dict[str, str]):
         ("To proceed, please install Git from:\n", "default"),
         ("https://git-scm.com/downloads", palette.get("link", "blue underline")),
     )
-    console.print(
+    error_console.print(
         Panel(
             message,
             expand=False,
@@ -146,13 +145,13 @@ def _handle_missing_git(palette: Dict[str, str]):
 
 def _handle_registry_error(target: str, e: Exception, palette: Dict[str, str]):
     from dorsal.common.exceptions import NotFoundError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
 
-    console = get_rich_console()
+    error_console = get_error_console()
     if isinstance(e, NotFoundError) or "404" in str(e):
-        console.print(f"[{palette.get('error', 'bold red')}]Error: Model '{target}' not found in registry.[/]")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Error: Model '{target}' not found in registry.[/]")
     else:
-        console.print(
+        error_console.print(
             f"[{palette.get('error', 'bold red')}]Error: Failed to connect to registry for '{target}'.[/]\n{e}"
         )
     exit_cli(code=EXIT_CODE_ERROR)

@@ -149,7 +149,10 @@ def test_run_model_json_output(mock_rich_console, mock_run_deps):
 
         assert result.exit_code == 0
 
-        mock_run_deps["check_safety"].assert_not_called()
+        mock_run_deps["check_safety"].assert_called_once()
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("requires installation" in msg for msg in printed_messages)
 
         json_str = mock_rich_console.print.call_args.args[0]
         data = json.loads(json_str)
@@ -428,3 +431,86 @@ def test_run_model_export_missing_schema_id(mock_run_deps):
         printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
         assert any("Data Error on test.pdf" in msg for msg in printed_messages)
         assert any("Missing schema_id for export." in msg for msg in printed_messages)
+
+
+def test_run_model_json_and_export_conflict():
+    """Covers the Typer BadParameter raise when both --json and --export are provided."""
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json", "--export", "txt"])
+
+        assert result.exit_code != 0
+        assert "cannot use" in result.output
+        assert "at the same time" in result.output
+        assert "standard output" in result.output
+
+
+def test_run_model_empty_directory(mock_run_deps, mocker):
+    """Covers the exit_cli and error print when no readable files are found in a directory."""
+    mocker.patch("dorsal.common.cli.exit_cli", side_effect=typer.Exit(1))
+
+    with runner.isolated_filesystem():
+        empty_dir = pathlib.Path("empty_dir")
+        empty_dir.mkdir()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(empty_dir)])
+
+        assert result.exit_code != 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("No readable files found in target path" in msg for msg in printed_messages)
+
+
+def test_run_model_install_check_aborted(mock_run_deps):
+    """Covers the `except typer.Exit: raise` block when a user aborts the install prompt."""
+    mock_run_deps["is_installed"].return_value = False
+    mock_run_deps["check_safety"].side_effect = typer.Exit(1)
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        assert result.exit_code != 0
+        mock_run_deps["run_logic"].assert_not_called()
+
+
+def test_run_model_install_check_exception_passed(mock_run_deps):
+    """Covers the `except Exception: pass` block if resolution or checking fails non-fatally."""
+    mock_run_deps["is_installed"].return_value = False
+    mock_run_deps["check_safety"].side_effect = Exception("Random unexpected error")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        assert result.exit_code == 0
+        mock_run_deps["run_logic"].assert_called_once()
+
+
+def test_run_model_export_empty_record(mock_run_deps):
+    """Covers the ValueError raise when a model returns no record dictionary to export."""
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        record={},
+        schema_id="mock/schema",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+
+        assert result.exit_code == 0
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("Data Error" in msg for msg in printed_messages)
+        assert any("No record data generated to export" in msg for msg in printed_messages)

@@ -42,8 +42,8 @@ def mock_install_cmd(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the `install_model` command.
     """
-
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
+    mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_rich_console)
 
     mock_installer = mocker.patch("dorsal.registry.installer.install_model_target")
     mock_installer.return_value = "dorsal-model-package"
@@ -174,7 +174,6 @@ def test_install_model_unverified_warning(mock_rich_console, mock_install_cmd):
 
     panel = mock_rich_console.print.call_args_list[0].args[0]
     assert "Unverified" in str(panel.renderable)
-    assert "Safety Warning" in str(panel.renderable)
 
 
 def test_install_model_install_failure(mock_rich_console, mock_install_cmd):

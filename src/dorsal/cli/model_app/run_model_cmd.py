@@ -148,15 +148,20 @@ def run_model(
     parsed_options = parse_cli_options(options=options, palette=palette)
     parsed_export_options = parse_cli_options(options=export_options, palette=palette)
 
-    if not (json_output or export_format):
-        try:
-            strategy, package_name = resolve_target(target)
-            if not is_package_installed(package_name):
-                check_and_confirm_model_install(target, palette, yes=yes)
-        except typer.Exit:
-            raise
-        except Exception:
-            pass
+    try:
+        _strategy, package_name = resolve_target(target)
+        if not is_package_installed(package_name):
+            if (json_output or export_format) and not yes:
+                error_console.print(
+                    f"[{palette.get('info', 'dim')}]Running a model for the first time requires installation. "
+                    "To bypass this interactive prompt in scripts, use the '--yes' flag."
+                )
+
+            check_and_confirm_model_install(target, palette, yes=yes)
+    except typer.Exit:
+        raise
+    except Exception:
+        pass
 
     files_to_process = [f for f in file_path.iterdir() if f.is_file()] if file_path.is_dir() else [file_path]
     is_batch = len(files_to_process) > 1
