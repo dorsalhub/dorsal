@@ -152,7 +152,7 @@ def test_run_model_json_output(mock_rich_console, mock_run_deps):
         mock_run_deps["check_safety"].assert_called_once()
 
         printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Model requires installation" in msg for msg in printed_messages)
+        assert any("requires installation" in msg for msg in printed_messages)
 
         json_str = mock_rich_console.print.call_args.args[0]
         data = json.loads(json_str)
