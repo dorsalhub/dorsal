@@ -161,6 +161,46 @@ You can also export to any format supported by [Dorsal Adapters](https://github.
 dorsal run dorsalhub/pdf-extractor "path/to/document.pdf" --export=html
 ```
 
+### 4. Parse, Validate, and Export
+
+Dorsal has two companion libraries to handle data structure and interoperability:
+
+* **[Open Validation Schemas](https://github.com/dorsalhub/open-validation-schemas):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
+
+* **[Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):** A bundled utility that converts between strictly validated JSON records and standard file formats.
+
+**Example: Parse a standard file into a validated JSON record:**
+
+```bash
+$ dorsal adapter parse OSR_uk_000_0020_8k.srt audio-transcription
+```
+
+**Example: List available export formats for a schema:**
+
+```bash
+$ dorsal adapter list open/document-extraction
+```
+
+#### Supported Export Formats
+
+You can currently export validated records into the following formats:
+
+**Document Extraction** (`open/document-extraction`):
+
+- Markdown (`.md`)
+- HTML (`.html`)
+- hOCR (`.hocr.html`)
+- TSV (`.tsv`)
+- Plain Text (`.txt`)
+
+**Audio Transcription** (`open/audio-transcription`):
+
+- SRT (`.srt`)
+- WebVTT (`.vtt`)
+- Markdown (`.md`)
+- TSV (`.tsv`)
+- Plain Text (`.txt`)
+
 -----
 
 ## Python API
@@ -218,46 +258,6 @@ generate_html_directory_report(
     recursive=True
 )
 ```
-
-### 4. Parse, Validate, and Export
-
-Dorsal has two companion libraries to handle data structure and interoperability:
-
-* **[Open Validation Schemas](https://github.com/dorsalhub/open-validation-schemas):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
-
-* **[Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):** A bundled utility that converts between strictly validated JSON records and standard file formats.
-
-**Example: Parse a standard file into a validated JSON record:**
-
-```bash
-$ dorsal adapter parse OSR_uk_000_0020_8k.srt audio-transcription
-```
-
-**Example: List available export formats for a schema:**
-
-```bash
-$ dorsal adapter list open/document-extraction
-```
-
-#### Supported Export Formats
-
-You can currently export validated records into the following formats:
-
-**Document Extraction** (`open/document-extraction`):
-
-- Markdown (`.md`)
-- HTML (`.html`)
-- hOCR (`.hocr.html`)
-- TSV (`.tsv`)
-- Plain Text (`.txt`)
-
-**Audio Transcription** (`open/audio-transcription`):
-
-- SRT (`.srt`)
-- WebVTT (`.vtt`)
-- Markdown (`.md`)
-- TSV (`.tsv`)
-- Plain Text (`.txt`)
 
 
 -----
