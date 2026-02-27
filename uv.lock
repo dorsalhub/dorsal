@@ -356,7 +356,7 @@ toml = [
 
 [[package]]
 name = "dorsalhub"
-version = "0.8.4"
+version = "0.8.5"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },
@@ -411,7 +411,7 @@ requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "dorsalhub", extras = ["pandas"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["tlsh"], marker = "extra == 'all'" },
-    { name = "dorsalhub-adapters", specifier = ">=0.2.0" },
+    { name = "dorsalhub-adapters", specifier = ">=0.3.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema-rs", specifier = ">=0.38.1" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },
@@ -449,15 +449,15 @@ dev = [
 
 [[package]]
 name = "dorsalhub-adapters"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "srt" },
     { name = "webvtt-py" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/e8/9a54670da1034d4d80fffc7d7d68ac1e6cb066b9f3a1913f3e0fe96a9a3c/dorsalhub_adapters-0.2.0.tar.gz", hash = "sha256:c91e911181cbb5c07321c3178004710f42aec04d5f4918e70fa4985449853eac", size = 37629 }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/8b/fa40878843cfa8b4e74a97cf63e2eeb528f0f49a9d026f4fe07253f61663/dorsalhub_adapters-0.3.0.tar.gz", hash = "sha256:b5d7fa7ac8a1a75f57cd1a9454ff396cfb72b162927b4f2aa1cf1775d1cceadb", size = 42641 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/65/80ac85176c7b22e71803bae14c89cc9b551c5032f3dd669a6926b1b454b1/dorsalhub_adapters-0.2.0-py3-none-any.whl", hash = "sha256:279ab20265b49a190ed708ba6e1e55b9088318d6304f79dcc215fa18c2acd927", size = 39090 },
+    { url = "https://files.pythonhosted.org/packages/66/7c/a5784d0a9b0210b054ae3e7deb2217de04a032e57c0e1e1a42c2e3d06b98/dorsalhub_adapters-0.3.0-py3-none-any.whl", hash = "sha256:cfc26323e65f341ebfaf7bb29a734cc305d2929d6a56e36a131db1c909b85681", size = 45537 },
 ]
 
 [[package]]
