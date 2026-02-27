@@ -20,27 +20,14 @@ from typing import Any, IO
 from dorsal.common.exceptions import DorsalError
 from pydantic import BaseModel
 
+from dorsal_adapters.registry import ALIAS_MAPPING, list_formats, get_adapter
+
 logger = logging.getLogger(__name__)
-
-try:
-    from dorsal_adapters.registry import get_adapter, list_formats
-
-    _ADAPTERS_AVAILABLE = True
-except ImportError:
-    _ADAPTERS_AVAILABLE = False
-
-
-def _require_adapters() -> None:
-    if not _ADAPTERS_AVAILABLE:
-        raise DorsalError("Please pip install dorsalhub-adapters to enable exports.")
 
 
 def get_format_extension(schema_id: str, target_format: str) -> str:
     """Retrieves the correct file extension for a specific format adapter."""
-    _require_adapters()
     try:
-        from dorsal_adapters.registry import get_adapter
-
         adapter = get_adapter(schema_id, target_format)
         return adapter.extension
     except Exception as err:
@@ -56,8 +43,6 @@ def get_format_extension(schema_id: str, target_format: str) -> str:
 
 def export_record(record: dict[str, Any] | BaseModel, schema_id: str, target_format: str, **kwargs: Any) -> str:
     """Exports a validated JSON record to a standard format using Dorsal Adapters."""
-    _require_adapters()
-
     if isinstance(record, BaseModel):
         record_dict = record.model_dump(mode="json", by_alias=True)
     else:
@@ -82,8 +67,6 @@ def export_record_to_file(
     **kwargs: Any,
 ) -> str:
     """Exports a validated JSON record and saves it directly to a file path."""
-    _require_adapters()
-
     path_obj = Path(output_path)
 
     resolved_format = target_format
@@ -113,8 +96,6 @@ def export_record_to_file(
 
 def parse_file(content: str | bytes | IO[Any], schema_id: str, source_format: str, **kwargs: Any) -> dict[str, Any]:
     """Parses a file-like object or string into a validated JSON record using Dorsal Adapters."""
-    _require_adapters()
-
     logger.debug(f"Attempting to parse '{source_format}' into '{schema_id}'.")
 
     try:
@@ -138,8 +119,6 @@ def parse_file_from_path(
     Reads a file from a path and parses it into a validated JSON record.
     Automatically infers the format from the file extension if `source_format` is not provided.
     """
-    _require_adapters()
-
     path_obj = Path(file_path)
     if not path_obj.is_file():
         raise DorsalError(f"Provided path is not a valid file or does not exist: {path_obj}")
@@ -168,12 +147,5 @@ def parse_file_from_path(
 
 def get_supported_formats(schema_id: str) -> list[tuple[str, str]]:
     """Returns a list of (format_name, description) for all supported formats of a given schema."""
-    _require_adapters()
-
-    try:
-        from dorsal_adapters.registry import ALIAS_MAPPING, list_formats
-
-        resolved_schema_id = ALIAS_MAPPING.get(schema_id, schema_id)
-        return list_formats(resolved_schema_id)
-    except ImportError:
-        return list_formats(schema_id)
+    resolved_schema_id = ALIAS_MAPPING.get(schema_id, schema_id)
+    return list_formats(resolved_schema_id)

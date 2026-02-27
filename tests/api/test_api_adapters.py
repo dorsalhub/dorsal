@@ -36,23 +36,6 @@ class DummyRecord(BaseModel):
     number: int
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", False)
-def test_missing_adapters_package():
-    """Ensure a helpful DorsalError is raised if dorsalhub-adapters is not installed."""
-    with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
-        export_record({"key": "value"}, schema_id="test/schema", target_format="txt")
-
-    with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
-        parse_file("content", schema_id="test/schema", source_format="txt")
-
-    with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
-        get_supported_formats(schema_id="test/schema")
-
-    with pytest.raises(DorsalError, match="Please pip install dorsalhub-adapters to enable exports"):
-        get_format_extension(schema_id="test/schema", target_format="txt")
-
-
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_export_record_with_dict(mock_get_adapter):
     """Test exporting a standard python dictionary."""
@@ -68,7 +51,6 @@ def test_export_record_with_dict(mock_get_adapter):
     mock_adapter_instance.export.assert_called_once_with(record)
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_export_record_with_pydantic_model(mock_get_adapter):
     """Test that Pydantic models are correctly normalized to dictionaries before export."""
@@ -84,7 +66,6 @@ def test_export_record_with_pydantic_model(mock_get_adapter):
     mock_adapter_instance.export.assert_called_once_with(expected_dict)
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_export_record_with_kwargs(mock_get_adapter):
     """Test that kwargs are threaded through to the adapter export method."""
@@ -97,7 +78,6 @@ def test_export_record_with_kwargs(mock_get_adapter):
     mock_adapter_instance.export.assert_called_once_with(record, include_speakers=True)
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_export_record_handles_exceptions(mock_get_adapter):
     """Test that adapter export failures are caught and wrapped in a DorsalError."""
@@ -107,7 +87,6 @@ def test_export_record_handles_exceptions(mock_get_adapter):
         export_record({"key": "value"}, schema_id="test/schema", target_format="fake")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.export_record")
 def test_export_record_to_file_success(mock_export_record, tmp_path):
     """Test standard file export and format inference from the file extension."""
@@ -123,7 +102,6 @@ def test_export_record_to_file_success(mock_export_record, tmp_path):
     mock_export_record.assert_called_once_with({"foo": "bar"}, schema_id="test/schema", target_format="srt")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 def test_export_record_to_file_inference_failure(tmp_path):
     """Test error handling when the format cannot be inferred from the output path."""
     out_file = tmp_path / "file_without_extension"
@@ -132,7 +110,6 @@ def test_export_record_to_file_inference_failure(tmp_path):
         export_record_to_file({"foo": "bar"}, out_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.export_record")
 def test_export_record_to_file_write_failure(mock_export_record, tmp_path):
     """Test that OS-level write errors are safely wrapped in a DorsalError."""
@@ -144,7 +121,6 @@ def test_export_record_to_file_write_failure(mock_export_record, tmp_path):
             export_record_to_file({"foo": "bar"}, out_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_parse_file_with_string_and_kwargs(mock_get_adapter):
     """Test parsing raw string content directly, alongside passing kwargs."""
@@ -159,7 +135,6 @@ def test_parse_file_with_string_and_kwargs(mock_get_adapter):
     mock_adapter_instance.parse.assert_called_once_with(raw_content, strict=True)
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_parse_file_with_file_like_object(mock_get_adapter):
     """Test parsing from a file-like object using the .read() duck-typing."""
@@ -174,7 +149,6 @@ def test_parse_file_with_file_like_object(mock_get_adapter):
     mock_adapter_instance.parse_file.assert_called_once_with(fp)
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.get_adapter")
 def test_parse_file_handles_exceptions(mock_get_adapter):
     """Test that adapter parse failures are caught and wrapped in a DorsalError."""
@@ -184,7 +158,6 @@ def test_parse_file_handles_exceptions(mock_get_adapter):
         parse_file("content", schema_id="test/schema", source_format="fake")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.parse_file")
 def test_parse_file_from_path_success(mock_parse_file, tmp_path):
     """Test standard file parsing and format inference from the input extension."""
@@ -200,7 +173,6 @@ def test_parse_file_from_path_success(mock_parse_file, tmp_path):
     assert mock_parse_file.call_args.kwargs["source_format"] == "vtt"
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 def test_parse_file_from_path_missing_file(tmp_path):
     """Test error handling when the requested input path does not exist."""
     missing_file = tmp_path / "ghost_file.srt"
@@ -209,7 +181,6 @@ def test_parse_file_from_path_missing_file(tmp_path):
         parse_file_from_path(missing_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 def test_parse_file_from_path_inference_failure(tmp_path):
     """Test error handling when the format cannot be inferred from the input path."""
     in_file = tmp_path / "file_without_extension"
@@ -219,7 +190,6 @@ def test_parse_file_from_path_inference_failure(tmp_path):
         parse_file_from_path(in_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.parse_file")
 def test_parse_file_from_path_dorsal_error_propagation(mock_parse_file, tmp_path):
     """Test that existing DorsalErrors raised by parse_file bubble up cleanly without double-wrapping."""
@@ -232,7 +202,6 @@ def test_parse_file_from_path_dorsal_error_propagation(mock_parse_file, tmp_path
         parse_file_from_path(in_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.parse_file")
 def test_parse_file_from_path_unexpected_error(mock_parse_file, tmp_path):
     """Test that unexpected runtime exceptions are caught and wrapped cleanly."""
@@ -245,46 +214,40 @@ def test_parse_file_from_path_unexpected_error(mock_parse_file, tmp_path):
         parse_file_from_path(in_file, "test/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
-def test_get_supported_formats():
+@patch("dorsal.api.adapters.list_formats")
+@patch.dict("dorsal.api.adapters.ALIAS_MAPPING", {"test/schema": "resolved/schema"})
+def test_get_supported_formats(mock_list_formats):
     """Test that format listing proxies correctly to the registry."""
-    mock_registry = MagicMock()
-    mock_registry.ALIAS_MAPPING = {}
-    mock_registry.list_formats.return_value = [("srt", "SubRip Text"), ("vtt", "WebVTT")]
+    mock_list_formats.return_value = [("srt", "SubRip Text"), ("vtt", "WebVTT")]
 
-    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
-        result = get_supported_formats("test/schema")
+    result = get_supported_formats("test/schema")
 
-        assert result == [("srt", "SubRip Text"), ("vtt", "WebVTT")]
-        mock_registry.list_formats.assert_called_once_with("test/schema")
+    assert result == [("srt", "SubRip Text"), ("vtt", "WebVTT")]
+    mock_list_formats.assert_called_once_with("resolved/schema")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
-def test_get_format_extension_success():
+@patch("dorsal.api.adapters.get_adapter")
+def test_get_format_extension_success(mock_get_adapter):
     """Test that get_format_extension successfully retrieves the custom extension string."""
-    mock_registry = MagicMock()
     mock_adapter = MagicMock()
     mock_adapter.extension = "hocr.html"
-    mock_registry.get_adapter.return_value = mock_adapter
+    mock_get_adapter.return_value = mock_adapter
 
-    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
-        result = get_format_extension("test/schema", "hocr")
+    result = get_format_extension("test/schema", "hocr")
 
-        assert result == "hocr.html"
-        mock_registry.get_adapter.assert_called_once_with("test/schema", "hocr")
+    assert result == "hocr.html"
+    mock_get_adapter.assert_called_once_with("test/schema", "hocr")
 
 
-@patch("dorsal.api.adapters._ADAPTERS_AVAILABLE", True)
 @patch("dorsal.api.adapters.logger")
-def test_get_format_extension_fallback(mock_logger):
+@patch("dorsal.api.adapters.get_adapter")
+def test_get_format_extension_fallback(mock_get_adapter, mock_logger):
     """Test that get_format_extension safely falls back to target_format on exception."""
-    mock_registry = MagicMock()
-    mock_registry.get_adapter.side_effect = ValueError("Adapter not found")
+    mock_get_adapter.side_effect = ValueError("Adapter not found")
 
-    with patch.dict("sys.modules", {"dorsal_adapters": MagicMock(), "dorsal_adapters.registry": mock_registry}):
-        result = get_format_extension("test/schema", "fake_format")
+    result = get_format_extension("test/schema", "fake_format")
 
-        assert result == "fake_format"
+    assert result == "fake_format"
 
-        mock_logger.warning.assert_called_once()
-        assert "Adapter not found for schema" in mock_logger.warning.call_args[0][0]
+    mock_logger.warning.assert_called_once()
+    assert "Adapter not found for schema" in mock_logger.warning.call_args[0][0]
