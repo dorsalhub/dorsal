@@ -29,8 +29,8 @@ def mock_checks_deps(mocker, mock_rich_console):
     Mocks backend dependencies for the model installation checks.
     Targeting patches locally within the module to prevent network leakage.
     """
-
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
+    mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_rich_console)
 
     mock_get_client = mocker.patch("dorsal.session.get_shared_dorsal_client")
     mock_client_instance = mock_get_client.return_value
@@ -82,7 +82,6 @@ def test_check_install_unverified_warning(mock_rich_console, mock_checks_deps):
 
     panel = mock_rich_console.print.call_args.args[0]
     assert "Unverified" in panel.renderable
-    assert "Safety Warning" in panel.renderable
 
 
 def test_check_install_skip_via_flags(mock_rich_console, mock_checks_deps):

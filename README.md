@@ -48,12 +48,6 @@ Dorsal is available on pypi as `dorsalhub`.
 pip install dorsalhub
 ```
 
-If you plan to export model outputs to specific file formats (like SRT or VTT subtitles), install the `adapters` extra:
-
-```bash
-pip install dorsalhub[adapters]
-```
-
 ## Authentication
 
 To sync metadata records with DorsalHub, authenticate with an API Key (generate one on your DorsalHub settings page).
