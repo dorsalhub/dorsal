@@ -442,7 +442,9 @@ def test_run_model_json_and_export_conflict():
         result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json", "--export", "txt"])
 
         assert result.exit_code != 0
-        assert "cannot use --json and --export at the same time" in result.output
+        assert "cannot use" in result.output
+        assert "at the same time" in result.output
+        assert "standard output" in result.output
 
 
 def test_run_model_empty_directory(mock_run_deps, mocker):
