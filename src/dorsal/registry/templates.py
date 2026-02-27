@@ -26,6 +26,14 @@ dependencies = [
     "dorsalhub",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy"
+]
+
 [project.entry-points."dorsal.models"]
 {entry_point_name} = "{module_name}"
 
