@@ -224,6 +224,9 @@ def run_model(
                         progress_callback=progress_hook,
                     )
 
+                    if res.error and "Authentication failed" in res.error:
+                        raise AuthError(res.error)
+
                     raw_results.append(res)
 
                     res_dict = res.model_dump(exclude_none=True)

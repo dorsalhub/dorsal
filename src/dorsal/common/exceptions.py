@@ -182,13 +182,12 @@ class AuthError(DorsalClientError):
     """Error for client-side authentication or API key configuration issues."""
 
     info_url = constants.DOCS_URL_API_AUTH
-    extra_info_template = f"\nFor more information about authentication, visit: {info_url}"
 
     def __init__(self, message: str):
         super().__init__(message)
 
     def __str__(self):
-        return f"{self.args[0]}\n\n{self.extra_info_template}"
+        return f"{self.args[0]}"
 
 
 class NetworkError(DorsalClientError):
