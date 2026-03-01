@@ -1508,7 +1508,7 @@ def _filter_by_size(
                     processed_files += 1
                     if rich_progress:
                         rich_progress.update(task_id, advance=1)
-                    elif tqdm_bar:
+                    elif tqdm_bar is not None:
                         tqdm_bar.update(1)
 
                     file_path = pathlib.Path(root) / name
@@ -2052,23 +2052,27 @@ def get_directory_info(
 
     progress_manager = rich_progress if rich_progress else open(os.devnull, "w")
     with progress_manager:
-        for root, dirs, files in os.walk(dir_path, topdown=True):
-            metrics.total_dirs += len(dirs)
+        try:
+            for root, dirs, files in os.walk(dir_path, topdown=True):
+                metrics.total_dirs += len(dirs)
 
-            for name in files:
-                metrics.total_files += 1
+                for name in files:
+                    metrics.total_files += 1
 
-                if rich_progress and task_id is not None:
-                    rich_progress.update(task_id, advance=1)
-                elif tqdm_bar:
-                    tqdm_bar.update(1)
+                    if rich_progress and task_id is not None:
+                        rich_progress.update(task_id, advance=1)
+                    elif tqdm_bar is not None:
+                        tqdm_bar.update(1)
 
-                metrics.process_file(pathlib.Path(root) / name)
+                    metrics.process_file(pathlib.Path(root) / name)
 
-            if not recursive:
-                dirs.clear()
+                if not recursive:
+                    dirs.clear()
+        finally:
+            if tqdm_bar is not None:
+                tqdm_bar.close()
 
-    if tqdm_bar:
+    if tqdm_bar is not None:
         tqdm_bar.close()
 
     duration = time.perf_counter() - start_time
