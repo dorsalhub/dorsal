@@ -296,10 +296,10 @@ def identify_file(
             new_msg = f"No file record was found on DorsalHub matching {hash_key}."
             logger.debug("A client error occurred during identify_file for '%s': %s", file_path, new_msg)
 
-            raise DorsalClientError(
+            raise NotFoundError(
                 message=new_msg,
                 request_url=getattr(err, "request_url", None),
-                original_exception=err,
+                response_text=getattr(err, "response_text", None),
             ) from err
 
         logger.debug("A client error occurred during identify_file for '%s': %s", file_path, err)
@@ -448,7 +448,7 @@ def get_dorsal_file_record(
                 log_message_context,
                 new_msg,
             )
-            raise DorsalClientError(
+            raise NotFoundError(
                 message=new_msg,
                 request_url=getattr(err, "request_url", None),
                 original_exception=err,
@@ -2391,7 +2391,7 @@ def get_file_annotation(
             msg = f"Annotation '{annotation_id}' not found."
             if hash_string:
                 msg = f"Annotation '{annotation_id}' not found for file '{hash_string}'."
-            raise DorsalClientError(
+            raise NotFoundError(
                 message=msg,
                 request_url=getattr(err, "request_url", None),
                 original_exception=err,

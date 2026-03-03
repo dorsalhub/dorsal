@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 __all__ = [
     "DorsalFile",
+    "FileAnnotationStub",
     "LocalFile",
     "ModelRunner",
     "MetadataReader",

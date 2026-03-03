@@ -99,7 +99,7 @@ def get_file_record(
         else:
             if not output_path.is_dir():
                 console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
+                    f"Warning --output path '{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
                     style=palette.get("warning", "yellow"),
                 )

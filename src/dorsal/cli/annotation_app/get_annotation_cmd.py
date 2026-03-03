@@ -44,6 +44,7 @@ def get_annotation(
     """
     from dorsal.api.file import get_file_annotation
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
+    from dorsal.common.exceptions import NotFoundError, DorsalClientError
     from dorsal.cli.views.model import create_model_result_panel
 
     console = get_rich_console()
@@ -70,9 +71,21 @@ def get_annotation(
         console.print(panel)
     except typer.Exit:
         raise
+    except NotFoundError as e:
+        if json_output:
+            error_console.print(json.dumps({"success": False, "error": "Not Found", "detail": e.message}))
+        else:
+            error_console.print(f"[{palette.get('warning', 'yellow')}]Not Found:[/] {e.message}")
+        exit_cli(code=EXIT_CODE_ERROR)
+    except DorsalClientError as e:
+        if json_output:
+            error_console.print(json.dumps({"success": False, "error": "API Error", "detail": e.message}))
+        else:
+            error_console.print(f"[{palette.get('error', 'bold red')}]API Error:[/] {e.message}")
+        exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         if json_output:
-            error_console.print(json.dumps({"error": str(e)}))
+            error_console.print(json.dumps({"success": False, "error": "Unexpected Error", "detail": str(e)}))
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Failed to get annotation:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
