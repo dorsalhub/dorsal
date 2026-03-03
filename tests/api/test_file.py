@@ -452,7 +452,7 @@ def test_find_duplicates_no_results(fs):
 
     assert result["total_sets"] == 0
     assert result["duplicate_sets"] == []
-    assert result["path"] == "/test"
+    assert result["path"] == os.path.normpath("/test")
 
 
 def test_get_directory_info_success(fs):
