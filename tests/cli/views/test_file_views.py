@@ -62,7 +62,6 @@ DUMMY_PALETTE = {
 
 
 def test_create_file_info_panel_public(capsys):
-    """Smoke test for public file panel generation."""
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Test File", private=False, palette=DUMMY_PALETTE
     )
@@ -74,7 +73,6 @@ def test_create_file_info_panel_public(capsys):
     output = capture.get()
     assert "Test File" in output
     assert "test_file.txt" in output
-    assert "Public Record" in output
     assert "apollo" in output
     assert "page_count" in output
     assert "manual (user_1)" in output

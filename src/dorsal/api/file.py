@@ -291,7 +291,7 @@ def identify_file(
         return file_record
 
     except DorsalClientError as err:
-        if isinstance(getattr(err, "original_exception", None), NotFoundError):
+        if isinstance(err, NotFoundError):
             hash_key = secure_hash_key or "the file's hash"
             new_msg = f"No file record was found on DorsalHub matching {hash_key}."
             logger.debug("A client error occurred during identify_file for '%s': %s", file_path, new_msg)
@@ -299,7 +299,7 @@ def identify_file(
             raise DorsalClientError(
                 message=new_msg,
                 request_url=getattr(err, "request_url", None),
-                original_exception=err.original_exception,
+                original_exception=err,
             ) from err
 
         logger.debug("A client error occurred during identify_file for '%s': %s", file_path, err)
@@ -439,7 +439,7 @@ def get_dorsal_file_record(
         )
         raise
     except DorsalClientError as err:
-        if isinstance(getattr(err, "original_exception", None), NotFoundError):
+        if isinstance(err, NotFoundError):
             new_msg = f"File not found in '{search_strategy}' scope for hash '{cleaned_hash_string}'."
             logger.warning(
                 "DorsalClientError during get_dorsal_file_record (hash: '%s', search: %s, %s): %s",
@@ -451,7 +451,7 @@ def get_dorsal_file_record(
             raise DorsalClientError(
                 message=new_msg,
                 request_url=getattr(err, "request_url", None),
-                original_exception=err.original_exception,
+                original_exception=err,
             ) from err
 
         logger.warning(
@@ -1555,7 +1555,7 @@ def _format_duplicate_results(path: str, hash_map: dict[str, list[str]]) -> dict
     """Formats the results of a duplicate search."""
     duplicate_sets_raw = [paths for paths in hash_map.values() if len(paths) > 1]
     if not duplicate_sets_raw:
-        return {}
+        return {"path": str(path), "total_sets": 0, "duplicate_sets": []}
 
     duplicate_sets_formatted: list[_DuplicateSet] = []
     for paths in duplicate_sets_raw:
@@ -1779,7 +1779,7 @@ def find_duplicates(
     )
     if not candidate_files:
         logger.debug("No potential duplicates found based on file size. Finished.")
-        return {}
+        return {"path": str(path), "total_sets": 0, "duplicate_sets": [], "hashes_from_cache": 0}
 
     results = {}
     total_cache_hits = 0
@@ -1975,7 +1975,7 @@ def _format_results(metrics: _DirectoryMetrics, duration: float) -> _DirectoryIn
         (metrics.total_size / metrics.successfully_processed_files) if metrics.successfully_processed_files > 0 else 0
     )
 
-    if metrics.total_files > 0 and metrics.successfully_processed_files == 0:
+    if metrics.successfully_processed_files == 0:
         largest_file = _to_report_info({"size": 0, "path": None})
         smallest_file = _to_report_info({"size": 0, "path": None})
         newest_mod = _to_report_info(None)
@@ -2387,14 +2387,14 @@ def get_file_annotation(
             return annotation.model_dump_json(indent=2, by_alias=True, exclude_none=True)
 
     except DorsalClientError as err:
-        if isinstance(getattr(err, "original_exception", None), NotFoundError):
+        if isinstance(err, NotFoundError):
             msg = f"Annotation '{annotation_id}' not found."
             if hash_string:
                 msg = f"Annotation '{annotation_id}' not found for file '{hash_string}'."
             raise DorsalClientError(
                 message=msg,
                 request_url=getattr(err, "request_url", None),
-                original_exception=err.original_exception,
+                original_exception=err,
             ) from err
         raise
     except Exception as err:

@@ -139,12 +139,8 @@ def create_file_info_panel(
         display_title = f"{title} [{palette.get('info', 'dim')}](from cache)[/]"
 
     access_text = None
-    if private is not None:
-        access_text = (
-            Text("Private Record", style=palette["access_private"])
-            if private
-            else Text("Public Record", style=palette["access_public"])
-        )
+    if private:
+        access_text = Text("Private Record", style=palette["access_private"])
 
     renderables: list[RenderableType] = []
 

@@ -444,12 +444,15 @@ def test_find_duplicates_success(fs):
 
 
 def test_find_duplicates_no_results(fs):
-    """Test that find_duplicates returns an empty dict when no duplicates are found."""
+    """Test that find_duplicates returns an empty sets list when no duplicates are found."""
     fs.create_file("/test/unique1.txt", contents="abc")
     fs.create_file("/test/unique2.txt", contents="12345")
 
     result = file_api.find_duplicates("/test", mode="sha256")
-    assert not result
+
+    assert result["total_sets"] == 0
+    assert result["duplicate_sets"] == []
+    assert result["path"] == "/test"
 
 
 def test_get_directory_info_success(fs):
@@ -674,7 +677,6 @@ def dummy_file_record_dt_with_stubs() -> FileRecordDateTime:
     )
     annotations = Annotations(file_base=file_base)
 
-    # Inject a custom open schema stub
     stub = AnnotationStub(
         hash="a" * 64,
         id=uuid.uuid4(),
@@ -683,7 +685,6 @@ def dummy_file_record_dt_with_stubs() -> FileRecordDateTime:
         date_modified=datetime.datetime.now(datetime.UTC),
     )
 
-    # Pydantic extra allows dynamic schema IDs
     annotations.__pydantic_extra__ = {"open/custom": [stub]}
 
     return FileRecordDateTime(
@@ -696,7 +697,7 @@ def dummy_file_record_dt_with_stubs() -> FileRecordDateTime:
 
 def test_get_file_annotation_success(mock_shared_client):
     """Test directly fetching a specific annotation by ID."""
-    # Use GenericFileAnnotation as a stand-in for a real response model
+
     dummy_response = GenericFileAnnotation(custom_field="hydrated_data")
     mock_shared_client.get_file_annotation.return_value = dummy_response
 
@@ -709,9 +710,8 @@ def test_get_file_annotation_success(mock_shared_client):
 def test_get_file_annotation_not_found(mock_shared_client):
     """Test that a 404 is caught and wrapped with a clear error message."""
     mock_not_found = NotFoundError(message="404", request_url="http://test")
-    wrapped_error = DorsalClientError(message="API Error", original_exception=mock_not_found)
 
-    mock_shared_client.get_file_annotation.side_effect = wrapped_error
+    mock_shared_client.get_file_annotation.side_effect = mock_not_found
 
     with pytest.raises(DorsalClientError, match="Annotation '123' not found for file"):
         file_api.get_file_annotation(hash_string="a" * 64, annotation_id="123")
@@ -719,16 +719,14 @@ def test_get_file_annotation_not_found(mock_shared_client):
 
 def test_get_latest_file_annotation_success(mock_shared_client, dummy_file_record_dt_with_stubs):
     """Test retrieving and automatically hydrating the latest annotation."""
-    # 1. Mock the DorsalFile initialization (fetching the file record)
+
     mock_shared_client.download_file_record.return_value = dummy_file_record_dt_with_stubs
 
-    # 2. Mock the stub hydration (fetching the actual annotation)
     dummy_hydrated = GenericFileAnnotation(custom_data="full_content")
     mock_shared_client.get_file_annotation.return_value = dummy_hydrated
 
     result = file_api.get_latest_file_annotation(hash_string="a" * 64, schema_id="open/custom")
 
-    # Assert both network calls were made seamlessly under the hood
     mock_shared_client.download_file_record.assert_called_once()
     mock_shared_client.get_file_annotation.assert_called_once()
     assert result == dummy_hydrated
@@ -741,7 +739,6 @@ def test_get_latest_file_annotation_formatting(mock_shared_client, dummy_file_re
     dummy_hydrated = GenericFileAnnotation(custom_data="full_content")
     mock_shared_client.get_file_annotation.return_value = dummy_hydrated
 
-    # Test dictionary formatting
     result_dict = file_api.get_latest_file_annotation(hash_string="a" * 64, schema_id="open/custom", mode="dict")
     assert isinstance(result_dict, dict)
     assert result_dict["custom_data"] == "full_content"
@@ -764,28 +761,22 @@ def test_get_file_annotations_summary(mock_shared_client, dummy_file_record_dt_w
     assert isinstance(result, list)
     assert len(result) == 1
 
-    # Assert it returned the unhydrated summary dict from the stub
     stub_summary = result[0]
     assert "id" in stub_summary
     assert "source" in stub_summary
     assert "url" in stub_summary
 
-    # Ensure it didn't trigger a network call to hydrate
     mock_shared_client.get_file_annotation.assert_not_called()
-
-
-# --- Unhappy paths for identify_file ---
 
 
 @patch("dorsal.api.file.get_sha256_hash")
 def test_identify_file_quick_hash_collision(mock_sha256, mock_shared_client, tmp_path):
     """Test that a ConflictError on a quick hash falls back to SHA-256."""
     file = tmp_path / "large_file.bin"
-    file.write_bytes(b"\0" * (32 * 1024 * 1024))  # 32 MiB file to trigger quick hash
+    file.write_bytes(b"\0" * (32 * 1024 * 1024))
 
     expected_record = MockFileRecord(hash_value="sha256-hash-value", name="large_file.bin")
 
-    # First call (QUICK) raises ConflictError, second call (SHA-256) succeeds
     mock_shared_client.download_file_record.side_effect = [
         ConflictError("Collision detected"),
         expected_record,
@@ -806,7 +797,6 @@ def test_identify_file_sha256_failure(mock_sha256, mock_shared_client, tmp_path)
     file = tmp_path / "test.txt"
     file.write_text("content")
 
-    # Force SHA-256 generation to fail
     mock_sha256.return_value = None
 
     with pytest.raises(DorsalError, match="Could not generate SHA-256 hash for file"):
@@ -824,23 +814,18 @@ def test_identify_file_unexpected_error(mock_shared_client, tmp_path):
         file_api.identify_file(str(file), quick=False)
 
 
-# --- Unhappy paths for get_dorsal_file_record ---
-
-
 @pytest.mark.parametrize("invalid_hash", ["", "   ", None])
 def test_get_dorsal_file_record_empty_hash(invalid_hash, mock_shared_client):
     """Test that empty or whitespace-only hashes raise a ValueError."""
     with pytest.raises(ValueError, match="hash_string must be a non-empty string"):
-        # Suppress type hinting warnings during test since we are actively testing bad types
         file_api.get_dorsal_file_record(invalid_hash)  # type: ignore
 
 
 def test_get_dorsal_file_record_not_found(mock_shared_client):
     """Test that NotFoundError is caught and context is added to the message."""
     mock_not_found = NotFoundError(message="Original 404", request_url="http://test")
-    wrapped_error = DorsalClientError(message="API Error", original_exception=mock_not_found)
 
-    mock_shared_client.download_file_record.side_effect = wrapped_error
+    mock_shared_client.download_file_record.side_effect = mock_not_found
 
     with pytest.raises(DorsalClientError, match="File not found in 'Agnostic.*' scope for hash 'missing_hash'"):
         file_api.get_dorsal_file_record("missing_hash")
@@ -862,12 +847,9 @@ def test_get_dorsal_file_record_invalid_mode(mock_shared_client):
         file_api.get_dorsal_file_record("abc", mode="xml")  # type: ignore
 
 
-# --- Unhappy paths for get_file_annotation ---
-
-
 def test_get_file_annotation_generic_client_error(mock_shared_client):
     """Test that a non-404 DorsalClientError is re-raised directly."""
-    # Notice this one does NOT have a NotFoundError original_exception
+
     mock_shared_client.get_file_annotation.side_effect = DorsalClientError("Permission Denied")
 
     with pytest.raises(DorsalClientError, match="Permission Denied"):
@@ -888,9 +870,6 @@ def test_get_file_annotation_invalid_mode(mock_shared_client):
 
     with pytest.raises(ValueError, match="Invalid mode: 'yaml'"):
         file_api.get_file_annotation("anno_123", "hash_abc", mode="yaml")  # type: ignore
-
-
-# --- Unhappy paths for get_latest_file_annotation ---
 
 
 @patch("dorsal.file.dorsal_file.DorsalFile")
@@ -918,14 +897,10 @@ def test_get_latest_file_annotation_invalid_mode(mock_dorsal_file_cls, mock_shar
     """Test that an invalid mode raises a ValueError."""
     mock_instance = mock_dorsal_file_cls.return_value
 
-    # We just need it to return something truthy to pass the 404 check
     mock_instance.get_latest_annotation.return_value = GenericFileAnnotation()
 
     with pytest.raises(ValueError, match="Invalid mode: 'csv'"):
         file_api.get_latest_file_annotation("hash_abc", "open/schema", mode="csv")  # type: ignore
-
-
-# --- Tests for list_file_annotations ---
 
 
 def test_list_file_annotations_invalid_mode():
@@ -951,7 +926,7 @@ def test_list_file_annotations_pydantic(mock_get_record):
 def test_list_file_annotations_dict(mock_get_record):
     """Test retrieving annotations as a standard dictionary via model_dump."""
     mock_record = MagicMock()
-    # model_dump is expected to return the full record dictionary
+
     mock_record.model_dump.return_value = {"annotations": {"AudioTranscription": [{"id": "123"}]}}
     mock_get_record.return_value = mock_record
 

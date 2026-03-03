@@ -121,6 +121,12 @@ def get_file_record(
     try:
         file_record = get_dorsal_file_record(hash_string=hash_string, public=public_scope, mode="pydantic")
 
+        is_private = False
+        if public_scope is not None:
+            is_private = not public_scope
+        elif file_record.annotations and file_record.annotations.file_base:
+            is_private = file_record.annotations.file_base.private is True
+
         record_dict = file_record.model_dump(by_alias=True, exclude_none=True, mode="json")
         record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
 
@@ -136,7 +142,7 @@ def get_file_record(
         panel = create_file_info_panel(
             record_dict=record_dict,
             title=title,
-            private=not public_scope,
+            private=is_private,
             palette=palette,
         )
         console.print(panel)
