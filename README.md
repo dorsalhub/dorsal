@@ -32,36 +32,6 @@
 
 Dorsal provides configurable extraction and annotation pipelines for files.
 
-### Annotation Models
-
-Annotation Models are **plug and play** packages for Dorsal which perform **file extraction**, **annotation** or **conversion**.
-
-[Explore](https://dorsalhub.com/models/explore) the models available on [dorsalhub.com](https://dorsalhub.com) or follow a [tutorial to build your own](https://docs.dorsalhub.com/python/hello-word/).
-
-You can run and install models directly from the command line:
-
-#### Whisper example
-
-```console
-$ dorsal run dorsalhub/whisper /home/video/test.mkv --export=srt
-1
-00:00:01,970 --> 00:00:05,970
-You might be wondering how I ended up in this situation.
-
-2
-00:00:05,970 --> 00:00:08,970
-Yeah that's me. A young subtitle.
-
-3
-00:00:08,970 --> 00:00:18,590
-Little did I know what life had in store for me.
-
-
-Outputs saved successfully:
-  ↳ /home/user/sandbox/test.dorsal.json
-  ↳ /home/user/sandbox/test.srt
-```
-
 ### Dorsal is...
 
 * **Local First:** Metadata extraction happens locally, not in the cloud. Use the CLI or python API to run the built-in extraction models or incorporate your own.
@@ -149,16 +119,36 @@ dorsal file push "docs/PDFSPEC.pdf"
 
 ### 3. Run Annotation Models
 
-You can install and run annotation models from the CLI:
+Annotation Models are **plug and play** packages for Dorsal which perform **file extraction**, **annotation** or **conversion**.
 
-```bash
-dorsal run dorsalhub/pdf-extractor "path/to/document.pdf"
+> [Explore](https://dorsalhub.com/models/explore) the models available on [dorsalhub.com](https://dorsalhub.com) or follow a [tutorial to build your own](https://docs.dorsalhub.com/python/hello-word/).
+
+You can run and install models directly from the command line:
+
+```console
+dorsal install dorsalhub/pdf-extractor
 ```
 
 You can also export to any format supported by [Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):
 
-```bash
-dorsal run dorsalhub/pdf-extractor "path/to/document.pdf" --export=html
+```console
+$ dorsal run dorsalhub/whisper /home/video/test.mkv --export=srt
+1
+00:00:01,970 --> 00:00:05,970
+You might be wondering how I ended up in this situation.
+
+2
+00:00:05,970 --> 00:00:08,970
+Yeah that's me. A young subtitle.
+
+3
+00:00:08,970 --> 00:00:18,590
+Little did I know what life had in store for me.
+
+
+Outputs saved successfully:
+  ↳ /home/user/sandbox/test.dorsal.json
+  ↳ /home/user/sandbox/test.srt
 ```
 
 ### 4. Parse, Validate, and Export
@@ -200,6 +190,13 @@ You can currently export validated records into the following formats:
 - Markdown (`.md`)
 - TSV (`.tsv`)
 - Plain Text (`.txt`)
+
+**Citation / Reference** ('dorsal/arxiv'):
+
+- BibTeX (`.bib`)
+- CSL-JSON (`.json`)
+- RIS (`.ris`)
+- Markdown (`.md`)
 
 -----
 
