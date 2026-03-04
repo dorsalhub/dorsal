@@ -113,6 +113,7 @@ SEARCH_PER_PAGE_DEFAULT = 25
 SEARCH_PER_PAGE_MIN = 1
 SEARCH_PER_PAGE_MAX = 50
 
+
 class LoggingRetry(Retry):
     def sleep(self, response=None):
         if response and response.status == 429:
@@ -120,6 +121,7 @@ class LoggingRetry(Retry):
             if retry_after:
                 logger.warning(f"Rate limit reached. Pausing for {int(retry_after)} seconds...")
         super().sleep(response)
+
 
 class DorsalClientSession(requests.Session):
     """requests.Session which Intercepts all HTTP requests for `DORSAL_OFFLINE` check."""
@@ -3484,7 +3486,7 @@ class DorsalClient:
         """
         from dorsal.client.validators import RegistryModelResponse
 
-        if model_identifier in self._registry_cache:
+        if use_cache and model_identifier in self._registry_cache:
             cached_time, cached_model = self._registry_cache[model_identifier]
 
             if (time.time() - cached_time) <= self.registry_cache_ttl:
@@ -3515,6 +3517,7 @@ class DorsalClient:
             self._handle_api_error(response)
 
         model_response = RegistryModelResponse(**response.json())
-        self._registry_cache[model_identifier] = (time.time(), model_response)
+        if use_cache:
+            self._registry_cache[model_identifier] = (time.time(), model_response)
 
         return model_response
