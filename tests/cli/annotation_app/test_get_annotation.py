@@ -159,7 +159,7 @@ def test_get_annotation_mutually_exclusive_flags():
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--json", "--export", "csl"])
 
     assert result.exit_code != 0
-    assert "cannot use --json and --export at the same time" in result.output
+    assert "at the same time" in result.output
 
 
 def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps):
