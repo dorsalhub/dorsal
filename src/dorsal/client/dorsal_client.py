@@ -186,6 +186,7 @@ class DorsalClient:
         base_url: str = _dorsal_base_url,
         identity: str = _default_identity,
         timeout: float | None = None,
+        registry_cache_ttl: float = 3600.0,
     ):
         """
         Initialize the DorsalClient.
@@ -206,6 +207,8 @@ class DorsalClient:
         self._file_records_batch_insert_size = constants.API_BATCH_SIZE
         self.last_response: requests.Response | None = None
         self.last_request: requests.Request | None = None
+        self.registry_cache_ttl = registry_cache_ttl
+        self._registry_cache: dict[str, tuple[float, "RegistryModelResponse"]] = {}
         logger.debug(
             "DorsalClient initialized successfully. Base URL: '%s', Identity: '%s'. API key configured: %s ",
             self.base_url,
@@ -3461,7 +3464,7 @@ class DorsalClient:
         logger.debug("Successfully deleted annotation %s from file %s.", annotation_id, validated_hash)
         return None
 
-    def get_registry_model(self, model_identifier: str) -> RegistryModelResponse:
+    def get_registry_model(self, model_identifier: str, use_cache: bool = True) -> RegistryModelResponse:
         """
         Resolves a registry ID (e.g. 'dorsal/whisper') to its installation metadata.
 
@@ -3473,6 +3476,15 @@ class DorsalClient:
             DorsalClientError: If the identifier format is invalid.
         """
         from dorsal.client.validators import RegistryModelResponse
+
+        if model_identifier in self._registry_cache:
+            cached_time, cached_model = self._registry_cache[model_identifier]
+
+            if (time.time() - cached_time) <= self.registry_cache_ttl:
+                logger.debug("Registry ID '%s' resolved from local cache.", model_identifier)
+                return cached_model
+            else:
+                logger.debug("Cache for Registry ID '%s' expired. Fetching fresh data.", model_identifier)
 
         if "/" not in model_identifier:
             raise DorsalClientError(f"Invalid registry ID '{model_identifier}'. Expected format 'namespace/name'.")
@@ -3495,4 +3507,7 @@ class DorsalClient:
         if response.status_code != 200:
             self._handle_api_error(response)
 
-        return RegistryModelResponse(**response.json())
+        model_response = RegistryModelResponse(**response.json())
+        self._registry_cache[model_identifier] = (time.time(), model_response)
+
+        return model_response

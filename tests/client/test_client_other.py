@@ -308,3 +308,76 @@ def test_unauthenticated_client_blocks_auth_endpoints(mock_read_key, requests_mo
         unauth_client.check_files_indexed([_DUMMY_SHA256])
 
     assert not requests_mock.called
+
+
+@patch("dorsal.client.dorsal_client.time.time")
+def test_get_registry_model_uses_cache(mock_time, client, requests_mock):
+    """Test that get_registry_model caches the response within the TTL."""
+    mock_time.return_value = 1000.0
+
+    identifier = "dorsal/test-model"
+    url = f"{_DUMMY_BASE_URL}/v1/registry/models/dorsal/test-model"
+
+    mock_response = {
+        "namespace": "dorsal",
+        "name": "test-model",
+        "version": "1.0.0",
+        "install_url": "https://test.url",
+        "schema_id": "model/test",
+        "package_name": "test-pkg",
+        "is_official": True,
+        "is_verified": True,
+    }
+
+    requests_mock.get(url, json=mock_response, status_code=200)
+
+    res1 = client.get_registry_model(identifier)
+    assert requests_mock.call_count == 1
+    assert identifier in client._registry_cache
+
+    mock_time.return_value = 1000.0 + 1800.0
+    res2 = client.get_registry_model(identifier)
+
+    assert requests_mock.call_count == 1
+    assert res1.name == res2.name
+
+
+@patch("dorsal.client.dorsal_client.time.time")
+def test_get_registry_model_respects_ttl(mock_time, client, requests_mock):
+    """Test that get_registry_model fetches fresh data if the TTL has expired."""
+    mock_time.return_value = 1000.0
+
+    identifier = "dorsal/test-model"
+    url = f"{_DUMMY_BASE_URL}/v1/registry/models/dorsal/test-model"
+
+    mock_response = {
+        "namespace": "dorsal",
+        "name": "test-model",
+        "version": "1.0.0",
+        "install_url": "https://test.url",
+        "schema_id": "model/test",
+        "package_name": "test-pkg",
+        "is_official": True,
+        "is_verified": True,
+    }
+
+    requests_mock.get(url, json=mock_response, status_code=200)
+
+    client.get_registry_model(identifier)
+    assert requests_mock.call_count == 1
+
+    mock_time.return_value = 1000.0 + 3601.0
+
+    client.get_registry_model(identifier)
+
+    assert requests_mock.call_count == 2
+
+
+def test_client_registry_cache_ttl_config():
+    """Test that the custom TTL can be set during client initialization."""
+    custom_client = DorsalClient(api_key=_DUMMY_API_KEY, base_url=_DUMMY_BASE_URL, registry_cache_ttl=300.0)
+
+    assert custom_client.registry_cache_ttl == 300.0
+
+    assert isinstance(custom_client._registry_cache, dict)
+    assert len(custom_client._registry_cache) == 0
