@@ -205,3 +205,13 @@ def parse_cli_options(options: Sequence[str] | None, palette: dict) -> dict[str,
                 result[key] = value
 
     return result
+
+
+class DummyContext:
+    """A no-op context manager to suppress spinners when outputting raw JSON."""
+
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
