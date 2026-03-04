@@ -113,6 +113,13 @@ SEARCH_PER_PAGE_DEFAULT = 25
 SEARCH_PER_PAGE_MIN = 1
 SEARCH_PER_PAGE_MAX = 50
 
+class LoggingRetry(Retry):
+    def sleep(self, response=None):
+        if response and response.status == 429:
+            retry_after = self.get_retry_after(response)
+            if retry_after:
+                logger.warning(f"Rate limit reached. Pausing for {int(retry_after)} seconds...")
+        super().sleep(response)
 
 class DorsalClientSession(requests.Session):
     """requests.Session which Intercepts all HTTP requests for `DORSAL_OFFLINE` check."""
@@ -273,7 +280,7 @@ class DorsalClient:
         session = DorsalClientSession()
         session.headers.update(self._make_request_headers(require_auth=False))
 
-        retry_strategy = Retry(
+        retry_strategy = LoggingRetry(
             total=constants.API_MAX_RETRIES,
             status_forcelist=[
                 429,
