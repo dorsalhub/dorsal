@@ -164,10 +164,8 @@ class DorsalClientError(DorsalError):
         request_url: str | None = None,
         original_exception: Exception | None = None,
     ):
-        super().__init__(message)
+        super().__init__(message=message, request_url=request_url, original_exception=original_exception)
         self.message = message
-        self.request_url = request_url
-        self.original_exception = original_exception
 
     def __str__(self):
         message = f"{self.args[0]}"
@@ -182,13 +180,12 @@ class AuthError(DorsalClientError):
     """Error for client-side authentication or API key configuration issues."""
 
     info_url = constants.DOCS_URL_API_AUTH
-    extra_info_template = f"\nFor more information about authentication, visit: {info_url}"
 
     def __init__(self, message: str):
-        super().__init__(message)
+        super().__init__(message=message)
 
     def __str__(self):
-        return f"{self.args[0]}\n\n{self.extra_info_template}"
+        return f"{self.args[0]}"
 
 
 class NetworkError(DorsalClientError):
@@ -205,9 +202,7 @@ class NetworkError(DorsalClientError):
         request_url: str | None = None,
         original_exception: Exception | None = None,
     ):
-        super().__init__(message)
-        self.request_url = request_url
-        self.original_exception = original_exception
+        super().__init__(message=message, request_url=request_url, original_exception=original_exception)
 
     def __str__(self):
         message = f"{self.args[0]}"
@@ -235,10 +230,10 @@ class APIError(DorsalClientError):
         detail: str | dict,
         request_url: str | None = None,
         response_text: str | None = None,
+        original_exception: Exception | None = None,
     ):
         self.status_code = status_code
         self.detail = detail
-        self.request_url = request_url
         self.response_text = response_text
 
         if isinstance(detail, dict) and "detail" in detail:
@@ -249,7 +244,7 @@ class APIError(DorsalClientError):
             error_summary = "No detail provided."
 
         base_message = f"API Error {status_code}: {error_summary}"
-        super().__init__(base_message)
+        super().__init__(message=base_message, request_url=request_url, original_exception=original_exception)
 
     def __str__(self):
         message = f"{self.args[0]}"
@@ -269,10 +264,15 @@ class APIError(DorsalClientError):
 class BadRequestError(DorsalClientError):
     """400 Bad Request error."""
 
-    def __init__(self, message: str, request_url: str, response_text: str | None = None):
-        self.request_url = request_url
+    def __init__(
+        self,
+        message: str,
+        request_url: str,
+        response_text: str | None = None,
+        original_exception: Exception | None = None,
+    ):
         self.response_text = response_text
-        super().__init__(f"{message}")
+        super().__init__(message=message, request_url=request_url, original_exception=original_exception)
 
 
 class NotFoundError(DorsalClientError):
@@ -283,10 +283,10 @@ class NotFoundError(DorsalClientError):
         message: str,
         request_url: str | None = None,
         response_text: str | None = None,
+        original_exception: Exception | None = None,
     ):
-        self.request_url = request_url
         self.response_text = response_text
-        super().__init__(f"{message}")
+        super().__init__(message=message, request_url=request_url, original_exception=original_exception)
 
 
 class ForbiddenError(DorsalClientError):
@@ -297,11 +297,11 @@ class ForbiddenError(DorsalClientError):
         message: str,
         request_url: str | None = None,
         response_text: str | None = None,
+        original_exception: Exception | None = None,
     ):
-        self.request_url = request_url
         self.response_text = response_text
         full_message = f"{message}" if request_url else message
-        super().__init__(full_message)
+        super().__init__(message=full_message, request_url=request_url, original_exception=original_exception)
 
 
 class ConflictError(DorsalClientError):
@@ -312,11 +312,11 @@ class ConflictError(DorsalClientError):
         message: str,
         request_url: str | None = None,
         response_text: str | None = None,
+        original_exception: Exception | None = None,
     ):
-        self.request_url = request_url
         self.response_text = response_text
         full_message = f"{message}" if request_url else message
-        super().__init__(full_message)
+        super().__init__(message=full_message, request_url=request_url, original_exception=original_exception)
 
 
 class RateLimitError(DorsalClientError):
@@ -328,14 +328,15 @@ class RateLimitError(DorsalClientError):
         request_url: str,
         retry_after: str | int | None = None,
         response_text: str | None = None,
+        original_exception: Exception | None = None,
     ):
-        self.request_url = request_url
         self.retry_after = retry_after
         self.response_text = response_text
         super_message = f"{message} for {request_url}"
         if retry_after:
             super_message += f". Try again after {retry_after} seconds."
-        super().__init__(super_message)
+
+        super().__init__(message=super_message, request_url=request_url, original_exception=original_exception)
 
 
 class ApiDataValidationError(DorsalClientError):
@@ -355,19 +356,9 @@ class ApiDataValidationError(DorsalClientError):
         response_text_snippet: str | None = None,
         original_exception: Exception | None = None,
     ):
-        """
-        Args:
-            message: A concise description of the validation/decoding error.
-            request_url: The URL that was being accessed.
-            validation_errors: Specific validation errors (e.g., from Pydantic).
-            response_text_snippet: A snippet of the problematic response text.
-            original_exception: The underlying exception (e.g., JSONDecodeError, pydantic.ValidationError).
-        """
-        super().__init__(message)
-        self.request_url = request_url
+        super().__init__(message=message, request_url=request_url, original_exception=original_exception)
         self.validation_errors = validation_errors
         self.response_text_snippet = response_text_snippet
-        self.original_exception = original_exception
 
     def __str__(self):
         message = f"{self.args[0]}"

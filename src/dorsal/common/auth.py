@@ -92,15 +92,17 @@ def get_api_key_details() -> APIKeyDetails:
 
 
 def write_auth_config(
-    api_key: str, email: str | None = None, user_id: int | None = None, scope: str = "global"
+    api_key: str | None = None, email: str | None = None, user_id: int | None = None, scope: str = "global"
 ) -> None:
     """Writes authentication details to the specified config scope."""
-    set_config_value(
-        section=constants.CONFIG_SECTION_AUTH,
-        option=constants.CONFIG_OPTION_API_KEY,
-        value=api_key,
-        scope=scope,
-    )
+    if api_key is not None:
+        set_config_value(
+            section=constants.CONFIG_SECTION_AUTH,
+            option=constants.CONFIG_OPTION_API_KEY,
+            value=api_key,
+            scope=scope,
+        )
+
     if email:
         set_config_value(
             section=constants.CONFIG_SECTION_AUTH,
@@ -129,9 +131,9 @@ def remove_api_key(scope: APIKeySource) -> bool:
     )
 
 
-def read_api_key(api_key: str | None = None) -> str:
+def read_api_key(api_key: str | None = None) -> str | None:
     """
-    Reads the active API key, raising an AuthError if none is found.
+    Reads the active API key. Returns the key as a string, or None if not found.
     """
     if api_key:
         return api_key
@@ -141,11 +143,7 @@ def read_api_key(api_key: str | None = None) -> str:
     if key:
         return key
 
-    raise AuthError(
-        f"API key not found. Provide it via the `api_key` argument, "
-        f"the '{constants.ENV_DORSAL_API_KEY_STR}' environment variable, or run "
-        f"`dorsal auth login`."
-    )
+    return None
 
 
 def get_theme_from_config() -> str | None:

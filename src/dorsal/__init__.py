@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
 from dorsal.version import __version__
 
 __all__ = [
@@ -25,6 +27,15 @@ __all__ = [
     "DorsalClient",
     "__version__",
 ]
+
+if TYPE_CHECKING:
+    from dorsal.file.dorsal_file import LocalFile, DorsalFile
+    from dorsal.file.collection.local import LocalFileCollection
+    from dorsal.file.collection.remote import DorsalFileCollection
+    from dorsal.file.metadata_reader import MetadataReader
+    from dorsal.file.model_runner import ModelRunner
+    from dorsal.client import DorsalClient
+    from dorsal.common.model import AnnotationModel
 
 
 def __getattr__(name: str):

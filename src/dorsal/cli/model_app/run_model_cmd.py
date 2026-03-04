@@ -224,6 +224,9 @@ def run_model(
                         progress_callback=progress_hook,
                     )
 
+                    if res.error and "Authentication failed" in res.error:
+                        raise AuthError(res.error)
+
                     raw_results.append(res)
 
                     res_dict = res.model_dump(exclude_none=True)
@@ -281,7 +284,9 @@ def run_model(
                 if overall_task is not None:
                     progress.advance(overall_task)
 
-    except (DorsalError, AuthError) as e:
+    except AuthError:
+        raise
+    except DorsalError as e:
         if json_output:
             error_console.print(json.dumps({"error": str(e)}))
         else:

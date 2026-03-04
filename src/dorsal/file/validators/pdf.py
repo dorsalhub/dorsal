@@ -22,7 +22,7 @@ class PDFValidationModel(BaseModel):
 
     author: TString4096 | None = Field(
         default=None,
-        description="The primary author of the document, from the 'Author' metadata field.",
+        description="The primary author(s) of the document, from the 'Author' metadata field.",
         json_schema_extra={"pii_risk": True},
     )
     title: TString4096 | None = Field(

@@ -271,3 +271,40 @@ def test_get_registry_model_invalid_format(client):
     """Test that a non-namespaced ID raises a client error."""
     with pytest.raises(DorsalClientError, match="Invalid registry ID"):
         client.get_registry_model("whisper")
+
+
+@patch("dorsal.client.dorsal_client.read_api_key", return_value=None)
+def test_unauthenticated_client_can_get_registry_model(mock_read_key, requests_mock):
+    """Test that a client without an API key can successfully hit the public registry."""
+    unauth_client = DorsalClient(api_key=None, base_url=_DUMMY_BASE_URL)
+
+    mock_registry_response = {
+        "namespace": "dorsal",
+        "name": "whisper",
+        "version": "1.0.0",
+        "install_url": "https://test.url",
+        "schema_id": "model/test",
+        "package_name": "test-pkg",
+        "description": "test",
+        "is_official": True,
+        "is_verified": True,
+    }
+
+    url = f"{_DUMMY_BASE_URL}/v1/registry/models/dorsal/whisper"
+    requests_mock.get(url, json=mock_registry_response, status_code=200)
+
+    result = unauth_client.get_registry_model("dorsal/whisper")
+
+    assert result.name == "whisper"
+    assert "Authorization" not in requests_mock.last_request.headers
+
+
+@patch("dorsal.client.dorsal_client.read_api_key", return_value=None)
+def test_unauthenticated_client_blocks_auth_endpoints(mock_read_key, requests_mock):
+    """Test that standard endpoints still strictly enforce local API key checks."""
+    unauth_client = DorsalClient(api_key=None, base_url=_DUMMY_BASE_URL)
+
+    with pytest.raises(AuthError, match="API Key is missing"):
+        unauth_client.check_files_indexed([_DUMMY_SHA256])
+
+    assert not requests_mock.called

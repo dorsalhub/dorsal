@@ -211,7 +211,7 @@ def scan_directory(
             csv = True
         else:
             console.print(
-                f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
+                f"Warning --output path '{output_path}' was specified with an unknown extension."
                 f" Please use -s (for .json) or -c (for .csv) to specify the report type.",
                 style=palette.get("warning", "yellow"),
             )
