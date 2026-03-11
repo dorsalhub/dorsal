@@ -121,7 +121,7 @@ def run_model(
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
     from dorsal.common.exceptions import DorsalError, AuthError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
+    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console, get_error_console, parse_cli_options
     from dorsal.api.model import run_or_install_model
     from dorsal.api.adapters import export_record, get_format_extension
     from dorsal.cli.views.model import create_model_result_panel
@@ -129,6 +129,7 @@ def run_model(
     from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
     from dorsal.file.validators.file_record import AnnotationGroup, Annotation
+    from rich.logging import RichHandler
     from rich.table import Table
     from rich.progress import (
         Progress,
@@ -144,6 +145,8 @@ def run_model(
     console = get_rich_console()
     error_console = get_error_console()
     palette: dict[str, str] = ctx.obj.get("palette", {})
+
+    logging.getLogger().handlers[0] = RichHandler(console=error_console, markup=True)
 
     parsed_options = parse_cli_options(options=options, palette=palette)
     parsed_export_options = parse_cli_options(options=export_options, palette=palette)

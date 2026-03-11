@@ -28,7 +28,6 @@ from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 from urllib3.util.retry import Retry
 
-
 from dorsal.common import constants
 from dorsal.common.auth import is_offline_mode, read_api_key, get_user_id_from_config, write_auth_config
 from dorsal.common.constants import BASE_URL, VALID_DATASET_TYPES
