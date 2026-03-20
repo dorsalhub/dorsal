@@ -103,7 +103,7 @@ def add_tag(
             display_val = f"'{value}' (label)" if label else f"'{name}:{value}'"
 
             console.print(
-                f"✏️  Adding {tag_type_str} tag {display_val} to file [{palette.get('hash_value', 'magenta')}]{hash_string}...[/]"
+                f"Adding {tag_type_str} tag {display_val} to file [{palette.get('hash_value', 'magenta')}]{hash_string}...[/]"
             )
 
         if label:

@@ -233,7 +233,7 @@ def create_file_info_panel(
             anno_title = f"{title_part.replace('_', ' ').title()} Info"
 
             renderables.append(
-                Text.from_markup(f"[{palette['section_title']}]✏️ {anno_title}[/][{palette['key']}] → {key}[/]")
+                Text.from_markup(f"[{palette['section_title']}]📑 {anno_title}[/][{palette['key']}] → {key}[/]")
             )
 
             if is_stub:
