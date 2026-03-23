@@ -26,12 +26,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     NonNegativeInt,
     ValidationInfo,
     field_validator,
     model_validator,
 )
 
+import dorsal
 from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES, ANNOTATION_SCHEMA_LIMIT_STRICT
 from dorsal.common.exceptions import PydanticValidationError
 from dorsal.common.model import (
@@ -365,17 +367,20 @@ class TagResult(BaseModel):
 
 
 class UrlSource(BaseModel):
-    type: Literal["Model", "Manual", "Unknown", "UserRecords"]
-    id: str
-    version: str | None = None
-    variant: str | None = None
-    user_id: int | None = None
+    """
+    Tracks the provenance and discovery context of a File URL.
+    """
+
+    agent: str = Field(default="dorsal-python", max_length=64, description="The software/tool that added this URL.")
+    agent_version: str | None = Field(default=dorsal.__version__, max_length=32)
+    parent_url: HttpUrl | None = Field(default=None, description="The webpage or directory where this link was found.")
+    reference: str | None = Field(default=None, max_length=128, description="Context string or detail about the URL.")
 
 
 class FileUrl(BaseModel):
-    """Client-facing representation of a File URL."""
+    """File URL record."""
 
-    id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)  # bson.ObjectId string
+    id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)
     url: AnyHttpUrl
     private: bool
     user_no: int

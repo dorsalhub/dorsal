@@ -15,7 +15,7 @@
 import datetime
 from typing import Any, Literal
 import requests
-from pydantic import BaseModel, Field, NonNegativeInt, computed_field
+from pydantic import BaseModel, Field, HttpUrl, NonNegativeInt, computed_field
 
 from dorsal.file.validators.file_record import AnnotationGroup, FileRecordDateTime
 from dorsal.file.validators.collection import (
@@ -292,3 +292,16 @@ class RegistryModelResponse(BaseModel):
     is_verified: bool = False
     created_at: datetime.datetime | None = None
     dependencies: list[dict[str, Any]] | None = None
+
+
+class FileUrlResponse(BaseModel):
+    url_id: str
+
+
+class FileUrlRequest(BaseModel):
+    url: HttpUrl
+    private: bool
+    parent_url: HttpUrl | None = None
+    reference: str | None = Field(default=None, max_length=128)
+    agent: str = Field(max_length=64, description="The tool/client making the request")
+    agent_version: str | None = Field(default=None, max_length=32)

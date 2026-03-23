@@ -94,6 +94,8 @@ if TYPE_CHECKING:
         FileAnnotationResponse,
         FileCollection,
         FileIndexResponse,
+        FileUrlResponse,
+        FileUrlRequest,
         NewDatasetResponse,
         RecordIndexResult,
         FileTagResponse,
@@ -489,6 +491,14 @@ class DorsalClient:
     def _make_model_registry_url(self, namespace: str, name: str) -> str:
         """Constructs the URL for the model registry endpoint."""
         return f"{self.base_url}/{self._registry_endpoint.strip('/')}/models/{namespace.strip('/')}/{name.strip('/')}"
+
+    def _make_add_file_url_url(self, file_hash: str) -> str:
+        """Constructs the URL for adding a URL to a file."""
+        return f"{self.base_url}/{self._files_endpoint}/{file_hash.strip('/')}/urls"
+
+    def _make_delete_file_url_url(self, url_id: str) -> str:
+        """Constructs the URL for deleting a file URL."""
+        return f"{self.base_url}/{self._files_endpoint}/urls/{url_id.strip('/')}"
 
     def _validate_sha256_hashes(self, file_hashes: list[str]) -> list[str]:
         if not isinstance(file_hashes, list) or not file_hashes:
@@ -3520,3 +3530,140 @@ class DorsalClient:
             self._registry_cache[model_identifier] = (time.time(), model_response)
 
         return model_response
+
+    def add_file_url(
+        self,
+        file_hash: str,
+        url: str,
+        private: bool,
+        parent_url: str | None = None,
+        reference: str | None = None,
+        agent: str = "dorsal-python",
+        agent_version: str | None = None,
+        api_key: str | None = None,
+    ) -> "FileUrlResponse":
+        """Adds a new URL to an existing file record.
+
+        Example:
+            ```python
+            from dorsal.client import DorsalClient
+
+            client = DorsalClient()
+            file_hash = "123..."
+
+            try:
+                response = client.add_file_url(
+                    file_hash=file_hash,
+                    url="[https://arxiv.org/pdf/2405.06604](https://arxiv.org/pdf/2405.06604)",
+                    private=True,
+                    parent_url="[https://arxiv.org/abs/2405.06604](https://arxiv.org/abs/2405.06604)",
+                )
+                print(f"Added URL with ID: {response.url_id}")
+            except Exception as e:
+                print(f"Failed to add URL: {e}")
+            ```
+
+        Args:
+            file_hash (str): The SHA-256 hash of the target file.
+            url (str): The URL to attach to the file.
+            private (bool): The visibility status of the URL itself.
+            parent_url (str, optional): The webpage where this link was found.
+            reference (str, optional): Custom context or reference ID.
+            agent (str, optional): The client/tool making the request. Defaults to 'dorsal-python'.
+            api_key (str, optional): API key override.
+
+        Returns:
+            FileUrlResponse: A model containing the newly generated `url_id`.
+        """
+        from dorsal.client.validators import FileUrlResponse
+        from dorsal.version import __version__
+
+        logger.debug("Client: add_file_url called for hash '%s', url '%s'.", file_hash, url)
+
+        try:
+            validated_hash = validate_hex64(file_hash)
+        except ValueError as err:
+            raise DorsalClientError(f"Invalid SHA-256 hash provided: '{file_hash}'") from err
+
+        target_url = self._make_add_file_url_url(validated_hash)
+        agent_version = agent_version if agent_version is not None else f"dorsal-{__version__}"
+
+        request_body = {
+            "url": url,
+            "private": private,
+            "parent_url": parent_url,
+            "reference": reference,
+            "agent": agent,
+            "agent_version": agent_version,
+        }
+
+        request_body = {k: v for k, v in request_body.items() if v is not None}
+
+        logger.debug("Attempting to add URL at: %s", target_url)
+
+        try:
+            headers = self._make_request_headers(api_key=api_key)
+            response = self.session.post(
+                url=target_url,
+                json=request_body,
+                allow_redirects=False,
+                timeout=self.timeout,
+                headers=headers,
+            )
+            self.last_response = response
+        except requests.exceptions.RequestException as err:
+            raise NetworkError("An unexpected error occurred during the HTTP request.", target_url, err) from err
+
+        if response.status_code != 201:
+            logger.warning("Failed to add URL. API responded with status %s.", response.status_code)
+            self._handle_api_error(response=response)
+
+        try:
+            return FileUrlResponse(**response.json())
+        except (json.JSONDecodeError, PydanticValidationError) as err:
+            raise ApiDataValidationError(
+                message="API response on add_file_url success failed data validation.",
+                request_url=target_url,
+                original_exception=err,
+            ) from err
+
+    def delete_file_url(self, url_id: str, api_key: str | None = None) -> None:
+        """Deletes a specific URL submission by its unique ID.
+
+        Args:
+            url_id (str): The 'url_...' prefixed ID of the URL to delete.
+            api_key (str, optional): API key override.
+
+        Returns:
+            None: A successful deletion returns no content.
+
+        Raises:
+            NotFoundError: If the URL does not exist.
+            ForbiddenError: If you do not own the URL.
+        """
+        logger.debug("Client: delete_file_url called for url_id '%s'.", url_id)
+
+        if not url_id or not isinstance(url_id, str):
+            raise DorsalClientError("url_id must be a non-empty string.")
+
+        target_url = self._make_delete_file_url_url(url_id)
+        logger.debug("Attempting to delete URL at: %s", target_url)
+
+        try:
+            headers = self._make_request_headers(api_key=api_key)
+            response = self.session.delete(
+                url=target_url,
+                allow_redirects=False,
+                timeout=self.timeout,
+                headers=headers,
+            )
+            self.last_response = response
+        except requests.exceptions.RequestException as err:
+            raise NetworkError("An unexpected error occurred during the HTTP request.", target_url, err) from err
+
+        if response.status_code != 204:
+            logger.warning("Failed to delete URL %s. API responded with status %s.", url_id, response.status_code)
+            self._handle_api_error(response=response)
+
+        logger.debug("Successfully deleted URL %s.", url_id)
+        return None
