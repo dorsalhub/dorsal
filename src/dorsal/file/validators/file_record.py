@@ -20,6 +20,7 @@ import uuid
 from typing import Annotated, Any, Callable, Literal, Self, Type, Union
 
 from pydantic import (
+    AnyHttpUrl,
     AwareDatetime,
     AliasChoices,
     BaseModel,
@@ -363,6 +364,30 @@ class TagResult(BaseModel):
     detail: str | None = None
 
 
+class UrlSource(BaseModel):
+    type: Literal["Model", "Manual", "Unknown", "UserRecords"]
+    id: str
+    version: str | None = None
+    variant: str | None = None
+    user_id: int | None = None
+
+
+class FileUrl(BaseModel):
+    """Client-facing representation of a File URL."""
+
+    id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)  # bson.ObjectId string
+    url: AnyHttpUrl
+    private: bool
+    user_no: int
+    source: UrlSource
+    status: Literal["alive", "dead", "restricted", "unreachable", "unverified"]
+    last_checked: AwareDatetime | None = None
+    upvotes: NonNegativeInt = 0
+    downvotes: NonNegativeInt = 0
+    date_created: AwareDatetime
+    date_modified: AwareDatetime
+
+
 DeletionScope = Literal["all", "public", "private", "none"]
 
 
@@ -379,6 +404,7 @@ class FileRecord(BaseModel):
     similarity_hash: TLSHash | None = None
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
     def _validate_or_populate_hash_field(
         self, *, field_name: str, source_value: str | None, source_name_for_error: str
@@ -479,6 +505,7 @@ class FileRecordStrict(FileRecord):
     source: Literal["disk", "cache", "dorsalhub"]
 
     tags: list[FileTag] = Field(default_factory=list, max_length=128)
+    urls: list[FileUrl] = Field(default_factory=list, max_length=10)
 
 
 class FileRecordDateTime(FileRecord):
@@ -502,6 +529,7 @@ class FileRecordLite(BaseModel):
 
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
 
 class FileRecordSuperLite(BaseModel):
@@ -520,6 +548,7 @@ class FileRecordSuperLite(BaseModel):
 
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
 
 class AnnotationData(BaseModel):
