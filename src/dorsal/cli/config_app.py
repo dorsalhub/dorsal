@@ -234,17 +234,28 @@ def _handle_pipeline_action(target: str, func_index, func_name, action_desc: str
 
 
 @pipeline_app.command(name="show")
-def show_pipeline(ctx: typer.Context):
+def show_pipeline(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output the pipeline configuration as a raw JSON array."),
+    ] = False,
+):
     """
     Show the current effective pipeline configuration.
     """
     from dorsal.common.cli import get_rich_console
     from dorsal.api.config import show_model_pipeline
+    import json
 
     console = get_rich_console()
     palette = ctx.obj["palette"]
 
     summary = show_model_pipeline()
+
+    if json_output:
+        console.print(json.dumps(summary, indent=2, default=str))
+        raise typer.Exit()
 
     if not summary:
         console.print(Panel("The pipeline is currently empty.", title="Pipeline", border_style=palette.get("warning")))
@@ -268,7 +279,7 @@ def show_pipeline(ctx: typer.Context):
             status = "[dim]🔒 Default[/]"
             name = f"[dim]{step['name']}[/]"
 
-        table.add_row(str(step["index"]), status, name, step["module"], step["schema_id"], step["dependencies"])
+        table.add_row(str(step["index"]), status, name, step["module"], step["schema_id"], str(step["dependencies"]))
 
     console.print(
         Panel(
