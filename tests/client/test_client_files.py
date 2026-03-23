@@ -23,9 +23,8 @@ from dorsal.file.validators.file_record import (
     NewFileTag,
     ValidateTagsResult,
 )
-from dorsal.client.validators import FileIndexResponse, FileTagResponse, FileDeleteResponse
+from dorsal.client.validators import FileIndexResponse, FileTagResponse, FileDeleteResponse, FileUrlResponse
 
-# Constants
 _DUMMY_API_KEY = "abc123_test_key"
 _DUMMY_BASE_URL = "http://dorsalhub.test"
 _DUMMY_SHA256 = "a" * 64
@@ -74,9 +73,6 @@ def mock_file_response_json():
     }
 
 
-# --- Indexing Tests ---
-
-
 def test_index_public_file_records_success(client, requests_mock, mock_file_record_strict):
     """Test successful indexing of public records."""
     mock_response = {"total": 1, "success": 1, "error": 0, "unauthorized": 0, "results": []}
@@ -108,9 +104,6 @@ def test_index_file_records_batch_size_error(client, mock_file_record_strict):
         client.index_public_file_records(records)
 
 
-# --- Search Tests ---
-
-
 def test_search_files_success(client, requests_mock):
     """Test successful file search."""
     mock_response = {
@@ -128,7 +121,7 @@ def test_search_files_success(client, requests_mock):
             "start_index": 0,
             "end_index": 0,
         },
-        "results": [],  # Empty results for simplicity
+        "results": [],
         "errors": [],
     }
     requests_mock.get(f"{_DUMMY_BASE_URL}/v1/files/search", json=mock_response, status_code=200)
@@ -147,9 +140,6 @@ def test_search_files_client_validation(client):
         client.search_files(q="", match_any=False)
 
 
-# --- Existence Check ---
-
-
 def test_check_files_indexed(client, requests_mock):
     """Test bulk existence check."""
     requests_mock.post(
@@ -166,9 +156,6 @@ def test_check_files_indexed(client, requests_mock):
     result = client.check_files_indexed([_DUMMY_SHA256, valid_other_hash])
     assert result[_DUMMY_SHA256] is True
     assert result[valid_other_hash] is False
-
-
-# --- Tag Operations ---
 
 
 def test_validate_tag_success(client, requests_mock):
@@ -203,9 +190,6 @@ def test_delete_tag_success(client, requests_mock):
 
     result = client.delete_tag(file_hash=_DUMMY_SHA256, tag_id=tag_id)
     assert result is None
-
-
-# --- Download Tests ---
 
 
 def test_download_public_file_success(client, requests_mock, mock_file_response_json):
@@ -245,9 +229,6 @@ def test_download_invalid_response(client, requests_mock):
         client.download_public_file_record(_DUMMY_SHA256)
 
 
-# --- Delete Tests ---
-
-
 def test_delete_file_granular(client, requests_mock):
     """Test the granular delete endpoint."""
     requests_mock.delete(
@@ -259,3 +240,46 @@ def test_delete_file_granular(client, requests_mock):
     result = client.delete_file(file_hash=_DUMMY_SHA256, record="private")
     assert isinstance(result, FileDeleteResponse)
     assert result.file_deleted == 1
+
+
+def test_add_file_url_success(client, requests_mock):
+    """Test successfully adding a URL to a file record using strict response validation."""
+    target_url = "https://example.com/research-paper"
+
+    mock_response = {"url_id": "url_abc123def456"}
+
+    requests_mock.post(f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}/urls", json=mock_response, status_code=201)
+
+    result = client.add_file_url(file_hash=_DUMMY_SHA256, url=target_url, private=True, reference="test-ref")
+
+    assert isinstance(result, FileUrlResponse)
+    assert result.url_id == "url_abc123def456"
+
+    last_request_json = requests_mock.last_request.json()
+    assert "parent_url" not in last_request_json
+    assert last_request_json["reference"] == "test-ref"
+    assert last_request_json["url"] == target_url
+
+
+def test_add_file_url_invalid_hash(client):
+    """Test that adding a URL with an invalid hash raises a DorsalClientError."""
+    with pytest.raises(DorsalClientError, match="Invalid SHA-256 hash provided"):
+        client.add_file_url(file_hash="short-invalid-hash", url="https://example.com", private=False)
+
+
+def test_delete_file_url_success(client, requests_mock):
+    """Test successfully deleting a file URL."""
+    url_id = "url_abc123def456"
+
+    requests_mock.delete(f"{_DUMMY_BASE_URL}/v1/files/urls/{url_id}", status_code=204)
+
+    result = client.delete_file_url(url_id=url_id)
+
+    assert result is None
+    assert requests_mock.called
+
+
+def test_delete_file_url_invalid_id(client):
+    """Test that deleting a URL with an empty string raises a DorsalClientError."""
+    with pytest.raises(DorsalClientError, match="url_id must be a non-empty string"):
+        client.delete_file_url(url_id="")

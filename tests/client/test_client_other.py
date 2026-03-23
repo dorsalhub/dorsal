@@ -15,7 +15,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import sys
-from dorsal.client import DorsalClient
+from dorsal.client import DorsalClient, LoggingRetry
 from dorsal.common.exceptions import ApiDataValidationError, AuthError, DorsalClientError, SchemaFormatError
 from dorsal.client.validators import FileAnnotationResponse, AnnotationIndexResult, RegistryModelResponse
 from dorsal.file.validators.file_record import (
@@ -381,3 +381,39 @@ def test_client_registry_cache_ttl_config():
 
     assert isinstance(custom_client._registry_cache, dict)
     assert len(custom_client._registry_cache) == 0
+
+
+@patch("dorsal.client.dorsal_client.logger")
+def test_logging_retry_sleep_429(mock_logger):
+    """Test that LoggingRetry logs a warning when hitting a 429 Rate Limit."""
+    retry_strategy = LoggingRetry()
+
+    mock_response = MagicMock()
+    mock_response.status = 429
+
+    mock_response.headers = {"Retry-After": "5"}
+    mock_response.getheader.return_value = "5"
+
+    with patch("urllib3.util.retry.Retry.sleep") as mock_super_sleep:
+        retry_strategy.sleep(response=mock_response)
+
+        mock_logger.warning.assert_called_once()
+        assert "Pausing for 5 seconds" in mock_logger.warning.call_args[0][0]
+        mock_super_sleep.assert_called_once_with(mock_response)
+
+
+@patch("dorsal.client.dorsal_client.logger")
+def test_logging_retry_sleep_non_429(mock_logger):
+    """Test that LoggingRetry defers to the parent without logging on non-429 errors."""
+    retry_strategy = LoggingRetry()
+
+    mock_response = MagicMock()
+    mock_response.status = 500
+    mock_response.headers = {}
+    mock_response.getheader.return_value = None
+
+    with patch("urllib3.util.retry.Retry.sleep") as mock_super_sleep:
+        retry_strategy.sleep(response=mock_response)
+
+        mock_logger.warning.assert_not_called()
+        mock_super_sleep.assert_called_once_with(mock_response)
