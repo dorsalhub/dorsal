@@ -13,9 +13,20 @@
 # limitations under the License.
 
 import pytest
+import requests
+
 from unittest.mock import MagicMock
 from dorsal.client import DorsalClient
-from dorsal.common.exceptions import DorsalClientError, NotFoundError, BatchSizeError, ApiDataValidationError, APIError
+from dorsal.common.exceptions import (
+    DorsalClientError,
+    BatchSizeError,
+    ApiDataValidationError,
+    APIError,
+    NetworkError,
+    APIError,
+    ApiDataValidationError,
+    ForbiddenError,
+)
 from dorsal.file.validators.file_record import (
     FileRecordStrict,
     FileRecordDateTime,
@@ -283,3 +294,69 @@ def test_delete_file_url_invalid_id(client):
     """Test that deleting a URL with an empty string raises a DorsalClientError."""
     with pytest.raises(DorsalClientError, match="url_id must be a non-empty string"):
         client.delete_file_url(url_id="")
+
+
+def test_add_file_url_network_error(client, requests_mock):
+    """Test that a RequestException during add_file_url raises a NetworkError."""
+    requests_mock.post(
+        f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}/urls",
+        exc=requests.exceptions.RequestException("Simulated connection drop"),
+    )
+
+    with pytest.raises(NetworkError, match="An unexpected error occurred during the HTTP request."):
+        client.add_file_url(file_hash=_DUMMY_SHA256, url="https://example.com", private=True)
+
+
+def test_add_file_url_api_error(client, requests_mock):
+    """Test that a non-201 response during add_file_url triggers _handle_api_error."""
+    requests_mock.post(
+        f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}/urls", status_code=500, json={"detail": "Internal Server Error"}
+    )
+
+    with pytest.raises(APIError, match="Server error \\(500\\)"):
+        client.add_file_url(file_hash=_DUMMY_SHA256, url="https://example.com", private=True)
+
+
+def test_add_file_url_json_decode_error(client, requests_mock):
+    """Test that malformed JSON response raises ApiDataValidationError."""
+    requests_mock.post(
+        f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}/urls", status_code=201, text="<html>Not JSON</html>"
+    )
+
+    with pytest.raises(ApiDataValidationError, match="API response on add_file_url success failed data validation"):
+        client.add_file_url(file_hash=_DUMMY_SHA256, url="https://example.com", private=True)
+
+
+def test_add_file_url_pydantic_validation_error(client, requests_mock):
+    """Test that a response missing required fields raises ApiDataValidationError."""
+    requests_mock.post(
+        f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}/urls", status_code=201, json={"wrong_key": "missing_url_id"}
+    )
+
+    with pytest.raises(ApiDataValidationError, match="API response on add_file_url success failed data validation"):
+        client.add_file_url(file_hash=_DUMMY_SHA256, url="https://example.com", private=True)
+
+
+def test_delete_file_url_network_error(client, requests_mock):
+    """Test that a RequestException during delete_file_url raises a NetworkError."""
+    url_id = "url_abc123"
+    requests_mock.delete(
+        f"{_DUMMY_BASE_URL}/v1/files/urls/{url_id}",
+        exc=requests.exceptions.RequestException("Simulated connection drop"),
+    )
+
+    with pytest.raises(NetworkError, match="An unexpected error occurred during the HTTP request."):
+        client.delete_file_url(url_id=url_id)
+
+
+def test_delete_file_url_api_error(client, requests_mock):
+    """Test that a non-204 response during delete_file_url triggers _handle_api_error."""
+    url_id = "url_abc123"
+    requests_mock.delete(
+        f"{_DUMMY_BASE_URL}/v1/files/urls/{url_id}",
+        status_code=403,
+        json={"detail": "You do not have permission to delete this URL."},
+    )
+
+    with pytest.raises(ForbiddenError, match="Forbidden: You do not have permission"):
+        client.delete_file_url(url_id=url_id)
