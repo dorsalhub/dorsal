@@ -56,7 +56,6 @@ def normalize_record_privacy(
                     f"but received an item explicitly marked {actual_state}."
                 )
             else:
-                # Overwrite
                 item.private = target_private
 
     def _process_container(container: Any, path: str) -> None:

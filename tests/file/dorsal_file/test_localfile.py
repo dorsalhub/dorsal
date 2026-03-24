@@ -933,3 +933,61 @@ def test_add_regression_integration(
     assert len(record.points) == 1
     assert record.points[0]["value"] == 42.0
     assert record.points[0]["statistic"] == "mean"
+
+
+def test_add_url_success(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test successfully adding a valid URL and its metadata to a LocalFile."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+
+    result = lf.add_url("https://example.com/source", parent_url="https://example.com", reference="Page 42")
+
+    assert result is lf
+    assert len(lf.model.urls) == 1
+
+    assert str(lf.model.urls[0].url).rstrip("/") == "https://example.com/source"
+    assert str(lf.model.urls[0].source.parent_url).rstrip("/") == "https://example.com"
+    assert lf.model.urls[0].source.reference == "Page 42"
+
+
+def test_add_url_duplicate(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that adding the exact same URL twice raises a ValueError."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+    lf.add_url("https://example.com/duplicate")
+
+    with pytest.raises(ValueError, match="URL already added"):
+        lf.add_url("https://example.com/duplicate")
+
+
+def test_add_url_limit(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that adding more than 10 URLs raises a ValueError limit exception."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+
+    for i in range(10):
+        lf.add_url(f"https://example.com/source/{i}")
+
+    with pytest.raises(ValueError, match="Limit of 10 URLs per file has been reached"):
+        lf.add_url("https://example.com/source/11")
+
+
+def test_add_url_invalid_format(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that an invalid URL string correctly raises a validation error."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+
+    with pytest.raises(ValueError, match="Invalid URL data"):
+        lf.add_url("not_a_valid_url")
