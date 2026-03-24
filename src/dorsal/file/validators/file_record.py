@@ -194,7 +194,7 @@ CORE_MODEL_ANNOTATION_WRAPPERS: dict[str | None, Type[Annotation]] = {
 
 class AnnotationStub(BaseModel):
     """
-    Represents a lightweight, summary view of an annotation, typically
+    Represents a lightweight, summary view of an annotation,
     returned in a fully hydrated FileRecord.
     """
 
@@ -375,6 +375,11 @@ class UrlSource(BaseModel):
     agent_version: str | None = Field(default=dorsal.__version__, max_length=32)
     parent_url: HttpUrl | None = Field(default=None, description="The webpage or directory where this link was found.")
     reference: str | None = Field(default=None, max_length=128, description="Context string or detail about the URL.")
+    user_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("user_no", "user_id"),
+        description="ID of the user who added the URL",
+    )
 
 
 class FileUrl(BaseModel):
@@ -382,15 +387,17 @@ class FileUrl(BaseModel):
 
     id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)
     url: AnyHttpUrl
-    private: bool
-    user_no: int
+    private: bool | None = None
     source: UrlSource
     status: Literal["alive", "dead", "restricted", "unreachable", "unverified"]
+    first_added: AwareDatetime | None = None
     last_checked: AwareDatetime | None = None
     upvotes: NonNegativeInt = 0
     downvotes: NonNegativeInt = 0
-    date_created: AwareDatetime
-    date_modified: AwareDatetime
+
+
+class NewFileUrl(FileUrl):
+    status: Literal["unverified"] = "unverified"
 
 
 DeletionScope = Literal["all", "public", "private", "none"]

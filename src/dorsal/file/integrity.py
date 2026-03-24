@@ -23,7 +23,7 @@ def normalize_record_privacy(
     record: FileRecordStrict, target_private: bool | None = None, strict: bool = False
 ) -> FileRecordStrict:
     """
-    Mutates the record in-place to normalize the `private` field of tags/annotations.
+    Mutates the record in-place to normalize the `private` field of tags/annotations/urls.
 
     Args:
         record: The record to mutate.
@@ -41,17 +41,13 @@ def normalize_record_privacy(
 
         current_val = item.private
 
-        # Case A: Neutralize (Client Mode) -> Wipe it
         if target_private is None:
             item.private = None
             return
 
-        # Case B: Resolve (Server Mode)
         if current_val is None:
-            # Agnostic -> Resolve
             item.private = target_private
         elif current_val != target_private:
-            # Conflict detected
             if strict:
                 required_state = "PRIVATE" if target_private else "PUBLIC"
                 actual_state = "PRIVATE" if current_val else "PUBLIC"
@@ -66,7 +62,6 @@ def normalize_record_privacy(
     def _process_container(container: Any, path: str) -> None:
         """Recursive traverser for Lists, Groups, and Items."""
         if isinstance(container, AnnotationGroup):
-            # Group container itself doesn't have privacy, only children
             for i, ann in enumerate(container.annotations):
                 _apply_policy(ann, f"{path} -> Group Index {i}")
 
@@ -77,26 +72,25 @@ def normalize_record_privacy(
         elif isinstance(container, Annotation):
             _apply_policy(container, path)
 
-        # Fallback for dynamic/extra fields that might be raw objects
         elif hasattr(container, "private"):
             _apply_policy(container, path)
 
-    # 1. Normalize Tags
     if record.tags:
         for i, tag in enumerate(record.tags):
             _apply_policy(tag, f"Tag index {i} ('{tag.name}')")
 
-    # 2. Normalize Annotations
     if record.annotations:
-        # A. Core Fields
         for field_name in AnnotationsStrict.model_fields:
             entry = getattr(record.annotations, field_name, None)
             if entry:
                 _process_container(entry, f"Annotation '{field_name}'")
 
-        # B. Extra Fields (Dynamic)
         if record.annotations.__pydantic_extra__:
             for key, value in record.annotations.__pydantic_extra__.items():
                 _process_container(value, f"Annotation '{key}'")
+
+    if record.urls:
+        for i, url_record in enumerate(record.urls):
+            _apply_policy(url_record, f"URL index {i} ('{url_record.url}')")
 
     return record
