@@ -357,11 +357,9 @@ def test_pipeline_show_json_output(mock_rich_console, mock_pipeline_api):
     result = runner.invoke(app, ["config", "pipeline", "show", "--json"])
 
     assert result.exit_code == 0
-    
-    
+
     json_output_str = mock_rich_console.print.call_args.args[0]
-    
-    
+
     data = json.loads(json_output_str)
 
     assert isinstance(data, list)
