@@ -331,3 +331,40 @@ def test_pipeline_check_broken_no_fix(mock_rich_console, mock_pipeline_api):
     assert "automatically remove" in output_text
 
     mock_pipeline_api["remove_idx"].assert_not_called()
+
+
+def test_pipeline_show_json_output(mock_rich_console, mock_pipeline_api):
+    """Tests `config pipeline show --json` output."""
+    mock_pipeline_api["show"].return_value = [
+        {
+            "index": 0,
+            "status": "Base (Locked)",
+            "name": "BaseModel",
+            "module": "dorsal.annotation_models",
+            "schema_id": "base",
+            "dependencies": "None",
+        },
+        {
+            "index": 1,
+            "status": "Active",
+            "name": "MyCustomModel",
+            "module": "custom.pkg",
+            "schema_id": "custom_schema",
+            "dependencies": ["base"],
+        },
+    ]
+
+    result = runner.invoke(app, ["config", "pipeline", "show", "--json"])
+
+    assert result.exit_code == 0
+    
+    
+    json_output_str = mock_rich_console.print.call_args.args[0]
+    
+    
+    data = json.loads(json_output_str)
+
+    assert isinstance(data, list)
+    assert len(data) == 2
+    assert data[0]["name"] == "BaseModel"
+    assert data[1]["schema_id"] == "custom_schema"
