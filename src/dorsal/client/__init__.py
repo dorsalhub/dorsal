@@ -12,4 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .dorsal_client import DorsalClient as DorsalClient
+from .dorsal_client import DorsalClient, LoggingRetry
+
+__any__ = ["DorsalClient", "LoggingRetry"]

@@ -2639,6 +2639,33 @@ class LocalFile(_DorsalFile):
             force=force,
         )
 
+    def add_url(
+        self,
+        url: str,
+        *,
+        parent_url: str | None = None,
+        reference: str | None = None,
+    ) -> "LocalFile":
+        """
+        Adds a file URL to the local file model.
+        """
+        from dorsal.file.validators.file_record import NewFileUrl, UrlSource
+
+        if len(self.model.urls) >= 10:
+            raise ValueError("Limit of 10 URLs per file has been reached.")
+
+        try:
+            new_url = NewFileUrl(url=url, source=UrlSource(parent_url=parent_url, reference=reference))
+        except PydanticValidationError as err:
+            raise ValueError(f"Invalid URL data: {err.errors()}") from err
+
+        existing_urls = {str(existing.url) for existing in self.model.urls}
+        if str(new_url.url) in existing_urls:
+            raise ValueError(f"URL already added: '{url}'")
+
+        self.model.urls.append(new_url)
+        return self
+
     def _get_local_info_dict(self) -> dict:
         """Returns local file attributes (file-system metadata) as a dictionary. Supports symlinks."""
         local_info: dict[str, Any] = {}

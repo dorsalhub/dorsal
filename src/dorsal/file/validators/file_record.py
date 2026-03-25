@@ -20,17 +20,20 @@ import uuid
 from typing import Annotated, Any, Callable, Literal, Self, Type, Union
 
 from pydantic import (
+    AnyHttpUrl,
     AwareDatetime,
     AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     NonNegativeInt,
     ValidationInfo,
     field_validator,
     model_validator,
 )
 
+import dorsal
 from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES, ANNOTATION_SCHEMA_LIMIT_STRICT
 from dorsal.common.exceptions import PydanticValidationError
 from dorsal.common.model import (
@@ -191,7 +194,7 @@ CORE_MODEL_ANNOTATION_WRAPPERS: dict[str | None, Type[Annotation]] = {
 
 class AnnotationStub(BaseModel):
     """
-    Represents a lightweight, summary view of an annotation, typically
+    Represents a lightweight, summary view of an annotation,
     returned in a fully hydrated FileRecord.
     """
 
@@ -363,6 +366,40 @@ class TagResult(BaseModel):
     detail: str | None = None
 
 
+class UrlSource(BaseModel):
+    """
+    Tracks the provenance and discovery context of a File URL.
+    """
+
+    agent: str = Field(default="dorsal-python", max_length=64, description="The software/tool that added this URL.")
+    agent_version: str | None = Field(default=dorsal.__version__, max_length=32)
+    parent_url: HttpUrl | None = Field(default=None, description="The webpage or directory where this link was found.")
+    reference: str | None = Field(default=None, max_length=128, description="Context string or detail about the URL.")
+    user_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("user_no", "user_id"),
+        description="ID of the user who added the URL",
+    )
+
+
+class FileUrl(BaseModel):
+    """File URL record."""
+
+    id: str | None = Field(pattern=r"^url_[a-zA-Z0-9_-]{22}$", default=None)
+    url: AnyHttpUrl
+    private: bool | None = None
+    source: UrlSource
+    status: Literal["alive", "dead", "restricted", "unreachable", "unverified"]
+    first_added: AwareDatetime | None = None
+    last_checked: AwareDatetime | None = None
+    upvotes: NonNegativeInt = 0
+    downvotes: NonNegativeInt = 0
+
+
+class NewFileUrl(FileUrl):
+    status: Literal["unverified"] = "unverified"
+
+
 DeletionScope = Literal["all", "public", "private", "none"]
 
 
@@ -379,6 +416,7 @@ class FileRecord(BaseModel):
     similarity_hash: TLSHash | None = None
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
     def _validate_or_populate_hash_field(
         self, *, field_name: str, source_value: str | None, source_name_for_error: str
@@ -479,6 +517,7 @@ class FileRecordStrict(FileRecord):
     source: Literal["disk", "cache", "dorsalhub"]
 
     tags: list[FileTag] = Field(default_factory=list, max_length=128)
+    urls: list[FileUrl] = Field(default_factory=list, max_length=10)
 
 
 class FileRecordDateTime(FileRecord):
@@ -502,6 +541,7 @@ class FileRecordLite(BaseModel):
 
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
 
 class FileRecordSuperLite(BaseModel):
@@ -520,6 +560,7 @@ class FileRecordSuperLite(BaseModel):
 
     annotations: Annotations | None = None
     tags: list[FileTag] = Field(default_factory=list)
+    urls: list[FileUrl] = Field(default_factory=list)
 
 
 class AnnotationData(BaseModel):

@@ -15,7 +15,7 @@
 import datetime
 from typing import Any, Literal
 import requests
-from pydantic import BaseModel, Field, NonNegativeInt, computed_field
+from pydantic import AnyHttpUrl, BaseModel, Field, NonNegativeInt, computed_field
 
 from dorsal.file.validators.file_record import AnnotationGroup, FileRecordDateTime
 from dorsal.file.validators.collection import (
@@ -52,12 +52,21 @@ class IndexResult(BaseModel):
     tags: list[TagResult] | None = None
 
 
+class UrlStats(BaseModel):
+    inserted: int = 0
+    duplicates_ignored: int = 0
+    errors: int = 0
+    banned_or_invalid: int = 0
+    evictions_triggered: int = 0
+
+
 class FileIndexResponse(BaseModel):
     total: int
     success: int
     error: int
     unauthorized: int
     tag_status: str | None = None
+    url_stats: UrlStats | None = None
     results: list[IndexResult]
     response: requests.Response | None = Field(default=None, exclude=True)
 
@@ -69,18 +78,22 @@ class FileIndexResponse(BaseModel):
         if self.success > 0:
             status_parts.append(f"Success: {self.success}")
         if self.error > 0:
-            status_parts.append(f"Errors: {self.error}")  # Highlight errors
+            status_parts.append(f"Errors: {self.error}")
         if self.unauthorized > 0:
             status_parts.append(f"Unauthorized: {self.unauthorized}")
 
+        if self.url_stats:
+            if self.url_stats.inserted > 0:
+                status_parts.append(f"URLs Inserted: {self.url_stats.inserted}")
+            if self.url_stats.errors > 0 or self.url_stats.banned_or_invalid > 0:
+                status_parts.append(f"URL Errors: {self.url_stats.errors + self.url_stats.banned_or_invalid}")
+
         summary = ", ".join(status_parts)
 
-        # If there are errors, we list them explicitly
         error_details = ""
         if self.error > 0:
             error_details = "\n  [!] ERRORS FOUND:"
             for res in self.results:
-                # check for annotation errors
                 failed_anns = [ann for ann in res.annotations if ann.status == "error"]
                 if failed_anns:
                     error_details += f"\n      - File: {res.name or res.hash[:8]}"
@@ -292,3 +305,16 @@ class RegistryModelResponse(BaseModel):
     is_verified: bool = False
     created_at: datetime.datetime | None = None
     dependencies: list[dict[str, Any]] | None = None
+
+
+class FileUrlResponse(BaseModel):
+    url_id: str
+
+
+class FileUrlRequest(BaseModel):
+    url: AnyHttpUrl
+    private: bool | None = None
+    parent_url: AnyHttpUrl | None = None
+    reference: str | None = Field(default=None, max_length=128)
+    agent: str = Field(max_length=64, description="The tool/client making the request")
+    agent_version: str | None = Field(default=None, max_length=32)
