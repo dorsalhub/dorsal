@@ -385,7 +385,7 @@ class UrlSource(BaseModel):
 class FileUrl(BaseModel):
     """File URL record."""
 
-    id: str | None = Field(pattern=r"^[0-9a-f]{24}$", default=None)
+    id: str | None = Field(pattern=r"^url_[a-zA-Z0-9_-]{22}$", default=None)
     url: AnyHttpUrl
     private: bool | None = None
     source: UrlSource
