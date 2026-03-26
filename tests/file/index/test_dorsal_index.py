@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import pytest
 import sqlite3
 import zlib
@@ -211,14 +210,13 @@ def test_export_json_gz(temp_index: DorsalIndex, mock_file_record_strict, tmp_pa
 def test_get_record_null_blob(temp_index: DorsalIndex):
     """Covers the branch where a DB row exists, but the record blob is NULL."""
     cursor = temp_index.conn.cursor()
-    # Manually insert a hash-only row (record is NULL)
+
     cursor.execute(
         "INSERT INTO cached_files (abspath, modified_time, hash_sha256) VALUES (?, ?, ?)",
         ("/fake/null_blob.txt", 100.0, "dummy_hash"),
     )
     temp_index.conn.commit()
 
-    # Should gracefully return None instead of crashing on decode
     assert temp_index.get_record(path="/fake/null_blob.txt") is None
 
 
@@ -238,18 +236,14 @@ def test_upsert_hash_overwrites_stale_full_record(temp_index: DorsalIndex, mock_
     """
     path = "/fake/stale_upsert.pdf"
 
-    # 1. Insert a full record
     temp_index.upsert_record(path=path, modified_time=100.0, record=mock_file_record_strict)
 
-    # Verify it exists in FTS
     cursor = temp_index.conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM dorsal_fts WHERE abspath = ?", (path,))
     assert cursor.fetchone()[0] == 1
 
-    # 2. Upsert just a hash, but with a NEWER modification time
     temp_index.upsert_hash(path=path, modified_time=200.0, hash_function="SHA-256", hash_value="new_hash")
 
-    # 3. Verify the full record and search indexes were wiped out
     assert temp_index.get_record(path=path) is None
 
     cursor.execute("SELECT COUNT(*) FROM dorsal_fts WHERE abspath = ?", (path,))
@@ -264,13 +258,10 @@ def test_get_hash_file_not_found(temp_index: DorsalIndex, fs):
     path = "/fake/missing.txt"
     fs.create_file(path)
 
-    # Insert hash while file exists
     temp_index.upsert_hash(path=path, modified_time=os.lstat(path).st_mtime, hash_function="SHA-256", hash_value="abc")
 
-    # Delete file from disk
     os.remove(path)
 
-    # Should catch FileNotFoundError and return None
     assert temp_index.get_hash(path=path) is None
 
 
@@ -280,32 +271,29 @@ def test_get_hash_missing_specific_hash(temp_index: DorsalIndex, fs):
     fs.create_file(path)
     mtime = os.lstat(path).st_mtime
 
-    # Only insert SHA-256
     temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="SHA-256", hash_value="abc")
 
-    # Requesting BLAKE3 should return None (row exists, but hash_blake3 is NULL)
     assert temp_index.get_hash(path=path, hash_function="BLAKE3") is None
 
 
 def test_default_db_path_and_mkdir(mocker, tmp_path):
     """Covers the default Path.home() routing and automatic directory creation."""
-    # Force Path.home() to return our temporary test directory
+
     mocker.patch("pathlib.Path.home", return_value=tmp_path)
 
-    # Initialize without providing a path
     index = DorsalIndex(db_path=None)
 
     expected_dir = tmp_path / ".dorsal"
     expected_path = expected_dir / "cache.db"
 
     assert index.db_path == expected_path
-    assert expected_dir.exists()  # Proves mkdir(parents=True) was executed
+    assert expected_dir.exists()
 
 
 def test_ensure_connection_failure():
     """Covers the RuntimeError when a connection completely fails to establish."""
     index = DorsalIndex()
-    # Sabotage the connect method so it leaves self.conn as None
+
     index.connect = lambda: None
 
     with pytest.raises(RuntimeError, match="Database connection could not be established."):
@@ -317,31 +305,27 @@ def test_finalize_connection_exception(mocker):
     mock_conn = mocker.MagicMock()
     mock_conn.close.side_effect = Exception("Simulated connection teardown error")
 
-    # This should execute and swallow the exception cleanly without raising
     DorsalIndex._finalize_connection(mock_conn)
     mock_conn.close.assert_called_once()
 
 
 def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
     """Covers the OSError branch when the database file cannot be deleted."""
-    # Mock os.remove to simulate a file lock or permission issue
+
     mocker.patch("os.remove", side_effect=OSError("Simulated Permission Denied"))
 
-    # Run clear
     temp_index.clear()
 
-    # Assert the error was caught and logged, preventing a crash
     assert "Error removing file at" in caplog.text
 
 
 def test_summary_file_not_found(temp_index: DorsalIndex, mocker):
     """Covers the FileNotFoundError when generating a summary of a missing DB file."""
-    # Simulate the database file not existing on disk yet
+
     mocker.patch("os.path.getsize", side_effect=FileNotFoundError())
 
     summary = temp_index.summary()
 
-    # The summary should gracefully report 0 bytes instead of crashing
     assert summary["database_size_bytes"] == 0
 
 
@@ -349,27 +333,24 @@ def test_sync_compression_none_data_and_already_synced(temp_index: DorsalIndex):
     """Covers the 'data is None' branch and the 'already synced' else branch."""
     conn = temp_index.conn
     cursor = conn.cursor()
-    # Insert a row with NULL record (e.g. hash-only file)
+
     cursor.execute("INSERT INTO cached_files (abspath, modified_time) VALUES (?, ?)", ("/fake/null.txt", 123.0))
     conn.commit()
 
-    # First pass shouldn't rewrite anything because the only row is NULL
     rewritten = temp_index._sync_compression()
     assert rewritten == 0
 
-    # Second pass covers the 'already matched' log branch
     rewritten = temp_index._sync_compression()
     assert rewritten == 0
 
 
 def test_sync_compression_decompression(temp_index: DorsalIndex):
     """Covers the decompression branch in _sync_compression."""
-    # Set to False so the sync routine WANTS to decompress everything
+
     temp_index.use_compression = False
     conn = temp_index.conn
     cursor = conn.cursor()
 
-    # Insert a compressed record manually
     fake_data = b'{"hello": "world"}'
     compressed_data = zlib.compress(fake_data)
 
@@ -379,11 +360,9 @@ def test_sync_compression_decompression(temp_index: DorsalIndex):
     )
     conn.commit()
 
-    # Should trigger decompression
     rewritten = temp_index._sync_compression()
     assert rewritten == 1
 
-    # Verify it was successfully decompressed in the DB
     cursor.execute("SELECT record, is_compressed FROM cached_files WHERE abspath = ?", ("/fake/compressed.txt",))
     row = cursor.fetchone()
     assert row["is_compressed"] == 0
@@ -392,7 +371,7 @@ def test_sync_compression_decompression(temp_index: DorsalIndex):
 
 def test_export_unwritable_path(temp_index: DorsalIndex, mocker):
     """Covers the IOError branch when export path is not writable."""
-    # Mock Path.mkdir to simulate a read-only filesystem or permission error
+
     mocker.patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied"))
 
     out_path = Path("/fake/unwritable/export.json.gz")
@@ -405,7 +384,6 @@ def test_export_decode_error(temp_index: DorsalIndex, tmp_path):
     conn = temp_index.conn
     cursor = conn.cursor()
 
-    # Insert corrupted compressed data (not valid zlib)
     cursor.execute(
         "INSERT INTO cached_files (abspath, modified_time, record, is_compressed) VALUES (?, ?, ?, ?)",
         ("/fake/corrupt.txt", 123.0, b"this is not valid zlib data", 1),
@@ -414,11 +392,9 @@ def test_export_decode_error(temp_index: DorsalIndex, tmp_path):
 
     out_path = tmp_path / "corrupt_export.json"
 
-    # Run export (format json for easy inspection)
     exported_count = temp_index.export(output_path=out_path, format="json")
     assert exported_count == 1
 
-    # Read the exported JSON to verify the error dictionary was substituted safely
     with open(out_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -436,17 +412,114 @@ def test_export_json_format(temp_index: DorsalIndex, tmp_path, mock_file_record_
     assert exported_count == 1
     assert out_path.exists()
 
-    # Verify it's standard readable JSON
     with open(out_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     assert data[0]["abspath"] == "/fake/valid.pdf"
-    assert "test" in data[0]["record"]  # From our mock_file_record_strict JSON dump
+    assert "test" in data[0]["record"]
 
 
 def test_export_unsupported_format(temp_index: DorsalIndex, tmp_path):
     """Covers the ValueError branch for an unknown export format."""
     out_path = tmp_path / "bad_format.csv"
     with pytest.raises(ValueError, match="Unsupported export format: csv"):
-        # Explicitly force a bad type to hit the else block
-        temp_index.export(output_path=out_path, format="csv")  # type: ignore
+        temp_index.export(output_path=out_path, format="csv")
+
+
+def test_extract_search_data_no_annotations(temp_index):
+    mock_record = MagicMock()
+    mock_record.annotations = None
+
+    fts, eav = temp_index._extract_search_data(mock_record)
+    assert fts == []
+    assert eav == []
+
+
+def test_extract_search_data_null_and_malformed_annotations(temp_index):
+    """Hits 188↛189 and 198↛199: None values and non-dict records in annotation list."""
+    mock_record = MagicMock()
+
+    mock_record.annotations.file_base = None
+
+    mock_record.annotations.model_dump.return_value = {
+        "schema/null": None,
+        "schema/bad-type": [{"record": "not-a-dict"}],
+    }
+    fts, eav = temp_index._extract_search_data(mock_record)
+
+    assert fts == []
+    assert eav == []
+
+
+def test_extract_search_data_nested_model_dump(temp_index):
+    mock_inner_model = MagicMock()
+    mock_inner_model.model_dump.return_value = {"producer": "nested-pydantic"}
+
+    mock_record = MagicMock()
+    mock_record.annotations.model_dump.return_value = {"open/generic": [{"record": mock_inner_model}]}
+    fts, eav = temp_index._extract_search_data(mock_record)
+
+    assert any("nested-pydantic" in str(x) for x in eav)
+
+
+def test_get_record_miss(temp_index):
+    assert temp_index.get_record(path="/non/existent/path") is None
+
+
+def test_get_hash_miss_and_stale(temp_index, fs):
+    path = "/fake/file.txt"
+    fs.create_file(path)
+
+    assert temp_index.get_hash(path=path) is None
+
+    temp_index.upsert_hash(path=path, modified_time=100.0, hash_function="SHA-256", hash_value="abc")
+    os.utime(path, (200.0, 200.0))
+    assert temp_index.get_hash(path=path) is None
+
+
+def test_clear_file_exists(temp_index):
+    db_path = temp_index.db_path
+    assert db_path.exists()
+    temp_index.clear()
+    assert not db_path.exists()
+
+
+def test_prune_no_stale_records(temp_index, fs, mock_file_record_strict):
+    path = "/fake/fresh.pdf"
+    fs.create_file(path)
+    temp_index.upsert_record(path=path, modified_time=os.path.getmtime(path), record=mock_file_record_strict)
+
+    pruned, total = temp_index.prune()
+    assert pruned == 0
+    assert total == 1
+
+
+def test_prune_file_disappeared_during_check(temp_index, fs, mock_file_record_strict, mocker):
+    path = "/fake/ghost.pdf"
+    fs.create_file(path)
+    temp_index.upsert_record(path=path, modified_time=os.path.getmtime(path), record=mock_file_record_strict)
+
+    mocker.patch("os.lstat", side_effect=FileNotFoundError)
+
+    pruned, total = temp_index.prune()
+    assert pruned == 1
+
+
+def test_vacuum_execution(temp_index):
+    """Ensures the vacuum method runs without error."""
+
+    temp_index.vacuum()
+
+
+def test_export_uncompressed_decode(temp_index, fs, mock_file_record_strict, tmp_path):
+    temp_index.use_compression = False
+    path = "/fake/uncompressed.pdf"
+    fs.create_file(path)
+    temp_index.upsert_record(path=path, modified_time=100.0, record=mock_file_record_strict)
+
+    out = tmp_path / "export.json"
+    temp_index.export(output_path=out, format="json")
+
+    with open(out, "r") as f:
+        data = json.load(f)
+    assert data[0]["record"]["test"] == "data"

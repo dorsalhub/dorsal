@@ -85,6 +85,11 @@ def clean_logging():
 def mock_rich_console(mocker):
     mock_console = mocker.MagicMock(spec=Console)
 
+    mock_console.time = 0.0
+
+    mock_console.is_terminal = False
+    mock_console.is_interactive = False
+
     mocker.patch.object(common_cli, "_console_instance", mock_console)
     return mock_console
 
