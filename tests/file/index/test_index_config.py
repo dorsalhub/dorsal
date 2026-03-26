@@ -20,8 +20,6 @@ from dorsal.file.index import config
 
 
 class TestIndexConfig:
-    
-
     @patch("os.getenv")
     def test_get_index_enabled_from_env_none(self, mock_getenv):
         """Hits the `if env_var is None: return None` condition."""
@@ -47,16 +45,10 @@ class TestIndexConfig:
         mock_getenv.return_value = env_val
         assert config._get_index_enabled_from_env() is expected
 
-    
-
     @patch("dorsal.file.index.config.load_config")
     def test_get_index_enabled_from_config_bool(self, mock_load_config):
         """Tests a valid boolean configuration."""
-        mock_config = {
-            constants.CONFIG_SECTION_INDEX: {
-                constants.CONFIG_OPTION_ENABLED: False
-            }
-        }
+        mock_config = {constants.CONFIG_SECTION_INDEX: {constants.CONFIG_OPTION_ENABLED: False}}
         mock_load_config.return_value = (mock_config, None)
         assert config._get_index_enabled_from_config() is False
 
@@ -70,18 +62,12 @@ class TestIndexConfig:
     @patch("dorsal.file.index.config.load_config")
     def test_get_index_enabled_from_config_invalid_type(self, mock_load_config, mock_warning):
         """Hits the `logger.warning` and `return None` fallback for invalid types."""
-        mock_config = {
-            constants.CONFIG_SECTION_INDEX: {
-                constants.CONFIG_OPTION_ENABLED: "not_a_boolean"
-            }
-        }
+        mock_config = {constants.CONFIG_SECTION_INDEX: {constants.CONFIG_OPTION_ENABLED: "not_a_boolean"}}
         mock_load_config.return_value = (mock_config, None)
-        
+
         assert config._get_index_enabled_from_config() is None
         mock_warning.assert_called_once()
         assert "Invalid value" in mock_warning.call_args[0][0]
-
-    
 
     @patch("os.getenv")
     def test_get_index_compression_from_env_none(self, mock_getenv):
@@ -105,16 +91,10 @@ class TestIndexConfig:
         mock_getenv.return_value = env_val
         assert config._get_index_compression_from_env() is expected
 
-    
-
     @patch("dorsal.file.index.config.load_config")
     def test_get_index_compression_from_config_bool(self, mock_load_config):
         """Tests a valid boolean configuration for compression."""
-        mock_config = {
-            constants.CONFIG_SECTION_INDEX: {
-                constants.CONFIG_OPTION_COMPRESSION: True
-            }
-        }
+        mock_config = {constants.CONFIG_SECTION_INDEX: {constants.CONFIG_OPTION_COMPRESSION: True}}
         mock_load_config.return_value = (mock_config, None)
         assert config._get_index_compression_from_config() is True
 
@@ -128,26 +108,20 @@ class TestIndexConfig:
     @patch("dorsal.file.index.config.load_config")
     def test_get_index_compression_from_config_invalid_type(self, mock_load_config, mock_warning):
         """Hits the `logger.warning` and `return None` fallback for invalid compression types."""
-        mock_config = {
-            constants.CONFIG_SECTION_INDEX: {
-                constants.CONFIG_OPTION_COMPRESSION: 12345  
-            }
-        }
+        mock_config = {constants.CONFIG_SECTION_INDEX: {constants.CONFIG_OPTION_COMPRESSION: 12345}}
         mock_load_config.return_value = (mock_config, None)
-        
+
         assert config._get_index_compression_from_config() is None
         mock_warning.assert_called_once()
         assert "Invalid value" in mock_warning.call_args[0][0]
-
-    
 
     @patch("dorsal.file.index.config.resolve_setting")
     def test_get_index_enabled(self, mock_resolve):
         """Ensures the wrapper passes the correct callables to resolve_setting."""
         mock_resolve.return_value = True
-        
+
         result = config.get_index_enabled(use_index=False)
-        
+
         assert result is True
         mock_resolve.assert_called_once_with(
             setting_name="index_enabled",
@@ -161,9 +135,9 @@ class TestIndexConfig:
     def test_get_index_compression(self, mock_resolve):
         """Ensures the wrapper passes the correct callables to resolve_setting."""
         mock_resolve.return_value = False
-        
+
         result = config.get_index_compression(compress=True)
-        
+
         assert result is False
         mock_resolve.assert_called_once_with(
             setting_name="index_compression",

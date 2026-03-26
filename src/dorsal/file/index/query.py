@@ -46,7 +46,7 @@ class QueryParser:
             for op in cls.OPERATORS:
                 if op in token and not token.startswith(op) and not token.endswith(op):
                     key, val = token.split(op, 1)
-                    
+
                     result["filters"].append((key.lower(), op, val))
                     found_op = op
                     break
@@ -96,7 +96,6 @@ class QueryCompiler:
     compiles it into optimized SQLite syntax for the LocalIndex.
     """
 
-    
     BASE_COLUMNS = {
         "ext": "extension",
         "extension": "extension",
@@ -110,7 +109,6 @@ class QueryCompiler:
         "tlsh": "hash_tlsh",
     }
 
-    
     SORT_COLUMNS = {
         "date_modified": "c.modified_time",
         "size": "c.size",
@@ -135,22 +133,18 @@ class QueryCompiler:
         """
         where_clauses, params = cls._build_where_clauses(parsed_query, or_logic)
 
-        
         sql = "SELECT c.abspath FROM cached_files c"
 
-        
         if parsed_query.get("text"):
             sql += " JOIN dorsal_fts f ON c.abspath = f.abspath"
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
 
-        
         sort_col = cls.SORT_COLUMNS.get(sort_by, "c.modified_time")
         direction = "DESC" if sort_desc else "ASC"
         sql += f" ORDER BY {sort_col} {direction}"
 
-        
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
@@ -180,12 +174,11 @@ class QueryCompiler:
     @classmethod
     def _build_where_clauses(cls, parsed_query: dict[str, list], or_logic: bool) -> tuple[list[str], list[Any]]:
         """Shared logic for building WHERE conditions and parameter binding."""
-        
+
         where_clauses = []
         params = []
         fts_terms = []
 
-        
         for text in parsed_query.get("text", []):
             if " " in text:
                 fts_terms.append(f'"{text}"')
@@ -198,7 +191,6 @@ class QueryCompiler:
             if key in cls.BASE_COLUMNS:
                 col_name = cls.BASE_COLUMNS[key]
 
-                
                 if col_name == "size" and isinstance(val, str):
                     try:
                         val = parse_filesize(val)

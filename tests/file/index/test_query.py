@@ -105,14 +105,12 @@ class TestQueryCompiler:
     def test_compile_pagination(self):
         """Tests that LIMIT and OFFSET are correctly appended to the SQL."""
         processed = {"text": [], "filters": []}
-        
-        
+
         sql, params = QueryCompiler.compile(processed, limit=10)
         assert "LIMIT ?" in sql
         assert "OFFSET ?" not in sql
         assert params == [10]
 
-        
         sql, params = QueryCompiler.compile(processed, limit=50, offset=100)
         assert "LIMIT ?" in sql
         assert "OFFSET ?" in sql
@@ -122,36 +120,27 @@ class TestQueryCompiler:
         """Tests the compile_count method for pagination footers."""
         processed = {"text": ["machine"], "filters": [("ext", ":", "pdf")]}
         sql, params = QueryCompiler.compile_count(processed)
-        
-        
+
         assert sql.startswith("SELECT COUNT(c.abspath) as total FROM cached_files c")
-        
-        
+
         assert "JOIN dorsal_fts f" in sql
         assert "c.extension =" in sql
         assert "f.content MATCH ?" in sql
-        
-        
+
         assert "ORDER BY" not in sql
         assert "LIMIT" not in sql
-        
-        
+
         assert params == [".pdf", "machine"]
 
     def test_compile_sorting(self):
         """Tests deterministic sorting and injection prevention in the compiler."""
         processed = {"text": [], "filters": []}
-        
-        
+
         sql, _ = QueryCompiler.compile(processed)
         assert "ORDER BY c.modified_time DESC" in sql
-        
-        
+
         sql, _ = QueryCompiler.compile(processed, sort_by="size", sort_desc=False)
         assert "ORDER BY c.size ASC" in sql
-        
-        
+
         sql, _ = QueryCompiler.compile(processed, sort_by="drop_tables_hacker_column")
         assert "ORDER BY c.modified_time DESC" in sql
-
-
