@@ -21,7 +21,7 @@ from rich.panel import Panel
 
 
 from dorsal.cli import app
-from dorsal.cli.search_app import search_and_display
+from dorsal.cli.record_app.remote_search import search_and_display
 from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenError
 
 runner = CliRunner()
@@ -40,19 +40,19 @@ def mock_search_cmd(mocker):
     mock_record.annotations.file_base.record = mock_base_record
     mock_record.hash = "sha256:mockhash123"
 
-    # Create a mock pydantic-style response object
+    
     mock_response = MagicMock()
     mock_response.api_version = "v2"
-    mock_response.results = [mock_record]  # Use the configured mock record
+    mock_response.results = [mock_record]  
     mock_response.pagination = MagicMock(page_count=1, has_next=False)
     mock_response.model_dump.return_value = {"results": [{"hash": "mock_hash"}]}
 
-    # Patch the backend search functions at their source
+    
     mock_user_search = mocker.patch("dorsal.api.file.search_user_files", return_value=mock_response)
     mock_global_search = mocker.patch("dorsal.api.file.search_global_files", return_value=mock_response)
 
-    # Patch the helper that saves reports to the filesystem
-    mock_save_helper = mocker.patch("dorsal.cli.search_app._save_search_results")
+    
+    mock_save_helper = mocker.patch("dorsal.cli.record_app.remote_search._save_search_results")
 
     return {
         "user_search": mock_user_search,
@@ -61,7 +61,7 @@ def mock_search_cmd(mocker):
     }
 
 
-@pytest.mark.parametrize("command_path", [["search"], ["record", "search"]])
+@pytest.mark.parametrize("command_path", [["record", "search"]])
 def test_search_user_scope_default(command_path, mock_rich_console, mock_search_cmd):
     """Tests a default search in the user scope, via both command paths."""
     result = runner.invoke(app, command_path + [QUERY])
@@ -79,7 +79,7 @@ def test_search_user_scope_default(command_path, mock_rich_console, mock_search_
     mock_search_cmd["global_search"].assert_not_called()
     mock_search_cmd["save_results"].assert_not_called()
 
-    # Verify that a Table was printed. The search message is the first print call, the table is the second.
+    
     printed_object = mock_rich_console.print.call_args_list[1].args[0]
     assert isinstance(printed_object, Table)
 
@@ -124,8 +124,8 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
 
     result = runner.invoke(app, ["record", "search", QUERY, "--global"])
 
-    assert result.exit_code == 0  # Graceful exit with an upgrade message
-    # Verify the special upgrade panel was printed
+    assert result.exit_code == 0  
+    
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, Panel)
     assert "Upgrade Required" in str(printed_object.title)

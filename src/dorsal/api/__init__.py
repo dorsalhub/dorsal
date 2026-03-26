@@ -58,6 +58,11 @@ from dorsal.api.config import (
     deactivate_model_by_name,
 )
 
+from dorsal.api.search import (
+    search_local,
+    search_local_paginated
+)
+
 
 __all__ = [
     # file
@@ -98,4 +103,7 @@ __all__ = [
     "remove_model_by_name",
     "activate_model_by_name",
     "deactivate_model_by_name",
+    # search
+    "search_local",
+    "search_local_paginated",
 ]

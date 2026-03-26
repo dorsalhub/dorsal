@@ -17,30 +17,28 @@ import json
 import logging
 import pathlib
 import re
-from typing import Literal, cast, Optional
+from typing import Annotated, Optional
 
+import typer
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-import typer
 
 from dorsal.common import constants
 
 logger = logging.getLogger(__name__)
 
 
-def _save_search_results(
+def _save_local_search_results(
     query: str,
-    scope: str,
     page_data: dict,
     palette: dict,
     output_path: Optional[pathlib.Path],
     json_to_stdout: bool,
 ):
     """
-    Saves a page of search results to a timestamped JSON file.
-    If output_path is provided, it's used. Otherwise, results are
-    stored in a directory derived from the search query.
+    Saves a page of local search results to a timestamped JSON file.
+    Matches the behavior of remote_search._save_search_results.
     """
     from dorsal.common.cli import get_rich_console
 
@@ -52,7 +50,7 @@ def _save_search_results(
     if output_path:
         if output_path.is_dir():
             safe_query = re.sub(r"[^\w\s-]", "", query).strip().replace(" ", "_")[:20]
-            filename = f"search-{scope}-{safe_query}-p{page_number}.json"
+            filename = f"search-local-{safe_query}-p{page_number}.json"
             filepath = output_path / filename
         else:
             filepath = output_path
@@ -63,7 +61,7 @@ def _save_search_results(
         if not truncated_query_name:
             truncated_query_name = "untitled_search"
 
-        query_dir = constants.CLI_SEARCH_REPORTS_DIR / scope / truncated_query_name
+        query_dir = constants.CLI_SEARCH_REPORTS_DIR / "local" / truncated_query_name
         query_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -89,35 +87,95 @@ def _save_search_results(
         console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
 
 
-SortByField = Literal["date_modified", "date_created", "size", "name"]
-SortOrder = Literal["asc", "desc"]
-
-
-def search_and_display(
+def search_index_cmd(
     ctx: typer.Context,
-    scope: str,
-    query: str,
-    page: int,
-    per_page: int,
-    sort_by: str,
-    sort_order: str,
-    json_output: bool,
-    match_any: bool,
-    save: bool,
-    output_path: Optional[pathlib.Path],
+    query: Annotated[
+        str,
+        typer.Argument(help="The search query string. Queries with spaces must be enclosed in quotes."),
+    ],
+    page: Annotated[
+        int,
+        typer.Option(
+            "--page",
+            "-p",
+            help="The page number of results to display.",
+            rich_help_panel="Search Options",
+        ),
+    ] = 1,
+    per_page: Annotated[
+        int,
+        typer.Option(
+            "--per-page",
+            help="The number of results to display per page.",
+            rich_help_panel="Search Options",
+        ),
+    ] = 30,
+    sort_by: Annotated[
+        str,
+        typer.Option(
+            "--sort-by",
+            help="Field to sort results by (e.g. date_modified, size, name).",
+            rich_help_panel="Search Options",
+        ),
+    ] = "date_modified",
+    sort_order: Annotated[
+        str,
+        typer.Option(
+            "--sort-order",
+            help="Sort order ('asc' or 'desc').",
+            rich_help_panel="Search Options",
+        ),
+    ] = "desc",
+    or_logic: Annotated[
+        bool,
+        typer.Option(
+            "--or",
+            help="Use OR logic for the query. By default, multiple terms are combined with AND.",
+            rich_help_panel="Search Options",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output results as a raw JSON object.",
+            rich_help_panel="Output Options",
+        ),
+    ] = False,
+    save: Annotated[
+        bool,
+        typer.Option(
+            "-s",
+            "--save",
+            help="Save the JSON search results to the default directory or --output path.",
+            rich_help_panel="Output Options",
+        ),
+    ] = False,
+    output_path: Annotated[
+        Optional[pathlib.Path],
+        typer.Option(
+            "-o",
+            "--output",
+            help="Custom path to save the JSON search results (e.g., 'results.json').",
+            dir_okay=True,
+            file_okay=True,
+            writable=True,
+            resolve_path=True,
+            rich_help_panel="Output Options",
+        ),
+    ] = None,
 ):
     """
-    A helper function to perform the search and display results,
-    shared by both 'user' and 'global' commands.
+    Search Dorsal's local file index.
     """
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
-    from dorsal.api.file import search_user_files, search_global_files
-    from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenError
+    from dorsal.api.search import search_local_paginated
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
+    
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
             save = True
@@ -129,29 +187,26 @@ def search_and_display(
                     style=palette.get("warning", "yellow"),
                 )
 
-    if not query:
+    if not query or not query.strip():
         console.print(f"[{palette['error']}]Error:[/] Please provide a search query.")
-        exit_cli(code=1)
+        exit_cli(code=EXIT_CODE_ERROR)
 
     try:
-        search_function = search_user_files if scope == "user" else search_global_files
-
         if not json_output:
             console.print(
-                f"🔎 Searching [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
+                f"🔎 Searching [{palette['primary_value']}]local[/] scope for records matching: [{palette['success']}]'{query}'[/]"
             )
 
-        casted_sort_by = cast(SortByField, sort_by)
-        casted_sort_order = cast(SortOrder, sort_order)
+        sort_desc = sort_order.lower() == "desc"
 
-        response = search_function(
+        
+        response = search_local_paginated(
             query=query,
+            or_logic=or_logic,
             page=page,
             per_page=per_page,
-            sort_by=casted_sort_by,
-            sort_order=casted_sort_order,
-            match_any=match_any,
-            mode="pydantic",
+            sort_by=sort_by,
+            sort_desc=sort_desc,
         )
 
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -160,17 +215,18 @@ def search_and_display(
             console.print(json.dumps(response_dict, indent=2, default=str, ensure_ascii=False))
             exit_cli()
 
-        if not response.results:
+        if not response.records:
             console.print(f"\n[{palette['warning']}]No records found matching your criteria.[/]")
             exit_cli()
 
         search_caption = (
-            f"Search powered by DorsalHub Search {response.api_version}. "
+            f"Search powered by Dorsal Local Index. "
             f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
+        
         table = Table(
-            title=f"{scope.capitalize()} Search Results",
+            title="Local Search Results",
             show_header=True,
             header_style=palette["table_header"],
             caption=search_caption,
@@ -191,29 +247,24 @@ def search_and_display(
             vertical="middle",
         )
 
-        for record in response.results:
-            if not record.annotations or not record.annotations.file_base:
-                logger.warning(
-                    "Search result with hash %s is missing base annotations, skipping.",
-                    record.hash,
-                )
-                continue
-
-            base_record = record.annotations.file_base.record
-
+        for record in response.records:
             table.add_row(
-                base_record.name,
-                human_filesize(base_record.size),
-                base_record.media_type,
-                record.hash,
+                record.name or "Unknown",
+                human_filesize(record.size or 0),
+                record.media_type or "Unknown",
+                record.hash_sha256,
             )
 
         console.print(table)
 
         pagination = response.pagination
+        
+        
+        start_display = pagination.start_index + 1 if pagination.record_count > 0 else 0
+        
         footer_text = (
             f"Showing page [bold]{pagination.current_page}[/] of [bold]{pagination.page_count}[/] | "
-            f"Displaying records [bold]{pagination.start_index} - {pagination.end_index}[/] "
+            f"Displaying records [bold]{start_display} - {pagination.end_index}[/] "
             f"of [bold]{pagination.record_count}[/] total."
         )
         console.print(footer_text)
@@ -224,43 +275,16 @@ def search_and_display(
             )
 
         if save:
-            _save_search_results(
+            _save_local_search_results(
                 query=query,
-                scope=scope,
                 page_data=response_dict,
                 palette=palette,
                 output_path=output_path,
                 json_to_stdout=json_output,
             )
 
-    except ForbiddenError:
-        if json_output:
-            console.print(
-                json.dumps(
-                    {
-                        "error": "Forbidden",
-                        "detail": "Global search is a premium feature.",
-                    },
-                    indent=2,
-                    default=str,
-                    ensure_ascii=False,
-                )
-            )
-        else:
-            upgrade_message = Text.assemble(
-                ("The 'global' search scope is a premium feature.\n\n", "default"),
-                ("To find out more, or to upgrade your account, visit:\n", "default"),
-                ("https://dorsalhub.com/pricing", palette.get("link", "blue underline")),
-                style=palette.get("text_default", "default"),
-            )
-
-            panel = Panel(
-                upgrade_message,
-                title=f"[{palette.get('panel_title_warning', 'bold yellow')}]🔒 Upgrade Required[/]",
-                border_style=palette.get("panel_border_warning", "yellow"),
-                expand=False,
-                padding=(1, 2),
-            )
-            console.print(panel)
     except typer.Exit:
         raise
+    except Exception as e:
+        logger.exception("Local search failed.")
+        exit_cli(code=EXIT_CODE_ERROR, message=f"An error occurred during local search: {e}")
