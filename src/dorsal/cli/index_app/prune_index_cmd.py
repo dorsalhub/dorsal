@@ -20,7 +20,7 @@ import json
 logger = logging.getLogger(__name__)
 
 
-def prune_cache(
+def prune_search_index(
     ctx: typer.Context,
     json_output: Annotated[
         bool,
@@ -28,21 +28,20 @@ def prune_cache(
     ] = False,
 ):
     """
-    Scans the cache and removes stale records.
+    Scans the search index and removes stale records.
 
     A record is considered stale if the file it points to no longer exists
-    or has been modified since it was cached.
+    or has been modified since it was indexed.
     """
+    from dorsal.api.index import prune
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
-    from dorsal.session import get_shared_cache
 
     console = get_rich_console()
     palette = ctx.obj["palette"]
 
     try:
-        with console.status("Pruning stale records from cache..."):
-            cache = get_shared_cache()
-            pruned_count, total_records = cache.prune()
+        with console.status("Pruning stale records from the search index..."):
+            pruned_count, total_records = prune()
 
         result = {
             "total_records_scanned": total_records,
@@ -65,8 +64,8 @@ def prune_cache(
     except typer.Exit:
         raise
     except Exception as err:
-        logger.exception("Failed to prune cache.")
+        logger.exception("Failed to prune the search index.")
         exit_cli(
             code=EXIT_CODE_ERROR,
-            message=f"An error occurred while pruning the cache: {err}",
+            message=f"An error occurred while pruning the search index: {err}",
         )

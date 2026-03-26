@@ -46,7 +46,7 @@ from dorsal.common import constants
 from dorsal.common import cli as common_cli
 from dorsal.file.index.dorsal_index import DorsalIndex
 from dorsal.file.validators.file_record import FileRecordStrict
-from dorsal.session import clear_shared_cache
+from dorsal.session import clear_shared_index
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -65,9 +65,9 @@ def reset_dorsal_singletons():
     Ensures every test starts with a clean slate.
     Closes any open cache connections from previous tests.
     """
-    clear_shared_cache()
+    clear_shared_index()
     yield
-    clear_shared_cache()
+    clear_shared_index()
 
 
 @pytest.fixture(autouse=True)

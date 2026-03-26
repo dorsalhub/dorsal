@@ -1,4 +1,4 @@
-# Copyright 2025-2026 Dorsal Hub LTD
+# Copyright 2026 Dorsal Hub LTD
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,18 +21,18 @@ from dorsal.common.config import load_config, resolve_setting
 logger = logging.getLogger(__name__)
 
 
-def _get_cache_enabled_from_env() -> bool | None:
-    """Reads the DORSAL_CACHE_ENABLED environment variable."""
-    env_var = os.getenv(constants.ENV_DORSAL_CACHE_ENABLED)
+def _get_index_enabled_from_env() -> bool | None:
+    """Reads the DORSAL_INDEX_ENABLED environment variable."""
+    env_var = os.getenv(constants.ENV_DORSAL_INDEX_ENABLED)
     if env_var is None:
         return None
     return env_var.lower() not in ("false", "0", "no")
 
 
-def _get_cache_enabled_from_config() -> bool | None:
-    """Reads the 'enabled' flag from the [cache] section of dorsal.toml."""
+def _get_index_enabled_from_config() -> bool | None:
+    """Reads the 'enabled' flag from the [index] section of dorsal.toml."""
     config, _ = load_config()
-    config_val = config.get(constants.CONFIG_SECTION_CACHE, {}).get(constants.CONFIG_OPTION_ENABLED)
+    config_val = config.get(constants.CONFIG_SECTION_INDEX, {}).get(constants.CONFIG_OPTION_ENABLED)
 
     if not isinstance(config_val, bool):
         if config_val is not None:
@@ -42,29 +42,29 @@ def _get_cache_enabled_from_config() -> bool | None:
     return config_val
 
 
-def get_cache_enabled(use_cache: bool | None = None) -> bool:
-    """Resolves whether the cache is enabled with standard precedence."""
+def get_index_enabled(use_index: bool | None = None) -> bool:
+    """Resolves whether the index is enabled with standard precedence."""
     return resolve_setting(
-        setting_name="cache_enabled",
-        explicit_value=use_cache,
-        env_getter=_get_cache_enabled_from_env,
-        config_getter=_get_cache_enabled_from_config,
+        setting_name="index_enabled",
+        explicit_value=use_index,
+        env_getter=_get_index_enabled_from_env,
+        config_getter=_get_index_enabled_from_config,
         default_value=True,
     )
 
 
-def _get_cache_compression_from_env() -> bool | None:
-    """Reads the DORSAL_CACHE_COMPRESSION environment variable."""
-    env_var = os.getenv(constants.ENV_DORSAL_CACHE_COMPRESSION)
+def _get_index_compression_from_env() -> bool | None:
+    """Reads the DORSAL_INDEX_COMPRESSION environment variable."""
+    env_var = os.getenv(constants.ENV_DORSAL_INDEX_COMPRESSION)
     if env_var is None:
         return None
     return env_var.lower() not in ("false", "0", "no")
 
 
-def _get_cache_compression_from_config() -> bool | None:
-    """Reads the 'compression' flag from the [cache] section of dorsal.toml."""
+def _get_index_compression_from_config() -> bool | None:
+    """Reads the 'compression' flag from the [index] section of dorsal.toml."""
     config, _ = load_config()
-    config_val = config.get(constants.CONFIG_SECTION_CACHE, {}).get(constants.CONFIG_OPTION_COMPRESSION)
+    config_val = config.get(constants.CONFIG_SECTION_INDEX, {}).get(constants.CONFIG_OPTION_COMPRESSION)
 
     if not isinstance(config_val, bool):
         if config_val is not None:
@@ -77,12 +77,12 @@ def _get_cache_compression_from_config() -> bool | None:
     return config_val
 
 
-def get_cache_compression(compress: bool | None = None) -> bool:
-    """Resolves whether cache compression is enabled with standard precedence."""
+def get_index_compression(compress: bool | None = None) -> bool:
+    """Resolves whether index compression is enabled with standard precedence."""
     return resolve_setting(
-        setting_name="cache_compression",
+        setting_name="index_compression",
         explicit_value=compress,
-        env_getter=_get_cache_compression_from_env,
-        config_getter=_get_cache_compression_from_config,
+        env_getter=_get_index_compression_from_env,
+        config_getter=_get_index_compression_from_config,
         default_value=True,
     )

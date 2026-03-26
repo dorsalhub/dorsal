@@ -35,7 +35,7 @@ from dorsal.common.exceptions import (
     DependencyNotMetError,
     APIError as DorsalClientAPIError,
 )
-from dorsal.file.cache import DorsalCache
+from dorsal.file.index import DorsalIndex
 
 
 from dorsal.file.metadata_reader import MetadataReader, make_dorsalhub_file_url
@@ -97,11 +97,11 @@ def mock_api_key_env_for_metadata_reader(mocker):
 
 
 @pytest.fixture
-def mock_dorsal_cache(mocker):
+def mock_dorsal_index(mocker):
     """Mocks the shared cache to prevent any database interactions."""
-    mock_cache_instance = MagicMock(spec=DorsalCache)
-    mocker.patch("dorsal.file.metadata_reader.get_shared_cache", return_value=mock_cache_instance)
-    return mock_cache_instance
+    mock_index_instance = MagicMock(spec=DorsalIndex)
+    mocker.patch("dorsal.file.metadata_reader.get_shared_index", return_value=mock_index_instance)
+    return mock_index_instance
 
 
 @pytest.fixture
@@ -139,11 +139,11 @@ def metadata_reader_base(
     mocker,
     mock_dorsal_client_for_reader,
     mock_model_runner_for_reader,
-    mock_dorsal_cache,
+    mock_dorsal_index,
 ):
     """
     Provides a base MetadataReader instance by injecting its mocked dependencies
-    (DorsalClient, ModelRunner, and DorsalCache).
+    (DorsalClient, ModelRunner, and DorsalIndex).
     """
     with patch(
         "dorsal.file.metadata_reader.ModelRunner",
@@ -204,7 +204,7 @@ def test_make_dorsalhub_file_url_with_slashes(mocker):
 
 
 class TestMetadataReaderInit:
-    def test_init_defaults_and_lazy_client(self, mocker, mock_dorsal_cache):
+    def test_init_defaults_and_lazy_client(self, mocker, mock_dorsal_index):
         mock_get_client = mocker.patch("dorsal.file.metadata_reader.get_shared_dorsal_client")
         mock_mr_constructor = mocker.patch("dorsal.file.metadata_reader.ModelRunner")
 
@@ -221,7 +221,7 @@ class TestMetadataReaderInit:
         _ = reader._client
         mock_get_client.assert_called_once()
 
-    def test_init_custom_params_and_injected_client(self, mocker, mock_dorsal_cache):
+    def test_init_custom_params_and_injected_client(self, mocker, mock_dorsal_index):
         mock_get_client = mocker.patch("dorsal.file.metadata_reader.get_shared_dorsal_client")
 
         mock_client_constructor = mocker.patch("dorsal.file.metadata_reader.DorsalClient")
@@ -484,7 +484,7 @@ class TestMetadataReaderIndexDirectory:
         mock_get_file_paths,
         mock_dorsal_client_for_reader,
         mock_model_runner_for_reader,
-        mock_dorsal_cache,
+        mock_dorsal_index,
     ):
         mocker.patch(
             "dorsal.file.metadata_reader.constants.API_MAX_BATCH_SIZE",
@@ -497,7 +497,7 @@ class TestMetadataReaderIndexDirectory:
             create=True,
         )
 
-        mocker.patch("dorsal.file.metadata_reader.get_shared_cache", return_value=mock_dorsal_cache)
+        mocker.patch("dorsal.file.metadata_reader.get_shared_index", return_value=mock_dorsal_index)
         with patch(
             "dorsal.file.metadata_reader.ModelRunner",
             return_value=mock_model_runner_for_reader,
@@ -613,9 +613,9 @@ class TestMetadataReaderIndexDirectory:
         temp_dir_with_files,
         mock_get_file_paths,
         mock_model_runner_for_reader,
-        mock_dorsal_cache,
+        mock_dorsal_index,
     ):
-        mocker.patch("dorsal.file.metadata_reader.get_shared_cache", return_value=mock_dorsal_cache)
+        mocker.patch("dorsal.file.metadata_reader.get_shared_index", return_value=mock_dorsal_index)
         mock_client_on_reader = mocker.MagicMock(spec=DorsalClient)
         with patch(
             "dorsal.file.metadata_reader.ModelRunner",
@@ -672,7 +672,7 @@ class TestMetadataReaderReadMethods:
         )
 
     @pytest.fixture
-    def reader_for_read_methods(self, mock_dorsal_client_for_reader, mock_dorsal_cache):
+    def reader_for_read_methods(self, mock_dorsal_client_for_reader, mock_dorsal_index):
         return MetadataReader(client=mock_dorsal_client_for_reader)
 
     def test_scan_file_success(self, reader_for_read_methods, caplog, fs):

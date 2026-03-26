@@ -23,7 +23,7 @@ from rich.table import Table
 logger = logging.getLogger(__name__)
 
 
-def show_cache(
+def show_index_summary(
     ctx: typer.Context,
     json_output: Annotated[
         bool,
@@ -31,18 +31,17 @@ def show_cache(
     ] = False,
 ):
     """
-    Displays statistics about the local file cache.
+    Displays statistics about the local file search index.
     """
+    from dorsal.api.index import summary as get_index_summary
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
-    from dorsal.session import get_shared_cache
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
-        cache = get_shared_cache()
-        summary = cache.summary()
+        summary = get_index_summary()
 
         if json_output:
             console.print(json.dumps(summary, indent=2))
@@ -55,12 +54,12 @@ def show_cache(
         summary_table.add_row("Database Path:", str(summary.get("database_path", "N/A")))
         summary_table.add_row("Database Size:", human_filesize(summary.get("database_size_bytes", 0)))
         summary_table.add_row("File Count:", f"{summary.get('total_records', 0):,}")
-        summary_table.add_row("Hash Cache:", f"{summary.get('hash_only_records', 0):,}")
+        summary_table.add_row("Hash Index:", f"{summary.get('hash_only_records', 0):,}")
 
         console.print(
             Panel(
                 summary_table,
-                title=f"[{palette.get('panel_title', 'bold white')}]Cache Summary[/]",
+                title=f"[{palette.get('panel_title', 'bold white')}]Index Summary[/]",
                 border_style=palette.get("panel_border", "default"),
                 expand=False,
             )
@@ -69,8 +68,8 @@ def show_cache(
     except typer.Exit:
         raise
     except Exception as err:
-        logger.exception("Failed to retrieve cache summary.")
+        logger.exception("Failed to retrieve search index summary.")
         exit_cli(
             code=EXIT_CODE_ERROR,
-            message=f"An error occurred while getting cache info: {err}",
+            message=f"An error occurred while getting search index info: {err}",
         )

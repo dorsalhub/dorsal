@@ -115,7 +115,7 @@ def test_scan_dir_success_default(mock_rich_console, mock_scan_dir_cmd, mock_exi
         console=mock_rich_console,
         palette=ANY,
         recursive=False,
-        use_cache=False,
+        use_cache=True,
         overwrite_cache=False,
         follow_symlinks=True,
         lazy=False,

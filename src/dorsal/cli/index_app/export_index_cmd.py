@@ -21,14 +21,14 @@ from typing import Annotated, Literal, Optional, cast
 logger = logging.getLogger(__name__)
 
 
-def export_cache_cmd(
+def export_index_cmd(
     ctx: typer.Context,
     output: Annotated[
         Optional[pathlib.Path],
         typer.Option(
             "--output",
             "-o",
-            help="Path to save the exported cache file. Defaults to the '.dorsal/export' directory.",
+            help="Path to save the exported dorsal index file. Defaults to the '.dorsal/export' directory.",
             writable=True,
             resolve_path=True,
         ),
@@ -50,11 +50,11 @@ def export_cache_cmd(
     ] = False,
 ):
     """
-    Exports the full contents of the local cache to a file.
+    Exports the full contents of the local dorsal index to a file.
     """
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.common import constants
-    from dorsal.file.utils.cache import export_cache
+    from dorsal.api.index import export
 
     console = get_rich_console()
 
@@ -66,7 +66,7 @@ def export_cache_cmd(
         try:
             constants.CLI_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            output_path = constants.CLI_EXPORTS_DIR / f"cache-export-{timestamp}.json.gz"
+            output_path = constants.CLI_EXPORTS_DIR / f"dorsal-index-export-{timestamp}.json.gz"
         except Exception as e:
             logger.error(f"Failed to create automatic export directory: {e}")
             return exit_cli(
@@ -97,8 +97,8 @@ def export_cache_cmd(
 
     literal_format = cast(Literal["json", "json.gz"], format)
     try:
-        with console.status(f"Exporting cache to '{output_path.name}'..."):
-            count = export_cache(
+        with console.status(f"Exporting dorsal index to '{output_path.name}'..."):
+            count = export(
                 output_path=output_path,
                 format=literal_format,
                 include_records=include_records,
@@ -109,5 +109,5 @@ def export_cache_cmd(
     except (IOError, ValueError) as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Export failed: {e}")
     except Exception as e:
-        logger.exception("An unexpected error occurred during cache export.")
+        logger.exception("An unexpected error occurred during dorsal index export.")
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")

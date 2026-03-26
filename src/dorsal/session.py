@@ -21,14 +21,13 @@ from dorsal.common.exceptions import DorsalOfflineError
 
 logger = logging.getLogger(__name__)
 
-# Hide heavy client/cache/model imports from the runtime
 if TYPE_CHECKING:
     from dorsal.client.dorsal_client import DorsalClient
-    from dorsal.file.cache.dorsal_cache import DorsalCache
     from dorsal.file.metadata_reader import MetadataReader
+    from dorsal.file.index.dorsal_index import DorsalIndex
 
 _DORSAL_CLIENT: DorsalClient | None = None
-_DORSAL_CACHE: DorsalCache | None = None
+_DORSAL_INDEX: DorsalIndex | None = None
 _METADATA_READER: MetadataReader | None = None
 
 
@@ -74,37 +73,6 @@ def clear_shared_dorsal_client() -> None:
     logger.debug("Cleared shared DorsalClient instance")
 
 
-def set_shared_cache(cache: DorsalCache) -> None:
-    """Sets the global `DorsalCache` instance."""
-    global _DORSAL_CACHE
-    logger.debug("Setting shared DorsalCache instance")
-    _DORSAL_CACHE = cache
-
-
-def get_shared_cache() -> DorsalCache:
-    global _DORSAL_CACHE
-    if _DORSAL_CACHE is None:
-        # Deferred imports
-        from dorsal.file.cache.dorsal_cache import DorsalCache
-        from dorsal.file.cache.config import get_cache_compression
-
-        _DORSAL_CACHE = DorsalCache(use_compression=get_cache_compression())
-    return _DORSAL_CACHE
-
-
-def clear_shared_cache() -> None:
-    """Clears the global DorsalCache instance."""
-    global _DORSAL_CACHE
-    if _DORSAL_CACHE is not None:
-        try:
-            _DORSAL_CACHE.close()
-        except Exception as e:
-            logger.warning(f"Error closing shared cache: {e}")
-
-    _DORSAL_CACHE = None
-    logger.debug("Cleared shared DorsalCache instance")
-
-
 def get_metadata_reader() -> MetadataReader:
     """Get or create a shared global `MetadataReader` instance.
 
@@ -116,7 +84,6 @@ def get_metadata_reader() -> MetadataReader:
     Returns:
         MetadataReader: The shared `MetadataReader` instance.
     """
-    # Deferred import
     from dorsal.file.metadata_reader import MetadataReader
 
     global _METADATA_READER
@@ -124,3 +91,33 @@ def get_metadata_reader() -> MetadataReader:
         logger.debug("Initializing shared MetadataReader instance for dorsal.api.file module.")
         _METADATA_READER = MetadataReader()
     return _METADATA_READER
+
+
+def set_shared_index(index: DorsalIndex) -> None:
+    """Sets the global `DorsalIndex` instance."""
+    global _DORSAL_INDEX
+    logger.debug("Setting shared DorsalIndex instance")
+    _DORSAL_INDEX = index
+
+
+def get_shared_index() -> DorsalIndex:
+    global _DORSAL_INDEX
+    if _DORSAL_INDEX is None:
+        from dorsal.file.index.dorsal_index import DorsalIndex
+        from dorsal.file.index.config import get_index_compression
+
+        _DORSAL_INDEX = DorsalIndex(use_compression=get_index_compression())
+    return _DORSAL_INDEX
+
+
+def clear_shared_index() -> None:
+    """Clears the global DorsalIndex instance."""
+    global _DORSAL_INDEX
+    if _DORSAL_INDEX is not None:
+        try:
+            _DORSAL_INDEX.close()
+        except Exception as e:
+            logger.warning(f"Error closing shared index: {e}")
+
+    _DORSAL_INDEX = None
+    logger.debug("Cleared shared DorsalIndex instance")

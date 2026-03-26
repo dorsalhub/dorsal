@@ -21,7 +21,7 @@ import typer
 logger = logging.getLogger(__name__)
 
 
-def get_cache_path(
+def get_index_db_path(
     ctx: typer.Context,
     json_output: Annotated[
         bool,
@@ -29,16 +29,15 @@ def get_cache_path(
     ] = False,
 ):
     """
-    Prints the absolute path to the cache database file.
+    Prints the absolute path to the dorsal index database file.
     """
+    from dorsal.api.index import get_path
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
-    from dorsal.session import get_shared_cache
 
     console = get_rich_console()
 
     try:
-        cache = get_shared_cache()
-        db_path_str = str(cache.db_path.resolve())
+        db_path_str = get_path()
 
         if json_output:
             console.print(json.dumps({"path": db_path_str}))
@@ -47,8 +46,8 @@ def get_cache_path(
     except typer.Exit:
         raise
     except Exception as err:
-        logger.exception("Failed to retrieve cache path.")
+        logger.exception("Failed to retrieve index path.")
         exit_cli(
             code=EXIT_CODE_ERROR,
-            message=f"An error occurred while getting cache path: {err}",
+            message=f"An error occurred while getting index path: {err}",
         )

@@ -23,7 +23,7 @@ from rich.table import Table
 logger = logging.getLogger(__name__)
 
 
-def optimize_cache(
+def optimize_search_index(
     ctx: typer.Context,
     json_output: Annotated[
         bool,
@@ -31,24 +31,22 @@ def optimize_cache(
     ] = False,
 ):
     """
-    Runs a full maintenance routine on the cache.
+    Runs maintenance on the SQLite search index.
 
-    This includes:
     - Pruning stale records (for deleted or modified files).
     - Syncing record compression with the current config.
     - Reclaiming disk space (VACUUM).
     """
+    from dorsal.api.index import optimize
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
-    from dorsal.session import get_shared_cache
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
-        with console.status("Optimizing cache... (this may take a moment)"):
-            cache = get_shared_cache()
-            results = cache.optimize()
+        with console.status("Optimizing search index... (this may take a moment)"):
+            results = optimize()
 
         if json_output:
             console.print(json.dumps(results))
@@ -80,7 +78,7 @@ def optimize_cache(
         console.print(
             Panel(
                 summary_table,
-                title=f"[{palette.get('panel_title_success', 'bold green')}]✅ Cache Optimization Complete[/]",
+                title=f"[{palette.get('panel_title_success', 'bold green')}]✅ Index Optimization Complete[/]",
                 border_style=palette.get("panel_border_success", "green"),
                 expand=False,
             )
@@ -89,8 +87,8 @@ def optimize_cache(
     except typer.Exit:
         raise
     except Exception as err:
-        logger.exception("Failed to optimize cache.")
+        logger.exception("Failed to optimize search index.")
         exit_cli(
             code=EXIT_CODE_ERROR,
-            message=f"An error occurred while optimizing the cache: {err}",
+            message=f"An error occurred while optimizing the search index: {err}",
         )

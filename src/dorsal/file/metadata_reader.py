@@ -46,11 +46,11 @@ from dorsal.common.exceptions import (
     DorsalClientError,
     DuplicateFileError,
 )
-from dorsal.file.cache import DorsalCache
 from dorsal.file.dorsal_file import LocalFile
+from dorsal.file.index import DorsalIndex
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.utils.files import get_file_paths
-from dorsal.session import get_shared_dorsal_client, get_shared_cache
+from dorsal.session import get_shared_dorsal_client, get_shared_index
 
 
 if TYPE_CHECKING:
@@ -141,9 +141,9 @@ class MetadataReader:
         logger.debug("MetadataReader initialized.")
 
     @property
-    def _cache(self) -> DorsalCache:
+    def _cache(self) -> DorsalIndex:
         """Dynamically retrieve the current valid shared cache."""
-        return get_shared_cache()
+        return get_shared_index()
 
     @property
     def _client(self) -> DorsalClient:

@@ -46,6 +46,7 @@ class QueryParser:
             for op in cls.OPERATORS:
                 if op in token and not token.startswith(op) and not token.endswith(op):
                     key, val = token.split(op, 1)
+                    
                     result["filters"].append((key.lower(), op, val))
                     found_op = op
                     break
@@ -95,6 +96,7 @@ class QueryCompiler:
     compiles it into optimized SQLite syntax for the LocalIndex.
     """
 
+    
     BASE_COLUMNS = {
         "ext": "extension",
         "extension": "extension",
@@ -108,24 +110,95 @@ class QueryCompiler:
         "tlsh": "hash_tlsh",
     }
 
+    
+    SORT_COLUMNS = {
+        "date_modified": "c.modified_time",
+        "size": "c.size",
+        "name": "c.name",
+        "media_type": "c.media_type",
+        "abspath": "c.abspath",
+    }
+
     @classmethod
-    def compile(cls, processed_query: dict[str, list], or_logic: bool = False) -> tuple[str, list[Any]]:
+    def compile(
+        cls,
+        parsed_query: dict[str, list],
+        *,
+        or_logic: bool = False,
+        limit: int | None = None,
+        offset: int | None = None,
+        sort_by: str = "date_modified",
+        sort_desc: bool = True,
+    ) -> tuple[str, list[Any]]:
+        """
+        Compiles tokens into a complete, paginated, and sorted SQL statement.
+        """
+        where_clauses, params = cls._build_where_clauses(parsed_query, or_logic)
+
+        
+        sql = "SELECT c.abspath FROM cached_files c"
+
+        
+        if parsed_query.get("text"):
+            sql += " JOIN dorsal_fts f ON c.abspath = f.abspath"
+
+        if where_clauses:
+            sql += " WHERE " + " AND ".join(where_clauses)
+
+        
+        sort_col = cls.SORT_COLUMNS.get(sort_by, "c.modified_time")
+        direction = "DESC" if sort_desc else "ASC"
+        sql += f" ORDER BY {sort_col} {direction}"
+
+        
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+            if offset is not None:
+                sql += " OFFSET ?"
+                params.append(offset)
+
+        return sql, params
+
+    @classmethod
+    def compile_count(cls, parsed_query: dict[str, list], *, or_logic: bool = False) -> tuple[str, list[Any]]:
+        """
+        Generates a query to count total matches for pagination footers.
+        """
+        where_clauses, params = cls._build_where_clauses(parsed_query, or_logic)
+
+        sql = "SELECT COUNT(c.abspath) as total FROM cached_files c"
+
+        if parsed_query.get("text"):
+            sql += " JOIN dorsal_fts f ON c.abspath = f.abspath"
+
+        if where_clauses:
+            sql += " WHERE " + " AND ".join(where_clauses)
+
+        return sql, params
+
+    @classmethod
+    def _build_where_clauses(cls, parsed_query: dict[str, list], or_logic: bool) -> tuple[list[str], list[Any]]:
+        """Shared logic for building WHERE conditions and parameter binding."""
+        
         where_clauses = []
         params = []
         fts_terms = []
 
-        for text in processed_query["text"]:
+        
+        for text in parsed_query.get("text", []):
             if " " in text:
                 fts_terms.append(f'"{text}"')
             else:
                 fts_terms.append(text)
 
-        for key, op, val in processed_query["filters"]:
+        for key, op, val in parsed_query.get("filters", []):
             sql_op = "=" if op == ":" else op
 
             if key in cls.BASE_COLUMNS:
                 col_name = cls.BASE_COLUMNS[key]
 
+                
                 if col_name == "size" and isinstance(val, str):
                     try:
                         val = parse_filesize(val)
@@ -167,12 +240,4 @@ class QueryCompiler:
             where_clauses.append("f.content MATCH ?")
             params.append(fts_query)
 
-        sql = "SELECT c.abspath FROM cached_files c"
-        if fts_terms:
-            sql += " JOIN dorsal_fts f ON c.abspath = f.abspath"
-        if where_clauses:
-            sql += " WHERE " + " AND ".join(where_clauses)
-
-        sql += " ORDER BY c.modified_time DESC LIMIT 1000"
-
-        return sql, params
+        return where_clauses, params

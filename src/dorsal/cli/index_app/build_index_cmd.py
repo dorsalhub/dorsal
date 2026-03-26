@@ -21,7 +21,7 @@ from typing import Annotated
 logger = logging.getLogger(__name__)
 
 
-def build_cache(
+def build_search_index(
     ctx: typer.Context,
     path: Annotated[
         pathlib.Path,
@@ -30,7 +30,7 @@ def build_cache(
             file_okay=False,
             dir_okay=True,
             readable=True,
-            help="The directory path to scan and populate the cache with.",
+            help="The directory path to scan and populate the search index with.",
         ),
     ],
     recursive: Annotated[
@@ -46,7 +46,7 @@ def build_cache(
         typer.Option(
             "--force",
             "-f",
-            help="Force re-processing and re-caching of all files, even if they are already in the cache.",
+            help="Force re-processing and re-indexing of all files, even if they are already in the search index.",
         ),
     ] = False,
     json_output: Annotated[
@@ -57,7 +57,7 @@ def build_cache(
         bool,
         typer.Option(
             "--follow-links/--no-follow-links",
-            help="Follow symlinks to cache target content vs caching the link itself.",
+            help="Follow symlinks to index target content vs indexing the link itself.",
         ),
     ] = True,
     lazy: Annotated[
@@ -69,10 +69,10 @@ def build_cache(
     ] = False,
 ):
     """
-    Scans a directory and populates the cache with full metadata records.
+    Scans a directory and populates the search index with full metadata records.
 
     This command ensures that subsequent operations (like 'scan' or 'duplicates')
-    on the same directory will be significantly faster by pre-populating the cache.
+    on the same directory will be significantly faster by pre-populating the search index.
     """
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.file.collection.local import LocalFileCollection
@@ -84,10 +84,10 @@ def build_cache(
 
     try:
         if force:
-            status_message = f"Force-building cache for '{path}' (re-processing all files)..."
+            status_message = f"Force-building search index for '{path}' (re-processing all files)..."
             use_cache_value = False
         else:
-            status_message = f"Building or updating cache for '{path}'..."
+            status_message = f"Building or updating search index for '{path}'..."
             use_cache_value = True
 
         if not json_output:
@@ -113,12 +113,12 @@ def build_cache(
 
         collection_info = collection.info()
         source_breakdown = collection_info.get("by_source", [])
-        files_from_cache = 0
+        files_from_index = 0
         files_from_disk = 0
 
         for source_stat in source_breakdown:
             if source_stat.get("source") == "cache":
-                files_from_cache = source_stat.get("count", 0)
+                files_from_index = source_stat.get("count", 0)
             elif source_stat.get("source") == "disk":
                 files_from_disk = source_stat.get("count", 0)
 
@@ -126,22 +126,22 @@ def build_cache(
             result = {
                 "success": True,
                 "total_files_processed": len(collection),
-                "loaded_from_cache": files_from_cache,
-                "newly_added_to_cache": files_from_disk,
+                "loaded_from_index": files_from_index,
+                "newly_added_to_index": files_from_disk,
             }
             console.print(json.dumps(result, indent=2))
             exit_cli()
 
-        console.print(f"[{palette.get('success', 'green')}]✅ Cache build complete.[/]")
+        console.print(f"[{palette.get('success', 'green')}]✅ Search Index updated successfully.[/]")
         console.print(f"   - Total files processed: {len(collection)}")
-        console.print(f"   - Loaded from cache: {files_from_cache}")
-        console.print(f"   - Newly added to cache: {files_from_disk}")
+        console.print(f"   - Loaded from index: {files_from_index}")
+        console.print(f"   - Newly added to index: {files_from_disk}")
 
     except typer.Exit:
         raise
     except Exception as err:
-        logger.exception("Failed to build cache.")
+        logger.exception("Failed to build search index.")
         exit_cli(
             code=EXIT_CODE_ERROR,
-            message=f"An error occurred while building the cache: {err}",
+            message=f"An error occurred while building the index: {err}",
         )

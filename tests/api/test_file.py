@@ -76,8 +76,8 @@ def mock_shared_client():
 
 @pytest.fixture
 def mock_cache():
-    """Mocks the get_shared_cache function."""
-    with patch("dorsal.session.get_shared_cache") as mock_get:
+    """Mocks the get_shared_index function."""
+    with patch("dorsal.session.get_shared_index") as mock_get:
         mock_cache_instance = MagicMock()
 
         mock_cache_instance.get_hash.return_value = None
@@ -427,7 +427,7 @@ def test_find_duplicates_success(fs):
 
     correct_hash = hashlib.sha256(b"12345").hexdigest()
 
-    with patch("dorsal.api.file.get_shared_cache") as mock_get_cache:
+    with patch("dorsal.api.file.get_shared_index") as mock_get_cache:
         mock_get_cache.return_value.get_hash.return_value = None
         result = file_api.find_duplicates("/test", recursive=True, mode="sha256")
 
@@ -601,7 +601,7 @@ def test_find_duplicates_quick_internal_logic(fs):
     mock_cache.get_hash.side_effect = mock_get_hash
 
     with (
-        patch("dorsal.api.file.get_shared_cache", return_value=mock_cache),
+        patch("dorsal.api.file.get_shared_index", return_value=mock_cache),
         patch("dorsal.api.file.get_quick_hash") as mock_quick,
         patch("dorsal.api.file.get_sha256_hash") as mock_sha,
     ):

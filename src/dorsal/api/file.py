@@ -55,13 +55,13 @@ from dorsal.file.dependencies import (
     make_file_name_dependency,
     make_file_size_dependency,
 )
-from dorsal.file.utils.cache import get_cached_hash
+from dorsal.file.utils.index import get_cached_hash
 from dorsal.file.utils.hashes import hash_string_validator
 from dorsal.file.utils import QuickHasher, get_quick_hash, get_sha256_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
 from dorsal.file.utils.reports import resolve_template_path
 from dorsal.file.utils.size import get_filesize, human_filesize, parse_filesize
-from dorsal.session import get_shared_cache, get_metadata_reader
+from dorsal.session import get_shared_index, get_metadata_reader
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -223,7 +223,7 @@ def identify_file(
 
         file_record = None
         secure_hash_key = ""
-        cache = get_shared_cache() if use_cache else None
+        cache = get_shared_index() if use_cache else None
 
         if quick:
             if file_size is None:
@@ -234,7 +234,7 @@ def identify_file(
                 if cache:
                     quick_hash_val = get_cached_hash(
                         file_path=file_path,
-                        cache=cache,
+                        index=cache,
                         hash_callable=lambda p: get_quick_hash(p, fallback_to_sha256=False, file_size=file_size),
                         hash_function="QUICK",
                     )
@@ -268,7 +268,7 @@ def identify_file(
             if cache:
                 secure_hash_val = get_cached_hash(
                     file_path=file_path,
-                    cache=cache,
+                    index=cache,
                     hash_callable=get_sha256_hash,
                     hash_function="SHA-256",
                 )
@@ -1629,7 +1629,7 @@ def _find_duplicates_sha256(
     hash_map = defaultdict(list)
     cache_hits = 0
 
-    cache = get_shared_cache() if use_cache else None
+    cache = get_shared_index() if use_cache else None
 
     iterator: Iterable[pathlib.Path] = files_to_check
     rich_progress = None
@@ -1658,7 +1658,7 @@ def _find_duplicates_sha256(
                     if cache:
                         file_hash = get_cached_hash(
                             file_path=resolved_path,
-                            cache=cache,
+                            index=cache,
                             hash_callable=get_sha256_hash,
                             hash_function="SHA-256",
                         )
@@ -1686,7 +1686,7 @@ def _find_duplicates_quick(
     hash_map = defaultdict(list)
     cache_hits = 0
 
-    cache = get_shared_cache() if use_cache else None
+    cache = get_shared_index() if use_cache else None
 
     iterator: Iterable[pathlib.Path] = files_to_check
     rich_progress = None
@@ -1715,7 +1715,7 @@ def _find_duplicates_quick(
                     if cache:
                         quick_hash_val = get_cached_hash(
                             file_path=resolved_path,
-                            cache=cache,
+                            index=cache,
                             hash_callable=lambda p: get_quick_hash(p, fallback_to_sha256=False),
                             hash_function="QUICK",
                         )
@@ -1737,7 +1737,7 @@ def _find_duplicates_quick(
                         if cache:
                             hash_to_use = get_cached_hash(
                                 file_path=resolved_path,
-                                cache=cache,
+                                index=cache,
                                 hash_callable=get_sha256_hash,
                                 hash_function="SHA-256",
                             )
