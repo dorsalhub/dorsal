@@ -523,3 +523,21 @@ def test_export_uncompressed_decode(temp_index, fs, mock_file_record_strict, tmp
     with open(out, "r") as f:
         data = json.load(f)
     assert data[0]["record"]["test"] == "data"
+
+
+def test_prune_mtime_mismatch(temp_index, fs, mock_file_record_strict):
+    """Specifically hits the mtime mismatch branch in prune()."""
+    path = "/fake/stale_file.pdf"
+    fs.create_file(path)
+
+    # 1. Insert with mtime 100.0
+    temp_index.upsert_record(path=path, modified_time=100.0, record=mock_file_record_strict)
+
+    # 2. Change disk mtime to 200.0
+    os.utime(path, (200.0, 200.0))
+
+    # 3. Prune should detect mismatch and hit the logger/append lines
+    removed, total = temp_index.prune()
+
+    assert removed == 1
+    assert total == 1
