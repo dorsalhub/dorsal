@@ -34,25 +34,35 @@ class TestQueryParser:
     def test_parse_unclosed_quotes_safe_handling(self):
         result = QueryParser.parse('ext:pdf "broken quote')
         assert result["filters"] == [("ext", ":", "pdf")]
-        # Expectation changed: unclosed quote is stripped
+
         assert result["text"] == ["broken quote"]
+
+    def test_parse_empty_query(self):
+        """Hits: if not query_string: return result"""
+        result = QueryParser.parse("")
+        assert result == {"text": [], "filters": []}
+
+    def test_tokenize_nested_quotes(self):
+        """Hits the 'else: current.append(char)' inside the quote logic."""
+
+        result = QueryParser.parse('"it\'s a test"')
+        assert result["text"] == ["it's a test"]
 
 
 class TestQueryCompiler:
     def test_compile_base_columns(self):
-        # 1. Test Base-10 (MB)
+
         processed_si = {"text": [], "filters": [("ext", ":", "pdf"), ("size", ">", "5mb")]}
         sql_si, params_si = QueryCompiler.compile(processed_si)
 
         assert "c.extension = ?" in sql_si
         assert "c.size > ?" in sql_si
-        assert params_si == [".pdf", 5000000]  # SI base-10
+        assert params_si == [".pdf", 5000000]
 
-        # 2. Test Base-2 (MiB)
         processed_iec = {"text": [], "filters": [("ext", ":", "pdf"), ("size", ">", "5mib")]}
         _, params_iec = QueryCompiler.compile(processed_iec)
 
-        assert params_iec == [".pdf", 5242880]  # IEC base-2
+        assert params_iec == [".pdf", 5242880]
 
     def test_compile_eav_tags(self):
         processed = {"text": [], "filters": [("project", "=", "alpha"), ("score", ">=", "0.9")]}
@@ -66,10 +76,28 @@ class TestQueryCompiler:
         assert 0.9 in params
 
     def test_compile_fts_text(self):
-        # We pass the unquoted string just like the parser would output
+
         processed = {"text": ["machine", "dark matter"], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
         assert "f.content MATCH ?" in sql
-        # The compiler sees a space in 'dark matter' and automatically wraps it in quotes!
+
         assert params == ['machine AND "dark matter"']
+
+    def test_compile_invalid_filesize(self):
+        """Hits the ValueError pass for parse_filesize."""
+
+        processed = {"text": [], "filters": [("size", ">", "huge")]}
+        sql, params = QueryCompiler.compile(processed)
+
+        assert "c.size > ?" in sql
+        assert "huge" in params
+
+    def test_compile_invalid_numeric_filter(self):
+        """Hits the ValueError pass for float(val) in EAV filters."""
+
+        processed = {"text": [], "filters": [("custom_field", ">", "not_a_number")]}
+        sql, params = QueryCompiler.compile(processed)
+
+        assert "a.value_text > ?" in sql
+        assert "not_a_number" in params
