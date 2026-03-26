@@ -75,7 +75,6 @@ def get_index_record(
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
-    
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
             save = True
@@ -91,46 +90,38 @@ def get_index_record(
     record = None
 
     if not json_output:
-        console.print(f"🔎 Searching local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]")
+        console.print(
+            f"🔎 Searching local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
+        )
 
-    
     if os.path.isabs(identifier) or os.path.exists(identifier):
         path_str = str(pathlib.Path(identifier).resolve())
         record = index.get_record(path=path_str)
 
-    
     if not record and len(identifier) == 64 and all(c in string.hexdigits for c in identifier):
-        
         results = search_local(f"sha256:{identifier}", index=index, limit=1)
         if results:
             record = results[0]
 
     if not record:
-        console.print(f"\n[{palette.get('warning', 'yellow')}]⚠️ Not Found:[/] No local records found matching '{identifier}'.")
+        console.print(
+            f"\n[{palette.get('warning', 'yellow')}]⚠️ Not Found:[/] No local records found matching '{identifier}'."
+        )
         exit_cli(code=EXIT_CODE_ERROR)
 
-    
     try:
-        if isinstance(record.record_json, str):
-            record_dict = json.loads(record.record_json)
-        else:
-            record_dict = record.record_json
+        record_dict = json.loads(record.record_json)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode cached record JSON: {e}")
         exit_cli(code=EXIT_CODE_ERROR, message="Corrupted record found in local index.")
 
-    
     record_dict["hash"] = record.hash_sha256
     record_dict["validation_hash"] = record.hash_blake3
     record_dict["quick_hash"] = record.hash_quick
     record_dict["similarity_hash"] = record.hash_tlsh
-    
-    
+
     dt_mod = datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc)
-    record_dict["local_filesystem"] = {
-        "full_path": record.abspath,
-        "date_modified": dt_mod.isoformat()
-    }
+    record_dict["local_filesystem"] = {"full_path": record.abspath, "date_modified": dt_mod.isoformat()}
 
     record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
 
@@ -138,20 +129,14 @@ def get_index_record(
         console.print(record_json_str)
         exit_cli()
 
-    
     base_record = record_dict.get("annotations", {}).get("file/base", {})
     title = f"File Record: {record.name or 'Unknown'}"
     is_private = base_record.get("private", False)
 
-    
     panel = create_file_info_panel(
-        record_dict=record_dict,
-        title=title,
-        private=is_private,
-        palette=palette,
-        source="cache"
+        record_dict=record_dict, title=title, private=is_private, palette=palette, source="cache"
     )
-    
+
     console.print()
     console.print(panel)
 

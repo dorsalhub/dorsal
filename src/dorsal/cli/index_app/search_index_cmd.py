@@ -175,7 +175,6 @@ def search_index_cmd(
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
-    
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
             save = True
@@ -199,7 +198,6 @@ def search_index_cmd(
 
         sort_desc = sort_order.lower() == "desc"
 
-        
         response = search_local_paginated(
             query=query,
             or_logic=or_logic,
@@ -220,11 +218,10 @@ def search_index_cmd(
             exit_cli()
 
         search_caption = (
-            f"Search powered by Dorsal Local Index. "
-            f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
+            "Search powered by Dorsal Local Index. "
+            "For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
-        
         table = Table(
             title="Local Search Results",
             show_header=True,
@@ -258,10 +255,9 @@ def search_index_cmd(
         console.print(table)
 
         pagination = response.pagination
-        
-        
+
         start_display = pagination.start_index + 1 if pagination.record_count > 0 else 0
-        
+
         footer_text = (
             f"Showing page [bold]{pagination.current_page}[/] of [bold]{pagination.page_count}[/] | "
             f"Displaying records [bold]{start_display} - {pagination.end_index}[/] "

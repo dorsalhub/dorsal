@@ -58,10 +58,7 @@ from dorsal.api.config import (
     deactivate_model_by_name,
 )
 
-from dorsal.api.search import (
-    search_local,
-    search_local_paginated
-)
+from dorsal.api.search import search_local, search_local_paginated
 
 
 __all__ = [

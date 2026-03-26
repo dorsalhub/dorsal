@@ -122,10 +122,10 @@ class TestSearchLocalPaginated:
     def test_paginated_success_and_math(self, test_index):
         """Validates that pagination math, limits, and offsets correctly slice the data."""
         # test_index contains 2 PDF files
-        
+
         # Request Page 1 (limit 1)
         result1 = search_local_paginated("ext:pdf", index=test_index, page=1, per_page=1)
-        
+
         assert isinstance(result1, PaginatedSearchResults)
         assert result1.pagination.record_count == 2
         assert result1.pagination.page_count == 2
@@ -135,18 +135,18 @@ class TestSearchLocalPaginated:
 
         # Request Page 2 (limit 1)
         result2 = search_local_paginated("ext:pdf", index=test_index, page=2, per_page=1)
-        
+
         assert len(result2.records) == 1
         assert result2.pagination.has_next is False
         assert result2.pagination.has_prev is True
-        
+
         # Ensure we got different records
         assert result1.records[0].abspath != result2.records[0].abspath
 
     def test_empty_query_returns_early(self):
         """Hits the early return for empty queries in the paginated flow."""
         result = search_local_paginated("   ", per_page=10)
-        
+
         assert result.records == []
         assert result.pagination.record_count == 0
         assert result.pagination.per_page == 10
@@ -154,7 +154,7 @@ class TestSearchLocalPaginated:
     def test_zero_matches_fast_path(self, test_index):
         """Hits the early return when COUNT(*) returns 0."""
         result = search_local_paginated("ext:doesnotexist", index=test_index)
-        
+
         assert result.records == []
         assert result.pagination.record_count == 0
 
@@ -164,18 +164,14 @@ class TestSearchLocalPaginated:
         mock_index_inst = mock_index_class.return_value
 
         from dorsal.file.index.dorsal_index import CachedFileRecord
-        dummy_record = CachedFileRecord(
-            abspath="/fake",
-            modified_time=123.0,
-            record="{}",
-            hash_sha256="fake_hash"
-        )
+
+        dummy_record = CachedFileRecord(abspath="/fake", modified_time=123.0, record="{}", hash_sha256="fake_hash")
         mock_index_inst.get_record.return_value = dummy_record
-        
+
         with (
             patch("dorsal.api.search.QueryParser.parse"),
             patch("dorsal.api.search.QueryCompiler.compile_count", return_value=("SELECT COUNT", [])),
-            patch("dorsal.api.search.QueryCompiler.compile", return_value=("SELECT DATA", []))
+            patch("dorsal.api.search.QueryCompiler.compile", return_value=("SELECT DATA", [])),
         ):
             mock_conn = MagicMock()
             mock_index_inst._ensure_connection.return_value = mock_conn
@@ -212,7 +208,7 @@ class TestSearchLocalPaginated:
             # We need the first execution (COUNT) to pass, but the second (DATA) to fail
             def execute_side_effect(sql, *args, **kwargs):
                 if "COUNT" in sql:
-                    return None 
+                    return None
                 raise Exception("DB Data Error")
 
             mock_conn.cursor.return_value.execute.side_effect = execute_side_effect
@@ -225,7 +221,7 @@ class TestSearchLocalPaginated:
         """Hits the branch where a path is returned from DB but file record is gone from disk/cache."""
         with (
             patch("dorsal.api.search.QueryCompiler.compile_count", return_value=("SELECT COUNT", [])),
-            patch("dorsal.api.search.QueryCompiler.compile", return_value=("SELECT 'ghost_path' as abspath", []))
+            patch("dorsal.api.search.QueryCompiler.compile", return_value=("SELECT 'ghost_path' as abspath", [])),
         ):
             with patch.object(test_index, "_ensure_connection") as mock_ensure:
                 mock_conn = MagicMock()
@@ -236,6 +232,6 @@ class TestSearchLocalPaginated:
                 # Force get_record to return None simulating a stale cache hit
                 with patch.object(test_index, "get_record", return_value=None):
                     result = search_local_paginated("find ghost", index=test_index)
-                    
+
                     assert result.records == []
                     assert result.pagination.record_count == 1

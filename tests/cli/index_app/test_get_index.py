@@ -39,18 +39,10 @@ def mock_get_index_cmd(mocker, tmp_path):
     mock_record.hash_blake3 = "fake_blake3"
     mock_record.hash_quick = None
     mock_record.hash_tlsh = None
-    
-    mock_record.record_json = json.dumps({
-        "annotations": {
-            "file/base": {
-                "record": {
-                    "name": "test.pdf",
-                    "size": 12345
-                },
-                "private": False
-            }
-        }
-    })
+
+    mock_record.record_json = json.dumps(
+        {"annotations": {"file/base": {"record": {"name": "test.pdf", "size": 12345}, "private": False}}}
+    )
 
     mock_index = MagicMock()
     mock_index.get_record.return_value = mock_record
@@ -58,8 +50,7 @@ def mock_get_index_cmd(mocker, tmp_path):
     mock_get_shared_index = mocker.patch("dorsal.session.get_shared_index", return_value=mock_index)
     mock_search_local = mocker.patch("dorsal.api.search.search_local", return_value=[mock_record])
     mock_create_panel = mocker.patch("dorsal.cli.views.file.create_file_info_panel", return_value=Panel("Mock Panel"))
-    
-    
+
     mock_reports_dir = tmp_path / "reports"
     mocker.patch("dorsal.common.constants.CLI_GET_REPORTS_DIR", mock_reports_dir)
 
@@ -70,7 +61,7 @@ def mock_get_index_cmd(mocker, tmp_path):
         "create_panel": mock_create_panel,
         "record": mock_record,
         "tmp_path": tmp_path,
-        "reports_dir": mock_reports_dir
+        "reports_dir": mock_reports_dir,
     }
 
 
@@ -131,19 +122,10 @@ def test_get_index_json_decode_error(mock_rich_console, mock_get_index_cmd):
     assert "Corrupted record found in local index" in result.output
 
 
-def test_get_index_dict_record_json(mock_rich_console, mock_get_index_cmd):
-    """Tests when the record_json is already a dictionary (hits the 'else' block)."""
-    mock_get_index_cmd["record"].record_json = {"already": "parsed"}
-    result = runner.invoke(app, ["index", "get", PATH_ID])
-    
-    assert result.exit_code == 0
-    mock_get_index_cmd["create_panel"].assert_called_once()
-
-
 def test_get_index_save_default_path(mock_get_index_cmd):
     """Tests saving the output to the default auto-generated directory."""
     result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
-    
+
     assert result.exit_code == 0
     saved_files = list(mock_get_index_cmd["reports_dir"].glob("*.json"))
     assert len(saved_files) == 1
@@ -154,7 +136,7 @@ def test_get_index_output_file(mock_get_index_cmd):
     """Tests saving output to an explicitly named JSON file."""
     custom_out = mock_get_index_cmd["tmp_path"] / "custom_report.json"
     result = runner.invoke(app, ["index", "get", PATH_ID, "--output", str(custom_out)])
-    
+
     assert result.exit_code == 0
     assert custom_out.exists()
 
@@ -163,9 +145,9 @@ def test_get_index_output_dir(mock_get_index_cmd):
     """Tests saving output into an explicitly named directory."""
     custom_dir = mock_get_index_cmd["tmp_path"] / "custom_dir"
     custom_dir.mkdir()
-    
+
     result = runner.invoke(app, ["index", "get", PATH_ID, "-s", "--output", str(custom_dir)])
-    
+
     assert result.exit_code == 0
     saved_files = list(custom_dir.glob("*.json"))
     assert len(saved_files) == 1
@@ -175,9 +157,9 @@ def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cm
     """Tests the warning generated when a non-JSON extension is provided without the save flag."""
     weird_out = mock_get_index_cmd["tmp_path"] / "report.txt"
     result = runner.invoke(app, ["index", "get", PATH_ID, "--output", str(weird_out)])
-    
+
     assert result.exit_code == 0
-    
+
     all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
     assert "unknown extension" in all_output
 
@@ -185,9 +167,9 @@ def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cm
 def test_get_index_save_ioerror(mock_get_index_cmd, mocker):
     """Tests the graceful exit when an IOError occurs during save."""
     mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
-    
+
     result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
-    
+
     assert result.exit_code != 0
     assert "Error writing to file" in result.output
 
@@ -195,10 +177,10 @@ def test_get_index_save_ioerror(mock_get_index_cmd, mocker):
 def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, mocker):
     """Tests the warning panel fallback when a generic Exception occurs during save."""
     mocker.patch("builtins.open", side_effect=Exception("Unknown file error"))
-    
+
     result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
-    
+
     assert result.exit_code == 0
-    
+
     all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
     assert "Could not save JSON report" in all_output

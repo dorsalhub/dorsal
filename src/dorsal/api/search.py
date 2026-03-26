@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class PaginatedSearchResults(BaseModel):
     """Structured response for paginated UI search views."""
+
     records: list[CachedFileRecord]
     pagination: Pagination
 
@@ -41,7 +42,7 @@ def search_local(
     sort_desc: bool = True,
 ) -> Sequence[CachedFileRecord]:
     """
-    Standard search returning a flat list of records. 
+    Standard search returning a flat list of records.
     Fastest option. Does not calculate total matches.
     """
     logger.debug(f"Starting standard local search for query: '{query}'")
@@ -58,18 +59,14 @@ def search_local(
         try:
             processed_query = QueryParser.parse(query)
             sql, params = QueryCompiler.compile(
-                processed_query, 
-                or_logic=or_logic,
-                limit=limit,
-                sort_by=sort_by,
-                sort_desc=sort_desc
+                processed_query, or_logic=or_logic, limit=limit, sort_by=sort_by, sort_desc=sort_desc
             )
         except Exception as e:
             raise DorsalError(f"Invalid search syntax or compilation error: {e}") from e
 
         conn = index._ensure_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -99,16 +96,21 @@ def search_local_paginated(
     sort_desc: bool = True,
 ) -> PaginatedSearchResults:
     """
-    UI-focused search. Executes a data query AND a count query 
+    UI-focused search. Executes a data query AND a count query
     to provide full pagination metadata using the standard Pagination model.
     """
     logger.debug(f"Starting paginated local search for query: '{query}' (Page {page})")
 
-    
     if not query or not query.strip():
         empty_pagination = Pagination(
-            current_page=page, record_count=0, page_count=0, per_page=per_page,
-            has_next=False, has_prev=False, start_index=0, end_index=0
+            current_page=page,
+            record_count=0,
+            page_count=0,
+            per_page=per_page,
+            has_next=False,
+            has_prev=False,
+            start_index=0,
+            end_index=0,
         )
         return PaginatedSearchResults(records=[], pagination=empty_pagination)
 
@@ -127,14 +129,12 @@ def search_local_paginated(
         conn = index._ensure_connection()
         cursor = conn.cursor()
 
-        
         try:
             cursor.execute(count_sql, count_params)
             total_matches = cursor.fetchone()["total"]
         except Exception as e:
             raise DorsalError(f"Count execution failed: {e}") from e
 
-        
         total_pages = math.ceil(total_matches / per_page) if per_page > 0 else 0
         start_index = (page - 1) * per_page
         end_index = min(start_index + per_page, total_matches)
@@ -147,29 +147,26 @@ def search_local_paginated(
             has_next=page < total_pages,
             has_prev=page > 1,
             start_index=start_index,
-            end_index=end_index
+            end_index=end_index,
         )
 
-        
         if total_matches == 0:
             return PaginatedSearchResults(records=[], pagination=pagination)
 
-        
         try:
             data_sql, data_params = QueryCompiler.compile(
-                processed_query, 
+                processed_query,
                 or_logic=or_logic,
                 limit=per_page,
                 offset=start_index,
                 sort_by=sort_by,
-                sort_desc=sort_desc
+                sort_desc=sort_desc,
             )
             cursor.execute(data_sql, data_params)
             rows = cursor.fetchall()
         except Exception as e:
             raise DorsalError(f"Data execution failed: {e}") from e
 
-        
         results: list[CachedFileRecord] = []
         for row in rows:
             record = index.get_record(path=row["abspath"])
