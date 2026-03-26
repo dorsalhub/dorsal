@@ -50,24 +50,20 @@ def search_local(
         logger.debug("Empty query provided. Returning empty result set.")
         return []
 
-    
-    
     close_after = False
     if index is None:
         index = DorsalIndex()
         close_after = True
 
     try:
-        
         try:
             processed_query = QueryParser.parse(query)
-            
+
             sql, params = QueryCompiler.compile(processed_query, or_logic=or_logic)
         except Exception as e:
             logger.error(f"Failed to parse or compile search query '{query}': {e}")
             raise DorsalError(f"Invalid search syntax or compilation error: {e}") from e
 
-        
         conn = index._ensure_connection()
         cursor = conn.cursor()
 
@@ -79,9 +75,6 @@ def search_local(
             logger.error(f"Database execution failed for query '{query}': {e}")
             raise DorsalError(f"Search execution failed: {e}") from e
 
-        
-        
-        
         results: list[CachedFileRecord] = []
         for row in rows:
             path = row["abspath"]
@@ -95,6 +88,5 @@ def search_local(
         return results
 
     finally:
-        
         if close_after and index:
             index.close()

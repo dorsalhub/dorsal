@@ -114,14 +114,11 @@ def make_mock_record():
         abspath: str, ext: str = ".pdf", size: int = 1024, tags: dict = None, arxiv_title: str = None
     ) -> FileRecordStrict:
 
-        
-        
         dummy_sha256 = hashlib.sha256(abspath.encode("utf-8")).hexdigest()
         dummy_blake3 = blake3.blake3(abspath.encode("utf-8")).hexdigest()
 
-        
         annotations = {
-            "file/base": {  
+            "file/base": {
                 "record": {
                     "hash": dummy_sha256,
                     "name": Path(abspath).name,
@@ -135,7 +132,6 @@ def make_mock_record():
             }
         }
 
-        
         if arxiv_title:
             annotations["dorsal/arxiv"] = {
                 "record": {
@@ -148,7 +144,6 @@ def make_mock_record():
                 "source": {"type": "Model", "id": "test_mock", "version": "1.0"},
             }
 
-        
         tag_list = []
         if tags:
             tag_list = [
@@ -156,7 +151,6 @@ def make_mock_record():
                 for k, v in tags.items()
             ]
 
-        
         record_dict = {
             "hash": dummy_sha256,
             "validation_hash": dummy_blake3,
@@ -180,15 +174,12 @@ def test_index(tmp_path, make_mock_record) -> DorsalIndex:
     db_path = tmp_path / "test_cache.db"
     index = DorsalIndex(db_path=db_path, use_compression=False)
 
-    
     rec1 = make_mock_record("/tmp/report.pdf", ext=".pdf", size=5000000, tags={"status": "draft"})
     index.upsert_record(path="/tmp/report.pdf", modified_time=time.time(), record=rec1)
 
-    
     rec2 = make_mock_record("/tmp/video.mp4", ext=".mp4", size=2000000000, tags={"project": "alpha"})
     index.upsert_record(path="/tmp/video.mp4", modified_time=time.time(), record=rec2)
 
-    
     rec3 = make_mock_record(
         "/tmp/paper.pdf", ext=".pdf", size=1500000, arxiv_title="Machine Learning for Dark Matter Detection"
     )
@@ -196,5 +187,4 @@ def test_index(tmp_path, make_mock_record) -> DorsalIndex:
 
     yield index
 
-    
     index.close()

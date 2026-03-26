@@ -22,13 +22,13 @@ class TestDorsalIndex:
         """Verifies the schema and test data were inserted correctly."""
         summary = test_index.summary()
         assert summary["total_records"] == 3
-        
+
         assert summary["indexed_attributes"] > 0
 
     def test_search_base_columns(self, test_index):
         """Tests standard extension and size queries."""
         results = search_local("ext:pdf", index=test_index)
-        assert len(results) == 2  
+        assert len(results) == 2
 
         results = search_local("size>10mb", index=test_index)
         assert len(results) == 1
@@ -42,16 +42,14 @@ class TestDorsalIndex:
 
     def test_search_fts_and_schema(self, test_index):
         """Tests Full-Text Search and Dual-Indexed Schema Attributes."""
-        
+
         results = search_local("learning", index=test_index)
         assert len(results) == 1
         assert results[0].abspath == "/tmp/paper.pdf"
 
-        
         results = search_local('category="astro-ph"', index=test_index)
         assert len(results) == 1
 
-        
         results = search_local("annotation:dorsal/arxiv", index=test_index)
         assert len(results) == 1
 

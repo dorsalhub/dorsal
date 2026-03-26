@@ -102,7 +102,6 @@ class DorsalIndex:
 
         logger.debug("Initializing database schema...")
 
-        
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS cached_files (
@@ -122,7 +121,6 @@ class DorsalIndex:
             """
         )
 
-        
         cursor.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS dorsal_fts USING fts5(
@@ -132,7 +130,6 @@ class DorsalIndex:
             """
         )
 
-        
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS file_attributes (
@@ -147,7 +144,6 @@ class DorsalIndex:
 
         logger.debug("Ensuring all indexes exist...")
 
-        
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_sha256 ON cached_files (hash_sha256);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_blake3 ON cached_files (hash_blake3);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_quick ON cached_files (hash_quick);")
@@ -156,7 +152,6 @@ class DorsalIndex:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_extension ON cached_files (extension);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_media_type ON cached_files (media_type);")
 
-        
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_attr_schema ON file_attributes (schema_id, abspath);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_attr_exact_text ON file_attributes (key, value_text, abspath);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_attr_exact_num ON file_attributes (key, value_num, abspath);")
@@ -182,7 +177,6 @@ class DorsalIndex:
             else:
                 eav_attributes.append((schema_id, key, str(value), None))
 
-        
         base = (
             record.annotations.file_base.record
             if record.annotations and hasattr(record.annotations, "file_base") and record.annotations.file_base
@@ -195,23 +189,19 @@ class DorsalIndex:
             if base.extension is not None:
                 fts_texts.append(base.extension)
 
-        
         if hasattr(record, "tags"):
             for tag in record.tags:
                 add_attr("tag", tag.name, tag.value)
 
-        
         if not record.annotations:
             return fts_texts, eav_attributes
 
-        
         annotations_dict = record.annotations.model_dump(by_alias=True, exclude_none=True)
 
         for schema_id, annotation_data in annotations_dict.items():
             if annotation_data is None:
                 continue
 
-            
             ann_list = annotation_data if isinstance(annotation_data, list) else [annotation_data]
 
             for ann in ann_list:
@@ -221,7 +211,6 @@ class DorsalIndex:
                 elif not isinstance(rec_dict, dict):
                     continue
 
-                
                 if "producer" in rec_dict:
                     add_attr(schema_id, "producer", rec_dict["producer"])
 
@@ -229,7 +218,6 @@ class DorsalIndex:
                     for k, v in rec_dict["attributes"].items():
                         add_attr(schema_id, k, v)
 
-                
                 if schema_id == "open/audio-transcription":
                     if "text" in rec_dict:
                         fts_texts.append(rec_dict["text"])
@@ -292,25 +280,19 @@ class DorsalIndex:
                         add_attr(schema_id, "value", point.get("value"))
 
                 elif schema_id == "dorsal/arxiv":
-                    
                     if "title" in rec_dict:
                         fts_texts.append(rec_dict["title"])
                     if "abstract" in rec_dict:
                         fts_texts.append(rec_dict["abstract"])
 
-                    
-                    
-                    
                     for author in rec_dict.get("authors", []):
                         add_attr(schema_id, "author", author)
                         fts_texts.append(author)
 
-                    
                     add_attr(schema_id, "arxiv_id", rec_dict.get("arxiv_id"))
                     add_attr(schema_id, "doi", rec_dict.get("doi"))
                     add_attr(schema_id, "journal_ref", rec_dict.get("journal_ref"))
 
-                    
                     for category in rec_dict.get("categories", []):
                         add_attr(schema_id, "category", category)
 
@@ -323,7 +305,6 @@ class DorsalIndex:
         base_annotation = record.annotations.file_base.record
         all_hashes = base_annotation.all_hash_ids or {}
 
-        
         record_json_str = record.model_dump_json(by_alias=True, exclude_none=True)
         is_compressed_flag = 0
 
@@ -349,22 +330,17 @@ class DorsalIndex:
             "hash_tlsh": all_hashes.get("TLSH"),
         }
 
-        
         fts_texts, eav_attributes = self._extract_search_data(record)
 
-        
         full_fts_text = " ".join([str(t) for t in fts_texts if t]).strip()
 
-        
         eav_inserts = [(path, attr[0], attr[1], attr[2], attr[3]) for attr in eav_attributes]
 
         cursor = conn.cursor()
 
-        
         cursor.execute("DELETE FROM dorsal_fts WHERE abspath = ?", (path,))
         cursor.execute("DELETE FROM file_attributes WHERE abspath = ?", (path,))
 
-        
         cursor.execute(
             """
             INSERT OR REPLACE INTO cached_files (
@@ -380,7 +356,6 @@ class DorsalIndex:
             sql_data,
         )
 
-        
         if full_fts_text:
             cursor.execute("INSERT INTO dorsal_fts (abspath, content) VALUES (?, ?)", (path, full_fts_text))
 
@@ -457,7 +432,7 @@ class DorsalIndex:
             if cached_mod_time != modified_time:
                 logger.debug(f"Stale full record found for '{path}'. Deleting before upserting new hash.")
                 cursor.execute("DELETE FROM cached_files WHERE abspath = ?", (path,))
-                
+
                 cursor.execute("DELETE FROM dorsal_fts WHERE abspath = ?", (path,))
                 cursor.execute("DELETE FROM file_attributes WHERE abspath = ?", (path,))
 

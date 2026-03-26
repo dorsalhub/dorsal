@@ -43,29 +43,23 @@ def mock_file_record_strict(mocker) -> MagicMock:
     """Provides a mock FileRecordStrict object configured to test FTS and EAV extraction."""
     record = mocker.MagicMock()
 
-    
     record.annotations.file_base.record.name = "test.pdf"
     record.annotations.file_base.record.extension = ".pdf"
     record.annotations.file_base.record.size = 1024
     record.annotations.file_base.record.media_type = "application/pdf"
     record.annotations.file_base.record.all_hash_ids = {"SHA-256": "fakehash256"}
 
-    
     tag = mocker.MagicMock()
     tag.name = "project"
     tag.value = "alpha"
     record.tags = [tag]
 
-    
     record.annotations.model_dump.return_value = {
         "open/generic": {"record": {"description": "highly confidential financial data", "producer": "test-runner"}}
     }
 
     record.model_dump_json.return_value = '{"test": "data"}'
     return record
-
-
-
 
 
 def test_upsert_and_get_record_compressed(temp_index: DorsalIndex, mock_file_record_strict):
@@ -91,38 +85,29 @@ def test_upsert_and_get_record_uncompressed(temp_index: DorsalIndex, mock_file_r
     assert json.loads(fetched.record_json) == {"test": "data"}
 
 
-
-
-
 def test_upsert_record_populates_search_indexes(temp_index: DorsalIndex, mock_file_record_strict):
     """Verifies that FTS5 and EAV tables are populated during an upsert."""
     temp_index.upsert_record(path="/fake/test.pdf", modified_time=123.45, record=mock_file_record_strict)
 
     cursor = temp_index.conn.cursor()
 
-    
     cursor.execute("SELECT content FROM dorsal_fts WHERE abspath = ?", ("/fake/test.pdf",))
     fts_row = cursor.fetchone()
     assert fts_row is not None
     content = fts_row["content"]
     assert "test.pdf" in content
     assert ".pdf" in content
-    assert "highly confidential financial data" in content  
+    assert "highly confidential financial data" in content
 
-    
     cursor.execute("SELECT schema_id, key, value_text FROM file_attributes WHERE abspath = ?", ("/fake/test.pdf",))
     eav_rows = cursor.fetchall()
     assert len(eav_rows) > 0
 
     eav_dicts = [{"schema": r["schema_id"], "key": r["key"], "val": r["value_text"]} for r in eav_rows]
 
-    
     assert {"schema": "tag", "key": "project", "val": "alpha"} in eav_dicts
-    
+
     assert {"schema": "open/generic", "key": "producer", "val": "test-runner"} in eav_dicts
-
-
-
 
 
 @patch("os.lstat")
@@ -143,26 +128,21 @@ def test_upsert_hash_and_get_hash(mock_lstat, temp_index: DorsalIndex):
     assert fetched_hash == "abc123blake"
 
 
-
-
-
 @patch("os.path.exists")
 @patch("os.lstat")
 def test_prune_removes_stale_records_and_indexes(
     mock_lstat, mock_exists, temp_index: DorsalIndex, mock_file_record_strict
 ):
     """Test that prune removes records AND their search indexes if files are missing or modified."""
-    
+
     temp_index.upsert_record(path="/fake/missing.pdf", modified_time=100.0, record=mock_file_record_strict)
 
-    
     mock_exists.return_value = False
 
     removed, total = temp_index.prune()
     assert removed == 1
     assert total == 1
 
-    
     cursor = temp_index.conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM cached_files")
@@ -193,15 +173,11 @@ def test_optimize_runs_all_maintenance(mock_vacuum, mock_sync, mock_prune, temp_
     assert result["records_rewritten_for_compression"] == 2
 
 
-
-
-
 def test_sync_compression_compresses_records(temp_index: DorsalIndex):
     """Test that _sync_compression correctly compresses uncompressed records."""
     temp_index.use_compression = True
     uncompressed_data = b'{"test": "data"}'
 
-    
     cursor = temp_index.conn.cursor()
     cursor.execute(
         "INSERT INTO cached_files (abspath, modified_time, record, is_compressed) VALUES (?, ?, ?, ?)",
@@ -212,7 +188,6 @@ def test_sync_compression_compresses_records(temp_index: DorsalIndex):
     rewritten_count = temp_index._sync_compression()
     assert rewritten_count == 1
 
-    
     cursor.execute(
         "SELECT record, is_compressed FROM cached_files WHERE abspath = ?",
         ("/fake/file.txt",),
@@ -220,9 +195,6 @@ def test_sync_compression_compresses_records(temp_index: DorsalIndex):
     row = cursor.fetchone()
     assert row["is_compressed"] == 1
     assert zlib.decompress(row["record"]) == uncompressed_data
-
-
-
 
 
 def test_export_json_gz(temp_index: DorsalIndex, mock_file_record_strict, tmp_path):
