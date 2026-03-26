@@ -26,6 +26,9 @@
   <a href="https://codecov.io/gh/dorsalhub/dorsal">
     <img src="https://codecov.io/gh/dorsalhub/dorsal/graph/badge.svg" alt="codecov">
   </a>
+  <a href="https://mypy-lang.org/">
+    <img src="https://img.shields.io/badge/mypy-checked-0ea5e9" alt="Mypy checked">
+  </a>
 </p>
 
 **Dorsal** is an extensible, local-first framework and command line tool for **generating, validating, and managing structured file metadata**.
