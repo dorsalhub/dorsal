@@ -25,6 +25,8 @@ import zlib
 
 from pydantic import BaseModel, Field
 
+from dorsal.file.index.extractors import registry, create_eav_tuple
+
 if TYPE_CHECKING:
     from dorsal.file.validators.file_record import FileRecordStrict
 
@@ -160,38 +162,22 @@ class DorsalIndex:
         logger.debug("Schema initialization complete.")
 
     def _extract_search_data(self, record: "FileRecordStrict") -> tuple[list[str], list[tuple]]:
-        """
-        Unrolls a FileRecordStrict into text chunks for FTS5 and flat tuples for the EAV table.
-        Returns: (fts_texts, eav_attributes)
-        """
+        """Extracts searchable data by delegating to the ExtractorRegistry."""
         fts_texts: list[str] = []
-        eav_attributes: list[tuple[str, str, str | None, float | None]] = []
+        eav_attributes: list[tuple] = []
 
-        def add_attr(schema_id: str, key: str, value: Any):
-            if value is None:
-                return
-            if isinstance(value, bool):
-                eav_attributes.append((schema_id, key, str(value).lower(), None))
-            elif isinstance(value, (int, float)):
-                eav_attributes.append((schema_id, key, None, float(value)))
-            else:
-                eav_attributes.append((schema_id, key, str(value), None))
-
-        base = (
-            record.annotations.file_base.record
-            if record.annotations and hasattr(record.annotations, "file_base") and record.annotations.file_base
-            else None
-        )
-        if base:
-            if base.name is not None:
+        if record.annotations and record.annotations.file_base:
+            base = record.annotations.file_base.record
+            if base and base.name:
                 fts_texts.append(base.name)
-
-            if base.extension is not None:
+            if base and base.extension:
                 fts_texts.append(base.extension)
 
         if hasattr(record, "tags"):
             for tag in record.tags:
-                add_attr("tag", tag.name, tag.value)
+                tup = create_eav_tuple("tag", tag.name, tag.value)
+                if tup:
+                    eav_attributes.append(tup)
 
         if not record.annotations:
             return fts_texts, eav_attributes
@@ -206,95 +192,15 @@ class DorsalIndex:
 
             for ann in ann_list:
                 rec_dict = ann.get("record", {}) if isinstance(ann, dict) else getattr(ann, "record", {})
+
                 if hasattr(rec_dict, "model_dump"):
                     rec_dict = rec_dict.model_dump(exclude_none=True)
                 elif not isinstance(rec_dict, dict):
                     continue
 
-                if "producer" in rec_dict:
-                    add_attr(schema_id, "producer", rec_dict["producer"])
-
-                if "attributes" in rec_dict and isinstance(rec_dict["attributes"], dict):
-                    for k, v in rec_dict["attributes"].items():
-                        add_attr(schema_id, k, v)
-
-                if schema_id == "open/audio-transcription":
-                    if "text" in rec_dict:
-                        fts_texts.append(rec_dict["text"])
-                    for seg in rec_dict.get("segments", []):
-                        if "text" in seg:
-                            fts_texts.append(seg["text"])
-                    add_attr(schema_id, "language", rec_dict.get("language"))
-                    add_attr(schema_id, "track_id", rec_dict.get("track_id"))
-
-                elif schema_id == "open/classification":
-                    add_attr(schema_id, "target", rec_dict.get("target"))
-                    for label_obj in rec_dict.get("labels", []):
-                        add_attr(schema_id, "label", label_obj.get("label"))
-
-                elif schema_id == "open/document-extraction":
-                    for block in rec_dict.get("blocks", []):
-                        if "text" in block:
-                            fts_texts.append(block["text"])
-
-                elif schema_id == "open/entity-extraction":
-                    for entity in rec_dict.get("entities", []):
-                        if "text" in entity:
-                            fts_texts.append(entity["text"])
-                        if "definition" in entity:
-                            fts_texts.append(entity["definition"])
-                        add_attr(schema_id, "label", entity.get("label"))
-                        add_attr(schema_id, "concept", entity.get("concept"))
-                        add_attr(schema_id, "value", entity.get("value"))
-
-                elif schema_id == "open/generic":
-                    if "description" in rec_dict:
-                        fts_texts.append(rec_dict["description"])
-                    data_obj = rec_dict.get("data", {})
-                    if isinstance(data_obj, dict):
-                        for k, v in data_obj.items():
-                            add_attr(schema_id, k, v)
-
-                elif schema_id == "open/geolocation":
-                    props = rec_dict.get("properties", {})
-                    if props:
-                        add_attr(schema_id, "camera_make", props.get("camera_make"))
-                        add_attr(schema_id, "camera_model", props.get("camera_model"))
-
-                elif schema_id == "open/llm-output":
-                    if "prompt" in rec_dict:
-                        fts_texts.append(rec_dict["prompt"])
-                    if "response_data" in rec_dict:
-                        fts_texts.append(str(rec_dict["response_data"]))
-                    add_attr(schema_id, "model", rec_dict.get("model"))
-                    add_attr(schema_id, "language", rec_dict.get("language"))
-
-                elif schema_id == "open/object-detection":
-                    for obj in rec_dict.get("objects", []):
-                        add_attr(schema_id, "label", obj.get("label"))
-
-                elif schema_id == "open/regression":
-                    add_attr(schema_id, "target", rec_dict.get("target"))
-                    add_attr(schema_id, "unit", rec_dict.get("unit"))
-                    for point in rec_dict.get("points", []):
-                        add_attr(schema_id, "value", point.get("value"))
-
-                elif schema_id == "dorsal/arxiv":
-                    if "title" in rec_dict:
-                        fts_texts.append(rec_dict["title"])
-                    if "abstract" in rec_dict:
-                        fts_texts.append(rec_dict["abstract"])
-
-                    for author in rec_dict.get("authors", []):
-                        add_attr(schema_id, "author", author)
-                        fts_texts.append(author)
-
-                    add_attr(schema_id, "arxiv_id", rec_dict.get("arxiv_id"))
-                    add_attr(schema_id, "doi", rec_dict.get("doi"))
-                    add_attr(schema_id, "journal_ref", rec_dict.get("journal_ref"))
-
-                    for category in rec_dict.get("categories", []):
-                        add_attr(schema_id, "category", category)
+                schema_fts, schema_eav = registry.extract(schema_id, rec_dict)
+                fts_texts.extend(schema_fts)
+                eav_attributes.extend(schema_eav)
 
         return fts_texts, eav_attributes
 
