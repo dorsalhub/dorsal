@@ -50,6 +50,9 @@ def mock_run_deps(mocker, mock_rich_console):
 
     mock_error_console = MagicMock()
 
+    mock_error_console.get_time.side_effect = time.time
+    mock_error_console.is_terminal = False
+
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 

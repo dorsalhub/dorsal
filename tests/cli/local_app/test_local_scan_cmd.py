@@ -15,7 +15,7 @@
 import json
 import datetime
 import pathlib
-from unittest.mock import MagicMock, ANY
+from unittest.mock import MagicMock, ANY, patch
 
 import pytest
 import typer
@@ -238,3 +238,193 @@ def test_scan_dir_empty_graceful_exit(mock_dir_deps, mock_exit_cli, tmp_path):
 
     assert result.exit_code == 0
     mock_exit_cli.assert_called_once()
+
+
+def test_scan_skip_overwrite_conflict(mock_exit_cli, tmp_path):
+    """Hits the skip_cache + overwrite_cache conflict block."""
+    target = tmp_path / "test.txt"
+    target.touch()
+    result = runner.invoke(app, ["local", "scan", str(target), "--skip-cache", "--overwrite-cache"])
+    assert result.exit_code != 0
+    mock_exit_cli.assert_called_with(
+        code=ANY, message="Error: --skip-cache and --overwrite-cache cannot be used together."
+    )
+
+
+def test_scan_output_inference_extensions(mock_file_deps, tmp_path):
+    """Hits the output_path inference block for .json, .csv, and .html."""
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    runner.invoke(app, ["local", "scan", str(target), "--output", tmp_path / "report.json"])
+
+    runner.invoke(app, ["local", "scan", str(target), "--output", tmp_path / "report.html"])
+    mock_file_deps["generate_html"].assert_called()
+
+
+def test_scan_file_ignored_dir_flags(mock_rich_console, mock_file_deps, tmp_path):
+    """Hits the directory-flag warning when scanning a file."""
+    target = tmp_path / "test.txt"
+    target.touch()
+    runner.invoke(app, ["local", "scan", str(target), "--csv", "--recursive", "--lazy"])
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Directory-specific flags" in printed_text
+    assert "are ignored when scanning a single file" in printed_text
+
+
+def test_scan_file_fallback_local_filesystem(mock_file_deps, tmp_path):
+    """Hits the 'else' block where local_attributes is missing from the record_dict."""
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    mock_file_deps["local_file_class"].return_value.to_dict.return_value = {
+        "name": "test.txt",
+        "hashes": {"SHA-256": "mock_hash"},
+    }
+
+    result = runner.invoke(app, ["local", "scan", str(target)])
+    assert result.exit_code == 0
+
+
+@patch("builtins.open")
+def test_scan_file_save_success_and_error(mock_open, mock_rich_console, mock_file_deps, tmp_path):
+    """Hits the file save block and the exception block in _save_report_to_disk."""
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    runner.invoke(app, ["local", "scan", str(target), "-s"])
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "JSON report saved to" in printed_text
+
+    mock_rich_console.reset_mock()
+    mock_open.side_effect = Exception("Mock Write Failure")
+    runner.invoke(app, ["local", "scan", str(target), "-s"])
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Could not save JSON report. Error: Mock Write Failure" in printed_text
+
+
+def test_scan_file_html_error(mock_rich_console, mock_file_deps, tmp_path):
+    """Hits the exception block during file HTML report generation."""
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    mock_file_deps["generate_html"].side_effect = Exception("Mock HTML Failure")
+    runner.invoke(app, ["local", "scan", str(target), "--report"])
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Could not generate HTML report. Error: Mock HTML Failure" in printed_text
+
+
+def test_scan_dir_init_error(mock_exit_cli, mock_dir_deps, tmp_path):
+    """Hits the exception block when initializing LocalFileCollection."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    mock_dir_deps["collection_class"].side_effect = Exception("Init failed")
+    runner.invoke(app, ["local", "scan", str(target)])
+
+    mock_exit_cli.assert_called()
+    assert "An error occurred during file discovery: Init failed" in mock_exit_cli.call_args.kwargs["message"]
+
+
+def test_scan_dir_json_stdout(mock_rich_console, mock_exit_cli, mock_dir_deps, tmp_path):
+    """Hits the early exit when outputting directory JSON to stdout."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "--json"])
+    mock_exit_cli.assert_called()
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "total_files_found" in printed_text
+
+
+def test_scan_dir_warnings(mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the warnings block for directory scans."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    mock_dir_deps["collection_instance"].warnings = ["This is a mock warning"]
+    runner.invoke(app, ["local", "scan", str(target)])
+
+    print_calls = mock_rich_console.print.call_args_list
+    panels = [call.args[0] for call in print_calls if isinstance(call.args[0], Panel)]
+    assert any("This is a mock warning" in str(p.renderable) for p in panels)
+
+
+def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the dir save logic and its exception handler."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "-s"])
+    mock_dir_deps["collection_instance"].to_json.assert_called_once()
+
+    mock_rich_console.reset_mock()
+    mock_dir_deps["collection_instance"].to_json.side_effect = Exception("Mock Dir JSON Error")
+    runner.invoke(app, ["local", "scan", str(target), "-s"])
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Could not save JSON report. Error: Mock Dir JSON Error" in printed_text
+
+
+def test_scan_dir_save_csv_error(mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the exception handler when saving a dir CSV fails."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    mock_dir_deps["collection_instance"].to_csv.side_effect = Exception("Mock CSV Error")
+    runner.invoke(app, ["local", "scan", str(target), "--csv"])
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Could not save CSV report. Error: Mock CSV Error" in printed_text
+
+
+def test_scan_dir_save_html_error(mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the exception handler when saving a dir HTML fails."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    mock_dir_deps["generate_html"].side_effect = Exception("Mock Dir HTML Error")
+    runner.invoke(app, ["local", "scan", str(target), "--report"])
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Could not generate HTML directory report. Error: Mock Dir HTML Error" in printed_text
+
+
+def test_scan_output_path_is_dir(mock_file_deps, tmp_path):
+    """Hits the block checking if output_path is an existing directory."""
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    out_dir = tmp_path / "reports"
+    out_dir.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "-s", "--output", str(out_dir)])
+
+
+@patch("pathlib.Path.is_symlink")
+@patch("pathlib.Path.readlink")
+def test_scan_dir_symlink_success_and_error(mock_readlink, mock_is_symlink, mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the symlink display logic and its OSError handler in the table printer."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    mock_is_symlink.return_value = True
+
+    mock_readlink.return_value = "/real/target/file.txt"
+    runner.invoke(app, ["local", "scan", str(target)])
+
+    mock_readlink.side_effect = OSError("Symlink broken")
+    runner.invoke(app, ["local", "scan", str(target)])
+
+
+def test_scan_dir_limit_message(mock_rich_console, mock_dir_deps, tmp_path):
+    """Hits the check for limit < total files."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "--limit", "1"])
+
+    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Showing first 1 of 2 files" in printed_text
