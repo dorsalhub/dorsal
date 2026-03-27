@@ -180,10 +180,14 @@ class QueryCompiler:
         fts_terms = []
 
         for text in parsed_query.get("text", []):
-            if " " in text:
-                fts_terms.append(f'"{text}"')
+            is_wildcard = text.endswith("*")
+            clean_text = text[:-1] if is_wildcard else text
+            escaped_text = clean_text.replace('"', '""')
+
+            if is_wildcard:
+                fts_terms.append(f'"{escaped_text}"*')
             else:
-                fts_terms.append(text)
+                fts_terms.append(f'"{escaped_text}"')
 
         for key, op, val in parsed_query.get("filters", []):
             sql_op = "=" if op == ":" else op

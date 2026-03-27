@@ -76,13 +76,12 @@ class TestQueryCompiler:
         assert 0.9 in params
 
     def test_compile_fts_text(self):
-
         processed = {"text": ["machine", "dark matter"], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
         assert "f.content MATCH ?" in sql
 
-        assert params == ['machine AND "dark matter"']
+        assert params == ['"machine" AND "dark matter"']
 
     def test_compile_invalid_filesize(self):
         """Hits the ValueError pass for parse_filesize."""
@@ -130,7 +129,7 @@ class TestQueryCompiler:
         assert "ORDER BY" not in sql
         assert "LIMIT" not in sql
 
-        assert params == [".pdf", "machine"]
+        assert params == [".pdf", '"machine"']
 
     def test_compile_sorting(self):
         """Tests deterministic sorting and injection prevention in the compiler."""
@@ -144,3 +143,13 @@ class TestQueryCompiler:
 
         sql, _ = QueryCompiler.compile(processed, sort_by="drop_tables_hacker_column")
         assert "ORDER BY c.modified_time DESC" in sql
+
+    def test_compile_fts_wildcard(self):
+        """Tests that explicit wildcards are placed outside the quotes for FTS5 prefix matching."""
+
+        processed = {"text": ["ren*", "exact", 'weird"quote*'], "filters": []}
+        sql, params = QueryCompiler.compile(processed)
+
+        assert "f.content MATCH ?" in sql
+
+        assert params == ['"ren"* AND "exact" AND "weird""quote"*']
