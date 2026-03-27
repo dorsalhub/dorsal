@@ -57,11 +57,9 @@ def push_target(
             file_okay=True,
             dir_okay=True,
             readable=True,
-            resolve_path=True,
             help="The path to the file or directory to push to DorsalHub.",
         ),
     ],
-    
     public: Annotated[
         bool,
         typer.Option("--public/--private", help="Index the record(s) as public or private."),
@@ -78,7 +76,6 @@ def push_target(
         bool,
         typer.Option("--json", help="Output the API response as a raw JSON object to stdout."),
     ] = False,
-    
     recursive: Annotated[
         bool,
         typer.Option(
@@ -105,12 +102,12 @@ def push_target(
         ),
     ] = None,
     collection_desc: Annotated[
-        str | None, 
+        str | None,
         typer.Option(
-            "--desc", 
+            "--desc",
             help="[Dir Only] Description for the new collection.",
             rich_help_panel="Directory Push Options",
-        )
+        ),
     ] = None,
     dry_run: Annotated[
         bool,
@@ -144,7 +141,6 @@ def push_target(
             rich_help_panel="Performance Options",
         ),
     ] = False,
-    
     use_cache: Annotated[
         bool,
         typer.Option(
@@ -184,45 +180,80 @@ def push_target(
     console = get_rich_console()
     palette = ctx.obj.get("palette", {})
 
-    
     if use_cache and skip_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --use-cache and --skip-cache flags cannot be used together.")
     if skip_cache and overwrite_cache:
-        exit_cli(code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache flags cannot be used together.")
+        exit_cli(
+            code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache flags cannot be used together."
+        )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
 
-    
     if path.is_file():
-        dir_flags_used = any([recursive, create_collection, collection_name, collection_desc, dry_run, ignore_duplicates, not fail_fast, lazy])
+        dir_flags_used = any(
+            [
+                recursive,
+                create_collection,
+                collection_name,
+                collection_desc,
+                dry_run,
+                ignore_duplicates,
+                not fail_fast,
+                lazy,
+            ]
+        )
         if dir_flags_used:
-             console.print("⚠️ [yellow]Warning:[/] Directory-specific push flags are ignored when pushing a single file.", style=palette.get("warning", "yellow"))
-             
+            console.print(
+                "⚠️ [yellow]Warning:[/] Directory-specific push flags are ignored when pushing a single file.",
+                style=palette.get("warning", "yellow"),
+            )
+
         _process_file_push(
-            ctx=ctx, path=path, use_cache_value=use_cache_value, overwrite_cache=overwrite_cache,
-            public=public, strict=strict, json_output=json_output, resolve_links=resolve_links,
-            palette=palette, console=console
+            ctx=ctx,
+            path=path,
+            use_cache_value=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            public=public,
+            strict=strict,
+            json_output=json_output,
+            resolve_links=resolve_links,
+            palette=palette,
+            console=console,
         )
     else:
         _process_dir_push(
-            ctx=ctx, path=path, use_cache_value=use_cache_value, overwrite_cache=overwrite_cache,
-            public=public, strict=strict, json_output=json_output, resolve_links=resolve_links,
-            recursive=recursive, create_collection=create_collection, collection_name=collection_name,
-            collection_desc=collection_desc, dry_run=dry_run, ignore_duplicates=ignore_duplicates,
-            fail_fast=fail_fast, lazy=lazy, palette=palette, console=console
+            ctx=ctx,
+            path=path,
+            use_cache_value=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            public=public,
+            strict=strict,
+            json_output=json_output,
+            resolve_links=resolve_links,
+            recursive=recursive,
+            create_collection=create_collection,
+            collection_name=collection_name,
+            collection_desc=collection_desc,
+            dry_run=dry_run,
+            ignore_duplicates=ignore_duplicates,
+            fail_fast=fail_fast,
+            lazy=lazy,
+            palette=palette,
+            console=console,
         )
 
 
-
-
-
-def _process_file_push(ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, palette, console):
+def _process_file_push(
+    ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, palette, console
+) -> None:
     from dorsal.file.dorsal_file import LocalFile
 
     access_level_str = "public" if public else "private"
 
     if not json_output:
-        console.print(f"📡 Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/] as a {access_level_str} record...")
+        console.print(
+            f"📡 Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/] as a {access_level_str} record..."
+        )
 
     try:
         local_file = LocalFile(
@@ -255,7 +286,9 @@ def _process_file_push(ctx, path, use_cache_value, overwrite_cache, public, stri
                 if api_response.results[0].annotations:
                     detail = api_response.results[0].annotations[0].detail
 
-            success_text = Text(f"The file could not be pushed to DorsalHub.\nReason: {detail}", style=palette.get("error", "bold red"))
+            success_text = Text(
+                f"The file could not be pushed to DorsalHub.\nReason: {detail}", style=palette.get("error", "bold red")
+            )
             panel_title, panel_border_style = "❌ Push Failed", palette.get("panel_border_error", "red")
 
         console.print(Panel(success_text, expand=False, title=panel_title, border_style=panel_border_style))
@@ -283,10 +316,26 @@ def _process_file_push(ctx, path, use_cache_value, overwrite_cache, public, stri
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")
 
 
-
-
-
-def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, recursive, create_collection, collection_name, collection_desc, dry_run, ignore_duplicates, fail_fast, lazy, palette, console):
+def _process_dir_push(
+    ctx,
+    path,
+    use_cache_value,
+    overwrite_cache,
+    public,
+    strict,
+    json_output,
+    resolve_links,
+    recursive,
+    create_collection,
+    collection_name,
+    collection_desc,
+    dry_run,
+    ignore_duplicates,
+    fail_fast,
+    lazy,
+    palette,
+    console,
+) -> None:
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
@@ -295,16 +344,26 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
     if create_collection and not collection_name:
         collection_name = path.name
         if not json_output:
-            console.print(f"[{palette.get('info', 'dim')}]--name not provided. Defaulting to directory name: '[bold]{collection_name}[/]'[/]")
+            console.print(
+                f"[{palette.get('info', 'dim')}]--name not provided. Defaulting to directory name: '[bold]{collection_name}[/]'[/]"
+            )
 
     if not json_output:
         action_verb = "publish" if create_collection else "push"
-        console.print(f"📡 Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
+        console.print(
+            f"📡 Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
+        )
 
     try:
         collection = LocalFileCollection(
-            source=str(path), recursive=recursive, console=progress_console, palette=palette,
-            use_cache=use_cache_value, overwrite_cache=overwrite_cache, follow_symlinks=resolve_links, lazy=lazy,
+            source=str(path),
+            recursive=recursive,
+            console=progress_console,
+            palette=palette,
+            use_cache=use_cache_value,
+            overwrite_cache=overwrite_cache,
+            follow_symlinks=resolve_links,
+            lazy=lazy,
         )
 
         if not collection:
@@ -316,21 +375,27 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
             if len(unique_files) < original_count:
                 collection = LocalFileCollection(source=cast(list[LocalFile], unique_files), use_cache=use_cache_value)
                 if not json_output:
-                    console.print(f"[{palette.get('info', 'dim')}]Ignoring {original_count - len(unique_files)} duplicate files.[/]")
+                    console.print(
+                        f"[{palette.get('info', 'dim')}]Ignoring {original_count - len(unique_files)} duplicate files.[/]"
+                    )
 
         if dry_run:
             _display_dry_run_panel(collection=collection, use_cache=use_cache_value, palette=palette, console=console)
             exit_cli()
 
         if create_collection and len(collection.files) > API_MAX_BATCH_SIZE:
-            logger.warning(f"Directory too large to create a collection via the CLI (limit: {API_MAX_BATCH_SIZE}). Instead, use the `LocalFileCollection` directly.")
+            logger.warning(
+                f"Directory too large to create a collection via the CLI (limit: {API_MAX_BATCH_SIZE}). Instead, use the `LocalFileCollection` directly."
+            )
             create_collection = False
 
         elif create_collection:
             if collection_name is None:
-                return exit_cli(code=EXIT_CODE_ERROR, message="Internal Error: Collection name was not set before creation.")
-                
-            remote_collection = collection.create_remote_collection(name=collection_name, description=collection_desc, public=public)
+                exit_cli(code=EXIT_CODE_ERROR, message="Internal Error: Collection name was not set before creation.")
+
+            remote_collection = collection.create_remote_collection(
+                name=collection_name, description=collection_desc, public=public
+            )
 
             if json_output:
                 console.print(remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True))
@@ -345,7 +410,9 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
                 console.print(success_panel)
 
         if not create_collection:
-            summary = collection.push(public=public, console=progress_console, palette=palette, fail_fast=fail_fast, strict=strict)
+            summary = collection.push(
+                public=public, console=progress_console, palette=palette, fail_fast=fail_fast, strict=strict
+            )
 
             is_duplicate_error = False
             if summary.get("failed", 0) > 0:
@@ -364,7 +431,14 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
                         "To push this directory anyway (the first of each duplicate will be indexed), run:\n"
                         f'[bold {command_color}]dorsal local push "{escape(str(path))}" --ignore-duplicates[/]',
                     )
-                    console.print(Panel(error_text, title=f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]", border_style=palette.get("panel_border_error", "red"), expand=False))
+                    console.print(
+                        Panel(
+                            error_text,
+                            title=f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]",
+                            border_style=palette.get("panel_border_error", "red"),
+                            expand=False,
+                        )
+                    )
                 else:
                     console.print(json.dumps(summary, indent=2, default=str, ensure_ascii=False))
                 exit_cli(code=EXIT_CODE_ERROR)
@@ -382,10 +456,16 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
             console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Failed:[/] {e}")
             summary = e.summary
             if summary and (summary.get("failed", 0) > 0 or summary.get("errors") or summary.get("failures")):
-                failed_table = Table(title="Strict Integrity Failures", expand=True, header_style=palette.get("table_header", "bold"), style="red")
+                failed_table = Table(
+                    title="Strict Integrity Failures",
+                    expand=True,
+                    header_style=palette.get("table_header", "bold"),
+                    style="red",
+                )
                 failed_table.add_column("Error Detail", style="red")
                 if "failures" in summary:
-                    for failure in summary["failures"]: failed_table.add_row(escape(str(failure)))
+                    for failure in summary["failures"]:
+                        failed_table.add_row(escape(str(failure)))
                 elif "errors" in summary:
                     for error in summary["errors"]:
                         msg = error.get("message") if isinstance(error, dict) else str(error)
@@ -404,59 +484,86 @@ def _process_dir_push(ctx, path, use_cache_value, overwrite_cache, public, stric
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
 
 
-
-
-
-def _display_dry_run_panel(collection, use_cache, palette, console):
+def _display_dry_run_panel(collection, use_cache, palette, console) -> None:
     from dorsal.file.utils.size import human_filesize
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
     cache_info_str = f" ({files_from_cache} from cache)" if files_from_cache > 0 else ""
 
-    console.print(Panel(f"DRY RUN MODE: Would push {len(collection)} files.", border_style=palette.get("panel_border_warning", "yellow")))
+    console.print(
+        Panel(
+            f"DRY RUN MODE: Would push {len(collection)} files.",
+            border_style=palette.get("panel_border_warning", "yellow"),
+        )
+    )
     console.print(f"🔎 Found {len(collection)} file(s) that would be pushed{cache_info_str}:")
-    
+
     scan_table = Table(box=box.ROUNDED, header_style=palette.get("table_header", "bold"))
     scan_table.add_column("Filename", style=palette.get("primary_value", "cyan"), no_wrap=True)
     scan_table.add_column("Size")
     scan_table.add_column("Media Type")
     scan_table.add_column("Source", justify="center")
-    
+
     for file in collection:
-        source_text, source_style = ("Cache", palette.get("success", "green")) if file._source == "cache" else ("Disk", palette.get("key", "dim"))
+        source_text, source_style = (
+            ("Cache", palette.get("success", "green"))
+            if file._source == "cache"
+            else ("Disk", palette.get("key", "dim"))
+        )
         scan_table.add_row(file.name, human_filesize(file.size), file.media_type, f"[{source_style}]{source_text}[/]")
     console.print(scan_table)
 
 
 def _display_summary_panel(summary, public, palette, use_cache, collection, console):
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
-    access_level_str, access_level_style = ("Public", palette.get("access_public", "default")) if public else ("Private", palette.get("access_private", "default"))
+    access_level_str, access_level_style = (
+        ("Public", palette.get("access_public", "default"))
+        if public
+        else ("Private", palette.get("access_private", "default"))
+    )
 
     summary_table = Table.grid(expand=True)
     summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=25)
     summary_table.add_column(justify="left")
     summary_table.add_row("Access Level:", Text(access_level_str, style=access_level_style))
     summary_table.add_row("Files Scanned:", f"{summary.get('total_records', 0)} ({files_from_cache} from cache)")
-    summary_table.add_row("File Records Accepted:", Text(str(summary.get("success", 0)), style=palette.get("success", "green")))
+    summary_table.add_row(
+        "File Records Accepted:", Text(str(summary.get("success", 0)), style=palette.get("success", "green"))
+    )
 
     batches = summary.get("batches", [])
     if len(batches) > 1:
         successful_batches = sum(1 for b in batches if b["status"] == "success")
         summary_table.add_row()
         summary_table.add_row("Batches Created:", str(len(batches)))
-        summary_table.add_row("Successful Batches:", Text(str(successful_batches), style=palette.get("success", "green")))
+        summary_table.add_row(
+            "Successful Batches:", Text(str(successful_batches), style=palette.get("success", "green"))
+        )
         if failed_batches := len(batches) - successful_batches:
             summary_table.add_row("Failed Batches:", Text(str(failed_batches), style=palette.get("error", "red")))
 
-    console.print(Panel(summary_table, title=f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]", expand=False, border_style=palette.get("panel_border_success", "green")))
+    console.print(
+        Panel(
+            summary_table,
+            title=f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]",
+            expand=False,
+            border_style=palette.get("panel_border_success", "green"),
+        )
+    )
 
     if summary.get("failed", 0) > 0 or summary.get("errors"):
         console.print(f"\n[{palette.get('error', 'red')}]⚠️ Some batches failed to process:[/]")
-        failed_table = Table(title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold"))
+        failed_table = Table(
+            title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold")
+        )
         failed_table.add_column("Batch #", style=palette.get("primary_value", "cyan"), ratio=15)
         failed_table.add_column("Error Type", style=palette.get("warning", "yellow"), ratio=25)
         failed_table.add_column("Error Message", ratio=60)
 
         for error in summary.get("errors", []):
-            failed_table.add_row(str(error.get("batch_index", "?")), error.get("error_type", "Unknown"), error.get("error_message", "No message"))
+            failed_table.add_row(
+                str(error.get("batch_index", "?")),
+                error.get("error_type", "Unknown"),
+                error.get("error_message", "No message"),
+            )
         console.print(failed_table)

@@ -23,7 +23,7 @@ from rich.panel import Panel
 from dorsal.cli import app
 
 
-from dorsal.cli.dir_app import duplicates_dir_cmd
+from dorsal.cli.local_app import duplicates_cmd
 
 
 runner = CliRunner()
@@ -49,14 +49,14 @@ MOCK_DUPLICATES_RESULT = {
 
 @pytest.fixture
 def mock_duplicates_cmd(mocker):
-    """Mocks backend dependencies for the `dir duplicates` command."""
+    """Mocks backend dependencies for the `local duplicates` command."""
     import dorsal.api.file
 
     mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=True)
 
     mock_find_dupes = mocker.patch.object(dorsal.api.file, "find_duplicates", return_value=MOCK_DUPLICATES_RESULT)
 
-    mock_save_report = mocker.patch.object(duplicates_dir_cmd, "_save_duplicates_report")
+    mock_save_report = mocker.patch.object(duplicates_cmd, "_save_duplicates_report")
 
     return {
         "find_duplicates": mock_find_dupes,
@@ -65,8 +65,8 @@ def mock_duplicates_cmd(mocker):
 
 
 def test_duplicates_dir_success_panel_output(mock_rich_console, mock_duplicates_cmd):
-    """Tests the default `dir duplicates` command, expecting Rich Panel output."""
-    result = runner.invoke(app, ["dir", "duplicates", TEST_DATA_DIR])
+    """Tests the default `local duplicates` command, expecting Rich Panel output."""
+    result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
 
@@ -81,7 +81,7 @@ def test_duplicates_dir_no_duplicates(mock_rich_console, mock_duplicates_cmd):
     """Tests the output when no duplicates are found."""
     mock_duplicates_cmd["find_duplicates"].return_value = {}
 
-    result = runner.invoke(app, ["dir", "duplicates", TEST_DATA_DIR])
+    result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
 
@@ -91,7 +91,7 @@ def test_duplicates_dir_no_duplicates(mock_rich_console, mock_duplicates_cmd):
 
 def test_duplicates_dir_json_output(mock_rich_console, mock_duplicates_cmd):
     """Tests the --json output flag."""
-    result = runner.invoke(app, ["dir", "duplicates", TEST_DATA_DIR, "--json"])
+    result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR, "--json"])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
 
@@ -122,7 +122,7 @@ def test_duplicates_dir_limit_output(mock_rich_console, mock_duplicates_cmd):
     }
     mock_duplicates_cmd["find_duplicates"].return_value = multi_result
 
-    result = runner.invoke(app, ["dir", "duplicates", TEST_DATA_DIR, "--limit", "1"])
+    result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR, "--limit", "1"])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
     printed_panels = [item for item in mock_rich_console.print.call_args_list if isinstance(item.args[0], Panel)]
@@ -136,7 +136,7 @@ def test_duplicates_dir_exception_handling(mock_rich_console, mock_duplicates_cm
     """Tests that a generic exception is handled gracefully."""
     mock_duplicates_cmd["find_duplicates"].side_effect = Exception("File system is unreadable")
 
-    result = runner.invoke(app, ["dir", "duplicates", TEST_DATA_DIR])
+    result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR])
 
     assert result.exit_code != 0
 

@@ -16,6 +16,11 @@ import typer
 
 from dorsal.cli.local_app.scan_cmd import scan_target
 from dorsal.cli.local_app.push_cmd import push_target
+from dorsal.cli.local_app.report_cmd import report_target
+from dorsal.cli.local_app.info_cmd import info_target
+from dorsal.cli.local_app.identify_cmd import identify_target
+from dorsal.cli.local_app.hash_cmd import hash_target
+from dorsal.cli.local_app.duplicates_cmd import duplicates_target
 
 app = typer.Typer(
     name="local",
@@ -25,3 +30,10 @@ app = typer.Typer(
 
 app.command(name="scan")(scan_target)
 app.command(name="push")(push_target)
+app.command(name="report")(report_target)
+app.command(name="info")(info_target)
+app.command(name="hash")(hash_target)
+app.command(name="id")(identify_target)
+app.command(name="identify", hidden=True)(identify_target)
+app.command(name="dupes")(duplicates_target)
+app.command(name="duplicates", hidden=True)(duplicates_target)

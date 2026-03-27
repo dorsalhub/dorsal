@@ -286,7 +286,7 @@ def _process_file_scan(
     resolve_links,
     palette,
     console,
-):
+) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
 
@@ -377,7 +377,7 @@ def _process_dir_scan(
     lazy,
     palette,
     console,
-):
+) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
     start_time = time.perf_counter()

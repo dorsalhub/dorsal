@@ -41,7 +41,7 @@ MOCK_HASHES = {
 @pytest.fixture
 def mock_hash_cmd(mocker):
     """
-    Mocks dependencies for the `file hash` command.
+    Mocks dependencies for the `local hash` command.
     """
     mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=True)
     mock_hash_reader = mocker.patch("dorsal.file.hash_reader.HASH_READER.get", return_value=MOCK_HASHES)
@@ -54,7 +54,7 @@ def mock_hash_cmd(mocker):
 
 def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd):
     """Tests the default case with no flags, expecting a Rich Panel."""
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH])
 
     assert result.exit_code == 0
     mock_hash_cmd.assert_called_once()
@@ -71,7 +71,7 @@ def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd):
 def test_hash_single_hash_plain_output(mock_rich_console, mock_hash_cmd):
     """Tests requesting a single hash, expecting plain text output."""
     normalized_path = os.path.normpath(str(TEST_FILE_PATH))
-    result = runner.invoke(app, ["file", "hash", normalized_path, "--sha256"])
+    result = runner.invoke(app, ["local", "hash", normalized_path, "--sha256"])
 
     assert result.exit_code == 0
     mock_hash_cmd.assert_called_once_with(file_path=normalized_path, hashes=["SHA-256"], skip_cache=False)
@@ -80,7 +80,7 @@ def test_hash_single_hash_plain_output(mock_rich_console, mock_hash_cmd):
 
 def test_hash_json_output(mock_rich_console, mock_hash_cmd):
     """Tests the --json flag, expecting a JSON string."""
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH, "--json"])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH, "--json"])
 
     assert result.exit_code == 0
     json_output_str = mock_rich_console.print.call_args.args[0]
@@ -90,7 +90,7 @@ def test_hash_json_output(mock_rich_console, mock_hash_cmd):
 
 def test_hash_cache_flag_conflict():
     """Tests that using both --use-cache and --skip-cache fails."""
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH, "--use-cache", "--skip-cache"])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH, "--use-cache", "--skip-cache"])
 
     assert result.exit_code != 0
     assert "Error: --use-cache and --skip-cache flags cannot be used together" in result.output
@@ -100,7 +100,7 @@ def test_hash_skip_cache_passthrough(mock_hash_cmd, mocker):
     """Tests that --skip-cache flag is passed correctly to the hash reader."""
     mocker.patch("dorsal.common.cli.determine_use_cache_value", return_value=False)
 
-    runner.invoke(app, ["file", "hash", TEST_FILE_PATH, "--skip-cache"])
+    runner.invoke(app, ["local", "hash", TEST_FILE_PATH, "--skip-cache"])
 
     mock_hash_cmd.assert_called_once()
     assert mock_hash_cmd.call_args.kwargs["skip_cache"] is True
@@ -109,7 +109,7 @@ def test_hash_skip_cache_passthrough(mock_hash_cmd, mocker):
 def test_hash_reader_exception(mock_hash_cmd):
     """Tests that an exception from the HASH_READER is handled gracefully."""
     mock_hash_cmd.side_effect = Exception("Disk read error")
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH])
 
     assert result.exit_code != 0
     assert "Disk read error" in result.output
@@ -118,7 +118,7 @@ def test_hash_reader_exception(mock_hash_cmd):
 def test_hash_quickhash_too_small_single(mock_rich_console, mock_hash_cmd):
     """Tests the info message when only --quick is requested and the file is too small."""
     mock_hash_cmd.return_value = {"QUICK": None}
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH, "--quick"])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH, "--quick"])
 
     assert result.exit_code == 0
     info_message = mock_rich_console.print.call_args.args[0]
@@ -133,7 +133,7 @@ def test_hash_quickhash_too_small_table(mock_table_grid, mock_rich_console, mock
     mock_table_grid.return_value = mock_table
     mock_hash_cmd.return_value = {**MOCK_HASHES, "QUICK": None}
 
-    result = runner.invoke(app, ["file", "hash", TEST_FILE_PATH])
+    result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH])
 
     assert result.exit_code == 0
     all_rows_text = ""

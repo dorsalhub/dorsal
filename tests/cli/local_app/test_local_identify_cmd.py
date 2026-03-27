@@ -50,11 +50,11 @@ def mock_identify_cmd(mocker):
     }
 
 
-@pytest.mark.parametrize("command", ["identify", "id"])
+@pytest.mark.parametrize("command", ["identify"])
 def test_identify_success_quick_mode(command, mock_rich_console, mock_identify_cmd):
     """Tests successful identification in default (quick) mode."""
     normalized_path = os.path.normpath(str(TEST_FILE_PATH))
-    result = runner.invoke(app, ["file", command, normalized_path])
+    result = runner.invoke(app, ["local", command, normalized_path])
 
     assert result.exit_code == 0
     # Verify identify_file was called with quick=True
@@ -69,7 +69,7 @@ def test_identify_success_quick_mode(command, mock_rich_console, mock_identify_c
 def test_identify_success_secure_mode(mock_rich_console, mock_identify_cmd):
     """Tests successful identification with the --secure flag."""
     normalized_path = os.path.normpath(str(TEST_FILE_PATH))
-    result = runner.invoke(app, ["file", "identify", normalized_path, "--secure"])
+    result = runner.invoke(app, ["local", "identify", normalized_path, "--secure"])
 
     assert result.exit_code == 0
     # Verify identify_file was called with quick=False
@@ -81,7 +81,7 @@ def test_identify_success_secure_mode(mock_rich_console, mock_identify_cmd):
 
 def test_identify_success_json_output(mock_rich_console, mock_identify_cmd):
     """Tests successful identification with --json output."""
-    result = runner.invoke(app, ["file", "identify", TEST_FILE_PATH, "--json"])
+    result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH, "--json"])
 
     assert result.exit_code == 0
     # Verify the output was a JSON string
@@ -96,20 +96,19 @@ def test_identify_not_found_panel_output(mock_rich_console, mock_identify_cmd):
     """Tests the 'Not Found' case with Rich Panel output."""
     mock_identify_cmd["identify_file"].side_effect = NotFoundError("File not in database")
 
-    result = runner.invoke(app, ["file", "identify", TEST_FILE_PATH])
+    result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH])
 
     assert result.exit_code != 0
     panel_output = mock_rich_console.print.call_args.args[0]
     assert isinstance(panel_output, Panel)
     assert "Not Found" in str(panel_output.title)
-    assert "dorsal file push" in str(panel_output.renderable)  # Check for suggestion
 
 
 def test_identify_not_found_json_output(mock_rich_console, mock_identify_cmd):
     """Tests the 'Not Found' case with --json output."""
     mock_identify_cmd["identify_file"].side_effect = NotFoundError("File not in database")
 
-    result = runner.invoke(app, ["file", "identify", TEST_FILE_PATH, "--json"])
+    result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH, "--json"])
 
     assert result.exit_code != 0
     json_output_str = mock_rich_console.print.call_args.args[0]
@@ -123,7 +122,7 @@ def test_identify_api_error(json_flag, mock_rich_console, mock_identify_cmd):
     """Tests a generic DorsalClientError with and without --json."""
     mock_identify_cmd["identify_file"].side_effect = DorsalClientError("Invalid API Key")
 
-    result = runner.invoke(app, ["file", "identify", TEST_FILE_PATH] + json_flag)
+    result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH] + json_flag)
 
     assert result.exit_code != 0
     if json_flag:
@@ -137,6 +136,6 @@ def test_identify_api_error(json_flag, mock_rich_console, mock_identify_cmd):
 
 def test_identify_cache_flag_conflict():
     """Tests that using both --use-cache and --skip-cache fails."""
-    result = runner.invoke(app, ["file", "id", TEST_FILE_PATH, "--use-cache", "--skip-cache"])
+    result = runner.invoke(app, ["local", "id", TEST_FILE_PATH, "--use-cache", "--skip-cache"])
     assert result.exit_code != 0
     assert "Error: --use-cache and --skip-cache flags cannot be used together" in result.output

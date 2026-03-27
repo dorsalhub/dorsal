@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 HashType = Literal["BLAKE3", "SHA-256", "TLSH", "QUICK"]
 
 
-def hash_file(
+def hash_target(
     ctx: typer.Context,
     path: Annotated[
         pathlib.Path,

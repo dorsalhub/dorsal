@@ -25,7 +25,7 @@ from rich.markup import escape
 logger = logging.getLogger(__name__)
 
 
-def identify_file_cmd(
+def identify_target(
     ctx: typer.Context,
     path: Annotated[
         pathlib.Path,
@@ -132,12 +132,12 @@ def identify_file_cmd(
                 ("This file has not been indexed to DorsalHub.\n\n", "default"),
                 ("Why not (privately) index it yourself, by running:\n", "default"),
                 (
-                    f'dorsal file push "{escape(str(path))}"\n\n',
+                    f'dorsal push "{escape(str(path))}"\n\n',
                     f"bold {palette.get('primary_value', 'default')}",
                 ),
                 ("You can also index it publicly, by running:\n", "default"),
                 (
-                    f'dorsal file push "{escape(str(path))}" --public',
+                    f'dorsal push "{escape(str(path))}" --public',
                     f"bold {palette.get('primary_value', 'default')}",
                 ),
             )

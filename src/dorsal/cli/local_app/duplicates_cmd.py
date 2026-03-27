@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 DuplicateMode = Literal["hybrid", "quick", "sha256"]
 
 
-def duplicates_dir(
+def duplicates_target(
     ctx: typer.Context,
     path: Annotated[
         pathlib.Path,
