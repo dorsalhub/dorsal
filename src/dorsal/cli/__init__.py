@@ -147,7 +147,6 @@ app.command(name="run")(run_model)
 app.command(name="push", help="Push a local file or directory to DorsalHub.")(push_target)
 
 
-
 app.add_typer(auth_app_, name="auth")
 # app.add_typer(file_app_, name="file")
 app.add_typer(annotation_app_, name="annotation")
