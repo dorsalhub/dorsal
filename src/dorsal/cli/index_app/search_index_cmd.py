@@ -170,7 +170,7 @@ def search_index_cmd(
     """
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.api.search import search_local_paginated
-    from dorsal.file.utils.size import human_filesize
+    from dorsal.cli.views.search import display_local_search_results
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
@@ -217,58 +217,8 @@ def search_index_cmd(
             console.print(f"\n[{palette['warning']}]No records found matching your criteria.[/]")
             exit_cli()
 
-        search_caption = (
-            "Search powered by Dorsal Local Index. "
-            "For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
-        )
-
-        table = Table(
-            title="Local Search Results",
-            show_header=True,
-            header_style=palette["table_header"],
-            caption=search_caption,
-            caption_style="dim",
-            caption_justify="left",
-            expand=True,
-            row_styles=["", palette.get("table_row_alt", "dim")],
-        )
-
-        table.add_column("Name", ratio=1, vertical="middle")
-        table.add_column("Size", justify="right", min_width=7, vertical="middle")
-        table.add_column("Media Type", min_width=8, vertical="middle")
-        table.add_column(
-            "SHA256 Hash",
-            style=palette["hash_value"],
-            no_wrap=True,
-            width=66,
-            vertical="middle",
-        )
-
-        for record in response.records:
-            table.add_row(
-                record.name or "Unknown",
-                human_filesize(record.size or 0),
-                record.media_type or "Unknown",
-                record.hash_sha256,
-            )
-
-        console.print(table)
-
-        pagination = response.pagination
-
-        start_display = pagination.start_index + 1 if pagination.record_count > 0 else 0
-
-        footer_text = (
-            f"Showing page [bold]{pagination.current_page}[/] of [bold]{pagination.page_count}[/] | "
-            f"Displaying records [bold]{start_display} - {pagination.end_index}[/] "
-            f"of [bold]{pagination.record_count}[/] total."
-        )
-        console.print(footer_text)
-
-        if pagination.has_next:
-            console.print(
-                f"To see the next page, run the command again with [bold {palette['primary_value']}]--page {pagination.current_page + 1}[/]"
-            )
+        # Render the view!
+        display_local_search_results(console=console, response=response, palette=palette)
 
         if save:
             _save_local_search_results(

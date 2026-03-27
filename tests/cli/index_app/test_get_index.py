@@ -23,14 +23,16 @@ from dorsal.cli import app
 
 runner = CliRunner()
 HASH_ID = "a" * 64
-PATH_ID = "/absolute/path/to/test.pdf"
 
 
 @pytest.fixture
 def mock_get_index_cmd(mocker, tmp_path):
     """Mocks dependencies for the local index get command."""
+    # Use tmp_path to generate a cross-platform absolute path
+    path_id = str(tmp_path / "test.pdf")
+
     mock_record = MagicMock()
-    mock_record.abspath = PATH_ID
+    mock_record.abspath = path_id
     mock_record.name = "test.pdf"
     mock_record.size = 12345
     mock_record.media_type = "application/pdf"
@@ -62,12 +64,14 @@ def mock_get_index_cmd(mocker, tmp_path):
         "record": mock_record,
         "tmp_path": tmp_path,
         "reports_dir": mock_reports_dir,
+        "path_id": path_id,
     }
 
 
 def test_get_index_by_path(mock_rich_console, mock_get_index_cmd):
     """Tests retrieving a record by its absolute path."""
-    result = runner.invoke(app, ["index", "get", PATH_ID])
+    path_id = mock_get_index_cmd["path_id"]
+    result = runner.invoke(app, ["index", "get", path_id])
 
     assert result.exit_code == 0
     mock_get_index_cmd["index_instance"].get_record.assert_called_once()
@@ -102,7 +106,8 @@ def test_get_index_not_found(mock_rich_console, mock_get_index_cmd):
 
 def test_get_index_json_output(mock_rich_console, mock_get_index_cmd):
     """Tests retrieving and printing the raw JSON dictionary."""
-    result = runner.invoke(app, ["index", "get", PATH_ID, "--json"])
+    path_id = mock_get_index_cmd["path_id"]
+    result = runner.invoke(app, ["index", "get", path_id, "--json"])
 
     assert result.exit_code == 0
     mock_get_index_cmd["create_panel"].assert_not_called()
@@ -115,8 +120,9 @@ def test_get_index_json_output(mock_rich_console, mock_get_index_cmd):
 def test_get_index_json_decode_error(mock_rich_console, mock_get_index_cmd):
     """Tests safety fallback if the SQLite database returns corrupted JSON."""
     mock_get_index_cmd["record"].record_json = "{ corrupted: json"
+    path_id = mock_get_index_cmd["path_id"]
 
-    result = runner.invoke(app, ["index", "get", PATH_ID])
+    result = runner.invoke(app, ["index", "get", path_id])
 
     assert result.exit_code != 0
     assert "Corrupted record found in local index" in result.output
@@ -124,7 +130,8 @@ def test_get_index_json_decode_error(mock_rich_console, mock_get_index_cmd):
 
 def test_get_index_save_default_path(mock_get_index_cmd):
     """Tests saving the output to the default auto-generated directory."""
-    result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
+    path_id = mock_get_index_cmd["path_id"]
+    result = runner.invoke(app, ["index", "get", path_id, "-s"])
 
     assert result.exit_code == 0
     saved_files = list(mock_get_index_cmd["reports_dir"].glob("*.json"))
@@ -135,7 +142,8 @@ def test_get_index_save_default_path(mock_get_index_cmd):
 def test_get_index_output_file(mock_get_index_cmd):
     """Tests saving output to an explicitly named JSON file."""
     custom_out = mock_get_index_cmd["tmp_path"] / "custom_report.json"
-    result = runner.invoke(app, ["index", "get", PATH_ID, "--output", str(custom_out)])
+    path_id = mock_get_index_cmd["path_id"]
+    result = runner.invoke(app, ["index", "get", path_id, "--output", str(custom_out)])
 
     assert result.exit_code == 0
     assert custom_out.exists()
@@ -145,8 +153,9 @@ def test_get_index_output_dir(mock_get_index_cmd):
     """Tests saving output into an explicitly named directory."""
     custom_dir = mock_get_index_cmd["tmp_path"] / "custom_dir"
     custom_dir.mkdir()
+    path_id = mock_get_index_cmd["path_id"]
 
-    result = runner.invoke(app, ["index", "get", PATH_ID, "-s", "--output", str(custom_dir)])
+    result = runner.invoke(app, ["index", "get", path_id, "-s", "--output", str(custom_dir)])
 
     assert result.exit_code == 0
     saved_files = list(custom_dir.glob("*.json"))
@@ -156,7 +165,8 @@ def test_get_index_output_dir(mock_get_index_cmd):
 def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cmd):
     """Tests the warning generated when a non-JSON extension is provided without the save flag."""
     weird_out = mock_get_index_cmd["tmp_path"] / "report.txt"
-    result = runner.invoke(app, ["index", "get", PATH_ID, "--output", str(weird_out)])
+    path_id = mock_get_index_cmd["path_id"]
+    result = runner.invoke(app, ["index", "get", path_id, "--output", str(weird_out)])
 
     assert result.exit_code == 0
 
@@ -167,8 +177,9 @@ def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cm
 def test_get_index_save_ioerror(mock_get_index_cmd, mocker):
     """Tests the graceful exit when an IOError occurs during save."""
     mocker.patch("builtins.open", side_effect=IOError("Permission denied"))
+    path_id = mock_get_index_cmd["path_id"]
 
-    result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
+    result = runner.invoke(app, ["index", "get", path_id, "-s"])
 
     assert result.exit_code != 0
     assert "Error writing to file" in result.output
@@ -177,8 +188,9 @@ def test_get_index_save_ioerror(mock_get_index_cmd, mocker):
 def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, mocker):
     """Tests the warning panel fallback when a generic Exception occurs during save."""
     mocker.patch("builtins.open", side_effect=Exception("Unknown file error"))
+    path_id = mock_get_index_cmd["path_id"]
 
-    result = runner.invoke(app, ["index", "get", PATH_ID, "-s"])
+    result = runner.invoke(app, ["index", "get", path_id, "-s"])
 
     assert result.exit_code == 0
 

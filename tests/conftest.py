@@ -86,6 +86,7 @@ def mock_rich_console(mocker):
     mock_console = mocker.MagicMock(spec=Console)
 
     mock_console.time = 0.0
+    mock_console.width = 120
 
     mock_console.is_terminal = False
     mock_console.is_interactive = False
