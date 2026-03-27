@@ -41,6 +41,7 @@ from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.index_app.search_index_cmd import search_index_cmd
 from dorsal.cli.local_app import app as local_app_
 from dorsal.cli.local_app.scan_cmd import scan_target
+from dorsal.cli.local_app.push_cmd import push_target
 
 logger = logging.getLogger(__name__)
 
@@ -185,11 +186,11 @@ def id_alias(
     )
 
 
-# app.command(name="search", help="Search DorsalHub file metadata.")(search_record)
 app.command(name="install")(install_model)
 app.command(name="run")(run_model)
 app.command(name="search")(search_index_cmd)
 app.command(name="scan", help="Scan a local file or directory.")(scan_target)
+app.command(name="push", help="Push a local file or directory to DorsalHub.")(push_target)
 
 app.add_typer(auth_app_, name="auth")
 app.add_typer(file_app_, name="file")

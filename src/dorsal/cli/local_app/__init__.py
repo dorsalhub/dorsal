@@ -15,7 +15,7 @@
 import typer
 
 from dorsal.cli.local_app.scan_cmd import scan_target
-# (Imports for other commands will go here once we port them)
+from dorsal.cli.local_app.push_cmd import push_target
 
 app = typer.Typer(
     name="local",
@@ -24,3 +24,4 @@ app = typer.Typer(
 )
 
 app.command(name="scan")(scan_target)
+app.command(name="push")(push_target)
