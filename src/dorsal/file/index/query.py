@@ -315,8 +315,8 @@ class QueryCompiler:
 
         sql = "SELECT c.abspath FROM cached_files c"
 
-        # The INNER JOIN has been removed to protect hash-only records.
-        # FTS queries are now handled safely via subqueries in the WHERE clause.
+        where_clauses.append("c.record IS NOT NULL")
+
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
 
@@ -341,6 +341,8 @@ class QueryCompiler:
         where_clauses, params = cls._build_where_clauses(parsed_query, or_logic)
 
         sql = "SELECT COUNT(c.abspath) as total FROM cached_files c"
+
+        where_clauses.append("c.record IS NOT NULL")
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
