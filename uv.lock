@@ -372,7 +372,7 @@ toml = [
 
 [[package]]
 name = "dorsalhub"
-version = "0.8.7"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },

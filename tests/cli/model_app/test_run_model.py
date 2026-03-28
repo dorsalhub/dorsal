@@ -50,6 +50,9 @@ def mock_run_deps(mocker, mock_rich_console):
 
     mock_error_console = MagicMock()
 
+    mock_error_console.get_time.side_effect = time.time
+    mock_error_console.is_terminal = False
+
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 
@@ -319,7 +322,6 @@ def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
 def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker):
     """Covers batch processing tables, truncation, error rows, and completion messages (Snippets 4 & 6)."""
 
-    mock_run_deps["error_console"].get_time.side_effect = time.time
     mocker.patch("dorsal.api.adapters.export_record", return_value="Simulated exported text")
 
     with runner.isolated_filesystem():
@@ -361,8 +363,6 @@ def test_run_model_single_file_inner_error_display(mock_run_deps):
 
 def test_run_model_progress_hook_coverage(mock_run_deps):
     """Tests the inner progress_hook function with and without descriptions."""
-
-    mock_run_deps["error_console"].get_time.side_effect = time.time
 
     def mock_run_with_progress(*args, **kwargs):
         cb = kwargs.get("progress_callback")

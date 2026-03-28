@@ -18,25 +18,25 @@ from dorsal.session import (
     get_shared_dorsal_client,
     set_shared_dorsal_client,
     clear_shared_dorsal_client,
-    get_shared_cache,
-    set_shared_cache,
-    clear_shared_cache,
+    get_shared_index,
+    set_shared_index,
+    clear_shared_index,
     get_metadata_reader,
 )
 from dorsal.client.dorsal_client import DorsalClient
-from dorsal.file.cache.dorsal_cache import DorsalCache
+from dorsal.file.index.dorsal_index import DorsalIndex
 
 
 @pytest.fixture(autouse=True)
 def clean_globals():
     """Reset global state before and after each test."""
     clear_shared_dorsal_client()
-    clear_shared_cache()
+    clear_shared_index()
     # _METADATA_READER doesn't have a public clear method in the snippet,
     # but it's less stateful.
     yield
     clear_shared_dorsal_client()
-    clear_shared_cache()
+    clear_shared_index()
 
 
 def test_get_shared_client_init():
@@ -56,29 +56,29 @@ def test_set_shared_client(mocker):
     assert get_shared_dorsal_client() is mock_client
 
 
-def test_get_shared_cache_init():
-    cache = get_shared_cache()
-    assert isinstance(cache, DorsalCache)
+def test_get_shared_index_init():
+    index = get_shared_index()
+    assert isinstance(index, DorsalIndex)
 
-    cache2 = get_shared_cache()
-    assert cache2 is cache
-
-
-def test_set_shared_cache(mocker):
-    mock_cache = mocker.MagicMock(spec=DorsalCache)
-    set_shared_cache(mock_cache)
-    assert get_shared_cache() is mock_cache
+    index2 = get_shared_index()
+    assert index2 is index
 
 
-def test_clear_shared_cache(mocker):
-    mock_cache = mocker.MagicMock(spec=DorsalCache)
-    set_shared_cache(mock_cache)
+def test_set_shared_index(mocker):
+    mock_index = mocker.MagicMock(spec=DorsalIndex)
+    set_shared_index(mock_index)
+    assert get_shared_index() is mock_index
 
-    clear_shared_cache()
-    mock_cache.close.assert_called_once()
+
+def test_clear_shared_index(mocker):
+    mock_index = mocker.MagicMock(spec=DorsalIndex)
+    set_shared_index(mock_index)
+
+    clear_shared_index()
+    mock_index.close.assert_called_once()
 
     # Next get should create new one
-    assert get_shared_cache() is not mock_cache
+    assert get_shared_index() is not mock_index
 
 
 def test_get_metadata_reader():

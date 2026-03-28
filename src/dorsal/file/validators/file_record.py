@@ -299,7 +299,7 @@ class AnnotationsStrict(Annotations):
         if not isinstance(value, dict):
             return value
 
-        if len(value) > 64:  # Allows for every open validation schema with 54 to spare for custom schemas
+        if len(value) > 64:
             raise ValueError(f"Too many annotation schemas. Received {len(value)}, limit is 64 schemas per file.")
 
         for key, items in value.items():

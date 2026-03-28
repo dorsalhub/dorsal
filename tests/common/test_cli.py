@@ -58,14 +58,14 @@ def test_exit_cli_no_message(mock_secho):
         (False, False, None),
     ],
 )
-@patch("dorsal.file.cache.config.get_cache_enabled")
+@patch("dorsal.file.index.config.get_index_enabled")
 def test_determine_use_cache_value(mock_get_cache_enabled, use_cache_flag, skip_cache_flag, expected_arg):
     """Test the logic for resolving cache flags."""
-    mock_get_cache_enabled.side_effect = lambda use_cache: use_cache
+    mock_get_cache_enabled.side_effect = lambda use_index=None, **kwargs: use_index
 
     cli.determine_use_cache_value(use_cache=use_cache_flag, skip_cache=skip_cache_flag)
 
-    mock_get_cache_enabled.assert_called_once_with(use_cache=expected_arg)
+    mock_get_cache_enabled.assert_called_once_with(use_index=expected_arg)
 
 
 def test_parse_cli_options_empty():

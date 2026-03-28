@@ -65,7 +65,7 @@ def exit_cli(code: int = EXIT_CODE_SUCCESS, message: str | None = None) -> NoRet
 
 
 def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
-    from dorsal.file.cache.config import get_cache_enabled
+    from dorsal.file.index.config import get_index_enabled
 
     use_cache_choice = None
     if use_cache:
@@ -73,7 +73,7 @@ def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
     elif skip_cache:
         use_cache_choice = False
 
-    use_cache_value = get_cache_enabled(use_cache=use_cache_choice)
+    use_cache_value = get_index_enabled(use_index=use_cache_choice)
 
     return use_cache_value
 

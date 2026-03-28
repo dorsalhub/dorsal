@@ -21,9 +21,9 @@ from dorsal.common.exceptions import (
     QuickHashFileSizeError,
 )
 from dorsal.file.utils import FILE_HASHER, QUICK_HASHER
-from dorsal.file.cache.dorsal_cache import DorsalCache
+from dorsal.file.index.dorsal_index import DorsalIndex
 from dorsal.file.utils.hashes import HashFunctionId
-from dorsal.session import get_shared_cache
+from dorsal.session import get_shared_index
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,9 @@ class HashReader:
     """Retrieves one or more hashes for a given file."""
 
     @property
-    def _cache(self) -> DorsalCache:
+    def _cache(self) -> DorsalIndex:
         """Dynamically fetches the current valid shared cache."""
-        return get_shared_cache()
+        return get_shared_index()
 
     def get(
         self,

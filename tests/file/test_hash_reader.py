@@ -25,7 +25,7 @@ def mock_cache():
     Mocks the shared cache dependency for all tests in this module.
     This provides a clean, isolated cache for each test function.
     """
-    with patch("dorsal.file.hash_reader.get_shared_cache") as mock_get_cache:
+    with patch("dorsal.file.hash_reader.get_shared_index") as mock_get_cache:
         cache_instance = MagicMock()
         mock_get_cache.return_value = cache_instance
         yield cache_instance

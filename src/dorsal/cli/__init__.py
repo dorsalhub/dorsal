@@ -23,22 +23,28 @@ from dorsal.common.exceptions import AuthError, DorsalOfflineError
 from dorsal.common.cli import get_rich_console, handle_auth_error, handle_offline_error, exit_cli, EXIT_CODE_ERROR
 from dorsal.cli.themes.palettes import get_palette
 from dorsal.cli.adapter_app import app as adapter_app_
-from dorsal.cli.cache_app import app as cache_app_
+from dorsal.cli.index_app import app as index_app_
 from dorsal.cli.config_app import app as config_app_
 from dorsal.cli.auth_app import app as auth_app_
-from dorsal.cli.dir_app import app as dir_app_
-from dorsal.cli.file_app import app as file_app_
 from dorsal.cli.model_app import app as model_app_
 from dorsal.cli.record_app import app as record_app_
 from dorsal.cli.collection_app import app as collection_app_
 from dorsal.cli.config_app import theme_app as theme_app_
 from dorsal.cli.config_app import pipeline_app as pipeline_app_
 from dorsal.cli.annotation_app import app as annotation_app_
-from dorsal.cli.search_app import search_and_display
-from dorsal.cli.file_app.identify_cmd import identify_file_cmd
 from dorsal.cli.record_app.search_cmd import search_record
 from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.model_app.run_model_cmd import run_model
+from dorsal.cli.index_app.search_index_cmd import search_index_cmd
+from dorsal.cli.local_app import app as local_app_
+from dorsal.cli.local_app.scan_cmd import scan_target
+from dorsal.cli.local_app.push_cmd import push_target
+from dorsal.cli.local_app.report_cmd import report_target
+from dorsal.cli.local_app.info_cmd import info_target
+from dorsal.cli.local_app.identify_cmd import identify_target
+from dorsal.cli.local_app.hash_cmd import hash_target
+from dorsal.cli.local_app.duplicates_cmd import duplicates_target
+
 
 logger = logging.getLogger(__name__)
 
@@ -127,78 +133,33 @@ def main(
     ctx.obj = {"palette": get_palette(theme)}
 
 
-@app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.")
-def id_alias(
-    ctx: typer.Context,
-    path: Annotated[
-        pathlib.Path,
-        typer.Argument(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            help="The path to the local file to identify.",
-        ),
-    ],
-    secure: Annotated[
-        bool,
-        typer.Option(
-            "--secure",
-            "-s",
-            help="Use the slower, definitive SHA-256 hash instead of the default quick hash.",
-        ),
-    ] = False,
-    use_cache: Annotated[
-        bool,
-        typer.Option(
-            "--use-cache",
-            help="Force the use of the cache, overriding any global setting.",
-            rich_help_panel="Cache Options",
-        ),
-    ] = False,
-    skip_cache: Annotated[
-        bool,
-        typer.Option(
-            "--skip-cache",
-            help="Bypass the local cache and re-process the file, overriding any global setting to enable it.",
-            rich_help_panel="Cache Options",
-        ),
-    ] = False,
-    json_output: Annotated[
-        bool,
-        typer.Option(
-            "--json",
-            help="Output the full metadata as a raw JSON object to stdout for scripting.",
-        ),
-    ] = False,
-):
-    """Identifies a local file by its hash, by checking DorsalHub."""
-    identify_file_cmd(
-        ctx=ctx,
-        path=path,
-        secure=secure,
-        use_cache=use_cache,
-        skip_cache=skip_cache,
-        json_output=json_output,
-    )
-
-
-app.command(name="search", help="Search DorsalHub file metadata.")(search_record)
+app.command(name="scan", help="Scan a local file or directory.")(scan_target)
+app.command(name="hash", help="Generate cryptographic file hashes for a file.")(hash_target)
+app.command(name="search")(search_index_cmd)
+app.command(name="dupes", help="Scan a file directory, checking for duplicates.")(duplicates_target)
+app.command(name="duplicates", help="Scan a file directory, checking for duplicates.", hidden=True)(duplicates_target)
+app.command(name="info", help="High-level summary of a directory or a file.")(info_target)
+app.command(name="report", help="Generate an interactive HTML report for a local file or directory.")(report_target)
+app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.")(identify_target)
+app.command(name="identify", help="Identify a local file by its hash. Queries DorsalHub.", hidden=True)(identify_target)
 app.command(name="install")(install_model)
 app.command(name="run")(run_model)
+app.command(name="push", help="Push a local file or directory to DorsalHub.")(push_target)
+
 
 app.add_typer(auth_app_, name="auth")
-app.add_typer(file_app_, name="file")
+# app.add_typer(file_app_, name="file")
 app.add_typer(annotation_app_, name="annotation")
-app.add_typer(dir_app_, name="dir")
+# app.add_typer(dir_app_, name="dir")
 app.add_typer(record_app_, name="record")
 app.add_typer(collection_app_, name="collection")
 app.add_typer(model_app_, name="model")
 app.add_typer(adapter_app_, name="adapter")
-app.add_typer(cache_app_, name="cache")
+app.add_typer(index_app_, name="index")
 app.add_typer(config_app_, name="config")
 app.add_typer(theme_app_, name="theme")
 app.add_typer(pipeline_app_, name="pipeline")
+app.add_typer(local_app_, name="local")
 
 
 def cli_app():

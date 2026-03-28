@@ -1,0 +1,53 @@
+# Copyright 2025-2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import json
+import logging
+from typing import Annotated
+
+import typer
+
+logger = logging.getLogger(__name__)
+
+
+def get_index_db_path(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output the path as a raw JSON object."),
+    ] = False,
+):
+    """
+    Prints the absolute path to the dorsal index database file.
+    """
+    from dorsal.api.index import get_path
+    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+
+    console = get_rich_console()
+
+    try:
+        db_path_str = get_path()
+
+        if json_output:
+            console.print(json.dumps({"path": db_path_str}))
+        else:
+            console.print(db_path_str)
+    except typer.Exit:
+        raise
+    except Exception as err:
+        logger.exception("Failed to retrieve index path.")
+        exit_cli(
+            code=EXIT_CODE_ERROR,
+            message=f"An error occurred while getting index path: {err}",
+        )
