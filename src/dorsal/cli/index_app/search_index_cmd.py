@@ -92,7 +92,7 @@ def search_index_cmd(
     query: Annotated[
         str,
         typer.Argument(help="The search query string. Queries with spaces must be enclosed in quotes."),
-    ],
+    ] = "*",
     page: Annotated[
         int,
         typer.Option(

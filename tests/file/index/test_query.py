@@ -79,7 +79,7 @@ class TestQueryCompiler:
         processed = {"text": ["machine", "dark matter"], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
-        assert "f.content MATCH ?" in sql
+        assert "WHERE content MATCH ?" in sql
 
         assert params == ['"machine" AND "dark matter"']
 
@@ -122,9 +122,9 @@ class TestQueryCompiler:
 
         assert sql.startswith("SELECT COUNT(c.abspath) as total FROM cached_files c")
 
-        assert "JOIN dorsal_fts f" in sql
+        assert "JOIN dorsal_fts" not in sql
         assert "c.extension =" in sql
-        assert "f.content MATCH ?" in sql
+        assert "WHERE content MATCH ?" in sql
 
         assert "ORDER BY" not in sql
         assert "LIMIT" not in sql
@@ -150,6 +150,6 @@ class TestQueryCompiler:
         processed = {"text": ["ren*", "exact", 'weird"quote*'], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
-        assert "f.content MATCH ?" in sql
+        assert "WHERE content MATCH ?" in sql
 
         assert params == ['"ren"* AND "exact" AND "weird""quote"*']

@@ -51,6 +51,7 @@ def _build_annotation_table(
     level: int = 0,
     is_stub: bool = False,
     display_fields: set | None = None,
+    max_items: int = 3,
 ):
     """Recursive. Renders annotation stubs in a simplified format."""
     indent = "  " * level
@@ -76,36 +77,53 @@ def _build_annotation_table(
                 cta = f"dorsal annotation get {file_hash} {anno_id}"
                 table.add_row(f"{indent}To View:", Text(cta, style="cyan"))
         else:
-            for key, value in data.items():
-                if key == "file_hash":
+            for dict_key, value in data.items():
+                if dict_key == "file_hash":
                     continue
 
-                if display_fields and key not in display_fields:
+                if display_fields and dict_key not in display_fields:
                     continue
 
                 if not value:
                     continue
 
-                key_text = f"{indent}{key}:"
+                key_text = f"{indent}{dict_key}:"
 
                 if isinstance(value, dict):
                     table.add_row(key_text, "")
-                    _build_annotation_table(key, table, value, level + 1, display_fields=display_fields)
+                    _build_annotation_table(dict_key, table, value, level + 1, is_stub, display_fields, max_items)
 
                 elif isinstance(value, list):
+                    # Check if it's a flat list of strings/ints, or a list of dicts
                     if all(not isinstance(item, (dict, list)) for item in value):
-                        value_str = ", ".join(str(item) for item in value)
+                        display_list = value[:max_items]
+                        value_str = ", ".join(str(item) for item in display_list)
+                        if len(value) > max_items:
+                            value_str += f", ... (+{len(value) - max_items} more)"
                         table.add_row(key_text, value_str)
                     else:
                         table.add_row(key_text, "")
-                        _build_annotation_table(key, table, value, level + 1, display_fields=display_fields)
+                        display_list = value[:max_items]
+                        _build_annotation_table(
+                            dict_key, table, display_list, level + 1, is_stub, display_fields, max_items
+                        )
+                        if len(value) > max_items:
+                            table.add_row(
+                                f"{indent}  ...",
+                                Text(f"[ {len(value) - max_items} more items hidden ]", style="dim italic"),
+                            )
 
                 else:
                     table.add_row(key_text, str(value))
 
     elif isinstance(data, list):
-        for item in data:
-            _build_annotation_table(key, table, item, level, is_stub=is_stub, display_fields=display_fields)
+        display_data = data[:max_items]
+        for item in display_data:
+            _build_annotation_table(
+                key, table, item, level, is_stub=is_stub, display_fields=display_fields, max_items=max_items
+            )
+        if len(data) > max_items:
+            table.add_row(f"{indent}...", Text(f"[ {len(data) - max_items} more items hidden ]", style="dim italic"))
 
 
 def create_file_info_panel(
