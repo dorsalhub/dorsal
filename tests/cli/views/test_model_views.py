@@ -17,6 +17,7 @@ import pytest
 import re
 from unittest.mock import MagicMock
 
+from rich.box import ROUNDED
 from rich.console import Console
 
 from dorsal.cli.views.model import create_model_result_panel
@@ -26,6 +27,7 @@ from dorsal.common.model import AnnotationModelSource
 
 
 DUMMY_SOURCE = AnnotationModelSource(type="Model", id="test-model", version="1.0.0")
+DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
 
 
 def render_to_string(renderable) -> str:
@@ -53,7 +55,7 @@ def test_render_classification():
         ],
     }
     res = create_run_result(data, schema_id="open/classification")
-    panel = create_model_result_panel(res, "sentiment-model", "test.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "sentiment-model", "test.txt", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
     assert "Classification Result" in str(panel.title)
@@ -69,7 +71,7 @@ def test_render_llm_output():
         "generation_metadata": {"usage": {"total_tokens": 10, "prompt_tokens": 5, "completion_tokens": 5}},
     }
     res = create_run_result(data, schema_id="open/llm-output")
-    panel = create_model_result_panel(res, "llm-task", "query.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "llm-task", "query.txt", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
     assert "LLM Output Result" in str(panel.title)
@@ -85,7 +87,7 @@ def test_render_entity_extraction():
         ]
     }
     res = create_run_result(data, schema_id="open/entity-extraction")
-    panel = create_model_result_panel(res, "ner-model", "doc.pdf", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "ner-model", "doc.pdf", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
     assert "Entity Extraction Result" in str(panel.title)
@@ -107,7 +109,7 @@ def test_render_object_detection():
         "unit": "px",
     }
     res = create_run_result(data, schema_id="open/object-detection")
-    panel = create_model_result_panel(res, "yolo", "image.jpg", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "yolo", "image.jpg", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Object Detection Result" in str(panel.title)
@@ -121,7 +123,7 @@ def test_render_embedding():
         "target": "document_content",
     }
     res = create_run_result(data, schema_id="open/embedding")
-    panel = create_model_result_panel(res, "embedder", "data.json", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Embedding Result" in str(panel.title)
@@ -136,7 +138,7 @@ def test_render_audio_transcription():
         "segments": [{"start_time": 0.0, "end_time": 1.5, "text": "Hello", "speaker": {"id": "spk1", "name": "Alice"}}],
     }
     res = create_run_result(data, schema_id="open/audio-transcription")
-    panel = create_model_result_panel(res, "whisper", "audio.mp3", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "whisper", "audio.mp3", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
     assert "Audio Transcription Result" in str(panel.title)
@@ -153,7 +155,7 @@ def test_render_document_extraction():
         ],
     }
     res = create_run_result(data, schema_id="open/document-extraction")
-    panel = create_model_result_panel(res, "ocr", "scan.pdf", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "ocr", "scan.pdf", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Document Extraction Result" in str(panel.title)
@@ -168,7 +170,7 @@ def test_render_regression():
         "points": [{"value": 22.5, "timestamp": "2026-01-01T12:00:00Z", "statistic": "mean"}],
     }
     res = create_run_result(data, schema_id="open/regression")
-    panel = create_model_result_panel(res, "weather-model", "sensor.log", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "weather-model", "sensor.log", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Regression Result" in str(panel.title)
@@ -183,7 +185,7 @@ def test_render_geolocation():
         "properties": {"city": "London", "country": "UK"},
     }
     res = create_run_result(data, schema_id="open/geolocation")
-    panel = create_model_result_panel(res, "geocoder", "loc.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "geocoder", "loc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Geolocation Result" in str(panel.title)
@@ -194,7 +196,7 @@ def test_render_geolocation():
 def test_render_generic():
     data = {"description": "Custom Statistics", "data": {"mean": 10, "std": 2, "count": 100}}
     res = create_run_result(data, schema_id="open/generic")
-    panel = create_model_result_panel(res, "stat-model", "data.csv", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "stat-model", "data.csv", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Generic Data Result" in str(panel.title)
@@ -221,7 +223,7 @@ def test_render_annotation_group():
     group_res = MagicMock(spec=FileAnnotationGroupResponse)
     group_res.group = mock_group
 
-    panel = create_model_result_panel(group_res, "multi-embed", "file.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(group_res, "multi-embed", "file.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Embedding Result (Group of 2)" in str(panel.title)
@@ -231,7 +233,7 @@ def test_render_annotation_group():
 def test_render_fallback_raw_output():
     data = {"unexpected_field": "some_value", "random": 123}
     res = create_run_result(data, schema_id="unknown/schema")
-    panel = create_model_result_panel(res, "unknown-model", "test.bin", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "unknown-model", "test.bin", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Raw Output Result" in str(panel.title)
@@ -240,7 +242,7 @@ def test_render_fallback_raw_output():
 
 def test_render_empty_data():
     res = create_run_result(None, schema_id="open/generic")
-    panel = create_model_result_panel(res, "empty-model", "empty.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "empty-model", "empty.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Empty Result" in str(panel.title)
@@ -250,7 +252,7 @@ def test_render_empty_data():
 def test_panel_metadata_display():
     data = {"vector": [1]}
     res = create_run_result(data, schema_id="open/embedding")
-    panel = create_model_result_panel(res, "TARGET_ID", "FILE_NAME.ext", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "TARGET_ID", "FILE_NAME.ext", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "TARGET_ID" in output
@@ -261,7 +263,7 @@ def test_render_arxiv():
     data = {
         "title": "   Deep Learning   \nFor Cats",
         "arxiv_id": "2104.12345",
-        "version": "v2",
+        "version": "2",
         "authors": ["Alice Smith", "Bob Jones"],
         "abstract": "This is a detailed abstract about cats and neural networks.",
         "url": "https://arxiv.org/abs/2104.12345",
@@ -271,7 +273,7 @@ def test_render_arxiv():
         "license": "CC-BY-SA 4.0",
     }
     res = create_run_result(data, schema_id="dorsal/arxiv")
-    panel = create_model_result_panel(res, "arxiv-fetcher", "paper.pdf", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "arxiv-fetcher", "paper.pdf", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "ArXiv Record Result" in str(panel.title)
@@ -287,7 +289,7 @@ def test_render_classification_with_vocabulary():
     """Tests classification fallback when labels are empty but vocabulary is present."""
     data = {"target": "topic", "labels": [], "vocabulary": ["sports", "finance", "technology"]}
     res = create_run_result(data, schema_id="open/classification")
-    panel = create_model_result_panel(res, "topic-model", "doc.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "topic-model", "doc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Classification Result" in str(panel.title)
@@ -298,7 +300,7 @@ def test_render_classification_with_vocabulary_url():
     """Tests classification fallback when labels and vocabulary are empty but a URL is present."""
     data = {"target": "topic", "labels": [], "vocabulary": [], "vocabulary_url": "https://example.com/vocab.json"}
     res = create_run_result(data, schema_id="open/classification")
-    panel = create_model_result_panel(res, "topic-model", "doc.txt", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "topic-model", "doc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Classification Result" in str(panel.title)
@@ -313,7 +315,7 @@ def test_render_embedding_sparse_dict():
         "target": "text",
     }
     res = create_run_result(data, schema_id="open/embedding")
-    panel = create_model_result_panel(res, "embedder", "data.json", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Embedding Result" in str(panel.title)
@@ -328,7 +330,7 @@ def test_render_embedding_unknown_format():
     """Tests embedding rendering when the vector format is neither a list nor a dictionary."""
     data = {"model": "bad-embedder", "vector": "this is a string, not a valid vector"}
     res = create_run_result(data, schema_id="open/embedding")
-    panel = create_model_result_panel(res, "embedder", "data.json", DEFAULT_PALETTE)
+    panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
     assert "Embedding Result" in str(panel.title)

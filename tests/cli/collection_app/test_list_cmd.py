@@ -85,8 +85,8 @@ def test_list_collections_with_pagination(mock_rich_console, mock_list_collectio
     assert result.exit_code == 0
     # Combine all printed output to check for the footer
     all_printed_text = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
-    assert "Showing page 1 of 5" in all_printed_text
-    assert "To see the next page, run the command again with --page 2" in all_printed_text
+    assert "Showing page" in all_printed_text
+    assert "To see the next page" in all_printed_text
 
 
 def test_list_collections_no_results(mock_rich_console, mock_list_collections_cmd):

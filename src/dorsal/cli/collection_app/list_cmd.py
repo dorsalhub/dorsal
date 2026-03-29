@@ -18,6 +18,10 @@ from typing import Annotated, TYPE_CHECKING
 import typer
 from rich.table import Table
 from rich.text import Text
+from rich.console import Group
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.client.validators import CollectionsResponse
@@ -47,13 +51,15 @@ def list_dorsal_collections(
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    palette = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     if not json_output:
         console.print(f"🔎 Fetching collections from DorsalHub (page {page})...")
 
     try:
-        response: CollectionsResponse = list_collections(page=page, per_page=per_page, mode="pydantic")
+        response: "CollectionsResponse" = list_collections(page=page, per_page=per_page, mode="pydantic")
         logger.debug("PAGINATION OBJECT BEFORE DUMP: %s", response.pagination.model_dump())
         raw_dump = response.model_dump(by_alias=True, exclude_none=True)
         logger.debug("MANUAL DUMP OF PAGINATION: %s", raw_dump.get("pagination"))
@@ -63,55 +69,92 @@ def list_dorsal_collections(
             exit_cli()
 
         if not response.records:
-            console.print(f"\n[{palette.get('info')}]No collections found.[/]")
+            console.print(f"\n[{palette.get('info', 'dim')}]No collections found.[/]")
             exit_cli()
 
-        table = Table(
-            title="DorsalHub Collections",
-            header_style=palette.get("table_header"),
-            expand=False,
-        )
-        table.add_column("ID", style=palette.get("key"), no_wrap=True)
-        table.add_column(
-            "Name",
-            style=palette.get("primary_value"),
-            max_width=40,
-            overflow="ellipsis",
-        )
-        table.add_column("Files", justify="right")
-        table.add_column("Total Size", justify="right")
-        table.add_column("Access")
-        table.add_column("Last Modified", justify="right")
+        title_text: str | None = "DorsalHub Collections"
+        if borders == get_borders("none"):
+            title_text = None
 
-        for collection in response.records:
-            access_str = "Private" if collection.is_private else "Public"
-            access_style = palette.get("access_private") if collection.is_private else palette.get("access_public")
-            date_modified_str = (
-                collection.date_modified.strftime("%Y-%m-%d %H:%M") if collection.date_modified else "None"
+        table = Table(
+            title=title_text,
+            header_style=palette.get("table_header", "bold blue"),
+            expand=True if console.width < 115 else False,
+            box=borders,
+            row_styles=["", palette.get("table_row_alt", "dim")],
+        )
+
+        if borders == get_borders("none"):
+            table.padding = (0, 1)
+
+        if console.width < 115:
+            table.add_column("Collection (Name / ID)", ratio=1, overflow="fold")
+            table.add_column("Details (Files / Size)", justify="right", width=35)
+
+            for collection in response.records:
+                access_str = "Private" if collection.is_private else "Public"
+                access_style = (
+                    palette.get("access_private", "") if collection.is_private else palette.get("access_public", "")
+                )
+                date_modified_str = (
+                    collection.date_modified.strftime("%Y-%m-%d %H:%M") if collection.date_modified else "None"
+                )
+
+                name_text = Text(collection.name or "Untitled", style=palette.get("primary_value", "cyan"))
+                id_text = Text(collection.collection_id, style=palette.get("key", "dim"))
+                col1 = Group(name_text, id_text)
+
+                metrics_text = Text(f"{collection.file_count:,} files ({human_filesize(collection.total_size)})")
+                access_date_text = Text.assemble(
+                    (access_str, access_style),
+                    (" • ", palette.get("key", "dim")),
+                    (date_modified_str, palette.get("info", "dim")),
+                )
+                col2 = Group(metrics_text, access_date_text)
+
+                table.add_row(col1, col2)
+        else:
+            table.add_column("ID", style=palette.get("key", "dim"), no_wrap=True)
+            table.add_column(
+                "Name",
+                style=palette.get("primary_value", "cyan"),
+                max_width=40,
+                overflow="ellipsis",
             )
-            table.add_row(
-                collection.collection_id,
-                collection.name,
-                f"{collection.file_count:,}",
-                human_filesize(collection.total_size),
-                Text(access_str, style=access_style),
-                date_modified_str,
-            )
+            table.add_column("Files", justify="right")
+            table.add_column("Total Size", justify="right")
+            table.add_column("Access")
+            table.add_column("Last Modified", justify="right")
+
+            for collection in response.records:
+                access_str = "Private" if collection.is_private else "Public"
+                access_style = (
+                    palette.get("access_private", "") if collection.is_private else palette.get("access_public", "")
+                )
+                date_modified_str = (
+                    collection.date_modified.strftime("%Y-%m-%d %H:%M") if collection.date_modified else "None"
+                )
+                table.add_row(
+                    collection.collection_id,
+                    collection.name,
+                    f"{collection.file_count:,}",
+                    human_filesize(collection.total_size),
+                    Text(access_str, style=access_style),
+                    date_modified_str,
+                )
 
         console.print(table)
 
         pagination = response.pagination
         if pagination.page_count > 1:
             footer_text = (
-                f"Showing page {pagination.current_page} of {pagination.page_count} | "
-                f"Displaying records {pagination.start_index} - {pagination.end_index} of {pagination.record_count} total."
+                f"Showing page [bold]{pagination.current_page}[/] of [bold]{pagination.page_count}[/] | "
+                f"Displaying records [bold]{pagination.start_index} - {pagination.end_index}[/] of [bold]{pagination.record_count}[/] total."
             )
             if pagination.has_next:
-                footer_text += (
-                    f"\nTo see the next page, run the command again with --page {pagination.current_page + 1}"
-                )
+                footer_text += f"\nTo see the next page, run the command again with [bold {palette.get('primary_value', '')}]--page {pagination.current_page + 1}[/]"
 
-            console.print(f"\n[{palette.get('info')}]{footer_text}[/]")
+            console.print(f"\n[{palette.get('info', 'dim')}]{footer_text}[/]")
     except typer.Exit:
         raise
     except DorsalOfflineError:

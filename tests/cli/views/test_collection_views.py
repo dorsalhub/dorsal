@@ -16,13 +16,15 @@ import datetime
 from unittest.mock import Mock, MagicMock
 import pytest
 from rich.panel import Panel
+from rich.box import ROUNDED
 
 from dorsal.cli.views.collection import collection_metadata
 
 
 @pytest.fixture
-def mock_palette():
-    return {"key": "bold cyan", "primary_value": "green", "panel_title": "bold white", "panel_border": "blue"}
+def mock_ui_context():
+    palette = {"key": "bold cyan", "primary_value": "green", "panel_title": "bold white", "panel_border": "blue"}
+    return {"palette": palette, "borders": ROUNDED, "icons": {}}
 
 
 @pytest.fixture
@@ -38,10 +40,10 @@ def mock_collection():
     return col
 
 
-def test_collection_metadata_render_full(mock_collection, mock_palette):
+def test_collection_metadata_render_full(mock_collection, mock_ui_context):
     """Test rendering with all fields present."""
 
-    panel = collection_metadata(mock_collection, mock_palette)
+    panel = collection_metadata(mock_collection, mock_ui_context)
 
     assert isinstance(panel, Panel)
     assert "Collection Metadata" in panel.title
@@ -51,25 +53,25 @@ def test_collection_metadata_render_full(mock_collection, mock_palette):
     assert table.columns[0].style == "bold cyan"
 
 
-def test_collection_metadata_no_description(mock_collection, mock_palette):
+def test_collection_metadata_no_description(mock_collection, mock_ui_context):
     """Test rendering when description is None."""
     mock_collection.description = None
 
-    panel = collection_metadata(mock_collection, mock_palette)
+    panel = collection_metadata(mock_collection, mock_ui_context)
 
     assert isinstance(panel, Panel)
 
 
-def test_collection_metadata_no_date(mock_collection, mock_palette):
+def test_collection_metadata_no_date(mock_collection, mock_ui_context):
     """Test rendering when date_modified is None."""
     mock_collection.date_modified = None
 
-    panel = collection_metadata(mock_collection, mock_palette)
+    panel = collection_metadata(mock_collection, mock_ui_context)
     assert isinstance(panel, Panel)
 
 
-def test_collection_metadata_public(mock_collection, mock_palette):
+def test_collection_metadata_public(mock_collection, mock_ui_context):
     """Test rendering for public collection."""
     mock_collection.is_private = False
-    panel = collection_metadata(mock_collection, mock_palette)
+    panel = collection_metadata(mock_collection, mock_ui_context)
     assert isinstance(panel, Panel)

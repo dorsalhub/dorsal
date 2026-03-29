@@ -13,11 +13,18 @@
 # limitations under the License.
 
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TYPE_CHECKING
 
 import typer
 from rich.panel import Panel
+from rich.console import Group
+from rich.text import Text
 import json
+
+from dorsal.cli.themes.borders import get_borders
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +53,9 @@ def update_collection(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: "UIContext" = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     try:
         # Show a status spinner only for the interactive mode
@@ -76,10 +85,17 @@ def update_collection(
     if json_output:
         console.print(updated_collection.model_dump_json(indent=2, by_alias=True, exclude_none=True))
     else:
-        success_panel = Panel(
-            f"✅ Collection '[bold]{updated_collection.name}[/]' updated successfully.",
-            expand=False,
-            title=f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]",
-            border_style=palette.get("panel_border_success", "green"),
-        )
-        console.print(success_panel)
+        title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
+        message_text = f"✅ Collection '[bold]{updated_collection.name}[/]' updated successfully."
+
+        if borders == get_borders("none"):
+            console.print(Text.from_markup(message_text))
+        else:
+            success_panel = Panel(
+                Text.from_markup(message_text),
+                expand=False,
+                title=title_text,
+                border_style=palette.get("panel_border_success", "green"),
+                box=borders,
+            )
+            console.print(success_panel)

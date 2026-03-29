@@ -23,6 +23,7 @@ import time
 from typing import Annotated, Any, Optional, Literal, TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape
@@ -35,6 +36,9 @@ from dorsal.common.cli import (
     get_rich_console,
     determine_use_cache_value,
 )
+from dorsal.cli.themes.palettes import get_palette
+from dorsal.cli.themes.icons import get_icons
+from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.file.dorsal_file import LocalFile
@@ -197,7 +201,9 @@ def scan_target(
     Scans a local file or directory, extracts metadata, and generates reports.
     """
     console = get_rich_console()
-    palette = ctx.obj.get("palette", {})
+    palette = ctx.obj.get("palette", get_palette())
+    icons = ctx.obj.get("icons", get_icons())
+    borders = ctx.obj.get("borders", get_borders())
 
     if use_cache and skip_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --use-cache and --skip-cache cannot be used together.")
@@ -242,6 +248,8 @@ def scan_target(
             template=template,
             resolve_links=resolve_links,
             palette=palette,
+            icons=icons,
+            borders=borders,
             console=console,
         )
     else:
@@ -269,6 +277,8 @@ def scan_target(
             sort_order=sort_order,
             lazy=lazy,
             palette=palette,
+            icons=icons,
+            borders=borders,
             console=console,
         )
 
@@ -285,6 +295,8 @@ def _process_file_scan(
     template,
     resolve_links,
     palette,
+    icons,
+    borders,
     console,
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
@@ -325,6 +337,8 @@ def _process_file_scan(
                 record_dict=record_dict,
                 title=f"File Record: {local_file.name}",
                 palette=palette,
+                icons=icons,
+                box_style=borders,
                 private=None,
                 source=local_file._source,
             )
@@ -376,6 +390,8 @@ def _process_dir_scan(
     sort_order,
     lazy,
     palette,
+    icons,
+    borders,
     console,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
@@ -438,8 +454,8 @@ def _process_dir_scan(
     if not collection:
         exit_cli()
 
-    _print_directory_summary_panel(collection_info, palette, console)
-    _print_file_details_table(collection, palette, limit, sort_by, sort_order, console)
+    _print_directory_summary_panel(collection_info, palette, borders, console)
+    _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
 
     if save:
         final_path = _get_final_path(path, output_path, ".json", is_dir=True)
@@ -510,7 +526,7 @@ def _save_report_to_disk(path: pathlib.Path, content: str, doc_type: str, consol
         console.print(f"⚠️ Could not save {doc_type} report. Error: {e}", style=palette.get("warning", "yellow"))
 
 
-def _print_directory_summary_panel(collection_info: dict, palette: dict, console):
+def _print_directory_summary_panel(collection_info: dict, palette, borders, console):
     from dorsal.file.utils.size import human_filesize
 
     overall, by_type = collection_info.get("overall", {}), collection_info.get("by_type", [])
@@ -525,27 +541,35 @@ def _print_directory_summary_panel(collection_info: dict, palette: dict, console
 
     summary_text = Text(no_wrap=True)
     for label, val in [
-        ("       Total Files: ", str(overall.get("total_files", 0))),
-        ("        Total Size: ", human_filesize(overall.get("total_size", 0))),
-        ("Newest Modified File: ", newest_str),
-        ("Oldest Modified File: ", oldest_str),
-        ("\n       Media Types: ", str(len(by_type))),
+        ("          Total Files: ", str(overall.get("total_files", 0))),
+        ("           Total Size: ", human_filesize(overall.get("total_size", 0))),
+        (" Newest Modified File: ", newest_str),
+        (" Oldest Modified File: ", oldest_str),
+        ("          Media Types: ", str(len(by_type))),
     ]:
         summary_text.append(label, style=palette.get("key"))
         summary_text.append(val + "\n" if "\n" not in label else val, style=palette.get("value"))
 
-    console.print(
-        Panel(
-            summary_text,
-            title=f"[{palette.get('panel_title', 'bold default')}]Directory Scan Summary[/]",
-            border_style=palette.get("panel_border", "blue"),
-            title_align="left",
-            expand=False,
+    is_none_style = borders == get_borders("none")
+    title_text = f"[{palette.get('panel_title') or 'bold'}]Directory Scan Summary[/]"
+
+    if is_none_style:
+        console.print(Group(Text.from_markup(f"{title_text}\n"), summary_text))
+    else:
+        console.print(
+            Panel(
+                summary_text,
+                title=f"[{palette.get('panel_title', 'bold default')}]Directory Scan Summary[/]",
+                border_style=palette.get("panel_border", "blue"),
+                box=borders,
+                title_align="left",
+                expand=False,
+                padding=(1, 2),
+            )
         )
-    )
 
 
-def _print_file_details_table(collection, palette, limit, sort_by, sort_order, console):
+def _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console):
     from dorsal.file.utils.size import human_filesize
 
     sort_key_map = {
@@ -556,9 +580,21 @@ def _print_file_details_table(collection, palette, limit, sort_by, sort_order, c
     }
     sorted_files = sorted(list(collection), key=sort_key_map[sort_by], reverse=(sort_order == "desc"))
 
+    show_header = True
+    padding = (0, 1)
+    if borders == get_borders("none"):
+        show_header = False
+        padding = (0, 0)
+
     table = Table(
-        title="File Scan Details", show_header=True, header_style=palette.get("table_header", "bold"), expand=False
+        title="File Scan Details",
+        show_header=show_header,
+        header_style=palette.get("table_header", "bold"),
+        box=borders,
+        padding=padding,
+        expand=False,
     )
+
     table.add_column("Filename", style=palette.get("primary_value", "cyan"), min_width=30, overflow="ellipsis")
     table.add_column("Size", justify="right", style=palette.get("value"))
     table.add_column("Media Type", style=palette.get("value"))

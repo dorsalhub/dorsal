@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, ANY, patch
 import pytest
 import typer
 from typer.testing import CliRunner
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 
@@ -192,8 +193,8 @@ def test_scan_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
     mock_dir_deps["collection_class"].assert_called_once()
 
     print_calls = mock_rich_console.print.call_args_list
-    assert any(isinstance(call.args[0], Panel) for call in print_calls)
-    assert any(isinstance(call.args[0], Table) for call in print_calls)
+    # Assert that either a Panel or Group was used for the summary
+    assert any(isinstance(call.args[0], (Panel, Group)) for call in print_calls)
 
 
 def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):

@@ -15,13 +15,17 @@
 import datetime
 from typing import Any, Dict
 
+from rich import box
+from rich.box import Box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.console import Group, RenderableType
 from rich.markup import escape
 from rich.rule import Rule
-import typer
+
+from dorsal.cli.themes.icons import get_icons
+from dorsal.cli.themes.borders import get_borders
 
 
 def _get_max_key_width(data: Dict, indent_level: int = 0, display_fields: set | None = None) -> int:
@@ -135,12 +139,19 @@ def create_file_info_panel(
     override_title_style: str | None = None,
     override_border_style: str | None = None,
     source: str | None = None,
-) -> Panel:
+    icons: dict[str, str] | None = None,
+    box_style: Box | None = None,
+) -> Panel | Group:
     """
     Creates a standardized rich Panel to display file information using a color palette.
     """
     from dorsal.file.utils.size import human_filesize
     from dorsal.cli.views.mediainfo import MEDIAINFO_DISPLAY_FIELDS
+
+    if icons is None:
+        icons = get_icons("emoji")
+    if box_style is None:
+        box_style = get_borders("rounded")
 
     if override_border_style:
         border = override_border_style
@@ -173,7 +184,7 @@ def create_file_info_panel(
         hashes_table.add_row("QUICK:", record_dict["quick_hash"])
     if record_dict.get("similarity_hash"):
         hashes_table.add_row("TLSH:", record_dict["similarity_hash"])
-    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]🔑 Hashes[/]"), hashes_table))
+    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['key']}Hashes[/]"), hashes_table))
     renderables.append(Text(""))
 
     file_info_table = Table(box=None, show_header=False, padding=(0, 1))
@@ -208,7 +219,7 @@ def create_file_info_panel(
         file_info_table.add_row("Media Type:", base_info.get("media_type"))
     renderables.append(
         Group(
-            Text.from_markup(f"[{palette['section_title']}]📄 File Info[/]"),
+            Text.from_markup(f"[{palette['section_title']}]{icons['file']}File Info[/]"),
             file_info_table,
         )
     )
@@ -231,7 +242,7 @@ def create_file_info_panel(
             tags_table.add_row(f"{tag.get('name')}:", tag_value)
     else:
         tags_table.add_row("", Text("No tags found.", style=palette["info"]))
-    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]🔖 Tags[/]"), tags_table))
+    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['tags']}Tags[/]"), tags_table))
     renderables.append(Text(""))
 
     annotations = record_dict.get("annotations", {})
@@ -251,7 +262,9 @@ def create_file_info_panel(
             anno_title = f"{title_part.replace('_', ' ').title()} Info"
 
             renderables.append(
-                Text.from_markup(f"[{palette['section_title']}]📑 {anno_title}[/][{palette['key']}] → {key}[/]")
+                Text.from_markup(
+                    f"[{palette['section_title']}]{icons['info']}{anno_title}[/][{palette['key']}] → {key}[/]"
+                )
             )
 
             if is_stub:
@@ -284,10 +297,22 @@ def create_file_info_panel(
 
             renderables.append(Text(""))
 
+    is_none_style = box_style == get_borders("none")
+
+    display_title = title
+    if source == "cache":
+        display_title = f"{title} [{palette.get('info', 'dim')}](from cache)[/]"
+
+    if is_none_style:
+        tight_header = Text.from_markup(f"[{panel_title_style}]{display_title}[/]\n")
+
+        return Group(tight_header, *renderables)
+
     return Panel(
         Group(*renderables),
         title=f"[{panel_title_style}]{display_title}[/]",
         border_style=border,
+        box=box_style if box_style is not None else box.ROUNDED,
         expand=False,
         padding=(1, 2),
     )

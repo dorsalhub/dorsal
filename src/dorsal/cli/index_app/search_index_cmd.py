@@ -171,9 +171,12 @@ def search_index_cmd(
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.api.search import search_local_paginated
     from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes import UIContext
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    icons = ui_context["icons"]
 
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
@@ -193,7 +196,7 @@ def search_index_cmd(
     try:
         if not json_output:
             console.print(
-                f"🔎 Searching [{palette['primary_value']}]local[/] scope for records matching: [{palette['success']}]'{query}'[/]"
+                f"{icons.get('search')}Searching [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{query}'[/]"
             )
 
         sort_desc = sort_order.lower() == "desc"
@@ -217,8 +220,7 @@ def search_index_cmd(
             console.print(f"\n[{palette['warning']}]No records found matching your criteria.[/]")
             exit_cli()
 
-        # Render the view!
-        display_local_search_results(console=console, response=response, palette=palette)
+        display_local_search_results(console=console, response=response, ui_context=ui_context)
 
         if save:
             _save_local_search_results(

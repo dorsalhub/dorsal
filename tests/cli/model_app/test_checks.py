@@ -16,11 +16,15 @@ import datetime
 import pytest
 import typer
 from unittest.mock import MagicMock
+
+from rich.box import ROUNDED
 from rich.panel import Panel
 
 from dorsal.cli.model_app.checks import check_and_confirm_model_install
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import NotFoundError
+
+DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
 
 
 @pytest.fixture
@@ -63,7 +67,7 @@ def mock_checks_deps(mocker, mock_rich_console):
 
 def test_check_install_verified_registry_model(mock_rich_console, mock_checks_deps):
     """Tests check logic for a verified model from the registry."""
-    check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
+    check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
 
     mock_checks_deps["client"].get_registry_model.assert_called_once_with("dorsal/gpt-neo")
 
@@ -78,7 +82,7 @@ def test_check_install_unverified_warning(mock_rich_console, mock_checks_deps):
     mock_checks_deps["reg_data"].is_official = False
     mock_checks_deps["reg_data"].is_verified = False
 
-    check_and_confirm_model_install("user/experimental-model", DEFAULT_PALETTE)
+    check_and_confirm_model_install("user/experimental-model", DUMMY_UI_CONTEXT)
 
     panel = mock_rich_console.print.call_args.args[0]
     assert "Unverified" in panel.renderable
@@ -97,7 +101,7 @@ def test_check_install_missing_git_dependency(mock_rich_console, mock_checks_dep
     mock_checks_deps["shutil_which"].return_value = None
 
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
+        check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
 
     panel_calls = [c for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Panel)]
     assert len(panel_calls) > 0, "Missing System Dependency Panel was never printed"
@@ -112,7 +116,7 @@ def test_check_install_registry_not_found(mock_rich_console, mock_checks_deps):
     mock_checks_deps["client"].get_registry_model.side_effect = NotFoundError("404 Not Found")
 
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/missing", DEFAULT_PALETTE)
+        check_and_confirm_model_install("dorsal/missing", DUMMY_UI_CONTEXT)
 
     assert "Model 'dorsal/missing' not found in registry" in str(mock_rich_console.print.call_args.args[0])
 
@@ -122,7 +126,7 @@ def test_check_install_user_cancels(mock_rich_console, mock_checks_deps):
     mock_checks_deps["confirm"].return_value = False
 
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
+        check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
 
     assert "Cancelled" in str(mock_rich_console.print.call_args.args[0])
 
@@ -131,7 +135,7 @@ def test_check_install_pipx_note(mock_rich_console, mock_checks_deps, mocker):
     """Tests that a note is displayed when running in a pipx environment."""
     mocker.patch("sys.prefix", "/home/user/.local/pipx/venvs/dorsal")
 
-    check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE)
+    check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
 
     printed_text = str(mock_rich_console.print.call_args_list[0].args[0])
     assert "running inside a pipx environment" in printed_text

@@ -17,6 +17,11 @@ from typing import Annotated
 import json
 import typer
 from rich.panel import Panel
+from rich.console import Group
+from rich.text import Text
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,9 @@ def make_private(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, ConflictError
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     try:
         status_message = f"Updating collection '[bold]{collection_id}[/]'..." if not json_output else ""
@@ -47,22 +54,29 @@ def make_private(
         if json_output:
             console.print(response.model_dump_json(by_alias=True, exclude_none=True, indent=2))
         else:
-            success_panel = Panel(
-                f"✅ Collection is now private.\n\n[dim]URL:[/] {response.location_url}",
-                title=f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]",
-                border_style=palette.get("panel_border_success", "green"),
-                expand=False,
-            )
-            console.print(success_panel)
+            title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
+            message_text = f"✅ Collection is now private.\n\n[dim]URL:[/] {response.location_url}"
+
+            if borders == get_borders("none"):
+                console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup(message_text)))
+            else:
+                success_panel = Panel(
+                    Text.from_markup(message_text),
+                    title=title_text,
+                    border_style=palette.get("panel_border_success", "green"),
+                    expand=False,
+                    box=borders,
+                )
+                console.print(success_panel)
 
     except ConflictError as e:
-        handle_error(palette, e.message, json_output)
+        handle_error(ui_context, e.message, json_output)
     except DorsalOfflineError:
         raise
     except AuthError:
         raise
     except DorsalClientError as e:
-        handle_error(palette, f"API Error: {e.message}", json_output)
+        handle_error(ui_context, f"API Error: {e.message}", json_output)
     except Exception as e:
         logger.exception("An unexpected error occurred in 'collection make-private'")
-        handle_error(palette, f"An unexpected error occurred: {e}", json_output)
+        handle_error(ui_context, f"An unexpected error occurred: {e}", json_output)

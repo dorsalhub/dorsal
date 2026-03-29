@@ -18,7 +18,11 @@ from typing import Annotated
 
 import typer
 from rich.table import Table
+from rich.console import Group
+from rich.text import Text
 
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +37,10 @@ def list_annotations(
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette = ctx.obj["palette"]
+
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     with console.status(f"[{palette.get('info', 'dim')}]Fetching annotations...[/]"):
         try:
@@ -42,11 +49,19 @@ def list_annotations(
             error_console.print(f"[{palette.get('error', 'bold red')}]Failed to fetch annotations:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
-    table = Table(box=None, show_header=True, header_style=palette.get("section_title", "bold cyan"))
-    table.add_column("Schema")
-    table.add_column("Annotation ID")
-    table.add_column("Source")
-    table.add_column("Modified")
+    table = Table(box=borders, show_header=True, header_style=palette.get("section_title", "bold cyan"))
+
+    if borders == get_borders("none"):
+        table.padding = (0, 1)
+
+    if console.width < 115:
+        table.add_column("Annotation (ID / Schema)", ratio=1, overflow="fold")
+        table.add_column("Metadata (Modified / Source)", justify="right", width=38)
+    else:
+        table.add_column("Schema")
+        table.add_column("Annotation ID", no_wrap=True)
+        table.add_column("Source")
+        table.add_column("Modified")
 
     found_count = 0
 
@@ -61,7 +76,18 @@ def list_annotations(
 
                 mod_date = item.get("date_modified", "").replace("Z", "").replace("T", " ")[:16]
 
-                table.add_row(schema_id, anno_id, source_str, mod_date)
+                if console.width < 115:
+                    id_text = Text(anno_id, style=palette.get("primary_value", "cyan"))
+                    schema_text = Text(schema_id, style=palette.get("info", "dim"))
+                    col1 = Group(id_text, schema_text)
+
+                    mod_text = Text(mod_date)
+                    source_text = Text(source_str, style=palette.get("info", "dim"))
+                    col2 = Group(mod_text, source_text)
+
+                    table.add_row(col1, col2)
+                else:
+                    table.add_row(schema_id, anno_id, source_str, mod_date)
 
     if found_count == 0:
         console.print(f"[{palette.get('info', 'dim')}]No multi-value annotations found for this file.[/]")

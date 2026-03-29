@@ -71,6 +71,27 @@ def reset_dorsal_singletons():
 
 
 @pytest.fixture(autouse=True)
+def isolate_filesystem_from_tests(monkeypatch, tmp_path):
+    """
+    Forces the app to look in a temporary, empty directory for config files
+    instead of the developer's actual ~/.dorsal or project root.
+    """
+    test_home = tmp_path / "test_home"
+    test_home.mkdir(exist_ok=True)
+    monkeypatch.setattr(Path, "home", lambda: test_home)
+
+    monkeypatch.setattr(constants, "LOCAL_DORSAL_DIR", test_home / ".dorsal")
+
+    fake_cwd = tmp_path / "test_project"
+    fake_cwd.mkdir(exist_ok=True)
+    monkeypatch.setattr(Path, "cwd", lambda: fake_cwd)
+
+    monkeypatch.delenv("DORSAL_THEME", raising=False)
+    monkeypatch.delenv("DORSAL_ICONS", raising=False)
+    monkeypatch.delenv("DORSAL_BORDERS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def clean_logging():
     """
     (Auto-used) Clears all logging handlers before each test.
@@ -104,7 +125,8 @@ def mock_auth_app(mocker):
     parsing, and user output.
     """
     mocker.patch("dorsal.session.get_shared_dorsal_client")
-    mocker.patch("dorsal.common.config.load_config")
+    mocker.patch("dorsal.common.config.load_config", return_value=({}, Path("/fake/path/dorsal.toml")))
+
     mocker.patch("dorsal.session.clear_shared_dorsal_client")
     mocker.patch("dorsal.common.auth.write_auth_config")
     mocker.patch("dorsal.common.auth.remove_api_key")

@@ -16,10 +16,15 @@
 import typer
 import json
 from typing import Annotated
+from rich.box import Box
 from rich.panel import Panel
+from rich.console import Group
 from rich.text import Text
 import logging
 import enum
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +82,10 @@ def delete_file_record(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, NotFoundError
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    icons = ui_context.get("icons", {})
+    borders = ui_context.get("borders")
     hash_color = palette.get("hash_value", "default")
 
     fetch_scope: bool | None
@@ -89,6 +97,8 @@ def delete_file_record(
         fetch_scope = None
 
     try:
+        is_none_style = borders == get_borders("none")
+
         if not yes and not json_output:
             console.print("🔎 Finding record to delete...")
             file_to_delete = get_dorsal_file_record(hash_string=hash_string, mode="pydantic", public=fetch_scope)
@@ -99,6 +109,8 @@ def delete_file_record(
                 title="File record to be delete",
                 private=fetch_scope,
                 palette=palette,
+                icons=icons,
+                box_style=borders,
                 override_title_style=palette.get("error", "default"),
                 override_border_style=palette.get("panel_border_error", "default"),
             )
@@ -134,15 +146,23 @@ def delete_file_record(
                 body = "\n".join(bullet_points)
                 summary_text = f"{header}\n{body}"
 
-            console.print(
-                Panel(
-                    Text.from_markup(summary_text, justify="left"),
-                    title="Action Summary",
-                    border_style=palette.get("panel_border_warning", "yellow"),
-                    padding=(1, 2),
-                    expand=False,
+            summary_title = f"[{palette.get('panel_title_warning', 'bold yellow')}]Action Summary[/]"
+
+            if is_none_style:
+                console.print(
+                    Group(Text.from_markup(f"\n{summary_title}"), Text.from_markup(summary_text, justify="left"))
                 )
-            )
+            else:
+                console.print(
+                    Panel(
+                        Text.from_markup(summary_text, justify="left"),
+                        title=summary_title,
+                        border_style=palette.get("panel_border_warning", "yellow"),
+                        padding=(1, 2),
+                        expand=False,
+                        box=borders,
+                    )
+                )
 
             console.print(
                 f"[{palette.get('warning', 'default')}]Are you sure you want to perform this deletion operation?[/] ",
@@ -175,14 +195,21 @@ def delete_file_record(
                 (f"{message}\n\n", palette.get("success", "bold green")),
                 (details, palette.get("key", "dim")),
             )
-            console.print(
-                Panel(
-                    success_text,
-                    expand=False,
-                    title="Deletion Complete",
-                    border_style=palette.get("panel_border_success", "green"),
+
+            success_title = f"[{palette.get('panel_title_success', 'bold green')}]Deletion Complete[/]"
+
+            if is_none_style:
+                console.print(Group(Text.from_markup(f"\n{success_title}"), success_text))
+            else:
+                console.print(
+                    Panel(
+                        success_text,
+                        expand=False,
+                        title=success_title,
+                        border_style=palette.get("panel_border_success", "green"),
+                        box=borders,
+                    )
                 )
-            )
 
     except NotFoundError:
         scope_str = "any of your accessible records"
@@ -192,7 +219,7 @@ def delete_file_record(
             scope_str = "public records"
 
         message = f"File record with hash '{hash_string}' not found in {scope_str}."
-        handle_error(palette, f"Cannot delete: {message}", json_output)
+        handle_error(ui_context, f"Cannot delete: {message}", json_output)
     except typer.Abort:
         if not json_output:
             console.print(f"[{palette.get('warning', 'default')}]Deletion aborted by user.[/]")
@@ -202,7 +229,7 @@ def delete_file_record(
     except AuthError:
         raise
     except DorsalClientError as e:
-        handle_error(palette, f"API Error: {e.message}", json_output)
+        handle_error(ui_context, f"API Error: {e.message}", json_output)
     except Exception as e:
         logger.exception("An unexpected error occurred during 'file delete'")
-        handle_error(palette, f"An unexpected error occurred: {e}", json_output)
+        handle_error(ui_context, f"An unexpected error occurred: {e}", json_output)

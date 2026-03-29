@@ -24,6 +24,10 @@ from rich.syntax import Syntax
 from rich.bar import Bar
 from rich.rule import Rule
 from rich.json import JSON
+from rich.box import Box
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.file.configs.model_runner import RunModelResult
@@ -32,21 +36,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _tight_panel(content: RenderableType, title: str, border_style: str, borders: Box, **kwargs) -> RenderableType:
+    """Helper to automatically strip Panel wrappers when borders are disabled."""
+    if borders == get_borders("none"):
+        return Group(Text.from_markup(f"{title}\n"), content)
+    return Panel(content, title=title, border_style=border_style, box=borders, **kwargs)
+
+
 def create_model_result_panel(
     result: "RunModelResult | FileAnnotationResponse | FileAnnotationGroupResponse",
     title: str,
     file_name: str,
-    palette: dict[str, str],
+    ui_context: UIContext,
     max_length: int = 10,
-) -> Panel:
+) -> RenderableType:
     """
-    Dispatcher that renders a rich Panel for a model run result.
+    Dispatcher that renders a rich layout for a model run result.
     """
     from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.client.validators import FileAnnotationResponse, FileAnnotationGroupResponse
 
     logger.debug(f"Rendering model result panel for '{file_name}' (Target: {title})")
     logger.debug(f"Result object type: {type(result).__name__}")
+
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     data: dict[str, Any] | None = None
     group_info = ""
@@ -73,10 +88,11 @@ def create_model_result_panel(
 
     if not data:
         logger.debug("No record data found in result. Returning Empty Result panel.")
-        return Panel(
-            Text("No record data returned.", style=palette.get("error", "red")),
-            title=f"[{palette.get('panel_title_error', 'red')}] Empty Result{group_info}[/]",
+        return _tight_panel(
+            content=Text("No record data returned.", style=palette.get("error", "red")),
+            title=f"[{palette.get('panel_title_error', 'red')}]{icons.get('error', '')}Empty Result{group_info}[/]",
             border_style=palette.get("panel_border_error", "red"),
+            borders=borders,
         )
 
     content: RenderableType
@@ -85,7 +101,7 @@ def create_model_result_panel(
     if schema_id in RENDERER_REGISTRY:
         logger.debug(f"Found specific renderer for schema_id '{schema_id}' in RENDERER_REGISTRY.")
         render_func, schema_type = RENDERER_REGISTRY[schema_id]
-        content = render_func(data, palette, max_length)
+        content = render_func(data, ui_context, max_length)
     else:
         logger.debug(f"No specific renderer found for schema_id '{schema_id}'. Falling back to Raw JSON Output.")
         content = JSON.from_data(data)
@@ -101,11 +117,14 @@ def create_model_result_panel(
         Text(title, style=palette.get("section_title", "bold")), Text(f"{file_name}", style=palette.get("info", "dim"))
     )
 
+    main_content = Group(header, Rule(style=palette.get("info", "dim")), Text(""), content)
+
     logger.debug("Successfully constructed Panel layout.")
-    return Panel(
-        Group(header, Rule(style=palette.get("info", "dim")), Text(""), content),
-        title=f"[{title_style}]{schema_type} Result{group_info}[/]",
+    return _tight_panel(
+        content=main_content,
+        title=f"[{title_style}]{icons.get('info', '')}{schema_type} Result{group_info}[/]",
         border_style=border_style,
+        borders=borders,
         expand=False,
     )
 
@@ -136,8 +155,10 @@ def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
     return Bar(size=width, begin=0, end=score, color=color, bgcolor=bgcolor)
 
 
-def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_arxiv(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_arxiv")
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     title = data.get("title", "Untitled")
@@ -145,18 +166,13 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int
     arxiv_id = data.get("arxiv_id", "Unknown ID")
     version = data.get("version", "")
 
-    if version:
-        version_str = version if version.startswith("v") else f"v{version}"
-        id_str = f"{arxiv_id} ({version_str})"
-    else:
-        id_str = arxiv_id
+    id_str = f"{arxiv_id} (v{version})" if version else arxiv_id
 
     renderables.append(Text(title, style=palette.get("section_title", "bold")))
     renderables.append(Text(id_str, style=palette.get("info", "dim")))
 
     authors = data.get("authors", [])
     if authors:
-        # We can apply max_length to the authors list too!
         display_authors = authors[:max_length]
         author_str = ", ".join(display_authors)
         if len(authors) > max_length:
@@ -168,10 +184,11 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int
     abstract = data.get("abstract", "")
     if abstract:
         renderables.append(
-            Panel(
-                abstract,
+            _tight_panel(
+                content=abstract,
                 title=f"[{palette.get('panel_title_info', 'dim')}]Abstract[/]",
                 border_style=palette.get("panel_border_info", "dim"),
+                borders=borders,
             )
         )
         renderables.append(Text(""))
@@ -197,8 +214,9 @@ def _render_arxiv(data: dict[str, Any], palette: dict[str, str], max_length: int
     return Group(*renderables)
 
 
-def _render_classification(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_classification(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_classification")
+    palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
     grid = Table.grid(padding=(0, 2))
@@ -239,8 +257,9 @@ def _render_classification(data: dict[str, Any], palette: dict[str, str], max_le
     return Group(*renderables)
 
 
-def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_entity_extraction(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_entity_extraction")
+    palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -279,8 +298,9 @@ def _render_entity_extraction(data: dict[str, Any], palette: dict[str, str], max
     return Group(*renderables)
 
 
-def _render_object_detection(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_object_detection(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_object_detection")
+    palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -312,8 +332,10 @@ def _render_object_detection(data: dict[str, Any], palette: dict[str, str], max_
     return Group(*renderables)
 
 
-def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_embedding(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_embedding")
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     grid = Table.grid(padding=(0, 2))
@@ -348,10 +370,11 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length:
         [
             grid,
             Text(""),
-            Panel(
-                vec_preview,
+            _tight_panel(
+                content=vec_preview,
                 title=f"[{palette.get('panel_title_info', 'dim')}]Vector Data[/]",
                 border_style=palette.get("panel_border_info", "dim"),
+                borders=borders,
             ),
         ]
     )
@@ -359,8 +382,10 @@ def _render_embedding(data: dict[str, Any], palette: dict[str, str], max_length:
     return Group(*renderables)
 
 
-def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_audio_transcription(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_audio_transcription")
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     info_grid = Table.grid(padding=(0, 2))
@@ -382,10 +407,11 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], m
     if full_text := data.get("text"):
         renderables.extend(
             [
-                Panel(
-                    full_text,
+                _tight_panel(
+                    content=full_text,
                     title=f"[{palette.get('panel_title_info', 'dim')}]Full Transcription[/]",
                     border_style=palette.get("panel_border_info", "dim"),
+                    borders=borders,
                 ),
                 Text(""),
             ]
@@ -415,8 +441,10 @@ def _render_audio_transcription(data: dict[str, Any], palette: dict[str, str], m
     return Group(*renderables)
 
 
-def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_document_extraction(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_document_extraction")
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     blocks = data.get("blocks", [])
     stats: dict[str, int] = {}
     for b in blocks:
@@ -441,10 +469,11 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], m
     text_blocks = [b for b in blocks if b.get("text")]
     for b in text_blocks[:max_length]:
         renderables.append(
-            Panel(
-                b.get("text", ""),
+            _tight_panel(
+                content=b.get("text", ""),
                 title=f"[{palette.get('panel_title_info', 'dim')}]Block {b.get('id', '')[:8]} (Page {b.get('page_number', '?')})[/]",
                 border_style=palette.get("panel_border_info", "dim"),
+                borders=borders,
             )
         )
 
@@ -454,8 +483,10 @@ def _render_document_extraction(data: dict[str, Any], palette: dict[str, str], m
     return Group(*renderables)
 
 
-def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_llm_output(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_llm_output")
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     renderables.append(Text(f"Model: {data.get('model', 'Unknown Model')}", style=palette.get("section_title", "bold")))
@@ -466,10 +497,11 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length
     if len(prompt) > 200:
         prompt = prompt[:200] + "..."
     renderables.append(
-        Panel(
-            prompt,
+        _tight_panel(
+            content=prompt,
             title=f"[{palette.get('panel_title_info', 'dim')}]Input Prompt[/]",
             border_style=palette.get("panel_border_info", "dim"),
+            borders=borders,
             height=5,
         )
     )
@@ -482,10 +514,11 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length
         response_render = Text(str(response))
 
     renderables.append(
-        Panel(
-            response_render,
+        _tight_panel(
+            content=response_render,
             title=f"[{palette.get('panel_title_success', 'bold green')}]Response[/]",
             border_style=palette.get("panel_border_success", "green"),
+            borders=borders,
         )
     )
 
@@ -508,8 +541,9 @@ def _render_llm_output(data: dict[str, Any], palette: dict[str, str], max_length
     return Group(*renderables)
 
 
-def _render_regression(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_regression(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_regression")
+    palette = ui_context["palette"]
     points = data.get("points", [])
     target = data.get("target", "Unknown Target")
     unit = data.get("unit", "")
@@ -549,8 +583,9 @@ def _render_regression(data: dict[str, Any], palette: dict[str, str], max_length
     return Group(*renderables)
 
 
-def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_geolocation(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_geolocation")
+    palette = ui_context["palette"]
     geo = data.get("geometry") or {}
     props = data.get("properties") or {}
 
@@ -570,7 +605,6 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_lengt
             Text("Properties", style=palette.get("section_title", "bold")),
         ]
 
-        # Apply max_length to properties dictionary
         prop_items = list(props.items())
         for k, v in prop_items[:max_length]:
             if v is not None:
@@ -586,8 +620,9 @@ def _render_geolocation(data: dict[str, Any], palette: dict[str, str], max_lengt
     return grid
 
 
-def _render_generic(data: dict[str, Any], palette: dict[str, str], max_length: int) -> RenderableType:
+def _render_generic(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_generic")
+    palette = ui_context["palette"]
     kv_data = data.get("data", {})
     renderables: list[RenderableType] = [
         Text(data.get("description", "Generic Data"), style=f"{palette.get('info', 'dim')} italic")

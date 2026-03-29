@@ -18,6 +18,7 @@ import json
 import logging
 from typing import Annotated
 
+from rich.box import Box
 from rich.panel import Panel
 from rich.text import Text
 from rich.markup import escape
@@ -82,7 +83,9 @@ def identify_target(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, NotFoundError
 
     console = get_rich_console()
-    palette = ctx.obj["palette"]
+    palette: dict[str, str] = ctx.obj["palette"]
+    icons: dict[str, str] = ctx.obj.get("icons", {})
+    borders: Box | None = ctx.obj.get("borders")
 
     if use_cache and skip_cache:
         exit_cli(
@@ -114,6 +117,8 @@ def identify_target(
             title="✅ File Identified",
             private=None,
             palette=palette,
+            icons=icons,
+            box_style=borders,
         )
         console.print(panel)
 

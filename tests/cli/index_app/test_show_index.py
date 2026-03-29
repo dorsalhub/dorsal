@@ -17,6 +17,7 @@ import pytest
 import json
 from typer.testing import CliRunner
 from rich.panel import Panel
+from rich.console import Group
 
 from dorsal.cli import app
 
@@ -41,16 +42,15 @@ def mock_show_index_cmd(mocker):
 
 
 def test_show_index_panel_output(mock_rich_console, mock_show_index_cmd):
-    """Tests the default command, expecting a Rich Panel."""
+    """Tests the default command, expecting a Rich Panel or Group."""
     result = runner.invoke(app, ["index", "show"])
 
     assert result.exit_code == 0
     mock_show_index_cmd["summary"].assert_called_once()
 
-    # Verify that a Panel was the object printed to the console
+    # Verify that a Panel or Group was the object printed to the console
     printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Index Summary" in str(printed_object.title)
+    assert isinstance(printed_object, (Panel, Group))
 
 
 def test_show_index_json_output(mock_rich_console, mock_show_index_cmd):

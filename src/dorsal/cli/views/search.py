@@ -18,34 +18,42 @@ from rich.console import Console, Group
 from rich.table import Table
 from rich.text import Text
 
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
-def display_local_search_results(console: Console, response: Any, palette: dict[str, str]) -> None:
+
+def display_local_search_results(console: Console, response: Any, ui_context: UIContext) -> None:
     """
     Renders the local search results to the console, dynamically adjusting
     the layout based on the available terminal width.
     """
     from dorsal.file.utils.size import human_filesize
 
+    palette = ui_context["palette"]
+    icons = ui_context["icons"]
+    borders = ui_context["borders"]
+
     search_caption = (
         "Search powered by Dorsal Local Index. "
         "For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
     )
+    title: str | None = f"{icons.get('search', '')}Local Search Results"
+    if borders == get_borders("none"):
+        title = None
 
     table = Table(
-        title="Local Search Results",
+        title=title,
         show_header=True,
         header_style=palette.get("table_header", "bold blue"),
         caption=search_caption,
         caption_style="dim",
         caption_justify="left",
         expand=True,
+        box=borders,
         row_styles=["", palette.get("table_row_alt", "dim")],
     )
 
-    # --- RESPONSIVE LAYOUT CHECK ---
-    # 64 (hash) + 20 (name) + 15 (type) + 10 (size) + borders ≈ 115 columns needed
     if console.width < 115:
-        # Narrow layout: Two-Line Stacked Table
         table.add_column("File Details (Name / Hash)", ratio=1, overflow="fold")
         table.add_column("Size / Type", justify="right", width=20)
 
@@ -60,7 +68,6 @@ def display_local_search_results(console: Console, response: Any, palette: dict[
 
             table.add_row(details_group, meta_group)
     else:
-        # Wide layout: Standard Columns
         table.add_column("Name", ratio=1, min_width=20, overflow="fold", vertical="middle")
         table.add_column("Size", justify="right", min_width=7, vertical="middle")
         table.add_column("Media Type", min_width=8, vertical="middle")
@@ -82,7 +89,6 @@ def display_local_search_results(console: Console, response: Any, palette: dict[
 
     console.print(table)
 
-    # --- PAGINATION FOOTER ---
     pagination = response.pagination
     start_display = pagination.start_index + 1 if pagination.record_count > 0 else 0
 

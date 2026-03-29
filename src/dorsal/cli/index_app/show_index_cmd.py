@@ -17,8 +17,13 @@ import logging
 import typer
 from typing import Annotated
 
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +43,10 @@ def show_index_summary(
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    icons = ui_context["icons"]
+    borders = ui_context["borders"]
 
     try:
         summary = get_index_summary()
@@ -56,14 +64,21 @@ def show_index_summary(
         summary_table.add_row("File Count:", f"{summary.get('total_records', 0):,}")
         summary_table.add_row("Hash Index:", f"{summary.get('hash_only_records', 0):,}")
 
-        console.print(
-            Panel(
-                summary_table,
-                title=f"[{palette.get('panel_title', 'bold white')}]Index Summary[/]",
-                border_style=palette.get("panel_border", "default"),
-                expand=False,
+        is_none_style = borders == get_borders("none")
+        title_text = f"[{palette.get('panel_title', 'bold white')}]{icons.get('search', '')}Index Summary[/]"
+
+        if is_none_style:
+            console.print(Group(Text.from_markup(f"{title_text}\n"), summary_table))
+        else:
+            console.print(
+                Panel(
+                    summary_table,
+                    title=title_text,
+                    border_style=palette.get("panel_border", "default"),
+                    box=borders,
+                    expand=False,
+                )
             )
-        )
 
     except typer.Exit:
         raise

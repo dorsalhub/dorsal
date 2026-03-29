@@ -15,9 +15,10 @@
 import datetime
 from unittest.mock import MagicMock
 import pytest
+
 import typer
 from typer.testing import CliRunner
-
+from rich.box import ROUNDED
 
 from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
@@ -26,10 +27,12 @@ from dorsal.common.exceptions import DorsalError, NotFoundError
 
 cli_app = typer.Typer()
 
+DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = DUMMY_UI_CONTEXT
 
 
 cli_app.command(name="install")(install_model)

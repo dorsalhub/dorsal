@@ -22,8 +22,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
+from rich.console import Group
 
 from dorsal.common.literals import MiB
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 
 logger = logging.getLogger(__name__)
@@ -78,7 +81,10 @@ def hash_target(
     from dorsal.file.utils.quick_hasher import QuickHasher
 
     console = get_rich_console()
-    palette = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     if use_cache and skip_cache:
         exit_cli(
@@ -123,17 +129,17 @@ def hash_target(
         elif hash_type == "QUICK":
             min_size_mb = QuickHasher.min_permitted_filesize // MiB
             console.print(
-                f"[{palette['info']}]Info:[/] QuickHash not generated. File size is below the {min_size_mb}MiB minimum."
+                f"[{palette.get('info', 'dim')}]Info:[/] QuickHash not generated. File size is below the {min_size_mb}MiB minimum."
             )
         elif hash_type == "TLSH":
             console.print(
-                f"[{palette['info']}]Info:[/] TLSH hash not generated. To enable, please install the 'py-tlsh' Python package."
+                f"[{palette.get('info', 'dim')}]Info:[/] TLSH hash not generated. To enable, please install the 'py-tlsh' Python package."
             )
         return exit_cli()
 
     if file_hashes:
         hash_grid = Table.grid(padding=(0, 2))
-        hash_grid.add_column(justify="right", style=palette["key"])
+        hash_grid.add_column(justify="right", style=palette.get("key", "dim"))
         hash_grid.add_column(justify="left")
 
         for hash_function, hash_val in file_hashes.items():
@@ -156,11 +162,18 @@ def hash_target(
 
             hash_grid.add_row(f"{hash_function}:", Text(str(display_value), style=value_style))
 
-        console.print(
-            Panel(
-                hash_grid,
-                title=f"[{palette['panel_title']}]🔑 Hashes for {escape(path.name)}[/]",
-                expand=False,
-                border_style=palette["panel_border"],
+        is_none_style = borders == get_borders("none")
+        title_text = f"[{palette.get('panel_title', 'bold')}]{icons.get('key', '🔑 ')}Hashes for {escape(path.name)}[/]"
+
+        if is_none_style:
+            console.print(Group(Text.from_markup(f"{title_text}\n"), hash_grid))
+        else:
+            console.print(
+                Panel(
+                    hash_grid,
+                    title=title_text,
+                    expand=False,
+                    border_style=palette.get("panel_border", "blue"),
+                    box=borders,
+                )
             )
-        )

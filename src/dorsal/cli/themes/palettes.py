@@ -292,7 +292,7 @@ def _load_custom_palettes() -> dict[str, Any]:
         return {}
 
 
-def get_palette(name: str | None = None) -> dict[str, str]:
+def get_palette(name: str = "default") -> dict[str, str]:
     """
     Loads a palette by name, handling fallbacks and merging.
     - Precedence: Command-line --theme > DORSAL_THEME env var > config file > default.

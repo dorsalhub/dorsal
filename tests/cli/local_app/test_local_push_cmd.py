@@ -390,6 +390,7 @@ def test_push_dir_generic_errors(mock_dir_deps, mock_exit_cli, tmp_path):
 def test_push_dir_defensive_collection_name(mock_dir_deps, mock_exit_cli):
     """Hits the defensive 'if collection_name is None' block."""
     from dorsal.cli.local_app.push_cmd import _process_dir_push
+    from dorsal.cli.themes.borders import get_borders
 
     mock_path = MagicMock()
     mock_path.name = None
@@ -413,7 +414,7 @@ def test_push_dir_defensive_collection_name(mock_dir_deps, mock_exit_cli):
             ignore_duplicates=False,
             fail_fast=False,
             lazy=False,
-            palette={},
+            ui_context={"palette": {}, "borders": get_borders("rounded")},
             console=MagicMock(),
         )
 
@@ -422,7 +423,6 @@ def test_push_dir_defensive_collection_name(mock_dir_deps, mock_exit_cli):
 
 
 def test_push_exception_bubbling(mock_dir_deps, tmp_path):
-    """Ensures specific exceptions bubble up without being caught by generic handlers."""
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -436,11 +436,11 @@ def test_push_exception_bubbling(mock_dir_deps, tmp_path):
 
 
 def test_display_summary_panel_with_failures(mocker):
-    """Directly hits the failure block in _display_summary_panel."""
     mock_console = MagicMock()
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
 
     from dorsal.cli.local_app.push_cmd import _display_summary_panel
+    from dorsal.cli.themes.borders import get_borders
 
     summary_data = {
         "total_records": 10,
@@ -453,7 +453,9 @@ def test_display_summary_panel_with_failures(mocker):
     mock_collection = MagicMock()
     mock_collection.__iter__.return_value = iter([])
 
-    _display_summary_panel(summary_data, True, {}, False, mock_collection, mock_console)
+    mock_ui_context = {"palette": {}, "borders": get_borders("rounded")}
+
+    _display_summary_panel(summary_data, True, mock_ui_context, False, mock_collection, mock_console)
 
     assert mock_console.print.call_count == 3
     last_print_arg = mock_console.print.call_args_list[-1].args[0]
