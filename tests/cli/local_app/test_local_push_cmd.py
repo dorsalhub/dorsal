@@ -460,3 +460,139 @@ def test_display_summary_panel_with_failures(mocker):
     assert mock_console.print.call_count == 3
     last_print_arg = mock_console.print.call_args_list[-1].args[0]
     assert "Failed Batch Details" in str(last_print_arg.title)
+
+
+def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock_dir_deps, mock_exit_cli, tmp_path):
+    """Cover the 'none' borders and other specific UI paths in push_cmd."""
+    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.local_app.push_cmd import (
+        _process_file_push,
+        _process_dir_push,
+        _display_dry_run_panel,
+        _display_summary_panel,
+    )
+    from dorsal.common.exceptions import PartialIndexingError
+    from rich.console import Group
+
+    borderless_context = {"palette": {}, "borders": get_borders("none")}
+    ctx = MagicMock()
+    console = mock_rich_console
+
+    file_path = tmp_path / "test.txt"
+    file_path.touch()
+
+    _process_file_push(
+        ctx=ctx,
+        path=file_path,
+        use_cache_value=False,
+        overwrite_cache=False,
+        public=False,
+        strict=False,
+        json_output=False,
+        resolve_links=True,
+        ui_context=borderless_context,
+        console=console,
+    )
+
+    mock_file_deps["local_file_instance"].push.return_value.success = 0
+    _process_file_push(
+        ctx=ctx,
+        path=file_path,
+        use_cache_value=False,
+        overwrite_cache=False,
+        public=False,
+        strict=False,
+        json_output=False,
+        resolve_links=True,
+        ui_context=borderless_context,
+        console=console,
+    )
+
+    dir_path = tmp_path / "test_dir"
+    dir_path.mkdir()
+
+    _process_dir_push(
+        ctx=ctx,
+        path=dir_path,
+        use_cache_value=False,
+        overwrite_cache=False,
+        public=False,
+        strict=False,
+        json_output=False,
+        resolve_links=True,
+        recursive=False,
+        create_collection=True,
+        collection_name="col_name",
+        collection_desc=None,
+        dry_run=False,
+        ignore_duplicates=False,
+        fail_fast=False,
+        lazy=False,
+        ui_context=borderless_context,
+        console=console,
+    )
+
+    mock_dir_deps["collection_instance"].push.return_value = {
+        "failed": 1,
+        "errors": [{"error_message": "Cannot process duplicate files"}],
+    }
+    with pytest.raises(typer.Exit):
+        _process_dir_push(
+            ctx=ctx,
+            path=dir_path,
+            use_cache_value=False,
+            overwrite_cache=False,
+            public=False,
+            strict=False,
+            json_output=False,
+            resolve_links=True,
+            recursive=False,
+            create_collection=False,
+            collection_name=None,
+            collection_desc=None,
+            dry_run=False,
+            ignore_duplicates=False,
+            fail_fast=False,
+            lazy=False,
+            ui_context=borderless_context,
+            console=console,
+        )
+
+    mock_dir_deps["collection_instance"].push.side_effect = PartialIndexingError(
+        "Strict fail", {"failures": ["Bad bad"]}
+    )
+    with pytest.raises(typer.Exit):
+        _process_dir_push(
+            ctx=ctx,
+            path=dir_path,
+            use_cache_value=False,
+            overwrite_cache=False,
+            public=False,
+            strict=False,
+            json_output=False,
+            resolve_links=True,
+            recursive=False,
+            create_collection=False,
+            collection_name=None,
+            collection_desc=None,
+            dry_run=False,
+            ignore_duplicates=False,
+            fail_fast=False,
+            lazy=False,
+            ui_context=borderless_context,
+            console=console,
+        )
+
+    mock_collection = MagicMock()
+    mock_collection.__iter__.return_value = iter(
+        [MagicMock(_source="cache", size=100, media_type="text/plain", name="f1")]
+    )
+    mock_collection.__len__.return_value = 1
+
+    _display_dry_run_panel(mock_collection, True, borderless_context, console)
+
+    summary = {"total_records": 1, "success": 0, "failed": 1, "errors": [{"batch_index": 0}]}
+    _display_summary_panel(summary, False, borderless_context, False, mock_collection, console)
+
+    group_calls = [c for c in console.print.call_args_list if isinstance(c.args[0], Group)]
+    assert len(group_calls) > 0
