@@ -14,7 +14,7 @@
 
 import typer
 import json
-from typing import Annotated
+from typing import Annotated, cast
 
 from rich.panel import Panel
 from rich.text import Text
@@ -78,7 +78,6 @@ def add_tag(
                 "Invalid Request: Simple labels must be PRIVATE. Remove the --public flag or use --name/--value for public tags.",
                 json_output,
             )
-            return
 
         if name or value:
             handle_error(
@@ -86,11 +85,10 @@ def add_tag(
                 "Ambiguous Request: Please provide EITHER a simple label OR a --name/--value pair, not both.",
                 json_output,
             )
-            return
 
         name = "label"
         value = label
-        is_public_tag = False  # FIXED: Labels are inherently private
+        is_public_tag = False
 
     else:
         if not name or not value:
@@ -99,7 +97,6 @@ def add_tag(
                 "Missing Arguments: You must provide either a label OR both --name and --value.",
                 json_output,
             )
-            return
 
     try:
         if not json_output:
@@ -113,7 +110,9 @@ def add_tag(
         if label:
             response = add_label_to_file(hash_string=hash_string, label=label)
         else:
-            response = add_tag_to_file(hash_string=hash_string, name=name, value=value, public=is_public_tag)
+            response = add_tag_to_file(
+                hash_string=hash_string, name=cast(str, name), value=cast(str, value), public=is_public_tag
+            )
 
         if json_output:
             console.print(response.model_dump_json(indent=2))
