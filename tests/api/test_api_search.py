@@ -23,7 +23,7 @@ from dorsal.api.search import search_local, search_local_paginated, PaginatedSea
 class TestDorsalIndex:
     def test_index_initialization(self, test_index):
         """Verifies the schema and test data were inserted correctly."""
-        summary = test_index.summary()
+        summary = test_index.summary(verbose=True)
         assert summary["total_records"] == 3
 
         assert summary["indexed_attributes"] > 0

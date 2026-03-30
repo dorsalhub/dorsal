@@ -37,6 +37,7 @@ from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.index_app.search_index_cmd import search_index_cmd
 from dorsal.cli.local_app import app as local_app_
+from dorsal.cli.index_app.get_index_cmd import get_index_record
 from dorsal.cli.local_app.scan_cmd import scan_target
 from dorsal.cli.local_app.push_cmd import push_target
 from dorsal.cli.local_app.report_cmd import report_target
@@ -147,6 +148,7 @@ app.command(name="identify", help="Identify a local file by its hash. Queries Do
 app.command(name="install")(install_model)
 app.command(name="run")(run_model)
 app.command(name="push", help="Push a local file or directory to DorsalHub.")(push_target)
+app.command(name="get", help="Get a file record from the local search index.")(get_index_record)
 
 
 app.add_typer(auth_app_, name="auth")

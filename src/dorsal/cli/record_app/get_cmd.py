@@ -118,7 +118,7 @@ def get_file_record(
 
     if not json_output:
         console.print(
-            f"🔎 Searching for{search_type_str}file record with hash [{palette['primary_value']}]{hash_string}[/]"
+            f"Checking DorsalHub for{search_type_str}file record with hash [{palette['primary_value']}]{hash_string}[/]"
         )
 
     try:

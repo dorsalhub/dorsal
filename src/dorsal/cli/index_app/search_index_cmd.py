@@ -109,7 +109,7 @@ def search_index_cmd(
             help="The number of results to display per page.",
             rich_help_panel="Search Options",
         ),
-    ] = 30,
+    ] = 25,
     sort_by: Annotated[
         str,
         typer.Option(
@@ -176,7 +176,6 @@ def search_index_cmd(
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    icons = ui_context["icons"]
 
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
@@ -196,7 +195,7 @@ def search_index_cmd(
     try:
         if not json_output:
             console.print(
-                f"{icons.get('search')}Searching [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{query}'[/]"
+                f"Checking [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{query}'[/]"
             )
 
         sort_desc = sort_order.lower() == "desc"

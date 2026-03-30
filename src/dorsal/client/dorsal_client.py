@@ -3268,7 +3268,6 @@ class DorsalClient:
         try:
             json_response = response.json()
 
-            # Handle sharded annotation groups
             if json_response.get("group"):
                 try:
                     from dorsal.file.sharding import reassemble_record

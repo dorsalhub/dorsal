@@ -56,6 +56,7 @@ def _build_annotation_table(
     is_stub: bool = False,
     display_fields: set | None = None,
     max_items: int = 3,
+    preserve_whitespace: bool = False,
 ):
     """Recursive. Renders annotation stubs in a simplified format."""
     indent = "  " * level
@@ -91,14 +92,19 @@ def _build_annotation_table(
                 if not value:
                     continue
 
+                if isinstance(value, str):
+                    if not preserve_whitespace:
+                        value = " ".join(value.split())
+
                 key_text = f"{indent}{dict_key}:"
 
                 if isinstance(value, dict):
                     table.add_row(key_text, "")
-                    _build_annotation_table(dict_key, table, value, level + 1, is_stub, display_fields, max_items)
+                    _build_annotation_table(
+                        dict_key, table, value, level + 1, is_stub, display_fields, max_items, preserve_whitespace
+                    )
 
                 elif isinstance(value, list):
-                    # Check if it's a flat list of strings/ints, or a list of dicts
                     if all(not isinstance(item, (dict, list)) for item in value):
                         display_list = value[:max_items]
                         value_str = ", ".join(str(item) for item in display_list)
@@ -109,7 +115,14 @@ def _build_annotation_table(
                         table.add_row(key_text, "")
                         display_list = value[:max_items]
                         _build_annotation_table(
-                            dict_key, table, display_list, level + 1, is_stub, display_fields, max_items
+                            dict_key,
+                            table,
+                            display_list,
+                            level + 1,
+                            is_stub,
+                            display_fields,
+                            max_items,
+                            preserve_whitespace,
                         )
                         if len(value) > max_items:
                             table.add_row(
@@ -124,7 +137,14 @@ def _build_annotation_table(
         display_data = data[:max_items]
         for item in display_data:
             _build_annotation_table(
-                key, table, item, level, is_stub=is_stub, display_fields=display_fields, max_items=max_items
+                key,
+                table,
+                item,
+                level,
+                is_stub=is_stub,
+                display_fields=display_fields,
+                max_items=max_items,
+                preserve_whitespace=preserve_whitespace,
             )
         if len(data) > max_items:
             table.add_row(f"{indent}...", Text(f"[ {len(data) - max_items} more items hidden ]", style="dim italic"))
@@ -141,6 +161,7 @@ def create_file_info_panel(
     source: str | None = None,
     icons: dict[str, str] | None = None,
     box_style: Box | None = None,
+    preserve_whitespace: bool = False,
 ) -> Panel | Group:
     """
     Creates a standardized rich Panel to display file information using a color palette.
@@ -240,8 +261,7 @@ def create_file_info_panel(
             if tag_id:
                 tag_value.append(f" [id: {tag_id}]", style=palette["tag_subtext"])
             tags_table.add_row(f"{tag.get('name')}:", tag_value)
-    else:
-        tags_table.add_row("", Text("No tags found.", style=palette["info"]))
+
     renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['tags']}Tags[/]"), tags_table))
     renderables.append(Text(""))
 
@@ -278,7 +298,13 @@ def create_file_info_panel(
                     annotation_table = Table.grid(padding=(0, 1, 0, 2), expand=False)
                     annotation_table.add_column(style=palette["key"], justify="right", width=12)
                     annotation_table.add_column(style=palette["primary_value"])
-                    _build_annotation_table(key=key, table=annotation_table, data=item, is_stub=True)
+                    _build_annotation_table(
+                        key=key,
+                        table=annotation_table,
+                        data=item,
+                        is_stub=True,
+                        preserve_whitespace=preserve_whitespace,
+                    )
                     renderables.append(annotation_table)
             else:
                 record_to_render = items_to_render[0].get("record", items_to_render[0])
@@ -291,7 +317,11 @@ def create_file_info_panel(
                 annotation_table.add_column(style=palette["key"], justify="right", min_width=max_width + 2)
                 annotation_table.add_column(style=palette["primary_value"])
                 _build_annotation_table(
-                    key=key, table=annotation_table, data=record_to_render, display_fields=display_fields
+                    key=key,
+                    table=annotation_table,
+                    data=record_to_render,
+                    display_fields=display_fields,
+                    preserve_whitespace=preserve_whitespace,
                 )
                 renderables.append(annotation_table)
 

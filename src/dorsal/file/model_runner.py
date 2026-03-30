@@ -1030,6 +1030,7 @@ class ModelRunner:
     def _merge_model_results(self, model_results: "list[RunModelResult]", file_path_for_log: str) -> "FileRecordStrict":
         from dorsal.file.validators.file_record import FileRecordStrict, CORE_MODEL_ANNOTATION_WRAPPERS
         from dorsal.file.validators.base import FileCoreValidationModelStrict
+        from dorsal.file.sharding import build_annotation_or_annotationgroup
 
         if not model_results:
             logger.error(
@@ -1113,7 +1114,30 @@ class ModelRunner:
                 skipped_due_to_error += 1
                 continue
 
-            result_dump = result.model_dump(mode="json", exclude_none=self.exclude_none)
+            try:
+                source_data = result.source.model_dump(by_alias=True, exclude_none=True)
+
+                built_payload = build_annotation_or_annotationgroup(
+                    schema_id=schema_id,
+                    record_data=result.record,
+                    source=source_data,
+                    schema_version=result.schema_version,
+                    private=None,
+                )
+
+                result_dump = built_payload.model_dump(mode="json", exclude_none=self.exclude_none)
+
+            except Exception as err:
+                logger.error(
+                    "Failed to build annotation payload (sharding/instantiation failed) for '%s' on file '%s': %s",
+                    schema_id,
+                    file_path_for_log,
+                    err,
+                    exc_info=True,
+                )
+                skipped_due_to_error += 1
+                continue
+
             is_core_schema = schema_id in CORE_MODEL_ANNOTATION_WRAPPERS
 
             if is_core_schema:

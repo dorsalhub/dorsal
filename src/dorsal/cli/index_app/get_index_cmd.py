@@ -93,7 +93,7 @@ def get_index_record(
 
     if not json_output:
         console.print(
-            f"🔎 Searching local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
+            f"Checking local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
         )
 
     if os.path.isabs(identifier) or os.path.exists(identifier):

@@ -97,7 +97,7 @@ def test_get_collection_success(mock_shared_client):
     result = collection_api.get_collection("col_123", hydrate=True, mode="pydantic")
 
     mock_shared_client.get_collection.assert_called_once_with(
-        collection_id="col_123", hydrate=True, page=1, per_page=30
+        collection_id="col_123", hydrate=True, page=1, per_page=25
     )
     assert result.collection_id == "col_123"
 

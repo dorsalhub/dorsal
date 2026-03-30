@@ -67,7 +67,7 @@ def test_search_user_scope_default(command_path, mock_rich_console, mock_search_
     mock_search_cmd["user_search"].assert_called_once_with(
         query=QUERY,
         page=1,
-        per_page=30,
+        per_page=25,
         sort_by="date_modified",
         sort_order="desc",
         match_any=False,

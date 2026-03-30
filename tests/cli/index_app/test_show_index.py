@@ -34,31 +34,31 @@ MOCK_INDEX_SUMMARY = {
 
 
 @pytest.fixture
-def mock_show_index_cmd(mocker):
-    """Mocks dependencies for the `index show` command."""
+def mock_summary_index_cmd(mocker):
+    """Mocks dependencies for the `index summary` command."""
     # Mocking the new API function directly
     mock_summary = mocker.patch("dorsal.api.index.summary", return_value=MOCK_INDEX_SUMMARY)
     return {"summary": mock_summary}
 
 
-def test_show_index_panel_output(mock_rich_console, mock_show_index_cmd):
+def test_summary_index_panel_output(mock_rich_console, mock_summary_index_cmd):
     """Tests the default command, expecting a Rich Panel or Group."""
-    result = runner.invoke(app, ["index", "show"])
+    result = runner.invoke(app, ["index", "summary"])
 
     assert result.exit_code == 0
-    mock_show_index_cmd["summary"].assert_called_once()
+    mock_summary_index_cmd["summary"].assert_called_once()
 
     # Verify that a Panel or Group was the object printed to the console
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, (Panel, Group))
 
 
-def test_show_index_json_output(mock_rich_console, mock_show_index_cmd):
+def test_summary_index_json_output(mock_rich_console, mock_summary_index_cmd):
     """Tests the --json flag, expecting raw JSON output."""
-    result = runner.invoke(app, ["index", "show", "--json"])
+    result = runner.invoke(app, ["index", "summary", "--json"])
 
     assert result.exit_code == 0
-    mock_show_index_cmd["summary"].assert_called_once()
+    mock_summary_index_cmd["summary"].assert_called_once()
     mock_rich_console.print.assert_called_once()
 
     # Verify the output is the JSON representation of our mock summary
@@ -67,11 +67,11 @@ def test_show_index_json_output(mock_rich_console, mock_show_index_cmd):
     assert data == MOCK_INDEX_SUMMARY
 
 
-def test_show_index_exception_handling(mock_show_index_cmd):
+def test_summary_index_exception_handling(mock_summary_index_cmd):
     """Tests that a generic exception is handled gracefully."""
-    mock_show_index_cmd["summary"].side_effect = PermissionError("Permission denied")
+    mock_summary_index_cmd["summary"].side_effect = PermissionError("Permission denied")
 
-    result = runner.invoke(app, ["index", "show"])
+    result = runner.invoke(app, ["index", "summary"])
 
     assert result.exit_code != 0
     assert "An error occurred while getting search index info: Permission denied" in result.output

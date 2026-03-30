@@ -61,15 +61,16 @@ def clear(*, index: DorsalIndex | None = None) -> None:
         clear_shared_index()
 
 
-def summary(*, index: DorsalIndex | None = None) -> dict:
+def summary(*, verbose: bool = False, index: DorsalIndex | None = None) -> dict:
     """
     Retrieves statistics about the local search index.
 
     Args:
+        verbose: If True, calculates extended distributions and analytical metrics.
         index: Optional custom DorsalIndex instance. Defaults to shared index.
     """
     active_index = _get_active_index(index)
-    return active_index.summary()
+    return active_index.summary(verbose=verbose)
 
 
 def get_path(*, index: DorsalIndex | None = None) -> pathlib.Path:

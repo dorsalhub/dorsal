@@ -91,7 +91,7 @@ def search_local_paginated(
     or_logic: bool = False,
     index: DorsalIndex | None = None,
     page: int = 1,
-    per_page: int = 30,
+    per_page: int = 25,
     sort_by: str = "date_modified",
     sort_desc: bool = True,
 ) -> PaginatedSearchResults:

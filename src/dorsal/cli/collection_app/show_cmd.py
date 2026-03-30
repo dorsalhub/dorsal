@@ -45,7 +45,7 @@ def show_collection(
     per_page: Annotated[
         int,
         typer.Option("--per-page", help="The number of files to retrieve per page."),
-    ] = 30,
+    ] = 25,
     json_output: Annotated[
         bool,
         typer.Option(

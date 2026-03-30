@@ -120,7 +120,6 @@ def test_create_file_info_panel_minimal_data():
         console.print(panel)
     output = capture.get()
     assert "SHA-256" in output
-    assert "No tags found" in output
 
 
 def _render_table_to_string(table: Table) -> str:

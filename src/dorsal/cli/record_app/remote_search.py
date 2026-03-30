@@ -144,7 +144,7 @@ def search_and_display(
 
         if not json_output:
             console.print(
-                f"{icons.get('search', '🔎 ')}Searching [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
+                f"{icons.get('search', '🔎 ')}Searching DorsalHub [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
             )
 
         casted_sort_by = cast(SortByField, sort_by)

@@ -75,7 +75,7 @@ def test_show_collection_success_default(mock_rich_console, mock_show_collection
 
     assert result.exit_code == 0
     mock_show_collection_cmd["get_collection"].assert_called_once_with(
-        collection_id=COLLECTION_ID, hydrate=False, page=1, per_page=30, mode="pydantic"
+        collection_id=COLLECTION_ID, hydrate=False, page=1, per_page=25, mode="pydantic"
     )
     mock_show_collection_cmd["view"].assert_called_once()
 
