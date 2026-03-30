@@ -416,36 +416,99 @@ class DorsalIndex:
             self.conn.close()
             self.conn = None
 
-    def summary(self) -> dict:
+    def summary(self, verbose: bool = False) -> dict:
         """Provides a summary of the index's current state."""
         conn = self._ensure_connection()
-        logger.debug("Generating index summary...")
+        logger.debug(f"Generating index summary (verbose={verbose})...")
         cursor = conn.cursor()
 
+        # --- Base Metrics (Always Run) ---
         cursor.execute("SELECT COUNT(*) FROM cached_files")
-        record_count = cursor.fetchone()[0]
+        record_count = cursor.fetchone()[0] or 0
 
         cursor.execute("SELECT COUNT(*) FROM cached_files WHERE record IS NOT NULL")
-        full_records = cursor.fetchone()[0]
-
+        full_records = cursor.fetchone()[0] or 0
         hash_only_records = record_count - full_records
 
-        cursor.execute("SELECT COUNT(*) FROM file_attributes")
-        attr_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM dorsal_fts")
+        fts_count = cursor.fetchone()[0] or 0
 
         try:
-            db_size_bytes = os.path.getsize(self.db_path)
+            stat = os.stat(self.db_path)
+            db_size_bytes = stat.st_size
+            db_created_time = stat.st_ctime
+            db_modified_time = stat.st_mtime
         except FileNotFoundError:
             db_size_bytes = 0
+            db_created_time = 0
+            db_modified_time = 0
 
         summary_data = {
             "database_path": str(self.db_path),
             "total_records": record_count,
             "full_records": full_records,
             "hash_only_records": hash_only_records,
-            "indexed_attributes": attr_count,
             "database_size_bytes": db_size_bytes,
+            "fts_indexed_records": fts_count,
+            "created_time": db_created_time,
+            "modified_time": db_modified_time,
         }
+
+        # --- Extended Metrics (Verbose Only) ---
+        if verbose:
+            cursor.execute("SELECT SUM(size) FROM cached_files")
+            summary_data["total_tracked_file_bytes"] = cursor.fetchone()[0] or 0
+
+            cursor.execute("SELECT COUNT(*) FROM cached_files WHERE is_compressed = 1")
+            compressed_count = cursor.fetchone()[0] or 0
+            summary_data["compressed_records"] = compressed_count
+
+            cursor.execute("SELECT COUNT(*) FROM file_attributes")
+            summary_data["indexed_attributes"] = cursor.fetchone()[0] or 0
+
+            if compressed_count > 0:
+                cursor.execute("SELECT record FROM cached_files WHERE is_compressed = 1 LIMIT 20")
+                sample_rows = cursor.fetchall()
+                total_uncompressed = 0
+                total_compressed = 0
+                for r in sample_rows:
+                    comp_data = r["record"]
+                    if comp_data:
+                        total_compressed += len(comp_data)
+                        try:
+                            total_uncompressed += len(zlib.decompress(comp_data))
+                        except Exception:
+                            pass
+                if total_compressed > 0 and total_uncompressed > 0:
+                    summary_data["compression_ratio_sample"] = total_uncompressed / total_compressed
+
+            cursor.execute("""
+                SELECT extension, COUNT(*) as count 
+                FROM cached_files 
+                WHERE extension IS NOT NULL 
+                GROUP BY extension 
+                ORDER BY count DESC LIMIT 5
+            """)
+            summary_data["top_extensions"] = {row["extension"]: row["count"] for row in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT media_type, COUNT(*) as count 
+                FROM cached_files 
+                WHERE media_type IS NOT NULL 
+                GROUP BY media_type 
+                ORDER BY count DESC LIMIT 5
+            """)
+            summary_data["top_media_types"] = {row["media_type"]: row["count"] for row in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT schema_id, COUNT(DISTINCT abspath) as count 
+                FROM file_attributes 
+                WHERE schema_id NOT LIKE 'file/%'
+                GROUP BY schema_id 
+                ORDER BY count DESC LIMIT 5
+            """)
+            summary_data["top_schemas"] = {row["schema_id"]: row["count"] for row in cursor.fetchall()}
+
         logger.debug(f"Index summary generated: {summary_data}")
         return summary_data
 

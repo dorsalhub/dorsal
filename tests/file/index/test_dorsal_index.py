@@ -322,7 +322,7 @@ def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
 def test_summary_file_not_found(temp_index: DorsalIndex, mocker):
     """Covers the FileNotFoundError when generating a summary of a missing DB file."""
 
-    mocker.patch("os.path.getsize", side_effect=FileNotFoundError())
+    mocker.patch("os.stat", side_effect=FileNotFoundError())
 
     summary = temp_index.summary()
 
@@ -530,14 +530,43 @@ def test_prune_mtime_mismatch(temp_index, fs, mock_file_record_strict):
     path = "/fake/stale_file.pdf"
     fs.create_file(path)
 
-    # 1. Insert with mtime 100.0
     temp_index.upsert_record(path=path, modified_time=100.0, record=mock_file_record_strict)
 
-    # 2. Change disk mtime to 200.0
     os.utime(path, (200.0, 200.0))
 
-    # 3. Prune should detect mismatch and hit the logger/append lines
     removed, total = temp_index.prune()
 
     assert removed == 1
     assert total == 1
+
+
+def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_strict):
+    """Test that default summary() only returns base metrics."""
+    temp_index.upsert_record(path="/fake/test.pdf", modified_time=123.45, record=mock_file_record_strict)
+
+    summary = temp_index.summary()
+
+    assert "total_records" in summary
+    assert summary["total_records"] == 1
+    assert "database_size_bytes" in summary
+    assert "fts_indexed_records" in summary
+
+    assert "indexed_attributes" not in summary
+    assert "total_tracked_file_bytes" not in summary
+    assert "compressed_records" not in summary
+    assert "top_extensions" not in summary
+
+
+def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_strict):
+    """Test that summary(verbose=True) includes extended metrics."""
+    temp_index.upsert_record(path="/fake/test.pdf", modified_time=123.45, record=mock_file_record_strict)
+
+    summary = temp_index.summary(verbose=True)
+
+    assert "indexed_attributes" in summary
+    assert summary["indexed_attributes"] > 0
+    assert "total_tracked_file_bytes" in summary
+    assert "compressed_records" in summary
+    assert "top_extensions" in summary
+    assert "top_media_types" in summary
+    assert "top_schemas" in summary

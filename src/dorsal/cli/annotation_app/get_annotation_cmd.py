@@ -19,6 +19,8 @@ from typing import Annotated, Optional
 
 import typer
 
+from dorsal.cli.themes import UIContext
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,7 +83,9 @@ def get_annotation(
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
 
     parsed_export_options = parse_cli_options(options=export_options, palette=palette) if export_options else {}
 
@@ -139,7 +143,7 @@ def get_annotation(
 
             if not (json_output or export_format):
                 panel = create_model_result_panel(
-                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", palette=palette
+                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", ui_context=ui_context
                 )
                 console.print(panel)
 
@@ -148,7 +152,7 @@ def get_annotation(
                 console.print(data_str, end="" if export_format else "\n")
             else:
                 panel = create_model_result_panel(
-                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", palette=palette
+                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", ui_context=ui_context
                 )
                 console.print(panel)
 

@@ -128,7 +128,8 @@ def run_model(
     from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
-    from dorsal.file.validators.file_record import AnnotationGroup, Annotation
+    from dorsal.cli.themes import UIContext
+    from dorsal.cli.themes.borders import get_borders
     from rich.logging import RichHandler
     from rich.table import Table
     from rich.progress import (
@@ -144,7 +145,11 @@ def run_model(
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj.get("palette", {})
+
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     logging.getLogger().handlers[0] = RichHandler(console=error_console, markup=True)
 
@@ -160,7 +165,8 @@ def run_model(
                     "To bypass this interactive prompt in scripts, use the '--yes' flag."
                 )
 
-            check_and_confirm_model_install(target, palette, yes=yes)
+            # Pass ui_context here!
+            check_and_confirm_model_install(target, ui_context, yes=yes)
     except typer.Exit:
         raise
     except Exception:
@@ -331,9 +337,14 @@ def run_model(
     else:
         if is_batch:
             table = Table(
-                title=f"[{palette.get('panel_title', 'bold')}]Results: {target}[/]",
+                title=f"[{palette.get('panel_title', 'bold')}]{icons.get('info', '')}Results: {target}[/]",
                 header_style=palette.get("table_header", "bold blue"),
+                box=borders,
             )
+
+            if borders == get_borders("none"):
+                table.padding = (0, 1)
+
             table.add_column("Input File")
             table.add_column("Status")
 
@@ -392,7 +403,7 @@ def run_model(
                         result=first_raw_result,
                         title=target,
                         file_name=file_path.name,
-                        palette=palette,
+                        ui_context=ui_context,
                         max_length=max_length,
                     )
                     console.print(panel)

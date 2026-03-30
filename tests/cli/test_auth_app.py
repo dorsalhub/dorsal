@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open
 from typer.testing import CliRunner
-from rich.console import Console
+from rich.console import Console, Group
 from rich.text import Text
 from rich.panel import Panel
 
@@ -92,12 +92,17 @@ def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
     mock_write.assert_called_with(api_key="pk_123", email="test@example.com", scope="project")
 
     # Verify the security warning panel was printed
-    # It's usually the last thing printed
     last_print_arg = mock_rich_console.print.call_args[0][0]
-    assert isinstance(last_print_arg, Panel)
-    assert "Action Required" in str(last_print_arg.title)
-    assert "must not" in str(last_print_arg.renderable)
-    assert "dorsal auth gitignore" in str(last_print_arg.renderable)
+    assert isinstance(last_print_arg, (Panel, Group))
+
+    output_text = (
+        str(last_print_arg.title) + str(last_print_arg.renderable)
+        if isinstance(last_print_arg, Panel)
+        else "".join(str(r) for r in last_print_arg.renderables)
+    )
+    assert "Action Required" in output_text
+    assert "must not" in output_text
+    assert "dorsal auth gitignore" in output_text
 
 
 # --- Logout Tests ---
@@ -142,8 +147,14 @@ def test_logout_with_env_var_warning(mocker, mock_rich_console, mock_auth_app):
 
     assert result.exit_code == 0
     panel_output = mock_rich_console.print.call_args_list[0].args[0]
-    assert isinstance(panel_output, Panel)
-    assert "Environment Variable Active" in str(panel_output.title)
+    assert isinstance(panel_output, (Panel, Group))
+
+    output_text = (
+        str(panel_output.title) + str(panel_output.renderable)
+        if isinstance(panel_output, Panel)
+        else "".join(str(r) for r in panel_output.renderables)
+    )
+    assert "Environment Variable Active" in output_text
 
 
 # --- Whoami Tests ---
@@ -159,9 +170,15 @@ def test_whoami_success(mocker, mock_rich_console, mock_auth_app):
 
     assert result.exit_code == 0
     panel_output = mock_rich_console.print.call_args_list[2].args[0]
-    assert isinstance(panel_output, Panel)
-    assert "👤 Authenticated User" in str(panel_output.title)
-    assert "Test User" in str(panel_output.renderable)
+    assert isinstance(panel_output, (Panel, Group))
+
+    output_text = (
+        str(panel_output.title) + str(panel_output.renderable)
+        if isinstance(panel_output, Panel)
+        else "".join(str(r) for r in panel_output.renderables)
+    )
+    assert "👤 Authenticated User" in output_text
+    assert "Test User" in output_text
 
 
 def test_whoami_json(mocker, mock_rich_console, mock_auth_app):
@@ -265,8 +282,15 @@ def test_gitignore_already_exists(mocker, mock_rich_console):
 
     assert result.exit_code == 0
     assert "already exists in .gitignore" in str(mock_rich_console.print.call_args_list[-2].args[0])
-    # Should print the "File Still Tracked?" panel
-    assert "File Still Tracked?" in str(mock_rich_console.print.call_args_list[-1].args[0].title)
+
+    panel_output = mock_rich_console.print.call_args_list[-1].args[0]
+    assert isinstance(panel_output, (Panel, Group))
+    output_text = (
+        str(panel_output.title) + str(panel_output.renderable)
+        if isinstance(panel_output, Panel)
+        else "".join(str(r) for r in panel_output.renderables)
+    )
+    assert "File Still Tracked?" in output_text
 
 
 def test_gitignore_add_success(mocker, mock_rich_console):

@@ -22,9 +22,12 @@ from typing import Literal, cast, Optional
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.console import Group
 import typer
 
 from dorsal.common import constants
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,10 @@ def search_and_display(
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
@@ -138,7 +144,7 @@ def search_and_display(
 
         if not json_output:
             console.print(
-                f"🔎 Searching [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
+                f"{icons.get('search', '🔎 ')}Searching DorsalHub [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
             )
 
         casted_sort_by = cast(SortByField, sort_by)
@@ -169,44 +175,80 @@ def search_and_display(
             f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
         )
 
+        title_text: str | None = f"{scope.capitalize()} Search Results"
+        if borders == get_borders("none"):
+            title_text = None
+
         table = Table(
-            title=f"{scope.capitalize()} Search Results",
+            title=title_text,
             show_header=True,
-            header_style=palette["table_header"],
+            header_style=palette.get("table_header", "bold blue"),
             caption=search_caption,
             caption_style="dim",
             caption_justify="left",
             expand=True,
+            box=borders,
             row_styles=["", palette.get("table_row_alt", "dim")],
         )
 
-        table.add_column("Name", ratio=1, vertical="middle")
-        table.add_column("Size", justify="right", min_width=7, vertical="middle")
-        table.add_column("Media Type", min_width=8, vertical="middle")
-        table.add_column(
-            "SHA256 Hash",
-            style=palette["hash_value"],
-            no_wrap=True,
-            width=66,
-            vertical="middle",
-        )
+        if console.width < 115:
+            table.add_column("File Details (Name / Hash)", ratio=1, overflow="fold")
+            table.add_column("Size / Type", justify="right", width=20)
 
-        for record in response.results:
-            if not record.annotations or not record.annotations.file_base:
-                logger.warning(
-                    "Search result with hash %s is missing base annotations, skipping.",
+            for record in response.results:
+                if not record.annotations or not record.annotations.file_base:
+                    logger.warning(
+                        "Search result with hash %s is missing base annotations, skipping.",
+                        record.hash,
+                    )
+                    continue
+
+                base_record = record.annotations.file_base.record
+
+                name_text = Text(base_record.name or "Unknown", style=palette.get("primary_value", ""))
+                hash_text = Text(record.hash, style=palette.get("hash_value", ""))
+                details_group = Group(name_text, hash_text)
+
+                size_text = Text(human_filesize(base_record.size or 0))
+                type_text = Text(base_record.media_type or "Unknown", style=palette.get("info", "dim"))
+                meta_group = Group(size_text, type_text)
+
+                table.add_row(details_group, meta_group)
+        else:
+            table.add_column(
+                "Name",
+                ratio=1,
+                min_width=20,
+                overflow="fold",
+                style=palette.get("primary_value", ""),
+                vertical="middle",
+            )
+            table.add_column("Size", justify="right", min_width=7, vertical="middle")
+            table.add_column("Media Type", min_width=8, vertical="middle")
+            table.add_column(
+                "SHA256 Hash",
+                style=palette.get("hash_value", ""),
+                no_wrap=True,
+                width=66,
+                vertical="middle",
+            )
+
+            for record in response.results:
+                if not record.annotations or not record.annotations.file_base:
+                    logger.warning(
+                        "Search result with hash %s is missing base annotations, skipping.",
+                        record.hash,
+                    )
+                    continue
+
+                base_record = record.annotations.file_base.record
+
+                table.add_row(
+                    base_record.name or "Unknown",
+                    human_filesize(base_record.size or 0),
+                    base_record.media_type or "Unknown",
                     record.hash,
                 )
-                continue
-
-            base_record = record.annotations.file_base.record
-
-            table.add_row(
-                base_record.name,
-                human_filesize(base_record.size),
-                base_record.media_type,
-                record.hash,
-            )
 
         console.print(table)
 
@@ -220,7 +262,7 @@ def search_and_display(
 
         if pagination.has_next:
             console.print(
-                f"To see the next page, run the command again with [bold {palette['primary_value']}]--page {pagination.current_page + 1}[/]"
+                f"To see the next page, run the command again with [bold {palette.get('primary_value', '')}]--page {pagination.current_page + 1}[/]"
             )
 
         if save:
@@ -254,13 +296,22 @@ def search_and_display(
                 style=palette.get("text_default", "default"),
             )
 
-            panel = Panel(
-                upgrade_message,
-                title=f"[{palette.get('panel_title_warning', 'bold yellow')}]🔒 Upgrade Required[/]",
-                border_style=palette.get("panel_border_warning", "yellow"),
-                expand=False,
-                padding=(1, 2),
+            is_none_style = borders == get_borders("none")
+            title_text = (
+                f"[{palette.get('panel_title_warning', 'bold yellow')}]{icons.get('lock', '🔒 ')}Upgrade Required[/]"
             )
-            console.print(panel)
+
+            if is_none_style:
+                console.print(Group(Text.from_markup(f"\n{title_text}"), upgrade_message))
+            else:
+                panel = Panel(
+                    upgrade_message,
+                    title=title_text,
+                    border_style=palette.get("panel_border_warning", "yellow"),
+                    expand=False,
+                    padding=(1, 2),
+                    box=borders,
+                )
+                console.print(panel)
     except typer.Exit:
         raise

@@ -25,6 +25,7 @@ from rich.table import Table
 from rich.text import Text
 from rich import box
 from rich.markup import escape
+from rich.console import Group
 
 from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.common.cli import (
@@ -40,6 +41,8 @@ from dorsal.common.exceptions import (
     PartialIndexingError,
     DorsalError,
 )
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.file.dorsal_file import LocalFile
@@ -178,7 +181,8 @@ def push_target(
     with options for strict validation and collection creation.
     """
     console = get_rich_console()
-    palette = ctx.obj.get("palette", {})
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
 
     if use_cache and skip_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --use-cache and --skip-cache flags cannot be used together.")
@@ -217,7 +221,7 @@ def push_target(
             strict=strict,
             json_output=json_output,
             resolve_links=resolve_links,
-            palette=palette,
+            ui_context=ui_context,
             console=console,
         )
     else:
@@ -238,16 +242,18 @@ def push_target(
             ignore_duplicates=ignore_duplicates,
             fail_fast=fail_fast,
             lazy=lazy,
-            palette=palette,
+            ui_context=ui_context,
             console=console,
         )
 
 
 def _process_file_push(
-    ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, palette, console
+    ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, ui_context, console
 ) -> None:
     from dorsal.file.dorsal_file import LocalFile
 
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     access_level_str = "public" if public else "private"
 
     if not json_output:
@@ -291,7 +297,13 @@ def _process_file_push(
             )
             panel_title, panel_border_style = "❌ Push Failed", palette.get("panel_border_error", "red")
 
-        console.print(Panel(success_text, expand=False, title=panel_title, border_style=panel_border_style))
+        is_none_style = borders == get_borders("none")
+        if is_none_style:
+            console.print(Group(Text.from_markup(f"\n[{panel_border_style} bold]{panel_title}[/]"), success_text))
+        else:
+            console.print(
+                Panel(success_text, expand=False, title=panel_title, border_style=panel_border_style, box=borders)
+            )
 
     except PartialIndexingError as e:
         if json_output:
@@ -333,12 +345,14 @@ def _process_dir_push(
     ignore_duplicates,
     fail_fast,
     lazy,
-    palette,
+    ui_context,
     console,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
     progress_console = None if json_output else console
 
     if create_collection and not collection_name:
@@ -380,7 +394,9 @@ def _process_dir_push(
                     )
 
         if dry_run:
-            _display_dry_run_panel(collection=collection, use_cache=use_cache_value, palette=palette, console=console)
+            _display_dry_run_panel(
+                collection=collection, use_cache=use_cache_value, ui_context=ui_context, console=console
+            )
             exit_cli()
 
         if create_collection and len(collection.files) > API_MAX_BATCH_SIZE:
@@ -400,14 +416,24 @@ def _process_dir_push(
             if json_output:
                 console.print(remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True))
             else:
-                success_panel = Panel(
+                success_text = (
                     f"✅ Successfully pushed {len(collection)} files and created collection.\n\n"
-                    f"[bold]URL:[/] [link={remote_collection.metadata.private_url}]{remote_collection.metadata.private_url}[/link]",
-                    title=f"[{palette.get('panel_title_success', 'bold green')}]Publish Complete[/]",
-                    border_style=palette.get("panel_border_success", "green"),
-                    expand=False,
+                    f"[bold]URL:[/] [link={remote_collection.metadata.private_url}]{remote_collection.metadata.private_url}[/link]"
                 )
-                console.print(success_panel)
+                title_text = f"[{palette.get('panel_title_success', 'bold green')}]Publish Complete[/]"
+
+                is_none_style = borders == get_borders("none")
+                if is_none_style:
+                    console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup(success_text)))
+                else:
+                    success_panel = Panel(
+                        success_text,
+                        title=title_text,
+                        border_style=palette.get("panel_border_success", "green"),
+                        expand=False,
+                        box=borders,
+                    )
+                    console.print(success_panel)
 
         if not create_collection:
             summary = collection.push(
@@ -431,14 +457,21 @@ def _process_dir_push(
                         "To push this directory anyway (the first of each duplicate will be indexed), run:\n"
                         f'[bold {command_color}]dorsal local push "{escape(str(path))}" --ignore-duplicates[/]',
                     )
-                    console.print(
-                        Panel(
-                            error_text,
-                            title=f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]",
-                            border_style=palette.get("panel_border_error", "red"),
-                            expand=False,
+                    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]"
+
+                    is_none_style = borders == get_borders("none")
+                    if is_none_style:
+                        console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
+                    else:
+                        console.print(
+                            Panel(
+                                error_text,
+                                title=title_text,
+                                border_style=palette.get("panel_border_error", "red"),
+                                expand=False,
+                                box=borders,
+                            )
                         )
-                    )
                 else:
                     console.print(json.dumps(summary, indent=2, default=str, ensure_ascii=False))
                 exit_cli(code=EXIT_CODE_ERROR)
@@ -446,7 +479,7 @@ def _process_dir_push(
             if json_output:
                 console.print(json.dumps(summary, indent=2, default=str, ensure_ascii=False))
             else:
-                _display_summary_panel(summary, public, palette, use_cache_value, collection, console)
+                _display_summary_panel(summary, public, ui_context, use_cache_value, collection, console)
 
     except PartialIndexingError as e:
         if json_output:
@@ -461,7 +494,12 @@ def _process_dir_push(
                     expand=True,
                     header_style=palette.get("table_header", "bold"),
                     style="red",
+                    box=borders,
                 )
+
+                if borders == get_borders("none"):
+                    failed_table.padding = (0, 1)
+
                 failed_table.add_column("Error Detail", style="red")
                 if "failures" in summary:
                     for failure in summary["failures"]:
@@ -484,21 +522,34 @@ def _process_dir_push(
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
 
 
-def _display_dry_run_panel(collection, use_cache, palette, console) -> None:
+def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:
     from dorsal.file.utils.size import human_filesize
+
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
     cache_info_str = f" ({files_from_cache} from cache)" if files_from_cache > 0 else ""
 
-    console.print(
-        Panel(
-            f"DRY RUN MODE: Would push {len(collection)} files.",
-            border_style=palette.get("panel_border_warning", "yellow"),
+    is_none_style = borders == get_borders("none")
+    dry_run_text = f"DRY RUN MODE: Would push {len(collection)} files."
+    if is_none_style:
+        console.print(f"\n[{palette.get('panel_border_warning', 'yellow')}]{dry_run_text}[/]")
+    else:
+        console.print(
+            Panel(
+                dry_run_text,
+                border_style=palette.get("panel_border_warning", "yellow"),
+                box=borders,
+            )
         )
-    )
+
     console.print(f"🔎 Found {len(collection)} file(s) that would be pushed{cache_info_str}:")
 
-    scan_table = Table(box=box.ROUNDED, header_style=palette.get("table_header", "bold"))
+    scan_table = Table(box=borders, header_style=palette.get("table_header", "bold"))
+    if is_none_style:
+        scan_table.padding = (0, 1)
+
     scan_table.add_column("Filename", style=palette.get("primary_value", "cyan"), no_wrap=True)
     scan_table.add_column("Size")
     scan_table.add_column("Media Type")
@@ -514,7 +565,10 @@ def _display_dry_run_panel(collection, use_cache, palette, console) -> None:
     console.print(scan_table)
 
 
-def _display_summary_panel(summary, public, palette, use_cache, collection, console):
+def _display_summary_panel(summary, public, ui_context, use_cache, collection, console):
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
     access_level_str, access_level_style = (
         ("Public", palette.get("access_public", "default"))
@@ -522,8 +576,8 @@ def _display_summary_panel(summary, public, palette, use_cache, collection, cons
         else ("Private", palette.get("access_private", "default"))
     )
 
-    summary_table = Table.grid(expand=True)
-    summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=25)
+    summary_table = Table.grid(expand=False, padding=(0, 2))
+    summary_table.add_column(justify="right", style=palette.get("key", "dim"))
     summary_table.add_column(justify="left")
     summary_table.add_row("Access Level:", Text(access_level_str, style=access_level_style))
     summary_table.add_row("Files Scanned:", f"{summary.get('total_records', 0)} ({files_from_cache} from cache)")
@@ -542,20 +596,30 @@ def _display_summary_panel(summary, public, palette, use_cache, collection, cons
         if failed_batches := len(batches) - successful_batches:
             summary_table.add_row("Failed Batches:", Text(str(failed_batches), style=palette.get("error", "red")))
 
-    console.print(
-        Panel(
-            summary_table,
-            title=f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]",
-            expand=False,
-            border_style=palette.get("panel_border_success", "green"),
+    is_none_style = borders == get_borders("none")
+    title_text = f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]"
+
+    if is_none_style:
+        console.print(Group(Text.from_markup(f"\n{title_text}"), summary_table))
+    else:
+        console.print(
+            Panel(
+                summary_table,
+                title=title_text,
+                expand=False,
+                border_style=palette.get("panel_border_success", "green"),
+                box=borders,
+            )
         )
-    )
 
     if summary.get("failed", 0) > 0 or summary.get("errors"):
         console.print(f"\n[{palette.get('error', 'red')}]⚠️ Some batches failed to process:[/]")
         failed_table = Table(
-            title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold")
+            title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold"), box=borders
         )
+        if is_none_style:
+            failed_table.padding = (0, 1)
+
         failed_table.add_column("Batch #", style=palette.get("primary_value", "cyan"), ratio=15)
         failed_table.add_column("Error Type", style=palette.get("warning", "yellow"), ratio=25)
         failed_table.add_column("Error Message", ratio=60)

@@ -50,7 +50,7 @@ def search_record(
             help="The number of results to display per page.",
             rich_help_panel="Search Options",
         ),
-    ] = 30,
+    ] = 25,
     sort_by: Annotated[
         str,
         typer.Option(

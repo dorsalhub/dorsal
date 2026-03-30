@@ -19,6 +19,7 @@ import time
 from unittest.mock import MagicMock, ANY
 from typer.testing import CliRunner
 
+from rich.box import ROUNDED
 import typer
 
 from dorsal.cli.model_app.run_model_cmd import run_model
@@ -30,10 +31,12 @@ from dorsal.common.model import AnnotationModelSource
 
 cli_app = typer.Typer()
 
+DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = DUMMY_UI_CONTEXT
 
 
 cli_app.command(name="run")(run_model)
@@ -137,7 +140,8 @@ def test_run_model_triggers_safety_check_when_not_installed(mock_run_deps):
 
         runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        mock_run_deps["check_safety"].assert_called_once_with("dorsal/scanner", DEFAULT_PALETTE, yes=False)
+        # Update DEFAULT_PALETTE to DUMMY_UI_CONTEXT here:
+        mock_run_deps["check_safety"].assert_called_once_with("dorsal/scanner", DUMMY_UI_CONTEXT, yes=False)
 
 
 def test_run_model_json_output(mock_rich_console, mock_run_deps):

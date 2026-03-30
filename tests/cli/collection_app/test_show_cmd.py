@@ -75,7 +75,7 @@ def test_show_collection_success_default(mock_rich_console, mock_show_collection
 
     assert result.exit_code == 0
     mock_show_collection_cmd["get_collection"].assert_called_once_with(
-        collection_id=COLLECTION_ID, hydrate=False, page=1, per_page=30, mode="pydantic"
+        collection_id=COLLECTION_ID, hydrate=False, page=1, per_page=25, mode="pydantic"
     )
     mock_show_collection_cmd["view"].assert_called_once()
 
@@ -112,12 +112,12 @@ def test_show_collection_json_output(mock_rich_console, mock_show_collection_cmd
     result = runner.invoke(app, ["collection", "show", COLLECTION_ID, "--json"])
 
     assert result.exit_code == 0
-    # hydrate should be True for JSON output
+
     assert mock_show_collection_cmd["get_collection"].call_args.kwargs["hydrate"] is True
 
     mock_rich_console.print.assert_called_once()
     MOCK_API_RESPONSE.model_dump_json.assert_called_once()
-    # The view helper should NOT be called in JSON mode
+
     mock_show_collection_cmd["view"].assert_not_called()
 
 
@@ -139,3 +139,80 @@ def test_show_collection_api_error(mock_show_collection_cmd):
 
     assert result.exit_code != 0
     assert "API Error: Permission Denied" in result.output
+
+
+def test_show_collection_narrow_console(mock_rich_console, mock_show_collection_cmd):
+    """Tests the condensed table layout (< 115 width)."""
+    # FIX: Reset the global mock state leaked from previous tests
+    MOCK_API_RESPONSE.files = [mock_file]
+    MOCK_API_RESPONSE.collection.file_count = 1
+
+    # Force the console to be narrow
+    mock_rich_console.width = 100
+
+    result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
+
+    assert result.exit_code == 0
+
+    # The printed table is the 3rd print call (1: Fetching msg, 2: Metadata Panel, 3: File Table)
+    printed_table = mock_rich_console.print.call_args_list[2].args[0]
+
+    assert isinstance(printed_table, Table)
+    assert len(printed_table.columns) == 2
+    assert printed_table.columns[0].header == "File Details (Name / Hash)"
+
+
+def test_show_collection_pagination_has_next(mock_rich_console, mock_show_collection_cmd):
+    """Tests the footer output when there are multiple pages and a next page."""
+    # Reset the global mock state
+    MOCK_API_RESPONSE.files = [mock_file]
+    MOCK_API_RESPONSE.collection.file_count = 75
+
+    # Temporarily modify the pagination to simulate a multi-page response
+    MOCK_API_RESPONSE.pagination.page_count = 3
+    MOCK_API_RESPONSE.pagination.current_page = 1
+    MOCK_API_RESPONSE.pagination.has_next = True
+    MOCK_API_RESPONSE.pagination.record_count = 75
+    MOCK_API_RESPONSE.pagination.start_index = 0
+    MOCK_API_RESPONSE.pagination.end_index = 25
+
+    result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
+
+    assert result.exit_code == 0
+
+    # The footer is printed directly after the table
+    footer_text = mock_rich_console.print.call_args_list[3].args[0]
+
+    assert "Showing page [bold]1[/] of [bold]3[/]" in footer_text
+    assert "Displaying files [bold]1 - 25[/] of [bold]75[/] total" in footer_text
+    assert "To see the next page, run the command again" in footer_text
+
+    # Clean up the page_count modification
+    MOCK_API_RESPONSE.pagination.page_count = 1
+
+
+def test_show_collection_pagination_last_page_zero_records(mock_rich_console, mock_show_collection_cmd):
+    """Tests the footer on the last page, specifically triggering the 'else 0' fallback for start_display."""
+    # Reset the global mock state
+    MOCK_API_RESPONSE.files = [mock_file]
+    MOCK_API_RESPONSE.collection.file_count = 0
+
+    MOCK_API_RESPONSE.pagination.page_count = 2
+    MOCK_API_RESPONSE.pagination.current_page = 2
+    MOCK_API_RESPONSE.pagination.has_next = False
+    MOCK_API_RESPONSE.pagination.record_count = 0  # Forces start_display to be 0
+    MOCK_API_RESPONSE.pagination.start_index = 0
+    MOCK_API_RESPONSE.pagination.end_index = 0
+
+    result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
+
+    assert result.exit_code == 0
+
+    footer_text = mock_rich_console.print.call_args_list[3].args[0]
+
+    assert "Showing page [bold]2[/] of [bold]2[/]" in footer_text
+    assert "Displaying files [bold]0 - 0[/]" in footer_text
+    assert "To see the next page" not in footer_text
+
+    # Clean up the page_count modification
+    MOCK_API_RESPONSE.pagination.page_count = 1

@@ -73,7 +73,9 @@ def get_index_record(
     from dorsal.cli.views.file import create_file_info_panel
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    palette = ctx.obj["palette"]
+    icons = ctx.obj["icons"]
+    borders = ctx.obj["borders"]
 
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
@@ -91,7 +93,7 @@ def get_index_record(
 
     if not json_output:
         console.print(
-            f"🔎 Searching local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
+            f"Checking local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
         )
 
     if os.path.isabs(identifier) or os.path.exists(identifier):
@@ -132,9 +134,14 @@ def get_index_record(
     base_record = record_dict.get("annotations", {}).get("file/base", {})
     title = f"File Record: {record.name or 'Unknown'}"
     is_private = base_record.get("private", False)
-
     panel = create_file_info_panel(
-        record_dict=record_dict, title=title, private=is_private, palette=palette, source="cache"
+        record_dict=record_dict,
+        title=title,
+        private=is_private,
+        palette=palette,
+        icons=icons,
+        box_style=borders,
+        source="cache",
     )
 
     console.print()

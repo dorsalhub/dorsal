@@ -67,7 +67,7 @@ def test_search_index_default(mock_rich_console, mock_search_index_cmd):
         query=QUERY,
         or_logic=False,
         page=1,
-        per_page=30,
+        per_page=25,
         sort_by="date_modified",
         sort_desc=True,
     )
@@ -205,7 +205,6 @@ def test_save_local_search_results_ioerror_query_txt(tmp_path, mocker, mock_rich
     mock_dir = tmp_path / "reports"
     mocker.patch("dorsal.common.constants.CLI_SEARCH_REPORTS_DIR", mock_dir)
 
-    # We want open() to fail ONLY when it tries to write query.txt
     original_open = builtins.open
 
     def mock_open(path, *args, **kwargs):

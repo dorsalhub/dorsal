@@ -21,7 +21,7 @@ from rich.console import Console
 import sys
 from dorsal.common.exceptions import AuthError, DorsalOfflineError
 from dorsal.common.cli import get_rich_console, handle_auth_error, handle_offline_error, exit_cli, EXIT_CODE_ERROR
-from dorsal.cli.themes.palettes import get_palette
+from dorsal.cli.themes import get_ui_theme
 from dorsal.cli.adapter_app import app as adapter_app_
 from dorsal.cli.index_app import app as index_app_
 from dorsal.cli.config_app import app as config_app_
@@ -37,6 +37,7 @@ from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.index_app.search_index_cmd import search_index_cmd
 from dorsal.cli.local_app import app as local_app_
+from dorsal.cli.index_app.get_index_cmd import get_index_record
 from dorsal.cli.local_app.scan_cmd import scan_target
 from dorsal.cli.local_app.push_cmd import push_target
 from dorsal.cli.local_app.report_cmd import report_target
@@ -92,7 +93,9 @@ def main(
         count=True,
         help="Increase logging verbosity. -v for INFO, -vv for DEBUG.",
     ),
-    theme: str = typer.Option("default", "--theme", help="Set the color theme for the output."),
+    theme: str = typer.Option(None, "--theme", help="Override the default color theme."),
+    icons: str = typer.Option(None, "--icons", help="Override the icon style (emoji, ascii, none)."),
+    borders: str = typer.Option(None, "--borders", help="Override panel borders (rounded, heavy, ascii, none)."),
 ):
     """
     Dorsal CLI: A tool for interacting with the Dorsal data platform.
@@ -130,7 +133,7 @@ def main(
 
     logger = logging.getLogger("dorsal")
     logger.info(f"Logging level set to {logging.getLevelName(log_level)}")
-    ctx.obj = {"palette": get_palette(theme)}
+    ctx.obj = get_ui_theme(theme_override=theme, icon_override=icons, border_override=borders)
 
 
 app.command(name="scan", help="Scan a local file or directory.")(scan_target)
@@ -145,6 +148,7 @@ app.command(name="identify", help="Identify a local file by its hash. Queries Do
 app.command(name="install")(install_model)
 app.command(name="run")(run_model)
 app.command(name="push", help="Push a local file or directory to DorsalHub.")(push_target)
+app.command(name="get", help="Get a file record from the local search index.")(get_index_record)
 
 
 app.add_typer(auth_app_, name="auth")
@@ -162,38 +166,53 @@ app.add_typer(pipeline_app_, name="pipeline")
 app.add_typer(local_app_, name="local")
 
 
+def _extract_global_flag(flag_name: str) -> str | None:
+    """Safely extracts a flag from sys.argv handling both space and '=' syntax."""
+    import sys
+
+    for i, arg in enumerate(sys.argv):
+        if arg == flag_name:
+            if i + 1 < len(sys.argv):
+                return sys.argv[i + 1]
+        elif arg.startswith(f"{flag_name}="):
+            return arg.split("=", 1)[1]
+    return None
+
+
 def cli_app():
     try:
         app()
     except AuthError as err:
+        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+
         console = get_rich_console()
 
-        theme = "default"
-        if "--theme" in sys.argv:
-            try:
-                idx = sys.argv.index("--theme")
-                theme = sys.argv[idx + 1]
-            except IndexError:
-                pass
+        # Safely extract all three UI overrides
+        theme_override = _extract_global_flag("--theme")
+        icons_override = _extract_global_flag("--icons")
+        borders_override = _extract_global_flag("--borders")
 
-        palette = get_palette(theme)
-        handle_auth_error(err, console, palette)
+        ui_context = get_ui_theme(
+            theme_override=theme_override, icon_override=icons_override, border_override=borders_override
+        )
+
+        handle_auth_error(err, console, ui_context)
         sys.exit(EXIT_CODE_ERROR)
 
     except DorsalOfflineError as err:
+        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+
         console = get_rich_console()
 
-        theme = "default"
-        if "--theme" in sys.argv:
-            try:
-                idx = sys.argv.index("--theme")
-                theme = sys.argv[idx + 1]
-            except (ValueError, IndexError):
-                pass
+        theme_override = _extract_global_flag("--theme")
+        icons_override = _extract_global_flag("--icons")
+        borders_override = _extract_global_flag("--borders")
 
-        palette = get_palette(theme)
+        ui_context = get_ui_theme(
+            theme_override=theme_override, icon_override=icons_override, border_override=borders_override
+        )
 
-        handle_offline_error(err, console, palette)
+        handle_offline_error(err, console, ui_context)
         sys.exit(EXIT_CODE_ERROR)
 
 

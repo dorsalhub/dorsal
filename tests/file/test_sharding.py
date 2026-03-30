@@ -25,11 +25,13 @@ from dorsal.file.sharding import (
     ListBasedStrategy,
     StringShardingStrategy,
     ANNOTATION_MAX_SIZE_BYTES,
+    build_annotation_or_annotationgroup,
     check_record_size,
     process_record_for_sharding,
     reassemble_record,
 )
 from dorsal.file.validators.file_record import GenericFileAnnotation
+from dorsal.common.exceptions import AnnotationExecutionError
 
 
 class MockAnnotation:
@@ -59,7 +61,7 @@ def large_payload_generator():
     """Generates a list of items that definitely exceeds 1MiB."""
 
     def _gen(count: int = 2000, item_size: int = 1000) -> list[dict]:
-        # 2000 items * 1000 bytes = ~2MB
+
         return [{"id": i, "val": "x" * item_size} for i in range(count)]
 
     return _gen
@@ -78,7 +80,7 @@ def detection_strategy():
 def test_check_record_size():
     """Verify byte counting matches JSON serialization assumptions."""
     data = {"a": 1, "b": "test"}
-    # {"a":1,"b":"test"} = 16 bytes
+
     expected_size = len(json.dumps(data, separators=(",", ":")).encode("utf-8"))
     assert check_record_size(data) == expected_size
 
@@ -93,21 +95,19 @@ class TestListBasedStrategySplit:
 
     def test_split_large_record(self, detection_strategy, large_payload_generator):
         """Verify that a large record is actually split into multiple valid chunks."""
-        objects = large_payload_generator(count=1500, item_size=1000)  # ~1.5MB
+        objects = large_payload_generator(count=1500, item_size=1000)
         record = {"unit": "px", "objects": objects}
 
         chunks = detection_strategy.split(record)
 
         assert len(chunks) > 1
 
-        # Verify strict size limits
         for i, chunk in enumerate(chunks):
             size = check_record_size(chunk)
             assert size <= ANNOTATION_MAX_SIZE_BYTES, f"Chunk {i} size {size} exceeds limit {ANNOTATION_MAX_SIZE_BYTES}"
             assert "objects" in chunk
             assert len(chunk["objects"]) > 0
 
-        # Verify data integrity (total items matches)
         total_items = sum(len(c["objects"]) for c in chunks)
         assert total_items == 1500
 
@@ -123,12 +123,10 @@ class TestListBasedStrategySplit:
 
         assert len(chunks) >= 2
 
-        # Chunk 0 should have the text
         assert "text" in chunks[0]
         assert chunks[0]["text"] == "Full transcription text header"
         assert chunks[0]["meta"] == "keep_me"
 
-        # Chunk 1+ should NOT have the text
         assert "text" not in chunks[1]
         assert chunks[1]["meta"] == "keep_me"
 
@@ -153,23 +151,18 @@ class TestListBasedStrategySplit:
 
     def test_split_missing_list_field(self, detection_strategy):
         """Should handle records missing the target list field gracefully (return as-is)."""
-        record = {"other_field": 123}  # Missing 'objects'
+        record = {"other_field": 123}
         chunks = detection_strategy.split(record)
         assert len(chunks) == 1
         assert chunks[0] == record
 
 
 class TestStringShardingStrategySplit:
-    # NOTE: We use 10000 bytes as the patch limit.
-    # Logic: 4096 (Safety Buffer) + 1024 (Min Capacity) = 5120 bytes required minimum.
-    # 10000 gives us ~4800 bytes of capacity per chunk.
-
     def test_split_simple_string(self):
         """Test splitting a simple ASCII string."""
         strategy = StringShardingStrategy(text_field="response_data")
 
         with patch("dorsal.file.sharding.ANNOTATION_MAX_SIZE_BYTES", 10000):
-            # Create string ~12000 chars (larger than 10k limit)
             long_string = "a" * 12000
             record = {"model": "gpt-4", "response_data": long_string}
 
@@ -179,7 +172,6 @@ class TestStringShardingStrategySplit:
             full_text = "".join(c["response_data"] for c in chunks)
             assert full_text == long_string
 
-            # Verify each chunk respects the limit
             for chunk in chunks:
                 assert check_record_size(chunk) <= 10000
 
@@ -187,9 +179,6 @@ class TestStringShardingStrategySplit:
         """Verify that we do not slice in the middle of a multi-byte character."""
         strategy = StringShardingStrategy(text_field="text")
 
-        # 4-byte character: 🐻
-        # Create a string of emojis > 10k bytes
-        # 3000 * 4 = 12,000 bytes
         emojis = "🐻" * 3000
 
         with patch("dorsal.file.sharding.ANNOTATION_MAX_SIZE_BYTES", 10000):
@@ -201,10 +190,9 @@ class TestStringShardingStrategySplit:
             recombined = "".join(c["text"] for c in chunks)
             assert recombined == emojis
 
-            # Verify valid JSON (ensures no corrupted bytes)
             for chunk in chunks:
                 json_str = json.dumps(chunk)
-                assert "\ufffd" not in json_str  # No replacement chars
+                assert "\ufffd" not in json_str
 
     def test_split_context_dropping(self):
         """Verify that 'fields_to_drop' are removed from subsequent chunks."""
@@ -227,21 +215,11 @@ class TestStringShardingStrategySplit:
         """
         strategy = StringShardingStrategy(text_field="text")
 
-        # Newline characters '\n' (1 byte) become '\\n' (2 bytes) in JSON.
-
-        # Limit: 10000
-        # Capacity: 10000 - 4096 ≈ 5900.
-        # We need a payload P where P < 5900 but 2*P > 10000.
-        # 5500 fits this criteria.
-
         with patch("dorsal.file.sharding.ANNOTATION_MAX_SIZE_BYTES", 10000):
-            # 5500 newlines = 5500 raw bytes (fits in chunk capacity)
-            # In JSON this becomes 11000 bytes + overhead -> Exceeds 10000 limit.
             tricky_text = "\n" * 5500
 
             record = {"text": tricky_text}
 
-            # This forces the loop to detect the overflow and retry with a smaller window.
             chunks = strategy.split(record)
 
             for chunk in chunks:
@@ -249,9 +227,6 @@ class TestStringShardingStrategySplit:
 
             recombined = "".join(c["text"] for c in chunks)
             assert recombined == tricky_text
-
-
-# --- Processing Logic Tests ---
 
 
 class TestProcessRecordForSharding:
@@ -268,12 +243,12 @@ class TestProcessRecordForSharding:
         result = process_record_for_sharding("open/regression", record)
         assert len(result) > 1
         assert "points" in result[0]
-        # Verify header preservation
+
         assert result[0]["target"] == "stock_price"
 
     def test_process_llm_sharding(self):
         """Test open/llm-output uses StringShardingStrategy correctly."""
-        # Force a split with a small limit patch
+
         with patch("dorsal.file.sharding.ANNOTATION_MAX_SIZE_BYTES", 10000):
             record = {"model": "gpt-4", "response_data": "x" * 12000}
             result = process_record_for_sharding("open/llm-output", record)
@@ -287,9 +262,6 @@ class TestProcessRecordForSharding:
         with pytest.raises(ValueError) as exc:
             process_record_for_sharding("file/base", record)
         assert "does not support sharding" in str(exc.value)
-
-
-# --- Reassembly Tests ---
 
 
 class TestReassembly:
@@ -314,9 +286,7 @@ class TestReassembly:
         """Verify string concatenation reassembly (LLM Output)."""
         strategy = sharding.SHARDING_REGISTRY["open/llm-output"]
 
-        # Patch limit for splitting
         with patch("dorsal.file.sharding.ANNOTATION_MAX_SIZE_BYTES", 10000):
-            # Create a string larger than 10k
             original_text = "start-" + ("middle-" * 2000) + "-end"
             original_record = {"model": "test-v1", "prompt": "prompt-header", "response_data": original_text}
 
@@ -353,3 +323,132 @@ class TestReassembly:
         with pytest.raises(ValueError) as exc:
             reassemble_record(group)
         assert "Could not detect sharding strategy" in str(exc.value)
+
+
+class TestBuildAnnotationOrGroup:
+    """Tests for the build_annotation_or_annotationgroup orchestration function."""
+
+    @pytest.fixture
+    def pydantic_error(self):
+        """Generates a genuine Pydantic ValidationError to use in mock side_effects."""
+        from pydantic import BaseModel, ValidationError
+
+        class DummyErrorMaker(BaseModel):
+            val: int
+
+        try:
+            DummyErrorMaker(val="not_an_int")
+        except ValidationError as e:
+            return e
+
+    def test_atomic_happy_path(self, detection_schema_id):
+        """Tests successful creation of a single Annotation object."""
+        record = {"objects": [{"id": 1}]}
+        source = {"type": "Model", "id": "test_mock"}
+
+        result = build_annotation_or_annotationgroup(
+            schema_id=detection_schema_id, record_data=record, source=source, schema_version="1.0", private=False
+        )
+
+        assert result.__class__.__name__ == "Annotation"
+        assert result.schema_id == detection_schema_id
+        assert result.schema_version == "1.0"
+        assert result.private is False
+
+    def test_sharded_happy_path(self, detection_schema_id, large_payload_generator):
+        """Tests successful creation of an AnnotationGroup from a massive payload."""
+        record = {"objects": large_payload_generator(2000)}
+        source = {"type": "Model", "id": "test_mock"}
+
+        result = build_annotation_or_annotationgroup(
+            schema_id=detection_schema_id, record_data=record, source=source, schema_version="2.0", private=True
+        )
+
+        assert result.__class__.__name__ == "AnnotationGroup"
+        assert len(result.annotations) > 1
+        assert result.annotations[0].group.total == len(result.annotations)
+        assert result.annotations[0].private is True
+        assert result.annotations[0].schema_version == "2.0"
+
+    def test_sharding_failure_unsupported_schema(self, large_payload_generator):
+        """Tests that a large payload with no sharding strategy raises the correct error."""
+        record = {"massive_field": large_payload_generator(2000)}
+        source = {"type": "Model", "id": "test_mock"}
+
+        with pytest.raises(AnnotationExecutionError) as exc:
+            build_annotation_or_annotationgroup(
+                schema_id="file/base",
+                record_data=record,
+                source=source,
+            )
+
+        assert "Annotation processing failed" in str(exc.value)
+        assert "does not support sharding" in str(exc.value.__cause__)
+
+    def test_wrapper_validation_failure_atomic(self):
+        """Tests atomic wrapper instantiation failure using an invalid source."""
+        record = {"objects": [{"id": 1}]}
+
+        bad_source = {"missing_required_fields": "yep"}
+
+        with pytest.raises(AnnotationExecutionError) as exc:
+            build_annotation_or_annotationgroup(
+                schema_id="file/pdf",
+                record_data=record,
+                source=bad_source,
+            )
+
+        assert "Failed to create annotation wrapper for 'file/pdf'" in str(exc.value)
+
+    @patch("dorsal.file.validators.file_record.GenericFileAnnotation")
+    def test_generic_validation_failure_atomic(self, mock_generic, detection_schema_id, pydantic_error):
+        """Tests failure at the GenericFileAnnotation baseline validation (atomic path)."""
+
+        mock_generic.side_effect = pydantic_error
+
+        record = {"objects": [{"id": 1}]}
+        source = {"type": "Model", "id": "test_mock"}
+
+        with pytest.raises(AnnotationExecutionError) as exc:
+            build_annotation_or_annotationgroup(
+                schema_id=detection_schema_id,
+                record_data=record,
+                source=source,
+            )
+
+        assert "incompatible with the base annotation structure" in str(exc.value)
+        assert "Chunk" not in str(exc.value)
+
+    def test_wrapper_validation_failure_sharded(self, detection_schema_id, large_payload_generator):
+        """Tests wrapper instantiation failure during the chunk loop (sharded path) natively."""
+        record = {"objects": large_payload_generator(2000)}
+        bad_source = {"missing_required_fields": "yep"}
+
+        with pytest.raises(AnnotationExecutionError) as exc:
+            build_annotation_or_annotationgroup(
+                schema_id=detection_schema_id,
+                record_data=record,
+                source=bad_source,
+            )
+
+        assert "Failed to create annotation wrapper for 'open/object-detection'" in str(exc.value)
+
+    @patch("dorsal.file.validators.file_record.GenericFileAnnotation")
+    def test_generic_validation_failure_sharded(
+        self, mock_generic, detection_schema_id, large_payload_generator, pydantic_error
+    ):
+        """Tests failure at the GenericFileAnnotation baseline validation during the chunk loop."""
+        mock_generic.side_effect = pydantic_error
+
+        record = {"objects": large_payload_generator(2000)}
+        source = {"type": "Model", "id": "test_mock"}
+
+        with pytest.raises(AnnotationExecutionError) as exc:
+            build_annotation_or_annotationgroup(
+                schema_id=detection_schema_id,
+                record_data=record,
+                source=source,
+            )
+
+        assert "incompatible with the base annotation structure" in str(exc.value)
+        assert "Chunk 0/" in str(exc.value)

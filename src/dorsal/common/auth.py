@@ -151,9 +151,30 @@ def get_theme_from_config() -> str | None:
     return config.get(constants.CONFIG_SECTION_UI, {}).get(constants.CONFIG_OPTION_THEME)
 
 
-def write_theme_to_config(theme_name: str) -> None:
-    set_config_value(
-        section=constants.CONFIG_SECTION_UI,
-        option=constants.CONFIG_OPTION_THEME,
-        value=theme_name,
-    )
+def write_ui_config(
+    theme: str | None = None, icons: str | None = None, borders: str | None = None, scope: str = "global"
+) -> None:
+    """Writes UI preferences to the specified config scope."""
+    if theme is not None:
+        set_config_value(
+            section=constants.CONFIG_SECTION_UI,
+            option=constants.CONFIG_OPTION_THEME,
+            value=theme,
+            scope=scope,
+        )
+
+    if icons is not None:
+        set_config_value(
+            section=constants.CONFIG_SECTION_UI,
+            option=constants.CONFIG_OPTION_ICONS,
+            value=icons,
+            scope=scope,
+        )
+
+    if borders is not None:
+        set_config_value(
+            section=constants.CONFIG_SECTION_UI,
+            option=constants.CONFIG_OPTION_BORDERS,
+            value=borders,
+            scope=scope,
+        )

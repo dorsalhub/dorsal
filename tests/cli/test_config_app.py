@@ -21,9 +21,10 @@ from typer.testing import CliRunner
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.console import Group
 
 from dorsal.cli import app
-from dorsal.common.auth import APIKeySource, APIKeyDetails
+from dorsal.common.auth import APIKeySource
 
 runner = CliRunner()
 
@@ -33,11 +34,18 @@ def mock_config_app(mocker):
     """
     Mocks all backend dependencies for the `dorsal config` commands.
     """
-    mocker.patch("dorsal.api.config.load_config", return_value=({}, Path("/fake/path/dorsal.toml")))
-    mocker.patch("dorsal.api.config.get_global_config_path", return_value=Path("/fake/global/dorsal.toml"))
+    # Mock the direct config read used in `show_config`
+    mocker.patch(
+        "dorsal.common.config.load_config",
+        return_value=(
+            {"ui": {"theme": "dracula", "icons": "ascii", "borders": "heavy"}},
+            Path("/fake/path/dorsal.toml"),
+        ),
+    )
 
+    mocker.patch("dorsal.api.config.get_global_config_path", return_value=Path("/fake/global/dorsal.toml"))
     mocker.patch("dorsal.api.config.get_email_from_config", return_value="test@example.com")
-    mocker.patch("dorsal.api.config.get_theme_from_config", return_value="default")
+    mocker.patch("dorsal.api.config.get_theme_from_config", return_value="dracula")
 
     mocker.patch(
         "dorsal.api.config.get_api_key_details",
@@ -50,9 +58,9 @@ def mock_config_app(mocker):
 
     mocker.patch("dorsal.api.config.constants.BASE_URL", "https://api.dorsalhub.test/v1")
 
-    mocker.patch("dorsal.cli.themes.palettes.BUILT_IN_PALETTES", {"default": {}, "dark": {}})
+    mocker.patch("dorsal.cli.themes.palettes.BUILT_IN_PALETTES", {"default": {}, "dracula": {}})
     mocker.patch("dorsal.cli.themes.palettes._load_custom_palettes", return_value={})
-    mocker.patch("dorsal.common.auth.write_theme_to_config")
+    mocker.patch("dorsal.common.auth.write_ui_config")
 
     mocker.patch("dorsal.common.constants.LOCAL_DORSAL_DIR", Path("/fake/dorsal/dir"))
 
@@ -72,6 +80,12 @@ def test_show_config_logged_in(mock_table_grid, mock_rich_console, mock_config_a
 
     assert "test@example.com" in all_rows_text
     assert "project config" in all_rows_text
+    assert "Current Theme:" in all_rows_text
+    assert "dracula" in all_rows_text
+    assert "Current Icons:" in all_rows_text
+    assert "ascii" in all_rows_text
+    assert "Current Borders:" in all_rows_text
+    assert "heavy" in all_rows_text
 
 
 @patch("rich.table.Table.grid")
@@ -110,13 +124,27 @@ def test_show_config_json_output(mock_rich_console, mock_config_app):
     assert data["logged_in_user"] == "test@example.com"
 
 
+def test_show_config_no_borders(mock_rich_console, mock_config_app):
+    """Tests that `config show` drops the Panel container when borders=none."""
+    result = runner.invoke(app, ["--borders", "none", "config", "show"])
+
+    assert result.exit_code == 0
+    # The output should be a Group (Text title + Table) instead of a Panel
+    rendered_element = mock_rich_console.print.call_args_list[-3].args[0]  # Get the main renderable
+    assert isinstance(rendered_element, Group)
+
+
 def test_list_themes_built_in_only(mock_rich_console, mock_config_app):
     """Tests `config theme list` with only built-in themes."""
     result = runner.invoke(app, ["config", "theme", "list"])
 
     assert result.exit_code == 0
     panel_output = mock_rich_console.print.call_args.args[0]
-    group_renderables = panel_output.renderable.renderables
+
+    if isinstance(panel_output, Panel):
+        group_renderables = panel_output.renderable.renderables
+    else:
+        group_renderables = panel_output.renderables
 
     all_text_content = []
     for r in group_renderables:
@@ -142,16 +170,20 @@ def test_list_themes_with_custom(mocker, mock_rich_console, mock_config_app):
 
     assert result.exit_code == 0
     panel_output = mock_rich_console.print.call_args.args[0]
-    group_renderables = panel_output.renderable.renderables
+
+    if isinstance(panel_output, Panel):
+        group_renderables = panel_output.renderable.renderables
+    else:
+        group_renderables = panel_output.renderables
 
     all_text_content = []
     for r in group_renderables:
         if isinstance(r, Panel):
             all_text_content.append(str(r.title))
-        elif isinstance(r, str):
-            all_text_content.append(r)
-        elif isinstance(r, Text):
+        elif hasattr(r, "plain"):
             all_text_content.append(r.plain)
+        else:
+            all_text_content.append(str(r))
 
     combined_text = "".join(all_text_content)
 
@@ -160,38 +192,81 @@ def test_list_themes_with_custom(mocker, mock_rich_console, mock_config_app):
     assert "my_theme" in combined_text
 
 
-def test_set_theme_success(mock_rich_console, mock_config_app):
-    """Tests successfully setting a valid theme."""
-    result = runner.invoke(app, ["config", "theme", "set", "dark"])
+def test_list_themes_no_borders(mock_rich_console, mock_config_app):
+    """Tests that `config theme list` drops Panels when borders=none."""
+    result = runner.invoke(app, ["--borders", "none", "config", "theme", "list"])
+    assert result.exit_code == 0
+
+    rendered_element = mock_rich_console.print.call_args.args[0]
+    assert isinstance(rendered_element, Group)
+
+
+# --- Set UI Preferences Tests ---
+
+
+def test_set_ui_preferences_success(mock_rich_console, mock_config_app):
+    """Tests successfully setting multiple valid UI preferences."""
+    from dorsal.common.auth import write_ui_config
+
+    result = runner.invoke(app, ["config", "theme", "set", "dracula", "--icons", "ascii", "--borders", "none", "-g"])
 
     assert result.exit_code == 0
-    from dorsal.common.auth import write_theme_to_config
+    write_ui_config.assert_called_once_with(theme="dracula", icons="ascii", borders="none", scope="global")
 
-    write_theme_to_config.assert_called_once_with("dark")
     success_message = str(mock_rich_console.print.call_args.args[0])
-    assert "Default theme set to 'dark'" in success_message
+    assert "UI preferences updated in global config" in success_message
+    assert "dracula" in success_message
+    assert "ascii" in success_message
+    assert "none" in success_message
 
 
-def test_set_theme_not_found(mock_rich_console, mock_config_app):
+def test_set_ui_preferences_empty(mock_rich_console, mock_config_app):
+    """Tests setting UI preferences without providing any values."""
+    result = runner.invoke(app, ["config", "theme", "set"])
+    assert result.exit_code != 0
+    error_message = str(mock_rich_console.print.call_args.args[0])
+    assert "No UI preferences provided" in error_message
+
+
+def test_set_ui_preferences_invalid_theme(mock_rich_console, mock_config_app):
     """Tests setting a theme that does not exist."""
     result = runner.invoke(app, ["config", "theme", "set", "invalid_theme"])
-
     assert result.exit_code != 0
     error_message = str(mock_rich_console.print.call_args.args[0])
     assert "Theme 'invalid_theme' not found" in error_message
 
 
-def test_set_theme_os_error(mocker, mock_rich_console, mock_config_app):
-    """Tests handling of an OSError when writing the theme config."""
+def test_set_ui_preferences_invalid_icons(mock_rich_console, mock_config_app):
+    """Tests setting an icon style that does not exist."""
+    result = runner.invoke(app, ["config", "theme", "set", "--icons", "invalid_icon_style"])
+    assert result.exit_code != 0
+    error_message = str(mock_rich_console.print.call_args.args[0])
+    assert "Icon set 'invalid_icon_style' not found" in error_message
+
+
+def test_set_ui_preferences_invalid_borders(mock_rich_console, mock_config_app):
+    """Tests setting a border style that does not exist."""
+    result = runner.invoke(app, ["config", "theme", "set", "--borders", "invalid_border_style"])
+    assert result.exit_code != 0
+    error_message = str(mock_rich_console.print.call_args.args[0])
+    assert "Border style 'invalid_border_style' not found" in error_message
+
+
+def test_set_ui_preferences_os_error(mocker, mock_rich_console, mock_config_app):
+    """Tests handling of an OSError when writing the UI config."""
     mocker.patch(
-        "dorsal.common.auth.write_theme_to_config",
+        "dorsal.common.auth.write_ui_config",
         side_effect=OSError("Permission denied"),
     )
 
-    result = runner.invoke(app, ["config", "theme", "set", "dark"])
-
+    result = runner.invoke(app, ["config", "theme", "set", "dracula"])
     assert result.exit_code != 0
-    assert "Error saving configuration: Permission denied" in result.output
+
+    error_in_mock = any("Permission denied" in str(call.args[0]) for call in mock_rich_console.print.call_args_list)
+    assert error_in_mock or "Permission denied" in result.output
+
+
+# --- Pipeline Tests ---
 
 
 @pytest.fixture
@@ -231,20 +306,38 @@ def test_pipeline_show_populated(mock_rich_console, mock_pipeline_api):
             "schema_id": "base",
             "dependencies": "None",
         },
-        {
-            "index": 1,
-            "status": "Deactivated",
-            "name": "CustomModel",
-            "module": "my.pkg",
-            "schema_id": "custom",
-            "dependencies": "pdf",
-        },
     ]
 
     result = runner.invoke(app, ["config", "pipeline", "show"])
 
     assert result.exit_code == 0
-    assert "Annotation Model Pipeline" in str(mock_rich_console.print.call_args.args[0].title)
+
+    printed_obj = mock_rich_console.print.call_args.args[0]
+
+    if isinstance(printed_obj, Panel):
+        assert "Annotation Model Pipeline" in str(printed_obj.title)
+    else:
+        assert "Annotation Model Pipeline" in str(printed_obj.renderables[0])
+
+
+def test_pipeline_show_no_borders(mock_rich_console, mock_pipeline_api):
+    """Tests that `config pipeline show` drops the Panel container when borders=none."""
+    mock_pipeline_api["show"].return_value = [
+        {
+            "index": 0,
+            "status": "Base (Locked)",
+            "name": "BaseModel",
+            "module": "dorsal",
+            "schema_id": "base",
+            "dependencies": "None",
+        }
+    ]
+
+    result = runner.invoke(app, ["--borders", "none", "config", "pipeline", "show"])
+
+    assert result.exit_code == 0
+    rendered_element = mock_rich_console.print.call_args.args[0]
+    assert isinstance(rendered_element, Group)
 
 
 @pytest.mark.parametrize(

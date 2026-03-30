@@ -14,14 +14,17 @@
 
 import json
 import sys
-from typing import Any, NoReturn, Sequence
+from typing import Any, NoReturn, Sequence, TYPE_CHECKING
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 from dorsal.common.exceptions import AuthError
 
 import typer
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 
 EXIT_CODE_SUCCESS = 0
@@ -78,25 +81,41 @@ def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
     return use_cache_value
 
 
-def handle_error(palette: dict, message: str, json_output: bool):
+def handle_error(ui_context: "UIContext", message: str, json_output: bool):
+    from dorsal.cli.themes.borders import get_borders
+
     console = get_rich_console()
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     if json_output:
         console.print(json.dumps({"error": True, "detail": message}, indent=2, ensure_ascii=False))
     else:
-        panel = Panel(
-            Text(message, justify="left"),
-            title=f"[{palette.get('panel_title_error', 'bold red')}]Error[/]",
-            border_style=palette.get("panel_border_error", "red"),
-            expand=False,
-            padding=(1, 2),
-        )
-        console.print(panel)
+        title_text = f"[{palette.get('panel_title_error', 'bold red')}]Error[/]"
+
+        if borders == get_borders("none"):
+            console.print(Group(Text.from_markup(f"\n{title_text}"), Text(message, justify="left")))
+        else:
+            panel = Panel(
+                Text(message, justify="left"),
+                title=title_text,
+                border_style=palette.get("panel_border_error", "red"),
+                expand=False,
+                padding=(1, 2),
+                box=borders,
+            )
+            console.print(panel)
     exit_cli(code=EXIT_CODE_ERROR)
 
 
-def handle_auth_error(err: AuthError, console: Console, palette: dict[str, str]) -> None:
+def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext") -> None:
     """Handler for AuthError."""
+    from dorsal.cli.themes.borders import get_borders
+
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
+
     if "--json" in sys.argv:
         error_payload = {
             "success": False,
@@ -109,29 +128,44 @@ def handle_auth_error(err: AuthError, console: Console, palette: dict[str, str])
         return
 
     message = Text.assemble(
-        ("You are not currently logged in.\n\n", palette["warning"]),
+        ("You are not currently logged in.\n\n", palette.get("warning", "yellow")),
         ("To authenticate, you can either:\n", "default"),
         ("  1. Run ", "default"),
-        ("dorsal auth login\n", f"bold {palette['primary_value']}"),
+        ("dorsal auth login\n", f"bold {palette.get('primary_value', 'cyan')}"),
         ("  2. Set the ", "default"),
-        ("DORSAL_API_KEY", f"bold {palette['primary_value']}"),
+        ("DORSAL_API_KEY", f"bold {palette.get('primary_value', 'cyan')}"),
         (" environment variable.", "default"),
     )
 
-    console.print(
-        Panel(
-            message,
-            expand=False,
-            title=f"[{palette['panel_title_info']}]Authentication Required[/]",
-            border_style=palette["panel_border_info"],
-        )
+    title_text = (
+        f"[{palette.get('panel_title_info', 'bold cyan')}]{icons.get('warning', '⚠️ ')}Authentication Required[/]"
     )
 
+    if borders == get_borders("none"):
+        console.print(Group(Text.from_markup(f"\n{title_text}"), message))
+    else:
+        console.print(
+            Panel(
+                message,
+                expand=False,
+                title=title_text,
+                border_style=palette.get("panel_border_info", "cyan"),
+                box=borders,
+                padding=(1, 2),
+            )
+        )
 
-def handle_offline_error(e: Exception, console: Console, palette: dict):
+
+def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"):
     """
     Centralized handler for DorsalOfflineError.
     """
+    from dorsal.cli.themes.borders import get_borders
+
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
+
     if "--json" in sys.argv:
         error_payload = {
             "success": False,
@@ -144,24 +178,33 @@ def handle_offline_error(e: Exception, console: Console, palette: dict):
         return
 
     message = Text.assemble(
-        ("Offline Mode is currently active.\n\n", palette["warning"]),
+        ("Offline Mode is currently active.\n\n", palette.get("warning", "yellow")),
         ("DorsalHub API Access is blocked.\n\n", "default"),
         ("To restore access, unset the", "default"),
-        (" DORSAL_OFFLINE", f"bold {palette['primary_value']}"),
+        (" DORSAL_OFFLINE", f"bold {palette.get('primary_value', 'cyan')}"),
         (" environment variable.", "default"),
     )
 
-    console.print(
-        Panel(
-            message,
-            expand=False,
-            title=f"[{palette['panel_title_warning']}]Dorsal API Access Blocked[/]",
-            border_style=palette["panel_border_info"],
-        )
+    title_text = (
+        f"[{palette.get('panel_title_warning', 'bold yellow')}]{icons.get('warning', '⚠️ ')}Dorsal API Access Blocked[/]"
     )
 
+    if borders == get_borders("none"):
+        console.print(Group(Text.from_markup(f"\n{title_text}"), message))
+    else:
+        console.print(
+            Panel(
+                message,
+                expand=False,
+                title=title_text,
+                border_style=palette.get("panel_border_warning", "yellow"),
+                box=borders,
+                padding=(1, 2),
+            )
+        )
 
-def parse_cli_options(options: Sequence[str] | None, palette: dict) -> dict[str, Any]:
+
+def parse_cli_options(options: Sequence[str] | None, palette: dict[str, str]) -> dict[str, Any]:
     """Parses a sequence of 'key=value' strings into a dictionary."""
     if not options:
         return {}

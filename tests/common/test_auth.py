@@ -147,11 +147,30 @@ def test_remove_api_key(mock_remove_config):
 
 
 @patch("dorsal.common.auth.set_config_value")
-def test_write_theme_to_config(mock_set_config):
-    """Test writing the theme to the config."""
-    auth.write_theme_to_config("dorsal_dark")
+def test_write_ui_config(mock_set_config):
+    """Test writing ui preferences to the config."""
+
+    # Test writing multiple values
+    auth.write_ui_config(theme="dorsal_dark", icons="ascii", borders="none", scope="project")
+
+    expected_calls = [
+        call(
+            section=constants.CONFIG_SECTION_UI,
+            option=constants.CONFIG_OPTION_THEME,
+            value="dorsal_dark",
+            scope="project",
+        ),
+        call(section=constants.CONFIG_SECTION_UI, option=constants.CONFIG_OPTION_ICONS, value="ascii", scope="project"),
+        call(
+            section=constants.CONFIG_SECTION_UI, option=constants.CONFIG_OPTION_BORDERS, value="none", scope="project"
+        ),
+    ]
+    mock_set_config.assert_has_calls(expected_calls, any_order=True)
+
+    mock_set_config.reset_mock()
+
+    # Test writing a single value
+    auth.write_ui_config(borders="ascii", scope="global")
     mock_set_config.assert_called_once_with(
-        section=constants.CONFIG_SECTION_UI,
-        option=constants.CONFIG_OPTION_THEME,
-        value="dorsal_dark",
+        section=constants.CONFIG_SECTION_UI, option=constants.CONFIG_OPTION_BORDERS, value="ascii", scope="global"
     )

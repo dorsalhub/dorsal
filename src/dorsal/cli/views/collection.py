@@ -14,15 +14,22 @@
 
 from rich.panel import Panel
 from rich.table import Table
+from rich.console import Group, RenderableType
+from rich.text import Text
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dorsal.file.validators.collection import FileCollection
+    from dorsal.cli.themes import UIContext
 
 
-def collection_metadata(collection: "FileCollection", palette: dict[str, str]) -> Panel:
-    """Creates a rich Panel with the collection's metadata."""
+def collection_metadata(collection: "FileCollection", ui_context: "UIContext") -> RenderableType:
+    """Creates a rich visual block with the collection's metadata."""
     from dorsal.file.utils.size import human_filesize
+    from dorsal.cli.themes.borders import get_borders
+
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     if collection.date_modified is not None:
         date_modified = collection.date_modified.strftime("%Y-%m-%d %H:%M:%S")
@@ -42,9 +49,15 @@ def collection_metadata(collection: "FileCollection", palette: dict[str, str]) -
     metadata_table.add_row("Access:", "Private" if collection.is_private else "Public")
     metadata_table.add_row("Modified:", date_modified)
 
-    return Panel(
-        metadata_table,
-        title=f"[{palette.get('panel_title', 'default')}]Collection Metadata[/]",
-        border_style=palette.get("panel_border", "default"),
-        expand=False,
-    )
+    title_text = f"[{palette.get('panel_title', 'default')}]Collection Metadata[/]"
+
+    if borders == get_borders("none"):
+        return Group(Text.from_markup(f"\n{title_text}"), metadata_table)
+    else:
+        return Panel(
+            metadata_table,
+            title=title_text,
+            border_style=palette.get("panel_border", "default"),
+            expand=False,
+            box=borders,
+        )

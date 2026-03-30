@@ -14,11 +14,12 @@
 
 import typer
 import json
-from typing import Annotated
+from typing import Annotated, cast
 
 from rich.panel import Panel
 from rich.text import Text
 
+from dorsal.cli.themes import UIContext
 from dorsal.common.cli import get_rich_console, exit_cli, handle_error, EXIT_CODE_ERROR
 from dorsal.common.exceptions import (
     AuthError,
@@ -65,37 +66,37 @@ def add_tag(
     from dorsal.api.file import add_tag_to_file, add_label_to_file
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
 
     is_public_tag = public
 
     if label:
         if public:
             handle_error(
-                palette,
+                ui_context,
                 "Invalid Request: Simple labels must be PRIVATE. Remove the --public flag or use --name/--value for public tags.",
                 json_output,
             )
-            return
 
         if name or value:
             handle_error(
-                palette,
+                ui_context,
                 "Ambiguous Request: Please provide EITHER a simple label OR a --name/--value pair, not both.",
                 json_output,
             )
-            return
 
         name = "label"
         value = label
-        is_public_tag = True
+        is_public_tag = False
 
     else:
         if not name or not value:
             handle_error(
-                palette, "Missing Arguments: You must provide either a label OR both --name and --value.", json_output
+                ui_context,
+                "Missing Arguments: You must provide either a label OR both --name and --value.",
+                json_output,
             )
-            return
 
     try:
         if not json_output:
@@ -109,7 +110,9 @@ def add_tag(
         if label:
             response = add_label_to_file(hash_string=hash_string, label=label)
         else:
-            response = add_tag_to_file(hash_string=hash_string, name=name, value=value, public=is_public_tag)
+            response = add_tag_to_file(
+                hash_string=hash_string, name=cast(str, name), value=cast(str, value), public=is_public_tag
+            )
 
         if json_output:
             console.print(response.model_dump_json(indent=2))
@@ -124,28 +127,28 @@ def add_tag(
 
     except NotFoundError:
         handle_error(
-            palette,
-            f"Cannot add tag: No file record found for hash '{hash_string}",
+            ui_context,
+            f"Cannot add tag: No file record found for hash '{hash_string}'",
             json_output,
         )
     except ForbiddenError as err:
-        handle_error(palette, f"Cannot add tag. {err}", json_output)
+        handle_error(ui_context, f"Cannot add tag. {err}", json_output)
     except BadRequestError as err:
         handle_error(
-            palette,
+            ui_context,
             f"Invalid Tag: The server rejected the tag '{name}:{value}'.\nReason: {err}",
             json_output,
         )
     except (TaggingError, DuplicateTagError, ValueError) as err:
-        handle_error(palette, f"Invalid Tag: {err}", json_output)
+        handle_error(ui_context, f"Invalid Tag: {err}", json_output)
     except DorsalOfflineError:
         raise
     except AuthError:
         raise
     except DorsalClientError as err:
-        handle_error(palette, f"API Error: {err.message}", json_output)
+        handle_error(ui_context, f"API Error: {err.message}", json_output)
     except Exception as err:
-        handle_error(palette, f"An unexpected error occurred: {err}", json_output)
+        handle_error(ui_context, f"An unexpected error occurred: {err}", json_output)
 
 
 @tag_app.command(name="rm")
@@ -159,7 +162,8 @@ def remove_tag(
     from dorsal.api.file import remove_tag_from_file
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
 
     try:
         if not json_output:
@@ -186,17 +190,17 @@ def remove_tag(
 
     except NotFoundError:
         handle_error(
-            palette,
+            ui_context,
             f"Could not find a file with that hash, or a tag with ID '{tag_id}' on that file.",
             json_output,
         )
     except (TaggingError, ValueError) as e:
-        handle_error(palette, f"Invalid Request: {e}", json_output)
+        handle_error(ui_context, f"Invalid Request: {e}", json_output)
     except DorsalOfflineError:
         raise
     except AuthError:
         raise
     except DorsalClientError as e:
-        handle_error(palette, f"API Error: {e.message}", json_output)
+        handle_error(ui_context, f"API Error: {e.message}", json_output)
     except Exception as e:
-        handle_error(palette, f"An unexpected error occurred: {e}", json_output)
+        handle_error(ui_context, f"An unexpected error occurred: {e}", json_output)

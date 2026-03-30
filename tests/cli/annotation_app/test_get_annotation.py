@@ -16,6 +16,8 @@ import json
 import pytest
 import typer
 from unittest.mock import MagicMock
+
+from rich.box import ROUNDED
 from typer.testing import CliRunner
 
 from dorsal.cli.annotation_app.get_annotation_cmd import get_annotation
@@ -24,10 +26,12 @@ from dorsal.common.exceptions import DorsalError, NotFoundError, DorsalClientErr
 
 cli_app = typer.Typer()
 
+DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = DUMMY_UI_CONTEXT
 
 
 cli_app.command(name="get")(get_annotation)
@@ -61,7 +65,7 @@ def test_get_annotation_success(mock_rich_console, mock_get_deps):
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="pydantic")
     mock_get_deps["panel"].assert_called_once_with(
-        result=mock_result, title="AudioTranscription", file_name="ID: uuid-1234", palette=DEFAULT_PALETTE
+        result=mock_result, title="AudioTranscription", file_name="ID: uuid-1234", ui_context=DUMMY_UI_CONTEXT
     )
     assert mock_rich_console.print.called
 

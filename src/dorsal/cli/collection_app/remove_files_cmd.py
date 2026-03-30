@@ -15,11 +15,17 @@
 import logging
 import sys
 import json
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional, List, TYPE_CHECKING
 
 import typer
 from rich.panel import Panel
+from rich.console import Group
 from rich.text import Text
+
+from dorsal.cli.themes.borders import get_borders
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +82,9 @@ def remove_files(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: "UIContext" = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     final_hash_list = _get_hashes(hash_list, from_stdin, json_output, console)
 
@@ -115,10 +123,16 @@ def remove_files(
             style=palette.get("info", "dim"),
         )
 
-    success_panel = Panel(
-        output_text,
-        title=f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]",
-        border_style=palette.get("panel_border_success", "green"),
-        expand=False,
-    )
-    console.print(success_panel)
+    title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
+
+    if borders == get_borders("none"):
+        console.print(Group("", output_text))
+    else:
+        success_panel = Panel(
+            output_text,
+            title=title_text,
+            border_style=palette.get("panel_border_success", "green"),
+            expand=False,
+            box=borders,
+        )
+        console.print(success_panel)

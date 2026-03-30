@@ -19,16 +19,20 @@ import json
 import logging
 import pathlib
 import os
-from typing import Annotated, Any, TYPE_CHECKING, Optional, TypedDict
+from typing import Annotated, Any, TYPE_CHECKING, Optional
 
 from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape
 from rich.text import Text
+from rich.console import Group
 import typer
 
 from dorsal.common import constants
 from dorsal.common.cli import EXIT_CODE_ERROR, get_rich_console, exit_cli
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
+from rich.box import Box
 
 if TYPE_CHECKING:
     from dorsal.api.file import _DirectoryInfoResult
@@ -102,7 +106,10 @@ def info_target(
     Displays a high-level, fast summary of a local file or directory without hashing.
     """
     console = get_rich_console()
-    palette = ctx.obj.get("palette", {})
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
@@ -123,7 +130,14 @@ def info_target(
                     style=palette.get("warning", "yellow"),
                 )
         _process_file_info(
-            path=path, json_output=json_output, save=save, output_path=output_path, palette=palette, console=console
+            path=path,
+            json_output=json_output,
+            save=save,
+            output_path=output_path,
+            palette=palette,
+            borders=borders,
+            icons=icons,
+            console=console,
         )
     else:
         _process_dir_info(
@@ -134,12 +148,21 @@ def info_target(
             save=save,
             output_path=output_path,
             palette=palette,
+            borders=borders,
+            icons=icons,
             console=console,
         )
 
 
 def _process_file_info(
-    path: pathlib.Path, json_output: bool, save: bool, output_path: Optional[pathlib.Path], palette: dict, console
+    path: pathlib.Path,
+    json_output: bool,
+    save: bool,
+    output_path: Optional[pathlib.Path],
+    palette: dict[str, str],
+    borders: Box,
+    icons: dict[str, str],
+    console: Console,
 ) -> None:
     from dorsal.file.utils.size import human_filesize
     from dorsal.file.utils.infer_mediatype import get_media_type
@@ -171,7 +194,7 @@ def _process_file_info(
             console.print(json.dumps(file_info, indent=2, ensure_ascii=False))
             exit_cli()
 
-        summary_table = Table.grid(expand=False)
+        summary_table = Table.grid(expand=False, padding=(0, 1))
         summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=20)
         summary_table.add_column(justify="left", style=palette.get("primary_value", "cyan"))
 
@@ -200,15 +223,25 @@ def _process_file_info(
             perms.append("Execute")
         summary_table.add_row("Permissions:", ", ".join(perms) if perms else "None")
 
-        console.print(f"📊 Summary of [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
         console.print(
-            Panel(
-                summary_table,
-                title=f"[{palette.get('panel_title', 'bold default')}]File Summary[/]",
-                expand=False,
-                border_style=palette.get("panel_border", "blue"),
-            )
+            f"{icons.get('chart', '📊 ')}Summary of [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
         )
+
+        is_none_style = borders == get_borders("none")
+        title_text = f"[{palette.get('panel_title', 'bold default')}]{icons.get('file', '')}File Summary[/]"
+
+        if is_none_style:
+            console.print(summary_table)
+        else:
+            console.print(
+                Panel(
+                    summary_table,
+                    title=title_text,
+                    expand=False,
+                    border_style=palette.get("panel_border", "blue"),
+                    box=borders,
+                )
+            )
 
         if save:
             _save_json_report(
@@ -236,7 +269,9 @@ def _process_dir_info(
     json_output: bool,
     save: bool,
     output_path: Optional[pathlib.Path],
-    palette: dict,
+    palette: dict[str, str],
+    borders: Box,
+    icons: dict[str, str],
     console: Console,
 ) -> None:
     from dorsal.api.file import get_directory_info
@@ -267,7 +302,8 @@ def _process_dir_info(
         overall: dict[str, Any] = dir_info["overall"]
         duration_val = overall["time_taken_seconds"]
         duration_str = f"{duration_val:.2f} seconds" if duration_val >= 0.01 else "< 0.01 seconds"
-        summary_table = Table.grid(expand=False)
+
+        summary_table = Table.grid(expand=False, padding=(0, 2))
         summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=24)
         summary_table.add_column(justify="left", style=palette.get("primary_value", "cyan"))
 
@@ -303,23 +339,38 @@ def _process_dir_info(
             summary_table.add_row("Executable Files:", f"{permissions.get('executable', 0):,}")
             summary_table.add_row("Read-Only Files:", f"{permissions.get('read_only', 0):,}")
 
-        console.print(f"📊 Summary of [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
         console.print(
-            Panel(
-                summary_table,
-                title=f"[{palette.get('panel_title', 'bold default')}]Directory Summary[/]",
-                expand=False,
-                border_style=palette.get("panel_border", "blue"),
-            )
+            f"{icons.get('chart', '📊 ')}Summary of [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
         )
+
+        is_none_style = borders == get_borders("none")
+        title_text = f"[{palette.get('panel_title', 'bold default')}]{icons.get('folder', '')}Directory Summary[/]"
+
+        if is_none_style:
+            console.print(summary_table)
+        else:
+            console.print(
+                Panel(
+                    summary_table,
+                    title=title_text,
+                    expand=False,
+                    border_style=palette.get("panel_border", "blue"),
+                    box=borders,
+                )
+            )
 
         if media_type and dir_info["by_type"]:
             by_type_table = Table(
-                title="Media Type Breakdown",
+                title=f"[{palette.get('table_header', 'bold')}]{icons.get('info', '')}Media Type Breakdown[/]",
                 show_header=True,
                 header_style=palette.get("table_header", "bold"),
+                box=borders,
                 expand=False,
             )
+
+            if is_none_style:
+                by_type_table.padding = (0, 1)
+
             by_type_table.add_column("Media Type", style=palette.get("primary_value", "cyan"), ratio=55)
             by_type_table.add_column("Count", justify="right", ratio=15)
             by_type_table.add_column("Total Size", justify="right", ratio=15)

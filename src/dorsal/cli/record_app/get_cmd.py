@@ -18,6 +18,7 @@ import json
 import logging
 import pathlib
 
+from rich.box import Box
 from typing import Annotated, Optional
 
 from dorsal.common import constants
@@ -85,7 +86,9 @@ def get_file_record(
     from dorsal.common.exceptions import NotFoundError, AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
-    palette = ctx.obj["palette"]
+    palette: dict[str, str] = ctx.obj["palette"]
+    icons: dict[str, str] = ctx.obj.get("icons", {})
+    borders: Box | None = ctx.obj.get("borders")
 
     if private and public:
         exit_cli(
@@ -115,7 +118,7 @@ def get_file_record(
 
     if not json_output:
         console.print(
-            f"🔎 Searching for{search_type_str}file record with hash [{palette['primary_value']}]{hash_string}[/]"
+            f"Checking DorsalHub for{search_type_str}file record with hash [{palette['primary_value']}]{hash_string}[/]"
         )
 
     try:
@@ -144,6 +147,8 @@ def get_file_record(
             title=title,
             private=is_private,
             palette=palette,
+            icons=icons,
+            box_style=borders,
         )
         console.print(panel)
 

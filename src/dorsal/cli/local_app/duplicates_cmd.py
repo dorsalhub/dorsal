@@ -23,10 +23,14 @@ from typing import Annotated, Literal, Optional
 from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape
+from rich.console import Group
+from rich.text import Text
 import typer
 
-logger = logging.getLogger(__name__)
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
+logger = logging.getLogger(__name__)
 
 DuplicateMode = Literal["hybrid", "quick", "sha256"]
 
@@ -161,7 +165,10 @@ def duplicates_target(
     )
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+
     progress_console = None if json_output else console
 
     start_time = time.perf_counter()
@@ -257,6 +264,8 @@ def duplicates_target(
 
         sets_to_display = results["duplicate_sets"][:limit]
 
+        is_none_style = borders == get_borders("none")
+
         for i, dupe_set in enumerate(sets_to_display):
             size_str = dupe_set["file_size"]
             hash_str = dupe_set.get("hash", "N/A")
@@ -264,7 +273,7 @@ def duplicates_target(
 
             title_base = f"Duplicate Set {i + 1} of {total_sets}"
             size_info = f"Size: [{palette['success']}]{size_str}[/] (each)"
-            title = f"{title_base} | {size_info}"
+            title_text = f"{title_base} | {size_info}"
 
             hash_info_body = f"[{palette['info']}]{hash_type}: {hash_str}[/]"
 
@@ -288,14 +297,20 @@ def duplicates_target(
             content_grid.add_row(hash_info_body)
             content_grid.add_row(paths_table)
 
-            console.print(
-                Panel(
-                    content_grid,
-                    title=title,
-                    expand=False,
-                    border_style=palette["panel_border"],
+            if is_none_style:
+                console.print(
+                    Group(Text.from_markup(f"\n[{palette.get('panel_title', 'bold')}]{title_text}[/]"), content_grid)
                 )
-            )
+            else:
+                console.print(
+                    Panel(
+                        content_grid,
+                        title=title_text,
+                        expand=False,
+                        border_style=palette["panel_border"],
+                        box=borders,
+                    )
+                )
 
         if total_sets > limit and limit > 0:
             console.print(f"\n... and {total_sets - limit} more sets.")

@@ -18,25 +18,21 @@ import shutil
 from typing import Any, Dict
 
 from rich.panel import Panel
+from rich.console import Group
 from rich.prompt import Confirm
 from rich.text import Text
 import typer
+
+from dorsal.cli.themes import UIContext
+from dorsal.cli.themes.borders import get_borders
 
 
 logger = logging.getLogger(__name__)
 
 
-def check_and_confirm_model_install(
-    target: str, palette: Dict[str, str], force: bool = False, yes: bool = False
-) -> None:
+def check_and_confirm_model_install(target: str, ui_context: UIContext, force: bool = False, yes: bool = False) -> None:
     """
     Checks if a model target is safe to install and prompts the user for confirmation.
-
-    Args:
-        target: The model identifier (registry ID, git URL, etc).
-        palette: The CLI color palette.
-        force: If True, skips checks (assumes user knows what they are doing).
-        yes: If True, skips interactive confirmation.
     """
     from dorsal.common.constants import WEB_URL
     from dorsal.common.exceptions import AuthError
@@ -48,6 +44,8 @@ def check_and_confirm_model_install(
         return
 
     error_console = get_error_console()
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
 
     if "pipx" in sys.prefix:
         error_console.print(
@@ -80,7 +78,7 @@ def check_and_confirm_model_install(
 
                 if reg_data.install_url:
                     if reg_data.install_url.startswith("git+") and not shutil.which("git"):
-                        _handle_missing_git(palette)
+                        _handle_missing_git(ui_context)
 
                     raw_url = reg_data.install_url.replace("git+", "").split("@")[0]
                     display_meta["Source Code"] = f"[{link_style} link={raw_url}]{raw_url}[/]"
@@ -95,7 +93,7 @@ def check_and_confirm_model_install(
         except Exception as e:
             logger.debug(f"Metadata fetch failed: {e}")
             if "/" in target:
-                _handle_registry_error(target, e, palette)
+                _handle_registry_error(target, e, ui_context)
             display_meta["Warning"] = "Could not fetch remote metadata."
 
     msg_lines = []
@@ -106,24 +104,34 @@ def check_and_confirm_model_install(
         msg_lines.append("\nYou are about to install executable code from an unverified source.")
         msg_lines.append("Please review the source above before proceeding.")
 
-    error_console.print(
-        Panel(
-            "\n".join(msg_lines),
-            title=f"[{palette.get('panel_title_warning', 'bold yellow')}]Model Info[/]",
-            border_style=border_style,
-            expand=False,
+    is_none_style = borders == get_borders("none")
+    title_text = f"[{palette.get('panel_title_warning', 'bold yellow')}]Model Info[/]"
+
+    if is_none_style:
+        error_console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup("\n".join(msg_lines))))
+    else:
+        error_console.print(
+            Panel(
+                "\n".join(msg_lines),
+                title=title_text,
+                border_style=border_style,
+                expand=False,
+                box=borders,
+            )
         )
-    )
 
     if not Confirm.ask("Do you trust this source and want to proceed?", console=error_console):
         error_console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
         exit_cli(code=0)
 
 
-def _handle_missing_git(palette: Dict[str, str]):
+def _handle_missing_git(ui_context: UIContext):
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
 
     error_console = get_error_console()
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+
     message = Text.assemble(
         ("This model requires Git to install.\n\n", "default"),
         ("Dorsal could not find the ", "default"),
@@ -132,22 +140,32 @@ def _handle_missing_git(palette: Dict[str, str]):
         ("To proceed, please install Git from:\n", "default"),
         ("https://git-scm.com/downloads", palette.get("link", "blue underline")),
     )
-    error_console.print(
-        Panel(
-            message,
-            expand=False,
-            title=f"[{palette.get('panel_title_error', 'bold red')}]Missing System Dependency[/]",
-            border_style=palette.get("panel_border_error", "red"),
+
+    is_none_style = borders == get_borders("none")
+    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Missing System Dependency[/]"
+
+    if is_none_style:
+        error_console.print(Group(Text.from_markup(f"\n{title_text}"), message))
+    else:
+        error_console.print(
+            Panel(
+                message,
+                expand=False,
+                title=title_text,
+                border_style=palette.get("panel_border_error", "red"),
+                box=borders,
+            )
         )
-    )
     exit_cli(code=EXIT_CODE_ERROR)
 
 
-def _handle_registry_error(target: str, e: Exception, palette: Dict[str, str]):
+def _handle_registry_error(target: str, e: Exception, ui_context: UIContext):
     from dorsal.common.exceptions import NotFoundError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
 
     error_console = get_error_console()
+    palette = ui_context["palette"]
+
     if isinstance(e, NotFoundError) or "404" in str(e):
         error_console.print(f"[{palette.get('error', 'bold red')}]Error: Model '{target}' not found in registry.[/]")
     else:

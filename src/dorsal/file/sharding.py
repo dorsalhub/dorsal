@@ -17,15 +17,19 @@ from __future__ import annotations
 import logging
 import copy
 import json
-from typing import Any, Protocol, TYPE_CHECKING, runtime_checkable
+from typing import Any, Protocol, Type, TYPE_CHECKING, runtime_checkable
+from uuid import uuid4
 
 from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES
-from dorsal.common.exceptions import PydanticValidationError
+from dorsal.common.exceptions import AnnotationExecutionError, PydanticValidationError
 from dorsal.file.utils.size import human_filesize, check_record_size
 
-
 if TYPE_CHECKING:
-    from dorsal.file.validators.file_record import AnnotationGroup, ShardedAnnotation
+    from dorsal.file.validators.file_record import (
+        AnnotationGroup,
+        Annotation,
+        AnnotationGroupInfo,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -287,3 +291,102 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
         reassembled_record[strategy.text_field] = "".join(text_parts)
 
     return matched_schema_id, reassembled_record
+
+
+def build_annotation_or_annotationgroup(
+    *,
+    schema_id: str,
+    record_data: dict[str, Any],
+    source: dict[str, Any],
+    schema_version: str | None = None,
+    private: bool | None = None,
+) -> Annotation | AnnotationGroup:
+    """
+    Safely constructs a typed Annotation or AnnotationGroup from a dictionary.
+
+    If record exceeds the maximum allowed byte size (1MiB), splits using the registered sharding strategy.
+
+    Args:
+        schema_id: The validation schema ID (e.g., 'open/document-extraction').
+        record_data: The raw extracted dictionary.
+        source: The dictionary describing the annotation's source.
+        schema_version: Optional schema version string.
+        private: Visibility status.
+
+    Returns:
+        Annotation: If the record fits in one chunk.
+        AnnotationGroup: If the record was sharded.
+
+    Raises:
+        AnnotationExecutionError: If data parsing, sharding, or Pydantic instantiation fails.
+    """
+    from dorsal.file.validators.file_record import (
+        Annotation,
+        AnnotationGroup,
+        AnnotationGroupInfo,
+        CORE_MODEL_ANNOTATION_WRAPPERS,
+        GenericFileAnnotation,
+    )
+
+    try:
+        chunks = process_record_for_sharding(schema_id, record_data)
+    except ValueError as e:
+        logger.exception("Annotation processing/sharding failed for '%s'.", schema_id)
+        raise AnnotationExecutionError(f"Annotation processing failed for '{schema_id}': {e}") from e
+
+    wrapper_class: Type[Annotation] = CORE_MODEL_ANNOTATION_WRAPPERS.get(schema_id, Annotation)
+
+    def _create_wrapped_chunk(chunk_data: dict[str, Any], group_info: AnnotationGroupInfo | None = None) -> Annotation:
+        try:
+            GenericFileAnnotation(**chunk_data)
+        except PydanticValidationError as err:
+            group_info_str = f" (Chunk {group_info.index}/{group_info.total})" if group_info else ""
+            logger.exception(
+                "Failed to validate model output against GenericFileAnnotation for dataset '%s'%s.",
+                schema_id,
+                group_info_str,
+            )
+            raise AnnotationExecutionError(
+                f"Output for dataset '{schema_id}'{group_info_str} is incompatible with the base annotation structure."
+            ) from err
+
+        try:
+            return wrapper_class(
+                record=chunk_data,
+                private=private,
+                source=source,
+                schema_id=schema_id,
+                schema_version=schema_version,
+                group=group_info,
+            )
+        except PydanticValidationError as err:
+            logger.exception("Failed to instantiate wrapper class '%s'.", wrapper_class.__name__)
+            raise AnnotationExecutionError(
+                f"Failed to create annotation wrapper for '{schema_id}': {str(err)}"
+            ) from err
+
+    if len(chunks) == 1:
+        logger.debug(
+            "Creating atomic annotation wrapper '%s' for dataset '%s'.",
+            wrapper_class.__name__,
+            schema_id,
+        )
+        return _create_wrapped_chunk(chunk_data=chunks[0], group_info=None)
+
+    group_uid = uuid4()
+    total_chunks = len(chunks)
+    group_items: list[Annotation] = []
+
+    logger.info(
+        "Payload for '%s' exceeds size limits. Splitting into %d chunks (Group ID: %s).",
+        schema_id,
+        total_chunks,
+        group_uid,
+    )
+
+    for index, chunk_payload in enumerate(chunks):
+        chunk_meta = AnnotationGroupInfo(id=group_uid, index=index, total=total_chunks)
+        annotation_chunk = _create_wrapped_chunk(chunk_data=chunk_payload, group_info=chunk_meta)
+        group_items.append(annotation_chunk)
+
+    return AnnotationGroup(annotations=group_items)
