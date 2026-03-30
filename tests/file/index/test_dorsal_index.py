@@ -544,15 +544,13 @@ def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_str
     """Test that default summary() only returns base metrics."""
     temp_index.upsert_record(path="/fake/test.pdf", modified_time=123.45, record=mock_file_record_strict)
 
-    summary = temp_index.summary()  
+    summary = temp_index.summary()
 
-    
     assert "total_records" in summary
     assert summary["total_records"] == 1
     assert "database_size_bytes" in summary
     assert "fts_indexed_records" in summary
 
-    
     assert "indexed_attributes" not in summary
     assert "total_tracked_file_bytes" not in summary
     assert "compressed_records" not in summary
@@ -565,7 +563,6 @@ def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_stric
 
     summary = temp_index.summary(verbose=True)
 
-    
     assert "indexed_attributes" in summary
     assert summary["indexed_attributes"] > 0
     assert "total_tracked_file_bytes" in summary

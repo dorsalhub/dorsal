@@ -132,14 +132,13 @@ def test_search_auto_save_with_json_output_path(mock_rich_console, mock_search_c
     result = runner.invoke(app, ["record", "search", QUERY, "--output", "custom_results.json"])
 
     assert result.exit_code == 0
-    
+
     mock_search_cmd["save_results"].assert_called_once()
 
 
 def test_search_none_style_borders(mock_rich_console, mock_search_cmd, mocker):
     """Tests that the Table title is removed when border style is 'none'."""
-    
-    
+
     class MatchAnyBorder:
         def __eq__(self, other):
             return True
@@ -149,26 +148,25 @@ def test_search_none_style_borders(mock_rich_console, mock_search_cmd, mocker):
     result = runner.invoke(app, ["record", "search", QUERY])
 
     assert result.exit_code == 0
-    
-    
+
     printed_table = mock_rich_console.print.call_args_list[1].args[0]
     assert printed_table.title is None
 
+
 def test_search_narrow_console_and_missing_annotations(mock_rich_console, mock_search_cmd, caplog):
     """Tests the condensed table layout (< 115 width) and skipping records with missing annotations."""
-    
+
     mock_rich_console.width = 100
 
-    
     bad_record = MagicMock()
     bad_record.annotations = None
     bad_record.hash = "bad_hash_narrow"
 
-    
     good_record = mock_search_cmd["user_search"].return_value.results[0]
     mock_search_cmd["user_search"].return_value.results = [bad_record, good_record]
 
     import logging
+
     with caplog.at_level(logging.WARNING):
         result = runner.invoke(app, ["record", "search", QUERY])
 
@@ -183,25 +181,23 @@ def test_search_narrow_console_and_missing_annotations(mock_rich_console, mock_s
 
 def test_search_wide_console_missing_annotations(mock_rich_console, mock_search_cmd, caplog):
     """Tests skipping records with missing annotations in the standard wide layout (>= 115 width)."""
-    
+
     mock_rich_console.width = 120
 
-    
     bad_record = MagicMock()
     bad_record.annotations = None
     bad_record.hash = "bad_hash_wide"
-    
-    
+
     mock_search_cmd["user_search"].return_value.results = [bad_record]
 
     import logging
+
     with caplog.at_level(logging.WARNING):
         result = runner.invoke(app, ["record", "search", QUERY])
 
     assert result.exit_code == 0
     assert "Search result with hash bad_hash_wide is missing base annotations, skipping." in caplog.text
 
-    
     printed_table = mock_rich_console.print.call_args_list[1].args[0]
     assert len(printed_table.columns) == 4
     assert printed_table.columns[0].header == "Name"

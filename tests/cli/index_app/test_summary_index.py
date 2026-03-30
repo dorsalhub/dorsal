@@ -34,7 +34,6 @@ MOCK_INDEX_SUMMARY = {
 }
 
 
-
 @pytest.fixture
 def mock_summary_index_cmd_verbose(mocker):
     """Mocks dependencies with extended data for verbose output testing."""
@@ -55,7 +54,7 @@ def mock_summary_index_cmd_verbose(mocker):
 @pytest.fixture
 def mock_summary_index_cmd(mocker):
     """Mocks dependencies for the `index summary` command."""
-    
+
     mock_summary = mocker.patch("dorsal.api.index.summary", return_value=MOCK_INDEX_SUMMARY)
     return {"summary": mock_summary}
 
@@ -67,7 +66,6 @@ def test_summary_index_panel_output(mock_rich_console, mock_summary_index_cmd):
     assert result.exit_code == 0
     mock_summary_index_cmd["summary"].assert_called_once()
 
-    
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, (Panel, Group))
 
@@ -80,7 +78,6 @@ def test_summary_index_json_output(mock_rich_console, mock_summary_index_cmd):
     mock_summary_index_cmd["summary"].assert_called_once()
     mock_rich_console.print.assert_called_once()
 
-    
     json_output_str = mock_rich_console.print.call_args.args[0]
     data = json.loads(json_output_str)
     assert data == MOCK_INDEX_SUMMARY
@@ -103,10 +100,8 @@ def test_summary_index_verbose_output(mock_rich_console, mock_summary_index_cmd_
     assert result.exit_code == 0
     mock_summary_index_cmd_verbose.assert_called_once_with(verbose=True)
 
-    
     printed_objects = [call.args[0] for call in mock_rich_console.print.call_args_list if call.args]
 
-    
     has_columns = any(isinstance(obj, Columns) for obj in printed_objects)
     assert has_columns, "Expected a Rich Columns object to be printed for verbose distributions."
 
@@ -116,7 +111,6 @@ def test_summary_index_verbose_compressed_records_fallback(mock_rich_console, mo
     no_ratio_data = {
         **MOCK_INDEX_SUMMARY,
         "compressed_records": 1024,
-        
     }
     mock_summary = mocker.patch("dorsal.api.index.summary", return_value=no_ratio_data)
 
@@ -125,26 +119,21 @@ def test_summary_index_verbose_compressed_records_fallback(mock_rich_console, mo
     assert result.exit_code == 0
     mock_summary.assert_called_once_with(verbose=True)
 
-    
     assert mock_rich_console.print.called
 
 
 def test_summary_index_none_style_output(mock_rich_console, mock_summary_index_cmd, mocker):
     """Tests the output formatting when borders are set to 'none'."""
 
-    
-    
     class MatchAnyBorder:
         def __eq__(self, other):
             return True
 
-    
     mocker.patch("dorsal.cli.index_app.summary_index_cmd.get_borders", return_value=MatchAnyBorder())
 
     result = runner.invoke(app, ["index", "summary"])
 
     assert result.exit_code == 0
 
-    
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, Group), "Expected a Group object to be printed when border style is 'none'."

@@ -205,7 +205,6 @@ def test_save_local_search_results_ioerror_query_txt(tmp_path, mocker, mock_rich
     mock_dir = tmp_path / "reports"
     mocker.patch("dorsal.common.constants.CLI_SEARCH_REPORTS_DIR", mock_dir)
 
-    
     original_open = builtins.open
 
     def mock_open(path, *args, **kwargs):
