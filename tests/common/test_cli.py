@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+import sys
 import pytest
 from unittest.mock import patch, MagicMock
+
+from rich.panel import Panel
+from rich.console import Group
 import typer
 
+from dorsal.common.exceptions import AuthError
 from dorsal.common import cli
 
 
@@ -138,3 +144,112 @@ def test_parse_cli_options_json_structures():
     }
 
     assert cli.parse_cli_options(options, {}) == expected
+
+
+@pytest.fixture
+def mock_ui_context():
+    """Provides a standard UI context for testing visual handlers."""
+    return {
+        "palette": {
+            "panel_title_error": "red",
+            "panel_border_error": "red",
+            "panel_title_info": "cyan",
+            "panel_border_info": "cyan",
+            "panel_title_warning": "yellow",
+            "panel_border_warning": "yellow",
+            "warning": "yellow",
+            "primary_value": "cyan",
+            "text_default": "default",
+        },
+        "borders": "rounded",
+        "icons": {"warning": "⚠️ ", "error": "❌ ", "lock": "🔒 "},
+    }
+
+
+@patch("dorsal.common.cli.exit_cli")
+def test_handle_error_json(mock_exit, mock_rich_console, mock_ui_context):
+    """Tests that handle_error outputs raw JSON when requested."""
+    cli.handle_error(mock_ui_context, "Something broke.", json_output=True)
+
+    mock_rich_console.print.assert_called_once()
+    output = mock_rich_console.print.call_args[0][0]
+    assert '"error": true' in output
+    assert "Something broke." in output
+    mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
+
+
+@patch("dorsal.common.cli.exit_cli")
+def test_handle_error_panel(mock_exit, mock_rich_console, mock_ui_context):
+    """Tests that handle_error outputs a Rich Panel by default."""
+    cli.handle_error(mock_ui_context, "Something broke.", json_output=False)
+
+    printed_obj = mock_rich_console.print.call_args[0][0]
+    assert isinstance(printed_obj, Panel)
+    mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
+
+
+@patch("dorsal.common.cli.exit_cli")
+def test_handle_error_none_borders(mock_exit, mock_rich_console, mock_ui_context, mocker):
+    """Tests that handle_error strips the Panel when borders are 'none'."""
+
+    class MatchAnyBorder:
+        def __eq__(self, other):
+            return True
+
+    mocker.patch("dorsal.cli.themes.borders.get_borders", return_value=MatchAnyBorder())
+
+    cli.handle_error(mock_ui_context, "Something broke.", json_output=False)
+
+    printed_obj = mock_rich_console.print.call_args[0][0]
+    assert isinstance(printed_obj, Group)
+    mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
+
+
+@patch.object(sys, "argv", ["dorsal", "auth", "--json"])
+def test_handle_auth_error_json(capsys, mock_rich_console, mock_ui_context):
+    """Tests that auth errors bypass Rich and print raw JSON when --json is in sys.argv."""
+    err = AuthError("Fake auth error")
+    cli.handle_auth_error(err, mock_rich_console, mock_ui_context)
+
+    captured = capsys.readouterr()
+    assert '"success": false' in captured.out
+    assert '"error": "Authentication Required"' in captured.out
+    assert mock_rich_console.print.call_count == 0
+
+
+@patch.object(sys, "argv", ["dorsal", "auth"])
+def test_handle_auth_error_panel(mock_rich_console, mock_ui_context):
+    """Tests the standard visual output for an auth error."""
+    err = AuthError("Fake auth error")
+    cli.handle_auth_error(err, mock_rich_console, mock_ui_context)
+
+    printed_obj = mock_rich_console.print.call_args[0][0]
+    assert isinstance(printed_obj, Panel)
+
+
+@patch.object(sys, "argv", ["dorsal", "search", "--json"])
+def test_handle_offline_error_json(capsys, mock_rich_console, mock_ui_context):
+    """Tests that offline errors bypass Rich and print raw JSON when --json is in sys.argv."""
+    err = Exception("Fake offline error")
+    cli.handle_offline_error(err, mock_rich_console, mock_ui_context)
+
+    captured = capsys.readouterr()
+    assert '"success": false' in captured.out
+    assert '"error": "Offline Mode Active"' in captured.out
+    assert mock_rich_console.print.call_count == 0
+
+
+@patch.object(sys, "argv", ["dorsal", "search"])
+def test_handle_offline_error_panel(mock_rich_console, mock_ui_context):
+    """Tests the standard visual output for an offline error."""
+    err = Exception("Fake offline error")
+    cli.handle_offline_error(err, mock_rich_console, mock_ui_context)
+
+    printed_obj = mock_rich_console.print.call_args[0][0]
+    assert isinstance(printed_obj, Panel)
+
+
+def test_dummy_context():
+    """Ensures the DummyContext manager operates as a functional no-op."""
+    with cli.DummyContext() as ctx:
+        assert ctx is None

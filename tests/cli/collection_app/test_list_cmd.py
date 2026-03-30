@@ -56,7 +56,7 @@ MOCK_API_RESPONSE.model_dump_json.return_value = json.dumps(
 @pytest.fixture
 def mock_list_collections_cmd(mocker):
     """Mocks dependencies for the `collection list` command."""
-    # Patch list_collections at its source due to lazy loading in the command
+
     mock_list = mocker.patch("dorsal.api.collection.list_collections", return_value=MOCK_API_RESPONSE)
     return mock_list
 
@@ -68,7 +68,6 @@ def test_list_collections_success_table_output(mock_rich_console, mock_list_coll
     assert result.exit_code == 0
     mock_list_collections_cmd.assert_called_once_with(page=1, per_page=25, mode="pydantic")
 
-    # The command prints a status message, then the table
     assert mock_rich_console.print.call_count == 2
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, Table)
@@ -83,7 +82,7 @@ def test_list_collections_with_pagination(mock_rich_console, mock_list_collectio
     result = runner.invoke(app, ["collection", "list"])
 
     assert result.exit_code == 0
-    # Combine all printed output to check for the footer
+
     all_printed_text = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
     assert "Showing page" in all_printed_text
     assert "To see the next page" in all_printed_text
@@ -106,7 +105,7 @@ def test_list_collections_json_output(mock_rich_console, mock_list_collections_c
     result = runner.invoke(app, ["collection", "list", "--json"])
 
     assert result.exit_code == 0
-    # Verifies the model's dump method was called and the result printed
+
     mock_list_collections_cmd.return_value.model_dump_json.assert_called_once()
     mock_rich_console.print.assert_called_once_with(mock_list_collections_cmd.return_value.model_dump_json.return_value)
 
@@ -119,3 +118,65 @@ def test_list_collections_api_error(mock_list_collections_cmd):
 
     assert result.exit_code != 0
     assert "API Error: Authentication failed" in result.output
+
+
+def test_list_collections_none_borders(mock_rich_console, mock_list_collections_cmd, mocker):
+    """Tests the table padding and title removal when borders are set to 'none'."""
+    mock_list_collections_cmd.return_value.records = [mock_collection_record]
+
+    class MatchAnyBorder:
+        def __eq__(self, other):
+            return True
+
+    mocker.patch("dorsal.cli.collection_app.list_cmd.get_borders", return_value=MatchAnyBorder())
+
+    result = runner.invoke(app, ["collection", "list"])
+
+    assert result.exit_code == 0
+
+    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+
+    assert printed_table.title is None
+    assert printed_table.padding == (0, 1, 0, 1)
+
+
+def test_list_collections_narrow_console(mock_rich_console, mock_list_collections_cmd):
+    """Tests the condensed 2-column layout when the console width is under 115."""
+
+    mock_list_collections_cmd.return_value.records = [mock_collection_record]
+
+    mock_rich_console.width = 100
+
+    result = runner.invoke(app, ["collection", "list"])
+
+    assert result.exit_code == 0
+
+    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+
+    assert len(printed_table.columns) == 2
+    assert printed_table.columns[0].header == "Collection (Name / ID)"
+    assert printed_table.columns[1].header == "Details (Files / Size)"
+
+
+def test_list_collections_fallback_values(mock_rich_console, mock_list_collections_cmd):
+    """Tests the fallback formatting logic for missing/alternate values in the loops."""
+    mock_list_collections_cmd.return_value.records = [mock_collection_record]
+    mock_list_collections_cmd.return_value.pagination.page_count = 1
+    mock_list_collections_cmd.return_value.pagination.has_next = False
+    mock_list_collections_cmd.return_value.records[0].is_private = False
+    mock_list_collections_cmd.return_value.records[0].name = None
+    mock_list_collections_cmd.return_value.records[0].date_modified = None
+
+    mock_rich_console.width = 100
+
+    result = runner.invoke(app, ["collection", "list"])
+
+    assert result.exit_code == 0
+
+    assert mock_rich_console.print.call_count == 2
+
+    import datetime
+
+    mock_list_collections_cmd.return_value.records[0].is_private = True
+    mock_list_collections_cmd.return_value.records[0].name = "My Research Data"
+    mock_list_collections_cmd.return_value.records[0].date_modified = datetime.datetime(2025, 8, 9, 10, 30)

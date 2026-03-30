@@ -328,20 +328,16 @@ def build_annotation_or_annotationgroup(
         GenericFileAnnotation,
     )
 
-    # 1. Process the record through the sharding rules
     try:
         chunks = process_record_for_sharding(schema_id, record_data)
     except ValueError as e:
         logger.exception("Annotation processing/sharding failed for '%s'.", schema_id)
         raise AnnotationExecutionError(f"Annotation processing failed for '{schema_id}': {e}") from e
 
-    # Determine the specific Pydantic wrapper to use (e.g., Annotation_PDF or base Annotation)
     wrapper_class: Type[Annotation] = CORE_MODEL_ANNOTATION_WRAPPERS.get(schema_id, Annotation)
 
-    # 2. Safe instantiation helper
     def _create_wrapped_chunk(chunk_data: dict[str, Any], group_info: AnnotationGroupInfo | None = None) -> Annotation:
         try:
-            # Step A: Integrity check (ensure it matches the base shape)
             GenericFileAnnotation(**chunk_data)
         except PydanticValidationError as err:
             group_info_str = f" (Chunk {group_info.index}/{group_info.total})" if group_info else ""
@@ -355,9 +351,6 @@ def build_annotation_or_annotationgroup(
             ) from err
 
         try:
-            # Step B: Instantiate the specific outer wrapper
-            # FIX: Pass the raw `chunk_data` dict instead of the `GenericFileAnnotation` object.
-            # This allows Pydantic to naturally parse it into specific models like `PDFValidationModel`.
             return wrapper_class(
                 record=chunk_data,
                 private=private,
@@ -372,7 +365,6 @@ def build_annotation_or_annotationgroup(
                 f"Failed to create annotation wrapper for '{schema_id}': {str(err)}"
             ) from err
 
-    # 3. CASE A: Atomic Payload (No sharding needed)
     if len(chunks) == 1:
         logger.debug(
             "Creating atomic annotation wrapper '%s' for dataset '%s'.",
@@ -381,7 +373,6 @@ def build_annotation_or_annotationgroup(
         )
         return _create_wrapped_chunk(chunk_data=chunks[0], group_info=None)
 
-    # 4. CASE B: Sharded Payload
     group_uid = uuid4()
     total_chunks = len(chunks)
     group_items: list[Annotation] = []
