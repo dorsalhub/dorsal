@@ -35,7 +35,7 @@ from dorsal.client.validators import (
     CollectionSyncResponse,
 )
 
-# Constants
+
 _DUMMY_API_KEY = "abc123_test_key"
 _DUMMY_BASE_URL = "http://dorsalhub.test"
 _DUMMY_SHA256 = "a" * 64
@@ -98,7 +98,7 @@ def mock_collection_response_json(mock_pagination_json):
     }
 
 
-# --- CRUD Operations ---
+
 
 
 def test_create_collection_success(client, requests_mock):
@@ -149,7 +149,7 @@ def test_get_collection_success(client, requests_mock, mock_collection_response_
 
 def test_get_collection_hydrated(client, requests_mock, mock_collection_response_json):
     """Test successfully fetching a hydrated collection."""
-    # We reuse the same mock JSON, but the client will parse it into a different model
+    
     requests_mock.get(
         f"{_DUMMY_BASE_URL}/v1/collections/{_COLLECTION_ID}?page=1&per_page=100&hydrate=True",
         json=mock_collection_response_json,
@@ -222,7 +222,7 @@ def test_delete_collections_api_error(client, requests_mock):
         client.delete_collections(collection_ids=[_COLLECTION_ID])
 
 
-# --- File Management in Collections ---
+
 
 
 def test_add_files_to_collection_success(client, requests_mock):
@@ -253,21 +253,21 @@ def test_remove_files_from_collection_success(client, requests_mock):
     assert result.removed_count == 1
 
 
-# --- Visibility Actions ---
+
 
 
 def test_make_collection_public_success(client, requests_mock, mock_collection_response_json):
     """Test successfully making a private collection public."""
-    # Ensure initial state is private
+    
     mock_collection_response_json["collection"]["is_private"] = True
 
-    # 1. Mock pre-flight check
+    
     requests_mock.get(
         f"{_DUMMY_BASE_URL}/v1/collections/{_COLLECTION_ID}",
         json=mock_collection_response_json,
     )
 
-    # 2. Mock action POST
+    
     mock_action_response = {"location_url": f"{_DUMMY_BASE_URL}/collections/public/{_COLLECTION_ID}"}
     requests_mock.post(
         f"{_DUMMY_BASE_URL}/v1/collections/{_COLLECTION_ID}/actions/make-public",
@@ -312,7 +312,7 @@ def test_make_collection_private_success(client, requests_mock, mock_collection_
     assert isinstance(result, CollectionWebLocationResponse)
 
 
-# --- Export Operations ---
+
 
 
 def test_start_collection_export_success(client, requests_mock):
@@ -380,14 +380,14 @@ def test_export_collection_orchestrator_success(mock_open_file, mock_makedirs, c
     download_url = f"{_DUMMY_BASE_URL}/downloads/export.json.gz"
     output_path = "/tmp/final_export.json.gz"
 
-    # 1. Start
+    
     requests_mock.post(
         f"{_DUMMY_BASE_URL}/v1/export/collection/{_COLLECTION_ID}",
         json={"job_id": job_id, "status": "PENDING"},
         status_code=202,
     )
 
-    # 2. Poll (RUNNING -> COMPLETED)
+    
     status_url = f"{_DUMMY_BASE_URL}/v1/export/jobs/{job_id}"
     requests_mock.get(
         status_url,
@@ -400,7 +400,7 @@ def test_export_collection_orchestrator_success(mock_open_file, mock_makedirs, c
         ],
     )
 
-    # 3. Download
+    
     requests_mock.get(download_url, content=b"data")
 
     client.export_collection(_COLLECTION_ID, output_path, poll_interval=0.01)
@@ -416,7 +416,7 @@ def test_export_collection_with_console(mock_open_file, mock_makedirs, client, r
     download_url = f"{_DUMMY_BASE_URL}/downloads/export.json.gz"
     output_path = "/tmp/console_export.json.gz"
 
-    # Mock API flows
+    
     requests_mock.post(
         f"{_DUMMY_BASE_URL}/v1/export/collection/{_COLLECTION_ID}",
         json={"job_id": job_id, "status": "PENDING"},
@@ -429,11 +429,11 @@ def test_export_collection_with_console(mock_open_file, mock_makedirs, client, r
     )
     requests_mock.get(download_url, content=b"data")
 
-    # Mock the console object
+    
     mock_console = MagicMock()
 
-    # We must patch 'rich.live.Live' and 'rich.progress.Progress' as they are imported
-    # inside the function in dorsal_client.py.
+    
+    
     with (
         patch("rich.live.Live") as mock_live,
         patch("rich.progress.Progress") as mock_progress,
@@ -441,7 +441,7 @@ def test_export_collection_with_console(mock_open_file, mock_makedirs, client, r
     ):
         client.export_collection(_COLLECTION_ID, output_path, console=mock_console, poll_interval=0.01)
 
-        # Verify Rich components were initialized
+        
         assert mock_live.called
         assert mock_progress.called
         mock_open_file.assert_called_once_with(output_path, "wb")
@@ -471,7 +471,7 @@ def test_export_collection_jupyter(mock_tqdm, mock_is_jupyter, mock_open_file, m
 
     client.export_collection(_COLLECTION_ID, output_path, poll_interval=0.01)
 
-    # Verify tqdm was used (context manager enter/exit)
+    
     assert mock_tqdm.called
     mock_tqdm.return_value.__enter__.return_value.refresh.assert_called()
 
@@ -485,19 +485,19 @@ def test_export_collection_timeout(client, requests_mock):
         status_code=202,
     )
 
-    # Job stays RUNNING forever
+    
     requests_mock.get(
         f"{_DUMMY_BASE_URL}/v1/export/jobs/{job_id}",
         json={"job_id": job_id, "status": "RUNNING", "progress": 10.0},
         status_code=200,
     )
 
-    # Set a very short timeout
+    
     with pytest.raises(DorsalClientError, match="did not complete within"):
         client.export_collection(_COLLECTION_ID, "/tmp/out.gz", poll_interval=0.1, timeout=0.05)
 
 
-# --- Sync Operations ---
+
 
 
 def test_sync_collection_by_hash_success(client, requests_mock):
@@ -505,11 +505,11 @@ def test_sync_collection_by_hash_success(client, requests_mock):
     job_id = "sync_abc"
     hashes = [_DUMMY_SHA256]
 
-    # 1. Start
+    
     start_url = f"{_DUMMY_BASE_URL}/v1/collections/{_COLLECTION_ID}/sync"
     requests_mock.post(start_url, json={"job_id": job_id, "status": "PENDING"}, status_code=202)
 
-    # 2. Poll
+    
     status_url = f"{_DUMMY_BASE_URL}/v1/collections/sync-jobs/{job_id}"
     requests_mock.get(
         status_url,

@@ -121,9 +121,9 @@ class TestSearchLocalPaginated:
 
     def test_paginated_success_and_math(self, test_index):
         """Validates that pagination math, limits, and offsets correctly slice the data."""
-        # test_index contains 2 PDF files
+        
 
-        # Request Page 1 (limit 1)
+        
         result1 = search_local_paginated("ext:pdf", index=test_index, page=1, per_page=1)
 
         assert isinstance(result1, PaginatedSearchResults)
@@ -133,14 +133,14 @@ class TestSearchLocalPaginated:
         assert result1.pagination.has_next is True
         assert result1.pagination.has_prev is False
 
-        # Request Page 2 (limit 1)
+        
         result2 = search_local_paginated("ext:pdf", index=test_index, page=2, per_page=1)
 
         assert len(result2.records) == 1
         assert result2.pagination.has_next is False
         assert result2.pagination.has_prev is True
 
-        # Ensure we got different records
+        
         assert result1.records[0].abspath != result2.records[0].abspath
 
     def test_empty_query_returns_early(self):
@@ -205,7 +205,7 @@ class TestSearchLocalPaginated:
             mock_conn = MagicMock()
             mock_ensure.return_value = mock_conn
 
-            # We need the first execution (COUNT) to pass, but the second (DATA) to fail
+            
             def execute_side_effect(sql, *args, **kwargs):
                 if "COUNT" in sql:
                     return None
@@ -229,7 +229,7 @@ class TestSearchLocalPaginated:
                 mock_conn.cursor.return_value.fetchone.return_value = {"total": 1}
                 mock_conn.cursor.return_value.fetchall.return_value = [{"abspath": "ghost_path"}]
 
-                # Force get_record to return None simulating a stale cache hit
+                
                 with patch.object(test_index, "get_record", return_value=None):
                     result = search_local_paginated("find ghost", index=test_index)
 
