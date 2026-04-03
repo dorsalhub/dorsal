@@ -251,15 +251,15 @@ class LocalFileCollection(_BaseFileCollection):
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
+        try:
+            tags_to_validate = [tag if isinstance(tag, NewFileTag) else NewFileTag(**tag) for tag in tags]
+        except Exception as e:
+            raise DorsalClientError(f"Failed to parse input tags: {e}") from e
+
         if self.offline:
             logger.info("Step 1/2: *SKIPPING* tag validation - Offline Mode")
         else:
             logger.info(f"Step 1/2: Validating {len(tags)} tags in a single batch...")
-            try:
-                tags_to_validate = [tag if isinstance(tag, NewFileTag) else NewFileTag(**tag) for tag in tags]
-            except Exception as e:
-                raise DorsalClientError(f"Failed to parse input tags: {e}") from e
-
             validation_result = self._client.validate_tag(file_tags=tags_to_validate, api_key=api_key)
 
             if not validation_result.valid:

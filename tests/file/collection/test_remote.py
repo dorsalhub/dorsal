@@ -90,9 +90,6 @@ def mock_collection_response():
     )
 
 
-# --- Existing Tests ---
-
-
 @patch("dorsal.file.dorsal_file.DorsalFile.from_record")
 def test_dorsal_collection_init_success(mock_from_record, mock_dorsal_client, mock_collection_response):
     """Test successful initialization of a DorsalFileCollection."""
@@ -134,7 +131,7 @@ def test_populate_large_collection_raises_error_without_export_flag(mock_dorsal_
 
 def test_list_collections(mock_dorsal_client):
     """Test the list_collections classmethod."""
-    # Arrange
+
     mock_meta1 = FileCollection(
         collection_id="col_1",
         user_no=1,
@@ -157,10 +154,8 @@ def test_list_collections(mock_dorsal_client):
     mock_response = CollectionsResponse(records=[mock_meta1], pagination=mock_pagination)
     mock_dorsal_client.list_collections.return_value = mock_response
 
-    # Act
     collections = DorsalFileCollection.list_collections(client=mock_dorsal_client)
 
-    # Assert
     mock_dorsal_client.list_collections.assert_called_once_with(page=1, per_page=50)
     assert len(collections) == 1
     assert collections[0].collection_id == "col_1"
@@ -197,14 +192,10 @@ def test_fetch_page(mock_dorsal_client, mock_collection_response):
 
     collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
 
-    # Now, set up the mock response for the actual fetch_page call
     mock_dorsal_client.get_collection.return_value = mock_collection_response
 
-    # Act
     collection.fetch_page(3)
 
-    # Assert
-    # The call now correctly uses per_page=0 from the pagination object set during initialization.
     mock_dorsal_client.get_collection.assert_called_with("col_123", page=3, per_page=0, hydrate=True)
     assert len(collection.files) == 1
 
@@ -241,47 +232,39 @@ def test_fetch_page_invalid_page_raises_error(mock_dorsal_client):
         collection.fetch_page(4)
 
 
-# --- New Tests ---
-
-
 def test_add_files(mock_dorsal_client, mock_collection_response):
     """Test adding files to a remote collection."""
-    # Arrange
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
     hashes_to_add = ["hash1", "hash2"]
 
-    # Act
     collection.add_files(hashes_to_add)
 
-    # Assert
     mock_dorsal_client.add_files_to_collection.assert_called_once_with("col_123", hashes_to_add)
-    # The initial __init__ call and the refresh() call
+
     assert mock_dorsal_client.get_collection.call_count == 2
 
 
 def test_remove_files(mock_dorsal_client, mock_collection_response):
     """Test removing files from a remote collection."""
-    # Arrange
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
     hashes_to_remove = ["hash1", "hash2"]
 
-    # Act
     collection.remove_files(hashes_to_remove)
 
-    # Assert
     mock_dorsal_client.remove_files_from_collection.assert_called_once_with("col_123", hashes_to_remove)
     assert mock_dorsal_client.get_collection.call_count == 2
 
 
 def test_update(mock_dorsal_client, mock_collection_response):
     """Test updating a remote collection's metadata."""
-    # Arrange
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
 
-    # The client's update_collection method should return the new metadata
     updated_meta = mock_collection_response.collection.model_copy()
     updated_meta.name = "New Name"
     mock_dorsal_client.update_collection.return_value = updated_meta
@@ -297,53 +280,117 @@ def test_update(mock_dorsal_client, mock_collection_response):
 
 def test_make_public(mock_dorsal_client, mock_collection_response):
     """Test making a collection public."""
-    # Arrange
-    # The initial state is a private collection
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
 
-    # Mock the response from the make_collection_public client method
     mock_location_response = CollectionWebLocationResponse(location_url="http://example.com/public/col_123")
     mock_dorsal_client.make_collection_public.return_value = mock_location_response
 
-    # Act
     result_url = collection.make_public()
 
-    # Assert
     mock_dorsal_client.make_collection_public.assert_called_once_with("col_123")
-    # The method should call refresh(), which calls get_collection() again
+
     assert mock_dorsal_client.get_collection.call_count == 2
     assert result_url == "http://example.com/public/col_123"
 
 
 def test_make_private(mock_dorsal_client, mock_collection_response):
     """Test making a collection private."""
-    # Arrange
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
 
-    # Mock the response from the make_collection_private client method
     mock_location_response = CollectionWebLocationResponse(location_url="http://example.com/private/col_123")
     mock_dorsal_client.make_collection_private.return_value = mock_location_response
 
-    # Act
     result_url = collection.make_private()
 
-    # Assert
     mock_dorsal_client.make_collection_private.assert_called_once_with("col_123")
-    # The method should call refresh()
+
     assert mock_dorsal_client.get_collection.call_count == 2
     assert result_url == "http://example.com/private/col_123"
 
 
 def test_delete(mock_dorsal_client, mock_collection_response):
     """Test deleting a remote collection."""
-    # Arrange
+
     mock_dorsal_client.get_collection.return_value = mock_collection_response
     collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
 
-    # Act
     collection.delete()
 
-    # Assert
     mock_dorsal_client.delete_collections.assert_called_once_with(collection_ids=["col_123"])
+
+
+def test_populate_paginated_jupyter_ui(mock_dorsal_client, mock_collection_response, mocker):
+    """Covers the tqdm branch for paginated population."""
+    mocker.patch("dorsal.file.collection.remote.is_jupyter_environment", return_value=True)
+
+    collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
+    collection.metadata.file_count = 100
+
+    mock_dorsal_client.get_collection.return_value = mock_collection_response
+    collection.populate(use_export=False)
+
+    assert collection._is_populated is True
+
+
+def test_populate_paginated_rich_console(mock_dorsal_client, mock_collection_response):
+    """Covers the Rich Console branch for paginated population."""
+    from rich.console import Console
+
+    collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
+    collection.metadata.file_count = 100
+
+    mock_dorsal_client.get_collection.return_value = mock_collection_response
+    collection.populate(use_export=False, console=Console())
+
+    assert collection._is_populated is True
+
+
+def test_check_if_populated_unpopulated_error(mock_dorsal_client):
+    """Covers the exception raised when exporting an incomplete collection without force=True."""
+    collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
+    collection.metadata.file_count = 10
+    collection.files = []
+    collection._is_populated = False
+
+    with pytest.raises(DorsalClientError, match="This collection is not fully populated"):
+        collection._check_if_populated(force=False)
+
+
+def test_check_if_populated_unpopulated_force(mock_dorsal_client, caplog):
+    """Covers the warning logged when exporting an incomplete collection with force=True."""
+    collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
+    collection.metadata.file_count = 10
+    collection.files = []
+    collection._is_populated = False
+
+    collection._check_if_populated(force=True)
+    assert "Exporting an incomplete DorsalFileCollection" in caplog.text
+
+
+def test_to_json_datetime_encoder(mock_dorsal_client, mock_collection_response):
+    """Covers the custom JSON encoder branch for datetime objects in remote collections."""
+    mock_dorsal_client.get_collection.return_value = mock_collection_response
+    collection = DorsalFileCollection(collection_id="col_123", client=mock_dorsal_client)
+    collection._is_populated = True
+
+    json_str = collection.to_json(force=True)
+    assert "T" in json_str
+
+
+def test_update_from_response_unhydrated_warning(mock_dorsal_client, caplog):
+    """Covers the warning logged when a SingleCollectionResponse contains file stubs."""
+    from dorsal.file.collection.remote import DorsalFileCollection
+
+    collection = DorsalFileCollection.from_id_metadata_only("col_123", client=mock_dorsal_client)
+
+    stub_response = MagicMock()
+    stub_response.files = [{"stub": "data"}]
+
+    collection._update_from_response(stub_response)
+
+    assert "Received a non-hydrated response with file stubs" in caplog.text
+    assert collection.files == []
