@@ -38,7 +38,6 @@ pipeline_app = typer.Typer(
 )
 app.add_typer(pipeline_app)
 
-
 @app.command(name="show")
 def show_config(
     ctx: typer.Context,
@@ -51,8 +50,9 @@ def show_config(
     Displays the current configuration status and paths.
     """
     from dorsal.common.cli import get_rich_console
-    from dorsal.api.config import get_config_summary
     from dorsal.common.config import load_config
+    from dorsal.api.config import get_config_summary
+    from dorsal.cli.themes.borders import get_borders
 
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
@@ -65,7 +65,6 @@ def show_config(
         console.print(json.dumps(config_data, indent=2, default=str))
         raise typer.Exit()
 
-    # Extract raw UI settings from the config to show what is explicitly saved
     raw_config, _ = load_config()
     ui_cfg = raw_config.get("ui", {})
     active_theme = ui_cfg.get("theme", "default")
@@ -102,8 +101,15 @@ def show_config(
     config_table.add_row(
         "Global Config File:", Text(config_data["global_config_path"], style=palette.get("primary_value", "default"))
     )
-
-    from dorsal.cli.themes.borders import get_borders
+    if config_data['index_compression_enabled']:
+        config_table.add_row(
+            "Index Compression:", 
+            Text(f"{config_data['index_compression_mode']} (Level {config_data['index_compression_level']})", style=palette.get("primary_value", "cyan"))
+        )
+    else:
+        config_table.add_row(
+            "Index Compression: Not Enabled"
+        )
 
     is_none_style = borders == get_borders("none")
     title_text = f"[{palette.get('panel_title', 'bold')}]Dorsal Configuration[/]"
@@ -250,7 +256,6 @@ def set_ui_preferences(
         )
         exit_cli(code=EXIT_CODE_ERROR)
 
-    # Validation
     if theme_name:
         all_palettes = {**BUILT_IN_PALETTES, **_load_custom_palettes()}
         if theme_name not in all_palettes:
@@ -362,7 +367,7 @@ def show_pipeline(
         name = step["name"]
 
         if step["status"] == "Deactivated":
-            status = "❌ Deactivated"
+            status = "❌ Off"
         elif step["status"] == "Base (Locked)":
             status = "[dim]🔒 Default[/]"
             name = f"[dim]{step['name']}[/]"

@@ -1724,7 +1724,10 @@ class LocalFile(_DorsalFile):
             raise
 
     def _set_annotation_attribute(
-        self, schema_id: str, annotation: Annotation | AnnotationGroup, overwrite: bool
+        self,
+        schema_id: str,
+        annotation: Annotation | AnnotationGroup | list[Annotation | AnnotationGroup],
+        overwrite: bool,
     ) -> None:
         from dorsal.file.validators.file_record import CORE_MODEL_ANNOTATION_WRAPPERS
 
@@ -1736,6 +1739,9 @@ class LocalFile(_DorsalFile):
 
         is_core_schema = schema_id in CORE_MODEL_ANNOTATION_WRAPPERS
         annotation_id = schema_id.replace("/", "_").replace("-", "_") if is_core_schema else schema_id
+        new_items = annotation if isinstance(annotation, list) else [annotation]
+        if not new_items:
+            return
 
         if is_core_schema:
             if hasattr(self.model.annotations, annotation_id) and not overwrite:
@@ -1743,49 +1749,43 @@ class LocalFile(_DorsalFile):
                 logger.warning("AttributeConflictError: %s", conflict_message)
                 raise AttributeConflictError(message=conflict_message)
 
-            setattr(self.model.annotations, annotation_id, annotation)
+            setattr(self.model.annotations, annotation_id, new_items[0])
             self._populate()
             return
 
         current_list: list[Annotation | AnnotationGroup] | None = getattr(self.model.annotations, annotation_id, None)
+        new_source_id = new_items[0].source.id
 
         if current_list is None:
-            setattr(self.model.annotations, annotation_id, [annotation])
+            setattr(self.model.annotations, annotation_id, new_items)
             logger.debug("Initialized annotation list for key '%s'.", annotation_id)
         else:
-            match_index = -1
-            new_source = annotation.source
+            existing_matches = [ann for ann in current_list if ann.source.id == new_source_id]
 
-            new_source_id = new_source.id
-
-            for i, existing_item in enumerate(current_list):
-                existing_source = existing_item.source
-
-                if (
-                    existing_source.id == new_source_id
-                    and existing_source.version == new_source.version
-                    and existing_source.variant == new_source.variant
-                ):
-                    match_index = i
-                    break
-
-            if match_index != -1:
+            if existing_matches:
                 if not overwrite:
+                    existing_source = existing_matches[0].source
                     conflict_message = (
                         f"An annotation for '{schema_id}' with source id '{new_source_id}' "
-                        f"(v{new_source.version}) already exists. "
+                        f"(v{existing_source.version}) already exists. "
                         "Set overwrite=True to update this specific entry."
                     )
                     logger.warning("AttributeConflictError: %s", conflict_message)
                     raise AttributeConflictError(message=conflict_message)
 
-                current_list[match_index] = annotation
+                new_list = [ann for ann in current_list if ann.source.id != new_source_id]
+                new_list.extend(new_items)
+                setattr(self.model.annotations, annotation_id, new_list)
                 logger.debug(
-                    "Overwrote existing annotation in list for key '%s' (Source ID: %s).", annotation_id, new_source_id
+                    "Overwrote existing annotation(s) in list for key '%s' (Source ID: %s).",
+                    annotation_id,
+                    new_source_id,
                 )
             else:
-                current_list.append(annotation)
-                logger.debug("Appended annotation to list for key '%s' (Source ID: %s).", annotation_id, new_source_id)
+                current_list.extend(new_items)
+                logger.debug(
+                    "Appended annotation(s) to list for key '%s' (Source ID: %s).", annotation_id, new_source_id
+                )
 
         self._populate()
         return None
@@ -1919,7 +1919,7 @@ class LocalFile(_DorsalFile):
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise ValueError(f"Invalid Schema ID: {schema_id}")
 
-        annotation = FILE_ANNOTATOR.make_manual_annotation(
+        annotations = FILE_ANNOTATOR.make_manual_annotation(
             annotation=annotation,
             schema_id=schema_id,
             schema_version=schema_version,
@@ -1930,7 +1930,7 @@ class LocalFile(_DorsalFile):
             force=force,
         )
 
-        self._set_annotation_attribute(schema_id=schema_id, annotation=annotation, overwrite=overwrite)
+        self._set_annotation_attribute(schema_id=schema_id, annotation=annotations, overwrite=overwrite)
         return None
 
     def _add_annotation(

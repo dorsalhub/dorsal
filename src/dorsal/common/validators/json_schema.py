@@ -186,27 +186,43 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
             validator.validate(record)
             valid_records_count += 1
         except JsonSchemaValidationError as err:
+            path_str = " -> ".join(map(str, err.instance_path)) if err.instance_path else "root"
+            failed_rule = str(err.schema_path[-1]) if err.schema_path else "constraint"
+            limit_value = "unknown"
+            try:
+                curr = validator.schema
+                for segment in err.schema_path:
+                    curr = curr[segment]
+                limit_value = f"{curr:,}"
+            except (KeyError, TypeError):
+                pass
+
+            actual_info = ""
+            try:
+                if isinstance(err.instance, (list, dict, str)):
+                    actual_info = f" (found {len(err.instance):,} items)"
+            except Exception:
+                pass
+
+            public_error = (
+                f"Validation failed at '{path_str}': "
+                f"The '{failed_rule}' limit of {limit_value} was exceeded{actual_info}."
+            )
+
             record_str = str(record)
             record_preview = record_str[:150] + "..." if len(record_str) > 150 else record_str
-
-            path_list = [str(p) for p in err.instance_path]
 
             error_details_list.append(
                 {
                     "record_index": index,
                     "record_preview": record_preview,
-                    "error_message": err.message,
-                    "path": path_list,
+                    "error_message": public_error,
+                    "path": list(err.instance_path),
                     "validator": validator_name,
                 }
             )
-            logger.debug(
-                "Record at index %d failed validation against %s: %s (Path: %s)",
-                index,
-                validator_name,
-                err.message,
-                path_list,
-            )
+
+            logger.debug("Record %d: %s", index, public_error)
         except Exception as err:
             record_str = str(record)
             record_preview = record_str[:150] + "..." if len(record_str) > 150 else record_str

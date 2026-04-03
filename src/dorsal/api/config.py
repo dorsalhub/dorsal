@@ -26,7 +26,7 @@ from dorsal.common.auth import (
     APIKeySource,
 )
 from dorsal.common import constants
-from dorsal.common.config import load_config, get_global_config_path
+from dorsal.common.config import load_config, get_global_config_path, resolve_setting, set_config_value
 from dorsal.common.model import AnnotationModel
 from dorsal.common.validators import JsonSchemaValidator
 from dorsal.file.configs.model_runner import ModelRunnerDependencyConfig
@@ -40,6 +40,7 @@ def get_config_summary() -> dict[str, Any]:
     """
     Retrieves a summary of the current system configuration (Auth, UI, Paths).
     """
+    from dorsal.file.index.config import get_index_compression, get_index_compression_mode, get_index_compression_level
     details = get_api_key_details()
 
     key_source_map = {
@@ -60,6 +61,9 @@ def get_config_summary() -> dict[str, Any]:
         "reports_path": str(constants.LOCAL_DORSAL_DIR),
         "active_config_path": config_file_path,
         "global_config_path": str(get_global_config_path()),
+        "index_compression_enabled": get_index_compression(),
+        "index_compression_mode": get_index_compression_mode(),
+        "index_compression_level": get_index_compression_level(),
     }
 
 
@@ -151,6 +155,28 @@ def find_package_name_by_class(class_name: str, scope: Literal["project", "globa
 
     return None
 
+def set_compression(
+    mode: Literal["zlib", "zstd"] | None = None,
+    level: int | None = None,
+    scope: Literal["project", "global"] = "project"
+) -> None:
+    """
+    Updates the index compression settings in the dorsal configuration file.
+    
+    Args:
+        mode: The compression mode to use ("zlib" or "zstd").
+        level: The compression level (zlib: 0-9, zstd: 1-22).
+        scope: The config scope to modify ("project" or "global").
+    """
+    if mode is not None:
+        if mode not in ("zlib", "zstd"):
+            raise ValueError(f"Unsupported compression mode '{mode}'. Must be 'zlib' or 'zstd'.")
+        set_config_value(constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_MODE, mode, scope=scope)
+
+    if level is not None:
+        if not isinstance(level, int) or level < 0 or level > 22:
+            raise ValueError("Compression level must be an integer between 0 and 22.")
+        set_config_value(constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_LEVEL, level, scope=scope)
 
 def register_model(
     annotation_model: Type[AnnotationModel],
@@ -344,3 +370,4 @@ def unregister_model(package_name: str, scope: Literal["project", "global"] = "p
         logger.info(f"Removed step {found_index} from {scope} config.")
     except Exception as e:
         raise DorsalConfigError(f"Failed to unregister model '{package_name}' from {scope} config: {e}") from e
+

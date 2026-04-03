@@ -57,7 +57,7 @@ theme = "default"
 # Choose the icon style. ("emoji", "ascii", "none")
 icons = "emoji"
 
-# Choose the panel border style. ("rounded", "heavy", "ascii", "double", "square", "minimal", "none")
+# Choose the panel border style. ("rounded", "heavy", "ascii", "double", "square", "minimal", "markdown", "none")
 borders = "rounded"
 
 # -----------------------------------------------------------------------------
@@ -71,6 +71,23 @@ dynamic_size_histogram = false
 duplicates_report = true
 file_explorer = true
 
+# -----------------------------------------------------------------------------
+#  Local Search Index Configuration
+# -----------------------------------------------------------------------------
+[index]
+# Whether the local SQLite search index is enabled.
+enabled = true
+
+# Whether to compress the raw file records stored in the index.
+compression = true
+
+# The compression algorithm to use ("zlib" or "zstd"). 
+# Note: "zstd" requires Python 3.14+ or the 'zstandard' PyPI package.
+compression_mode = "zlib"
+
+# The compression level. If commented out, Dorsal uses optimal defaults 
+# based on the algorithm (6 for zlib, 3 for zstd).
+# compression_level = 6
 
 # -----------------------------------------------------------------------------
 #  Annotation Model Pipeline

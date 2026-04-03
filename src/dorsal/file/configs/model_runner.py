@@ -52,8 +52,8 @@ class RunModelResult(BaseModel):
     source: AnnotationModelSource = Field(
         description="Structured metadata identifying the model source (ID, version, variant)."
     )
-    record: dict[str, Any] | None = Field(
-        description="The generated annotation record (dict). None if the model failed, was skipped, or produced no output."
+    records: list[dict[str, Any]] | None = Field(
+        description="The generated annotation records. None if the model failed, was skipped, or produced no output."
     )
     schema_id: DatasetID | None = Field(
         description="The validation schema/model ID against which this record was validated."
@@ -68,6 +68,12 @@ class RunModelResult(BaseModel):
         default=None,
         description="A descriptive error message if the model failed, crashed, or if a dependency was not met.",
     )
+
+    @property
+    def record(self) -> dict[str, Any] | None:
+        if self.records:
+            return self.records[0]
+        return None
 
 
 class DependencyConfig(BaseModel):
@@ -173,21 +179,39 @@ ModelRunnerDependencyConfig = Annotated[
 ]
 
 
+def _get_base_record_for_dependency_check(
+    model_results: "list[RunModelResult]", check_name: str
+) -> dict[str, Any] | None:
+    """Helper to safely extract and verify the base record for dependency checks."""
+    if not model_results:
+        logger.debug("No model results found for %s dependency check.", check_name)
+        return None
+
+    base_result = model_results[0]
+
+    if base_result.schema_id != constants.FILE_BASE_ANNOTATION_SCHEMA:
+        logger.error(
+            "Pipeline integrity error during %s dependency check: "
+            "Expected base model at index 0 (schema '%s'), but found '%s'.",
+            check_name,
+            constants.FILE_BASE_ANNOTATION_SCHEMA,
+            base_result.schema_id,
+        )
+        return None
+
+    if not base_result.records:
+        logger.debug("Base model result has no records for %s dependency check.", check_name)
+        return None
+
+    return base_result.records[0]
+
+
 def check_media_type_dependency(model_results: "list[RunModelResult]", config: "MediaTypeDependencyConfig") -> bool:
     """
     Check whether the media type is within the scope of the annotation model.
-
-    - Performs exact string matches or regex matches on the full and partial media type.
-    - Checks both *full* and *partial* media type in the following order:
-        1. If in `exclude`, return False
-        2. If in `include` or matching `pattern`, return True
-        3. If `include` or `pattern` were provided, then it failed. Return False
-        4. If neither `include` nor `pattern` were provided, then it passed. Return True
     """
-    base_record = model_results[0].record
-
+    base_record = _get_base_record_for_dependency_check(model_results, "media type")
     if not base_record:
-        logger.debug("No base record found for media type dependency check")
         return False
 
     media_type_full = base_record.get("media_type")
@@ -233,15 +257,13 @@ def check_media_type_dependency(model_results: "list[RunModelResult]", config: "
     return True
 
 
-def check_extension_dependency(model_results: list[RunModelResult], config: FileExtensionDependencyConfig) -> bool:
+def check_extension_dependency(model_results: "list[RunModelResult]", config: "FileExtensionDependencyConfig") -> bool:
     """Check whether the extension is within the scope of the annotation model."""
-    base_record = model_results[0].record
-
+    base_record = _get_base_record_for_dependency_check(model_results, "extension")
     if not base_record:
-        logger.debug("No base record found")
         return False
 
-    extension: str | None = base_record["extension"]
+    extension: str | None = base_record.get("extension")
     if not extension:
         return False
 
@@ -251,12 +273,10 @@ def check_extension_dependency(model_results: list[RunModelResult], config: File
     return False
 
 
-def check_size_dependency(model_results: list[RunModelResult], config: FileSizeDependencyConfig) -> bool:
+def check_size_dependency(model_results: "list[RunModelResult]", config: "FileSizeDependencyConfig") -> bool:
     """Check whether the file size is within the scope of the annotation model."""
-    base_record = model_results[0].record
-
+    base_record = _get_base_record_for_dependency_check(model_results, "file size")
     if not base_record:
-        logger.debug("No base record found for file size dependency check")
         return False
 
     file_size = base_record.get("size")
@@ -276,12 +296,10 @@ def check_size_dependency(model_results: list[RunModelResult], config: FileSizeD
     return True
 
 
-def check_name_dependency(model_results: list[RunModelResult], config: FilenameDependencyConfig) -> bool:
+def check_name_dependency(model_results: "list[RunModelResult]", config: "FilenameDependencyConfig") -> bool:
     """Check whether the file's name matches the regex pattern."""
-    base_record = model_results[0].record
-
+    base_record = _get_base_record_for_dependency_check(model_results, "filename")
     if not base_record:
-        logger.debug("No base record found for filename dependency check")
         return False
 
     filename = base_record.get("name")

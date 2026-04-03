@@ -23,16 +23,20 @@ from dorsal.cli.index_app.summary_index_cmd import show_index_summary
 from dorsal.cli.index_app.export_index_cmd import export_index_cmd
 from dorsal.cli.index_app.search_index_cmd import search_index_cmd
 from dorsal.cli.index_app.get_index_cmd import get_index_record
+from dorsal.cli.index_app.compression_index_cmd import set_index_compression_cmd
+from dorsal.cli.index_app.rebuild_index_cmd import rebuild_index_cmd
 
 
 app = typer.Typer(name="index", help="Manage local search index settings.", no_args_is_help=True)
 
 app.command(name="get")(get_index_record)
+app.command(name="search")(search_index_cmd)
 app.command(name="build")(build_search_index)
 app.command(name="delete")(delete_search_index)
-app.command(name="path")(get_index_db_path)
 app.command(name="optimize")(optimize_search_index)
 app.command(name="prune")(prune_search_index)
+app.command(name="path")(get_index_db_path)
 app.command(name="summary")(show_index_summary)
+app.command(name="compression")(set_index_compression_cmd)
 app.command(name="export")(export_index_cmd)
-app.command(name="search")(search_index_cmd)
+app.command(name="rebuild")(rebuild_index_cmd)

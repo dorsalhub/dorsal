@@ -128,13 +128,13 @@ def test_handle_api_error_no_json(client):
 
 def test_parse_validate_file_hash(client):
     """Test hash string parsing validation."""
-    h, algo = client._parse_validate_file_hash(_DUMMY_SHA256)
+    h, h_func = client._parse_validate_file_hash(_DUMMY_SHA256)
     assert h == _DUMMY_SHA256
-    assert algo == "SHA-256"
+    assert h_func == "SHA-256"
 
-    h, algo = client._parse_validate_file_hash(f"sha256:{_DUMMY_SHA256}")
+    h, h_func = client._parse_validate_file_hash(f"sha256:{_DUMMY_SHA256}")
     assert h == _DUMMY_SHA256
-    assert algo == "SHA-256"
+    assert h_func == "SHA-256"
 
 
 def test_parse_validate_file_hash_errors(client):

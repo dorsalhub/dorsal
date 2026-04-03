@@ -18,6 +18,16 @@ import logging
 import datetime
 from typing import Annotated, Literal, Optional, cast
 
+from rich.progress import (
+        Progress, 
+        SpinnerColumn, 
+        TextColumn, 
+        BarColumn, 
+        TaskProgressColumn, 
+        MofNCompleteColumn, 
+        TimeRemainingColumn
+    )
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,10 +93,10 @@ def export_index_cmd(
         else:
             if output:
                 console.print(
-                    f"[{palette['info']}]Info:[/] No valid format specified or inferred. Defaulting to 'json.gz'."
+                    f"[{palette.get('info', 'dim')}]Info:[/] No valid format specified or inferred. Defaulting to 'json.gz'."
                 )
                 output_path = output.with_suffix(".json.gz")
-                console.print(f"[{palette['info']}]Info:[/] Output will be saved to: {output_path}")
+                console.print(f"[{palette.get('info', 'dim')}]Info:[/] Output will be saved to: {output_path}")
             format = "json.gz"
 
     if format not in ["json", "json.gz"]:
@@ -97,14 +107,33 @@ def export_index_cmd(
 
     literal_format = cast(Literal["json", "json.gz"], format)
     try:
-        with console.status(f"Exporting dorsal index to '{output_path.name}'..."):
+        # Build the Rich Progress Context using Theme Palettes and the correct columns
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(
+                style=palette.get("progress_bar", "red"),
+                complete_style=palette.get("progress_percentage", "green")
+            ),
+            MofNCompleteColumn(),   # <-- This renders the "1,000 / 21,129"
+            TaskProgressColumn(),   # <-- This renders the "5%"
+            TimeRemainingColumn(),  # <-- This renders the ETA
+            console=console,
+        ) as progress:
+            
+            task_id = progress.add_task(f"Exporting dorsal index to '{output_path.name}'...", total=None)
+
+            def _progress_cb(current: int, total: int):
+                progress.update(task_id, completed=current, total=total)
+
             count = export(
                 output_path=output_path,
                 format=literal_format,
                 include_records=include_records,
+                progress_callback=_progress_cb
             )
 
-        console.print(f"[{palette['success']}]✅ Successfully exported {count:,} records to '{output_path}'[/]")
+        console.print(f"\n[{palette.get('success', 'green')}]✅ Successfully exported {count:,} records to '{output_path}'[/]")
 
     except (IOError, ValueError) as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Export failed: {e}")

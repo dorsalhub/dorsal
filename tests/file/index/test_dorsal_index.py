@@ -549,12 +549,12 @@ def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_str
     assert "total_records" in summary
     assert summary["total_records"] == 1
     assert "database_size_bytes" in summary
-    assert "fts_indexed_records" in summary
 
     assert "indexed_attributes" not in summary
     assert "total_tracked_file_bytes" not in summary
     assert "compressed_records" not in summary
     assert "top_extensions" not in summary
+    assert "fts_indexed_records" not in summary
 
 
 def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_strict):
@@ -570,3 +570,4 @@ def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_stric
     assert "top_extensions" in summary
     assert "top_media_types" in summary
     assert "top_schemas" in summary
+    assert "fts_indexed_records" in summary

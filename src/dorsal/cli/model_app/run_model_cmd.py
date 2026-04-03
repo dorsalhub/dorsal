@@ -248,7 +248,12 @@ def run_model(
                                 raise ValueError(f"Cannot export due to model error: {res.error}")
 
                             schema_id = res.schema_id
-                            record_dict = res.record or {}
+                            record_dict = res.records[0] if res.records else {}
+
+                            if len(res.records or []) > 1:
+                                error_console.print(
+                                    f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(res.records)} records. The {export_format.upper()} export will currently only preview the first chunk."
+                                )
 
                             if not schema_id:
                                 raise ValueError("Missing schema_id for export.")

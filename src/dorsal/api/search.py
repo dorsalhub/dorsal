@@ -22,6 +22,7 @@ from dorsal.common.exceptions import DorsalError
 from dorsal.common.validators import Pagination
 from dorsal.file.index.dorsal_index import DorsalIndex, CachedFileRecord
 from dorsal.file.index.query import QueryParser, QueryCompiler
+from dorsal.session import create_index_instance
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def search_local(
 
     close_after = False
     if index is None:
-        index = DorsalIndex()
+        index = create_index_instance()
         close_after = True
 
     try:
@@ -116,7 +117,7 @@ def search_local_paginated(
 
     close_after = False
     if index is None:
-        index = DorsalIndex()
+        index = create_index_instance()
         close_after = True
 
     try:

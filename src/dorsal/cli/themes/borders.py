@@ -24,6 +24,7 @@ BORDER_SETS: dict[str, Box] = {
     "minimal": box.MINIMAL,
     "double": box.DOUBLE,
     "square": box.SQUARE,
+    "markdown": box.MARKDOWN,
     "none": INVISIBLE_BOX,
 }
 
