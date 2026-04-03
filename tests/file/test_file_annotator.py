@@ -291,7 +291,6 @@ def test_make_annotation_wrapper_lookup(annotator, mocker):
     valid_hash = "b" * 64
     valid_data = {"file_hash": valid_hash, "data": {}}
 
-    # Use 'Manual' source to satisfy union in _make_annotation
     source_dict = {"type": "Manual", "id": "test"}
 
     res = annotator._make_annotation(
@@ -299,3 +298,68 @@ def test_make_annotation_wrapper_lookup(annotator, mocker):
     )
 
     assert isinstance(res, SpecialAnnotation)
+
+
+def test_make_manual_annotation_rescue_success(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+    mocker.patch("dorsal.file.file_annotator.apply_linter")
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+    chunk1 = {"file_hash": valid_hash, "data": {"status": "chunk1"}}
+    chunk2 = {"file_hash": valid_hash, "data": {"status": "chunk2"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[chunk1, chunk2])
+
+    def mock_validate(annotation, validator):
+        if annotation == original_data:
+            raise AnnotationValidationError("Original validation failed")
+        return annotation
+
+    mocker.patch.object(annotator, "validate_manual_annotation", side_effect=mock_validate)
+
+    res = annotator.make_manual_annotation(
+        annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+    )
+
+    assert len(res) == 2
+    assert res[0].record.data == {"status": "chunk1"}
+    assert res[1].record.data == {"status": "chunk2"}
+
+
+def test_make_manual_annotation_rescue_failed_chunks(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+    chunk1 = {"file_hash": valid_hash, "data": {"status": "chunk1"}}
+    chunk2 = {"file_hash": valid_hash, "data": {"status": "chunk2"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[chunk1, chunk2])
+
+    mocker.patch.object(
+        annotator, "validate_manual_annotation", side_effect=AnnotationValidationError("Always fails validation")
+    )
+
+    with pytest.raises(AnnotationValidationError):
+        annotator.make_manual_annotation(
+            annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+        )
+
+
+def test_make_manual_annotation_rescue_no_chunks(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[original_data])
+
+    mocker.patch.object(
+        annotator, "validate_manual_annotation", side_effect=AnnotationValidationError("Original validation failed")
+    )
+
+    with pytest.raises(AnnotationValidationError):
+        annotator.make_manual_annotation(
+            annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+        )
