@@ -16,7 +16,7 @@ import pytest
 import re
 from unittest.mock import MagicMock
 
-
+from dorsal.common import constants
 from dorsal.file.configs import model_runner
 from dorsal.file.configs.model_runner import (
     check_media_type_dependency,
@@ -36,8 +36,9 @@ def mock_results():
 
     def _create(record_data):
         mock_res = MagicMock()
+        mock_res.schema_id = constants.FILE_BASE_ANNOTATION_SCHEMA
 
-        mock_res.record = record_data
+        mock_res.records = [record_data]
         return [mock_res]
 
     return _create

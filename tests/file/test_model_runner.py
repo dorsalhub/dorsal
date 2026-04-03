@@ -17,7 +17,7 @@ import json
 import time
 from typing import Any, Type
 import pytest
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from pydantic import BaseModel, Field
 from unittest.mock import MagicMock
 
 from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
@@ -28,7 +28,9 @@ from dorsal.common.exceptions import (
     MissingHashError,
     ModelExecutionError,
     ModelImportError,
+    ModelOutputValidationError,
     ModelRunnerConfigError,
+    PydanticValidationError,
     PipelineIntegrityError,
     DataQualityError,
     ModelRunnerConfigError,
@@ -43,7 +45,7 @@ from dorsal.file.configs.model_runner import (
     DependencyConfig,
     resolve_pipeline_step_models,
 )
-from dorsal.common.validators import JsonSchemaValidator
+from dorsal.common.validators import JsonSchemaValidator, get_json_schema_validator
 
 from dorsal.file.model_runner import ModelRunner, run_model
 
@@ -1092,3 +1094,189 @@ class TestResolvePipelineStepModels:
             resolve_pipeline_step_models(step)
 
         assert "Imported validator is not a supported type" in str(exc_info.value.__cause__)
+
+
+class MockStrictValidator(BaseModel):
+    """Pydantic model that intentionally fails if text is too long."""
+
+    text: str = Field(max_length=5)
+
+
+class SingleOutputModel(AnnotationModel):
+    id = "test/single"
+    version = "1.0"
+
+    def __init__(self, file_path: str):
+        pass
+
+    def main(self, **kwargs):
+        return {"text": "ok"}
+
+
+class MultiOutputModel(AnnotationModel):
+    id = "test/multi"
+    version = "1.0"
+
+    def __init__(self, file_path: str):
+        pass
+
+    def main(self, **kwargs):
+        return [{"text": "ok1"}, {"text": "ok2"}]
+
+
+class FailingModel(AnnotationModel):
+    id = "test/fail"
+    version = "1.0"
+
+    def __init__(self, file_path: str):
+        pass
+
+    def main(self, **kwargs):
+        return {"text": "way_too_long_string"}
+
+
+class FailingMultiModel(AnnotationModel):
+    id = "test/fail-multi"
+    version = "1.0"
+
+    def __init__(self, file_path: str):
+        pass
+
+    def main(self, **kwargs):
+        return [{"text": "ok1"}, {"text": "way_too_long_string"}]
+
+
+@pytest.fixture
+def base_model_runner():
+    return ModelRunner()
+
+
+class TestModelRunnerChunkRescueAndMultiOutput:
+    """Targeted tests for multiple outputs, validation branches, and chunking rescue."""
+
+    def test_run_single_model_no_validation(self, base_model_runner):
+        """Tests execution when no validation model is provided."""
+        result = base_model_runner.run_single_model(
+            annotation_model=SingleOutputModel, validation_model=None, file_path="/fake/path"
+        )
+        assert result.error is None
+        assert len(result.records) == 1
+        assert result.records[0]["text"] == "ok"
+
+    def test_run_single_model_multiple_outputs(self, base_model_runner):
+        """Tests that models returning a list of outputs are properly handled."""
+        result = base_model_runner.run_single_model(
+            annotation_model=MultiOutputModel, validation_model=MockStrictValidator, file_path="/fake/path"
+        )
+        assert result.error is None
+        assert len(result.records) == 2
+        assert result.records[0]["text"] == "ok1"
+        assert result.records[1]["text"] == "ok2"
+
+    def test_run_single_model_validation_failure_no_rescue(self, base_model_runner):
+        """Tests that validation failures immediately return an error if chunk rescue is disabled."""
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingModel,
+            validation_model=MockStrictValidator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": False},
+            schema_id="test/fail",
+        )
+
+        # Pipeline shouldn't crash, but it should return an error state
+        assert result.error is not None
+        assert result.records is None
+
+    def test_chunking_rescue_success_pydantic(self, base_model_runner, mocker):
+        """Tests a successful chunk rescue using a Pydantic validation model."""
+        mocker.patch("dorsal.file.chunking.chunk_record", return_value=[{"text": "chk1"}, {"text": "chk2"}])
+
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingModel,
+            validation_model=MockStrictValidator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": True},
+            schema_id="test/fail",
+        )
+
+        assert result.error is None
+        assert len(result.records) == 2
+        assert result.records[0]["text"] == "chk1"
+        assert result.records[1]["text"] == "chk2"
+
+    def test_chunking_rescue_multi_output_mixed(self, base_model_runner, mocker):
+        """Tests that chunk rescue correctly merges valid outputs with rescued chunks."""
+
+        def mock_smart_chunker(record, schema_id):
+            # Only chunk the invalid record
+            if record.get("text") == "way_too_long_string":
+                return [{"text": "chk1"}, {"text": "chk2"}]
+            return [record]
+
+        mocker.patch("dorsal.file.chunking.chunk_record", side_effect=mock_smart_chunker)
+
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingMultiModel,
+            validation_model=MockStrictValidator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": True},
+            schema_id="test/fail-multi",
+        )
+
+        assert result.error is None
+        assert len(result.records) == 3
+        # The valid one from the initial run, plus the two rescued chunks
+        assert result.records[0]["text"] == "ok1"
+        assert result.records[1]["text"] == "chk1"
+        assert result.records[2]["text"] == "chk2"
+
+    def test_chunking_rescue_cannot_chunk(self, base_model_runner, mocker):
+        """Tests failure when the chunker cannot break the record down any further."""
+        mocker.patch("dorsal.file.chunking.chunk_record", return_value=[{"text": "way_too_long_string"}])
+
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingModel,
+            validation_model=MockStrictValidator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": True},
+            schema_id="test/fail",
+        )
+
+        # It should fail validation a second time and exit gracefully
+        assert result.error is not None
+        assert result.records is None
+
+    def test_chunking_rescue_chunk_fails_validation(self, base_model_runner, mocker):
+        """Tests failure when a rescued chunk STILL fails the validation schema."""
+        mocker.patch("dorsal.file.chunking.chunk_record", return_value=[{"text": "ok"}, {"text": "still_too_long"}])
+
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingModel,
+            validation_model=MockStrictValidator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": True},
+            schema_id="test/fail",
+        )
+
+        assert result.error is not None
+        assert result.records is None
+
+    def test_chunking_rescue_jsonschema(self, base_model_runner, mocker):
+        """Tests a successful chunk rescue using a JsonSchemaValidator."""
+        schema = {"type": "object", "properties": {"text": {"type": "string", "maxLength": 5}}, "required": ["text"]}
+        validator = get_json_schema_validator(schema)
+
+        mocker.patch("dorsal.file.chunking.chunk_record", return_value=[{"text": "chk1"}, {"text": "chk2"}])
+
+        result = base_model_runner.run_single_model(
+            annotation_model=FailingModel,
+            validation_model=validator,
+            file_path="/fake/path",
+            options={"chunk_rescue_enabled": True},
+            schema_id="test/fail",
+        )
+
+        assert result.error is None
+        assert len(result.records) == 2
+        assert result.records[0] == {"text": "chk1"}
+        assert result.records[1] == {"text": "chk2"}
