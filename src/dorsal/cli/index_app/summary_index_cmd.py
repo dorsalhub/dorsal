@@ -73,7 +73,7 @@ def show_index_summary(
             else "N/A"
         )
 
-        summary_table = Table.grid(expand=False)
+        summary_table = Table.grid(expand=False, padding=(0, 1))
         summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=24)
         summary_table.add_column(justify="left", style=palette.get("primary_value", "default"))
 
@@ -137,6 +137,7 @@ def show_index_summary(
             )
 
         if verbose:
+
             def build_dist_table(title: str, data: dict, limit: int | None = None):
                 t = Table(
                     title=f"[{palette.get('panel_title', 'bold white')}]{title}[/]",

@@ -512,7 +512,7 @@ class DorsalIndex:
 
         if verbose:
             summary_data["database_size_bytes"] = db_size_bytes
-            
+
             cursor.execute("SELECT COUNT(*) FROM dorsal_fts")
             summary_data["fts_indexed_records"] = cursor.fetchone()[0] or 0
 

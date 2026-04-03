@@ -71,7 +71,7 @@ def delete_file_record(
     json_output: Annotated[bool, typer.Option("--json", help="Output result as a raw JSON object.")] = False,
 ):
     """
-    Deletes a file record and/or its associated data from DorsalHub with granular control.
+    Deletes a file record and/or its associated data from DorsalHub.
 
     The default behavior is a "full clean", targeting all records, tags, and
     annotations associated with the user for the given hash.

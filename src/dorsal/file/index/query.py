@@ -244,7 +244,7 @@ class QueryCompiler:
                     )
                     params.extend([key, val])
                     continue
-            
+
             nocase = " COLLATE NOCASE" if val_col == "value_text" else ""
             where_clauses.append(
                 f"c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ? AND {val_col} {sql_op} ?{nocase})"

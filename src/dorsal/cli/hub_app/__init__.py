@@ -18,10 +18,11 @@ from dorsal.cli.hub_app.get_cmd import get_file_record
 from dorsal.cli.hub_app.delete_cmd import delete_file_record
 from dorsal.cli.hub_app.tag_app import tag_app
 from dorsal.cli.hub_app.search_cmd import search_record
+from dorsal.cli.hub_app.annotation_app import app as annotation_app
 
 app = typer.Typer(
     name="record",
-    help="Search, view and delete file metadata records and tags on DorsalHub.",
+    help="[bold]get[/bold], [bold]delete[/bold], [bold]search[/bold], and [bold]tag[/bold] DorsalHub records.",
     no_args_is_help=True,
 )
 
@@ -29,3 +30,4 @@ app.command(name="get")(get_file_record)
 app.command(name="delete")(delete_file_record)
 app.command(name="search")(search_record)
 app.add_typer(tag_app, name="tag")
+app.add_typer(annotation_app, name="annotation")

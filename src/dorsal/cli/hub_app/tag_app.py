@@ -34,7 +34,7 @@ from dorsal.common.exceptions import (
 
 tag_app = typer.Typer(
     name="tag",
-    help="Add or remove tags from a remote file record.",
+    help="... [bold]add[/bold] or [bold]remove[/bold] tags from a remote file record.",
     no_args_is_help=True,
 )
 

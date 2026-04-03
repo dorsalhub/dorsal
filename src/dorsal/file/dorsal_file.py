@@ -1105,8 +1105,7 @@ class DorsalFile(_DorsalFile):
         api_key: str | None = None,
     ) -> "FileDeleteResponse":
         """
-        Deletes this file's record and/or associated data from DorsalHub
-        with granular control.
+        Deletes this file's record and/or associated data from DorsalHub.
 
         This method is context-aware. If no scope options are provided, it
         derives a default behavior from how the object was initialized:

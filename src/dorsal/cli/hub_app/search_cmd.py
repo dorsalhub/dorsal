@@ -107,7 +107,7 @@ def search_record(
     ] = None,
 ):
     """
-    Search DorsalHub file records.
+    Search file records on DorsalHub.
     """
     scope = "global" if is_global else "user"
 

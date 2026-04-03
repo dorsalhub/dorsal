@@ -78,7 +78,6 @@ def get_file_record(
 ):
     """
     Get a single file record from DorsalHub by its hash.
-    By default, searches for records you have access to (both public and private).
     """
     from dorsal.api import get_dorsal_file_record
     from dorsal.cli.views.file import create_file_info_panel
