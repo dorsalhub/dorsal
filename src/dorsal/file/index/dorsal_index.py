@@ -794,7 +794,7 @@ class DorsalIndex:
         elif mode == "zstd":
             lvl = level if level is not None else 3
             try:
-                import compression.zstd as zstd
+                import compression.zstd as zstd  # type: ignore[import-not-found]
 
                 return (lambda data: zstd.compress(data, level=lvl)), 2
             except ImportError:
@@ -823,7 +823,7 @@ class DorsalIndex:
             return zlib.decompress
         elif flag == 2:
             try:
-                import compression.zstd as zstd
+                import compression.zstd as zstd  # type: ignore[import-not-found]
 
                 return zstd.decompress
             except ImportError:
