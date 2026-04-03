@@ -232,3 +232,77 @@ def test_register_model_infers_open_schema_validator(mock_pipeline_config):
             "dorsal.file.validators.open_schema",
             "my_test_schema_validator",
         )
+
+
+@pytest.fixture
+def mock_set_config_value():
+    with patch("dorsal.api.config.set_config_value") as mock:
+        yield mock
+
+
+def test_set_compression_valid_mode(mock_set_config_value):
+    """Tests setting a valid compression mode."""
+    from dorsal.common import constants
+
+    config.set_compression(mode="zstd")
+    mock_set_config_value.assert_called_once_with(
+        constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_MODE, "zstd", scope="project"
+    )
+
+
+def test_set_compression_invalid_mode(mock_set_config_value):
+    """Tests that an invalid compression mode raises a ValueError."""
+    with pytest.raises(ValueError, match="Unsupported compression mode 'gzip'"):
+        config.set_compression(mode="gzip")
+
+    mock_set_config_value.assert_not_called()
+
+
+def test_set_compression_valid_level(mock_set_config_value):
+    """Tests setting a valid compression level."""
+    from dorsal.common import constants
+
+    config.set_compression(level=5)
+    mock_set_config_value.assert_called_once_with(
+        constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_LEVEL, 5, scope="project"
+    )
+
+
+def test_set_compression_invalid_level_type(mock_set_config_value):
+    """Tests that a non-integer compression level raises a ValueError."""
+    with pytest.raises(ValueError, match="Compression level must be an integer between 0 and 22."):
+        config.set_compression(level="5")
+
+    mock_set_config_value.assert_not_called()
+
+
+def test_set_compression_invalid_level_range(mock_set_config_value):
+    """Tests that out-of-bounds compression levels raise a ValueError."""
+    with pytest.raises(ValueError, match="Compression level must be an integer between 0 and 22."):
+        config.set_compression(level=-1)
+
+    with pytest.raises(ValueError, match="Compression level must be an integer between 0 and 22."):
+        config.set_compression(level=23)
+
+    mock_set_config_value.assert_not_called()
+
+
+def test_set_compression_both_valid_and_scope(mock_set_config_value):
+    """Tests setting both mode and level simultaneously with a custom scope."""
+    from dorsal.common import constants
+
+    config.set_compression(mode="zlib", level=9, scope="global")
+
+    assert mock_set_config_value.call_count == 2
+    mock_set_config_value.assert_any_call(
+        constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_MODE, "zlib", scope="global"
+    )
+    mock_set_config_value.assert_any_call(
+        constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_LEVEL, 9, scope="global"
+    )
+
+
+def test_set_compression_no_args(mock_set_config_value):
+    """Tests that calling without arguments does not write to config."""
+    config.set_compression()
+    mock_set_config_value.assert_not_called()
