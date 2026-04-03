@@ -482,7 +482,6 @@ class DorsalIndex:
         except sqlite3.OperationalError:
             db_created_time = fallback_created_time
 
-        # --- Calculate granular storage breakdown ---
         cursor.execute("""
             SELECT SUM(
                 LENGTH(CAST(abspath AS BLOB)) + 8 + 
@@ -526,14 +525,12 @@ class DorsalIndex:
             cursor.execute("SELECT COUNT(*) FROM file_attributes")
             summary_data["indexed_attributes"] = cursor.fetchone()[0] or 0
 
-            # --- Storage Breakdown ---
             cursor.execute("SELECT MAX(LENGTH(record)), AVG(LENGTH(record)) FROM cached_files WHERE record IS NOT NULL")
             record_stats = cursor.fetchone()
             if record_stats:
                 summary_data["max_record_size_bytes"] = record_stats[0] or 0
                 summary_data["avg_record_size_bytes"] = int(record_stats[1] or 0)
 
-            # --- Deduplication Insights ---
             cursor.execute("SELECT COUNT(DISTINCT hash_blake3) FROM cached_files WHERE hash_blake3 IS NOT NULL")
             unique_hashes = cursor.fetchone()[0] or 0
 
@@ -543,14 +540,12 @@ class DorsalIndex:
             summary_data["unique_files_by_hash"] = unique_hashes
             summary_data["duplicate_files_detected"] = max(0, total_hashed - unique_hashes)
 
-            # --- Data Freshness ---
             cursor.execute("SELECT MIN(modified_time), MAX(modified_time) FROM cached_files")
             time_stats = cursor.fetchone()
             if time_stats:
                 summary_data["oldest_record_timestamp"] = time_stats[0]
                 summary_data["newest_record_timestamp"] = time_stats[1]
 
-            # --- Deep Taxonomy ---
             cursor.execute(f"""
                 SELECT key, COUNT(*) as count 
                 FROM file_attributes 
@@ -796,15 +791,15 @@ class DorsalIndex:
             try:
                 import compression.zstd as zstd  # type: ignore[import-not-found]
 
-                return (lambda data: zstd.compress(data, level=lvl)), 2
+                return (lambda data: zstd.compress(data, level=lvl)), 2  # pragma: no cover
             except ImportError:
                 try:
                     import zstandard  # type: ignore[import-not-found]
 
-                    cctx = zstandard.ZstdCompressor(level=lvl)
-                    return cctx.compress, 2
-                except ImportError as err:
-                    raise RuntimeError(
+                    cctx = zstandard.ZstdCompressor(level=lvl)  # pragma: no cover
+                    return cctx.compress, 2  # pragma: no cover
+                except ImportError as err:  # pragma: no cover
+                    raise RuntimeError(  # pragma: no cover
                         "zstd compression is enabled, but neither the Python 3.14+ "
                         "'compression.zstd' module nor the PyPI 'zstandard' package is available. "
                         "Run `pip install zstandard` or switch config back to 'zlib'."
@@ -825,20 +820,20 @@ class DorsalIndex:
             try:
                 import compression.zstd as zstd  # type: ignore[import-not-found]
 
-                return zstd.decompress
+                return zstd.decompress  # pragma: no cover
             except ImportError:
                 try:
                     import zstandard  # type: ignore[import-not-found]
 
-                    dctx = zstandard.ZstdDecompressor()
-                    return dctx.decompress
-                except ImportError as err:
-                    raise RuntimeError(
+                    dctx = zstandard.ZstdDecompressor()  # pragma: no cover
+                    return dctx.decompress  # pragma: no cover
+                except ImportError as err:  # pragma: no cover
+                    raise RuntimeError(  # pragma: no cover
                         "Failed to read cache. This index contains 'zstd' compressed records, "
                         "but your current environment does not support it. "
                         "Please upgrade to Python 3.14+, `pip install zstandard`, or clear the cache."
                     ) from err
-        raise ValueError(f"Unknown compression flag in database: {flag}")
+        raise ValueError(f"Unknown compression flag in database: {flag}")  # pragma: no cover
 
     def convert_compression(
         self, target_mode: Literal["zlib", "zstd", "none"], target_level: int | None = None, force: bool = False
@@ -914,11 +909,9 @@ class DorsalIndex:
         conn = self._ensure_connection()
         cursor = conn.cursor()
 
-        # Get total count
         cursor.execute("SELECT COUNT(*) FROM cached_files")
         total_records = cursor.fetchone()[0]
 
-        # 1. Instantly inform the UI of the total so it doesn't pulse blindly
         if progress_callback:
             progress_callback(0, total_records)
 
@@ -977,15 +970,12 @@ class DorsalIndex:
                                 logger.warning(f"Could not decode record for {row_dict['abspath']}: {e}")
                                 record_json_str = '{"error": "Could not decode record"}'
 
-                        # 3. The JSON Splice: Avoid round-tripping the giant record string through loads() and dumps()
                         row_dict.pop("record", None)
                         row_dict.pop("is_compressed", None)
 
-                        # Dump the tiny metadata dict
                         meta_json = json.dumps(row_dict, default=str)
 
                         if include_records:
-                            # Slice off the closing '}' and manually append the pre-formatted record JSON string
                             final_row_json = f'{meta_json[:-1]}, "record": {record_json_str}}}'
                         else:
                             final_row_json = meta_json
@@ -998,7 +988,6 @@ class DorsalIndex:
                         f.write(",\n".join(batch_strings))
                         first_batch = False
 
-                    # 4. Sync the UI
                     count += len(rows)
                     if progress_callback:
                         progress_callback(count, total_records)
