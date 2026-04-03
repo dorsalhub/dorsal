@@ -14,10 +14,10 @@
 
 import typer
 
-from dorsal.cli.record_app.get_cmd import get_file_record
-from dorsal.cli.record_app.delete_cmd import delete_file_record
-from dorsal.cli.record_app.tag_app import tag_app
-from dorsal.cli.record_app.search_cmd import search_record
+from dorsal.cli.hub_app.get_cmd import get_file_record
+from dorsal.cli.hub_app.delete_cmd import delete_file_record
+from dorsal.cli.hub_app.tag_app import tag_app
+from dorsal.cli.hub_app.search_cmd import search_record
 
 app = typer.Typer(
     name="record",

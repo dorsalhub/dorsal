@@ -107,11 +107,9 @@ def create_index_instance() -> DorsalIndex:
     compression_enabled = get_index_compression()
     compression_mode = get_index_compression_mode()
     compression_level = get_index_compression_level(compression_mode=compression_mode)
-    
+
     return DorsalIndex(
-        use_compression=compression_enabled,
-        compression_level=compression_level,
-        compression_mode=compression_mode
+        use_compression=compression_enabled, compression_level=compression_level, compression_mode=compression_mode
     )
 
 

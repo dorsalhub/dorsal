@@ -56,8 +56,13 @@ class DorsalIndex:
     Manages the Dorsal SQLite Search Index.
     """
 
-    def __init__(self, db_path: Path | None = None, use_compression: bool = True, compression_mode: Literal["zlib", "zstd"] = "zlib",
-        compression_level: int | None = None,):
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        use_compression: bool = True,
+        compression_mode: Literal["zlib", "zstd"] = "zlib",
+        compression_level: int | None = None,
+    ):
         if db_path:
             self.db_path = db_path
         else:
@@ -157,7 +162,7 @@ class DorsalIndex:
             );
             """
         )
-        
+
         cursor.execute(
             """
             INSERT OR IGNORE INTO index_meta (key, value) 
@@ -233,11 +238,9 @@ class DorsalIndex:
         all_hashes = base_annotation.all_hash_ids or {}
 
         record_json_str = record.model_dump_json(by_alias=True, exclude_none=True)
-        
+
         if self.use_compression:
-            compress_fn, is_compressed_flag = self._get_compressor(
-                self.compression_mode, self.compression_level
-            )
+            compress_fn, is_compressed_flag = self._get_compressor(self.compression_mode, self.compression_level)
             logger.debug(f"Compressing record for path: {path} with {self.compression_mode}")
             record_data = compress_fn(record_json_str.encode("utf-8"))
         else:
@@ -327,7 +330,7 @@ class DorsalIndex:
             return None
 
         decompress_fn = self._get_decompressor(is_compressed_flag)
-        
+
         try:
             record_json_str = decompress_fn(record_data).decode("utf-8")
         except Exception as e:
@@ -470,6 +473,7 @@ class DorsalIndex:
             meta_row = cursor.fetchone()
             if meta_row and meta_row[0]:
                 import datetime
+
                 dt = datetime.datetime.strptime(meta_row[0], "%Y-%m-%d %H:%M:%S")
                 dt = dt.replace(tzinfo=datetime.timezone.utc)
                 db_created_time = dt.timestamp()
@@ -478,17 +482,37 @@ class DorsalIndex:
         except sqlite3.OperationalError:
             db_created_time = fallback_created_time
 
+        # --- Calculate granular storage breakdown ---
+        cursor.execute("""
+            SELECT SUM(
+                LENGTH(CAST(abspath AS BLOB)) + 8 + 
+                COALESCE(LENGTH(CAST(record AS BLOB)), 0) + 4 + 
+                COALESCE(LENGTH(CAST(name AS BLOB)), 0) + 8 + 
+                COALESCE(LENGTH(CAST(extension AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(media_type AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_sha256 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_blake3 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_quick AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0)
+            ) FROM cached_files
+        """)
+        record_cache_bytes = int(cursor.fetchone()[0] or 0)
+        search_index_bytes = max(0, db_size_bytes - record_cache_bytes)
+
         summary_data = {
             "database_path": str(self.db_path),
+            "record_cache_size_bytes": record_cache_bytes,
+            "search_index_size_bytes": search_index_bytes,
             "total_records": record_count,
             "full_records": full_records,
             "hash_only_records": hash_only_records,
-            "database_size_bytes": db_size_bytes,
             "created_time": db_created_time,
             "modified_time": db_modified_time,
         }
 
         if verbose:
+            summary_data["database_size_bytes"] = db_size_bytes
+            
             cursor.execute("SELECT COUNT(*) FROM dorsal_fts")
             summary_data["fts_indexed_records"] = cursor.fetchone()[0] or 0
 
@@ -502,31 +526,31 @@ class DorsalIndex:
             cursor.execute("SELECT COUNT(*) FROM file_attributes")
             summary_data["indexed_attributes"] = cursor.fetchone()[0] or 0
 
-            # --- NEW: Storage Breakdown ---
+            # --- Storage Breakdown ---
             cursor.execute("SELECT MAX(LENGTH(record)), AVG(LENGTH(record)) FROM cached_files WHERE record IS NOT NULL")
             record_stats = cursor.fetchone()
             if record_stats:
                 summary_data["max_record_size_bytes"] = record_stats[0] or 0
                 summary_data["avg_record_size_bytes"] = int(record_stats[1] or 0)
-            
-            # --- NEW: Deduplication Insights ---
+
+            # --- Deduplication Insights ---
             cursor.execute("SELECT COUNT(DISTINCT hash_blake3) FROM cached_files WHERE hash_blake3 IS NOT NULL")
             unique_hashes = cursor.fetchone()[0] or 0
-            
+
             cursor.execute("SELECT COUNT(*) FROM cached_files WHERE hash_blake3 IS NOT NULL")
             total_hashed = cursor.fetchone()[0] or 0
-            
+
             summary_data["unique_files_by_hash"] = unique_hashes
             summary_data["duplicate_files_detected"] = max(0, total_hashed - unique_hashes)
-            
-            # --- NEW: Data Freshness ---
+
+            # --- Data Freshness ---
             cursor.execute("SELECT MIN(modified_time), MAX(modified_time) FROM cached_files")
             time_stats = cursor.fetchone()
             if time_stats:
                 summary_data["oldest_record_timestamp"] = time_stats[0]
                 summary_data["newest_record_timestamp"] = time_stats[1]
 
-            # --- NEW: Deep Taxonomy ---
+            # --- Deep Taxonomy ---
             cursor.execute(f"""
                 SELECT key, COUNT(*) as count 
                 FROM file_attributes 
@@ -558,31 +582,40 @@ class DorsalIndex:
             summary_data["compression_mode"] = compression_mode
             summary_data["compression_level"] = get_index_compression_level(compression_mode=compression_mode)
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT extension, COUNT(*) as count 
                 FROM cached_files 
                 WHERE extension IS NOT NULL 
                 GROUP BY extension 
                 ORDER BY count DESC LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             summary_data["top_extensions"] = {row["extension"]: row["count"] for row in cursor.fetchall()}
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT media_type, COUNT(*) as count 
                 FROM cached_files 
                 WHERE media_type IS NOT NULL 
                 GROUP BY media_type 
                 ORDER BY count DESC LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             summary_data["top_media_types"] = {row["media_type"]: row["count"] for row in cursor.fetchall()}
 
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT schema_id, COUNT(DISTINCT abspath) as count 
                 FROM file_attributes 
                 WHERE schema_id != 'file/base'
                 GROUP BY schema_id 
                 ORDER BY count DESC LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             summary_data["top_schemas"] = {row["schema_id"]: row["count"] for row in cursor.fetchall()}
 
         logger.debug(f"Index summary generated: {summary_data}")
@@ -650,16 +683,14 @@ class DorsalIndex:
         """Runs a full maintenance routine on the index."""
         self._ensure_connection()
         logger.debug(f"Starting full index optimization (Force recompression: {force_recompression})...")
-        
+
         size_before = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
         pruned_count, _ = self.prune()
-        
+
         rewritten_count = self.convert_compression(
-            self.compression_mode if self.use_compression else "none", 
-            self.compression_level,
-            force=force_recompression
+            self.compression_mode if self.use_compression else "none", self.compression_level, force=force_recompression
         )
-        
+
         self.vacuum()
         size_after = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
 
@@ -676,7 +707,7 @@ class DorsalIndex:
     def rebuild(self, batch_size: int = 100, progress_callback: Callable[[int, int], None] | None = None) -> int:
         """Rebuilds the FTS and EAV search indexes from the compressed cache."""
         from dorsal.file.validators.file_record import FileRecordStrict
-        
+
         conn = self._ensure_connection()
         logger.info("Starting full search index rebuild...")
 
@@ -689,7 +720,7 @@ class DorsalIndex:
 
         cursor.execute("DELETE FROM dorsal_fts")
         cursor.execute("DELETE FROM file_attributes")
-        
+
         read_cursor = conn.cursor()
         read_cursor.execute("SELECT abspath, record, is_compressed FROM cached_files WHERE record IS NOT NULL")
 
@@ -706,13 +737,13 @@ class DorsalIndex:
                 decompress_fn = self._get_decompressor(is_compressed_flag)
                 record_json_str = decompress_fn(record_data).decode("utf-8")
                 record_obj = FileRecordStrict.model_validate_json(record_json_str)
-                
+
                 fts_texts, eav_attributes = self._extract_search_data(record_obj)
-                
+
                 full_fts_text = " ".join([str(t) for t in fts_texts if t]).strip()
                 if full_fts_text:
                     batch_fts.append((path, full_fts_text))
-                    
+
                 for attr in eav_attributes:
                     batch_eav.append((path, attr[0], attr[1], attr[2], attr[3]))
 
@@ -727,11 +758,11 @@ class DorsalIndex:
                 if batch_eav:
                     cursor.executemany(
                         "INSERT INTO file_attributes (abspath, schema_id, key, value_text, value_num) VALUES (?, ?, ?, ?, ?)",
-                        batch_eav
+                        batch_eav,
                     )
                 batch_fts.clear()
                 batch_eav.clear()
-                
+
                 if progress_callback:
                     progress_callback(count, total_records)
 
@@ -740,7 +771,7 @@ class DorsalIndex:
         if batch_eav:
             cursor.executemany(
                 "INSERT INTO file_attributes (abspath, schema_id, key, value_text, value_num) VALUES (?, ?, ?, ?, ?)",
-                batch_eav
+                batch_eav,
             )
 
         conn.commit()
@@ -758,17 +789,19 @@ class DorsalIndex:
         if mode == "zlib":
             lvl = level if level is not None else 6
             return (lambda data: zlib.compress(data, level=lvl)), 1
-            
+
         elif mode == "zstd":
             lvl = level if level is not None else 3
             try:
                 # Python 3.14+ Native
                 import compression.zstd as zstd
+
                 return (lambda data: zstd.compress(data, level=lvl)), 2
             except ImportError:
                 try:
                     # PyPI Fallback
                     import zstandard
+
                     cctx = zstandard.ZstdCompressor(level=lvl)
                     return cctx.compress, 2
                 except ImportError:
@@ -791,10 +824,12 @@ class DorsalIndex:
         elif flag == 2:
             try:
                 import compression.zstd as zstd
+
                 return zstd.decompress
             except ImportError:
                 try:
                     import zstandard
+
                     dctx = zstandard.ZstdDecompressor()
                     return dctx.decompress
                 except ImportError:
@@ -806,10 +841,7 @@ class DorsalIndex:
         raise ValueError(f"Unknown compression flag in database: {flag}")
 
     def convert_compression(
-        self, 
-        target_mode: Literal["zlib", "zstd", "none"], 
-        target_level: int | None = None,
-        force: bool = False
+        self, target_mode: Literal["zlib", "zstd", "none"], target_level: int | None = None, force: bool = False
     ) -> int:
         """
         Converts the entire database to a target compression algorithm.
@@ -826,10 +858,8 @@ class DorsalIndex:
 
         read_cursor = conn.cursor()
         write_cursor = conn.cursor()
-        
-        read_cursor.execute(
-            "SELECT abspath, record, is_compressed FROM cached_files WHERE record IS NOT NULL"
-        )
+
+        read_cursor.execute("SELECT abspath, record, is_compressed FROM cached_files WHERE record IS NOT NULL")
 
         rewritten_count = 0
         for row in read_cursor:
@@ -893,8 +923,16 @@ class DorsalIndex:
             progress_callback(0, total_records)
 
         columns = [
-            "abspath", "modified_time", "name", "size", "extension", 
-            "media_type", "hash_sha256", "hash_blake3", "hash_quick", "hash_tlsh"
+            "abspath",
+            "modified_time",
+            "name",
+            "size",
+            "extension",
+            "media_type",
+            "hash_sha256",
+            "hash_blake3",
+            "hash_quick",
+            "hash_tlsh",
         ]
         if include_records:
             columns.extend(["record", "is_compressed"])
@@ -907,10 +945,11 @@ class DorsalIndex:
         try:
             if format == "json.gz":
                 import gzip
+
                 f = gzip.open(output_path, "wt", encoding="utf-8")
             else:
                 f = open(output_path, "wt", encoding="utf-8")
-                
+
             with f:
                 f.write("[\n")
                 first_batch = True
@@ -924,7 +963,7 @@ class DorsalIndex:
                     for row in rows:
                         row_dict = dict(row)
                         record_json_str = "null"
-                        
+
                         if include_records and row_dict.get("record"):
                             record_data: bytes = row_dict["record"]
                             is_compressed_flag = row_dict["is_compressed"]
@@ -938,10 +977,10 @@ class DorsalIndex:
                         # 3. The JSON Splice: Avoid round-tripping the giant record string through loads() and dumps()
                         row_dict.pop("record", None)
                         row_dict.pop("is_compressed", None)
-                        
+
                         # Dump the tiny metadata dict
                         meta_json = json.dumps(row_dict, default=str)
-                        
+
                         if include_records:
                             # Slice off the closing '}' and manually append the pre-formatted record JSON string
                             final_row_json = f'{meta_json[:-1]}, "record": {record_json_str}}}'

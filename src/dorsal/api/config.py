@@ -41,6 +41,7 @@ def get_config_summary() -> dict[str, Any]:
     Retrieves a summary of the current system configuration (Auth, UI, Paths).
     """
     from dorsal.file.index.config import get_index_compression, get_index_compression_mode, get_index_compression_level
+
     details = get_api_key_details()
 
     key_source_map = {
@@ -155,14 +156,15 @@ def find_package_name_by_class(class_name: str, scope: Literal["project", "globa
 
     return None
 
+
 def set_compression(
     mode: Literal["zlib", "zstd"] | None = None,
     level: int | None = None,
-    scope: Literal["project", "global"] = "project"
+    scope: Literal["project", "global"] = "project",
 ) -> None:
     """
     Updates the index compression settings in the dorsal configuration file.
-    
+
     Args:
         mode: The compression mode to use ("zlib" or "zstd").
         level: The compression level (zlib: 0-9, zstd: 1-22).
@@ -177,6 +179,7 @@ def set_compression(
         if not isinstance(level, int) or level < 0 or level > 22:
             raise ValueError("Compression level must be an integer between 0 and 22.")
         set_config_value(constants.CONFIG_SECTION_INDEX, constants.CONFIG_OPTION_COMPRESSION_LEVEL, level, scope=scope)
+
 
 def register_model(
     annotation_model: Type[AnnotationModel],
@@ -370,4 +373,3 @@ def unregister_model(package_name: str, scope: Literal["project", "global"] = "p
         logger.info(f"Removed step {found_index} from {scope} config.")
     except Exception as e:
         raise DorsalConfigError(f"Failed to unregister model '{package_name}' from {scope} config: {e}") from e
-

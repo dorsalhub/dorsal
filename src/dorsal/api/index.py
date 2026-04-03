@@ -105,10 +105,7 @@ def export(
     """
     active_index = _get_active_index(index)
     return active_index.export(
-        output_path=output_path, 
-        format=format, 
-        include_records=include_records,
-        progress_callback=progress_callback
+        output_path=output_path, format=format, include_records=include_records, progress_callback=progress_callback
     )
 
 
@@ -134,16 +131,21 @@ def convert_compression(
     return active_index.convert_compression(target_algo=target_algo, target_level=target_level)
 
 
-def rebuild(*, batch_size: int = 100, index: DorsalIndex | None = None, progress_callback: Callable[[int, int], None] | None = None) -> int:
+def rebuild(
+    *,
+    batch_size: int = 100,
+    index: DorsalIndex | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> int:
     """
-    Rebuilds the FTS and EAV search indexes from the compressed cache.
+        Rebuilds the FTS and EAV search indexes from the compressed cache.
 
-    Args:
-        index: Optional custom DorsalIndex instance. Defaults to shared index.
-        progress_callback: Optional function `f(current, total)` to track progress.
+        Args:
+            index: Optional custom DorsalIndex instance. Defaults to shared index.
+            progress_callback: Optional function `f(current, total)` to track progress.
 
-    Returns:
-        The total number of records rebuilt.
-`   """
+        Returns:
+            The total number of records rebuilt.
+    `"""
     active_index = _get_active_index(index=index)
     return active_index.rebuild(batch_size=batch_size, progress_callback=progress_callback)

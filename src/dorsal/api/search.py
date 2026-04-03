@@ -35,7 +35,7 @@ class PaginatedSearchResults(BaseModel):
 
 
 def search_local(
-    query: str,
+    query: str | list[str],
     or_logic: bool = False,
     index: DorsalIndex | None = None,
     limit: int = 1000,
@@ -48,7 +48,9 @@ def search_local(
     """
     logger.debug(f"Starting standard local search for query: '{query}'")
 
-    if not query or not query.strip():
+    if not query:
+        return []
+    if isinstance(query, str) and not query.strip():
         return []
 
     close_after = False
@@ -102,7 +104,7 @@ def search_local_paginated(
     """
     logger.debug(f"Starting paginated local search for query: '{query}' (Page {page})")
 
-    if not query or not query.strip():
+    if not query or (isinstance(query, str) and not query.strip()):
         empty_pagination = Pagination(
             current_page=page,
             record_count=0,

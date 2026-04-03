@@ -47,7 +47,7 @@ def rebuild_index_cmd(
 ):
     """
     Rebuilds the FTS and EAV search indexes from the compressed cache.
-    
+
     Use this command after updating your Dorsal version or modifying custom
     extractors to ensure all cached files are fully searchable under the new rules.
     """
@@ -74,9 +74,9 @@ def rebuild_index_cmd(
                 style=palette.get("progress_bar", "blue"),
                 complete_style=palette.get("progress_percentage", "green"),
             ),
-            MofNCompleteColumn(), 
-            TaskProgressColumn(),  
-            TimeRemainingColumn(), 
+            MofNCompleteColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
             console=console,
         ) as progress:
             task_id = progress.add_task("Rebuilding search index...", total=None)
@@ -84,10 +84,7 @@ def rebuild_index_cmd(
             def _progress_cb(current: int, total: int):
                 progress.update(task_id, completed=current, total=total)
 
-            count = rebuild(
-                progress_callback=_progress_cb, 
-                batch_size=batch_size
-            )
+            count = rebuild(progress_callback=_progress_cb, batch_size=batch_size)
 
         console.print(
             f"\n[{palette.get('success', 'green')}]✅ Successfully rebuilt search indexes for {count:,} records.[/]"
@@ -97,7 +94,4 @@ def rebuild_index_cmd(
         raise
     except Exception as e:
         logger.exception("An unexpected error occurred during index rebuild.")
-        exit_cli(
-            code=EXIT_CODE_ERROR, 
-            message=f"An unexpected error occurred while rebuilding the index: {e}"
-        )
+        exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred while rebuilding the index: {e}")

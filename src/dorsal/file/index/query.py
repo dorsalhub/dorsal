@@ -29,17 +29,19 @@ class QueryParser:
     OPERATORS = {">=", "<=", ">", "<", "=", ":"}
 
     @classmethod
-    def parse(cls, query_string: str) -> dict[str, list]:
-        """Scans the query and categorizes tokens safely."""
+    def parse(cls, query_input: str | list[str]) -> dict[str, list]:
         result: dict[str, list[str | tuple]] = {
             "text": [],
             "filters": [],
         }
 
-        if not query_string or query_string.strip() == "*":
+        if not query_input or query_input == "*" or query_input == ["*"]:
             return result
 
-        tokens = cls._tokenize(query_string)
+        if isinstance(query_input, list):
+            tokens = query_input
+        else:
+            tokens = cls._tokenize(query_input)
 
         for token in tokens:
             if token == "*":
@@ -49,6 +51,10 @@ class QueryParser:
             for op in cls.OPERATORS:
                 if op in token and not token.startswith(op) and not token.endswith(op):
                     key, val = token.split(op, 1)
+
+                    if len(val) >= 2 and val.startswith(('"', "'")) and val.endswith(('"', "'")):
+                        if val[0] == val[-1]:
+                            val = val[1:-1]
 
                     result["filters"].append((key.lower(), op, val))
                     found_op = op
@@ -175,7 +181,7 @@ class QueryCompiler:
     @classmethod
     def _build_where_clauses(cls, parsed_query: dict[str, list], or_logic: bool) -> tuple[list[str], list[Any]]:
         """Shared logic for building WHERE conditions and parameter binding."""
-        from dorsal.file.index.extractors import registry # <--- NEW IMPORT
+        from dorsal.file.index.extractors import registry  # <--- NEW IMPORT
 
         where_clauses = []
         params = []
@@ -210,15 +216,13 @@ class QueryCompiler:
                 continue
 
             if key == "annotation":
-                where_clauses.append(
-                    "c.abspath IN (SELECT abspath FROM file_attributes WHERE schema_id = ?)"
-                )
+                where_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE schema_id = ?)")
                 params.append(val)
                 continue
 
             # --- Type-Safe EAV Attribute Filtering ---
             is_numeric_attr = registry.is_numeric_key(key)
-            
+
             if is_numeric_attr:
                 try:
                     val = float(val)
@@ -229,9 +233,7 @@ class QueryCompiler:
 
             if sql_op == "=" and is_wildcard_val:
                 if val == "*":
-                    where_clauses.append(
-                        "c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ?)"
-                    )
+                    where_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ?)")
                     params.append(key)
                     continue
                 else:
@@ -242,9 +244,10 @@ class QueryCompiler:
                     )
                     params.extend([key, val])
                     continue
-
+            
+            nocase = " COLLATE NOCASE" if val_col == "value_text" else ""
             where_clauses.append(
-                f"c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ? AND {val_col} {sql_op} ?)"
+                f"c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ? AND {val_col} {sql_op} ?{nocase})"
             )
             params.extend([key, val])
 

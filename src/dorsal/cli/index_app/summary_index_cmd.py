@@ -38,10 +38,7 @@ def show_index_summary(
         bool,
         typer.Option("--verbose", "-v", help="Show extended metrics and distributions."),
     ] = False,
-    limit: Annotated[
-        int,
-        typer.Option("--limit", "-l", help="Length limit for the tables in verbose view.")
-    ] = 10
+    limit: Annotated[int, typer.Option("--limit", "-l", help="Length limit for the tables in verbose view.")] = 10,
 ):
     """
     Displays statistics and health metrics about the local file search index.
@@ -77,29 +74,30 @@ def show_index_summary(
         )
 
         summary_table = Table.grid(expand=False)
-        # Increased width from 22 to 24 to prevent ugly text wrapping on labels
         summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=24)
         summary_table.add_column(justify="left", style=palette.get("primary_value", "default"))
 
         summary_table.add_row("Index Path:", str(summary.get("database_path", "N/A")))
-        summary_table.add_row("Index DB Size:", human_filesize(summary.get("database_size_bytes", 0)))
-        summary_table.add_row("Total Records:", f"{summary.get('total_records', 0):,}")
+        summary_table.add_row("Index Size:", f"{summary.get('total_records', 0):,} Records")
+        summary_table.add_row("Record Cache Size:", human_filesize(summary.get("record_cache_size_bytes", 0)))
+        summary_table.add_row("Search Index Size:", human_filesize(summary.get("search_index_size_bytes", 0)))
 
         if verbose:
-            summary_table.add_row("FTS Records:", f"{summary.get('fts_indexed_records', 0):,}")
+            summary_table.add_row("Total DB Size:", human_filesize(summary.get("database_size_bytes", 0)))
+            summary_table.add_row("Full-Text Index:", f"{summary.get('fts_indexed_records', 0):,} Records")
             summary_table.add_row("Index Created:", created_dt)
             summary_table.add_row("Last Modified:", modified_dt)
             summary_table.add_row("Tracked File Data:", human_filesize(summary.get("total_tracked_file_bytes", 0)))
-            
-            # --- New Storage Metrics ---
+
+            # --- Storage Metrics ---
             summary_table.add_row("Avg Index Record Size:", human_filesize(summary.get("avg_record_size_bytes", 0)))
             summary_table.add_row("Max Index Record Size:", human_filesize(summary.get("max_record_size_bytes", 0)))
-            
-            # --- New Deduplication Metrics ---
+
+            # --- Deduplication Metrics ---
             summary_table.add_row("Unique Files (Hash):", f"{summary.get('unique_files_by_hash', 0):,}")
             summary_table.add_row("Duplicate Files:", f"{summary.get('duplicate_files_detected', 0):,}")
 
-            # --- New Data Freshness Metrics ---
+            # --- Data Freshness Metrics ---
             oldest_ts = summary.get("oldest_record_timestamp")
             if oldest_ts:
                 summary_table.add_row("Oldest Tracked File:", datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d"))
@@ -107,7 +105,7 @@ def show_index_summary(
             if newest_ts:
                 summary_table.add_row("Newest Tracked File:", datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d"))
 
-            # --- Updated Compression Info ---
+            # --- Compression Info ---
             comp_mode = summary.get("compression_mode", "None")
             comp_level = summary.get("compression_level")
             comp_str = f"{comp_mode} (Level {comp_level})" if comp_level else comp_mode
@@ -139,13 +137,12 @@ def show_index_summary(
             )
 
         if verbose:
-
             def build_dist_table(title: str, data: dict, limit: int | None = None):
                 t = Table(
                     title=f"[{palette.get('panel_title', 'bold white')}]{title}[/]",
                     show_header=False,
                     box=borders,
-                    expand=False,  # <-- Fix 1: Stop tables from stretching artificially
+                    expand=False,
                 )
                 t.add_column("Type", style=palette.get("key", "dim"))
                 t.add_column("Count", justify="right", style=palette.get("primary_value", "default"))
@@ -166,7 +163,7 @@ def show_index_summary(
             top_schemas = summary.get("top_schemas", {})
             if top_schemas:
                 dist_tables.append(build_dist_table("Top Schemas", top_schemas, limit=limit))
-                
+
             top_attrs = summary.get("top_attribute_keys", {})
             if top_attrs:
                 dist_tables.append(build_dist_table("Top Attributes", top_attrs, limit=limit))

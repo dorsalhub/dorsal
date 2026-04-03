@@ -19,14 +19,14 @@ import datetime
 from typing import Annotated, Literal, Optional, cast
 
 from rich.progress import (
-        Progress, 
-        SpinnerColumn, 
-        TextColumn, 
-        BarColumn, 
-        TaskProgressColumn, 
-        MofNCompleteColumn, 
-        TimeRemainingColumn
-    )
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+    MofNCompleteColumn,
+    TimeRemainingColumn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,15 +112,13 @@ def export_index_cmd(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(
-                style=palette.get("progress_bar", "red"),
-                complete_style=palette.get("progress_percentage", "green")
+                style=palette.get("progress_bar", "red"), complete_style=palette.get("progress_percentage", "green")
             ),
-            MofNCompleteColumn(),   # <-- This renders the "1,000 / 21,129"
-            TaskProgressColumn(),   # <-- This renders the "5%"
+            MofNCompleteColumn(),  # <-- This renders the "1,000 / 21,129"
+            TaskProgressColumn(),  # <-- This renders the "5%"
             TimeRemainingColumn(),  # <-- This renders the ETA
             console=console,
         ) as progress:
-            
             task_id = progress.add_task(f"Exporting dorsal index to '{output_path.name}'...", total=None)
 
             def _progress_cb(current: int, total: int):
@@ -130,10 +128,12 @@ def export_index_cmd(
                 output_path=output_path,
                 format=literal_format,
                 include_records=include_records,
-                progress_callback=_progress_cb
+                progress_callback=_progress_cb,
             )
 
-        console.print(f"\n[{palette.get('success', 'green')}]✅ Successfully exported {count:,} records to '{output_path}'[/]")
+        console.print(
+            f"\n[{palette.get('success', 'green')}]✅ Successfully exported {count:,} records to '{output_path}'[/]"
+        )
 
     except (IOError, ValueError) as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Export failed: {e}")

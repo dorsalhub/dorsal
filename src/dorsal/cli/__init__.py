@@ -27,12 +27,11 @@ from dorsal.cli.index_app import app as index_app_
 from dorsal.cli.config_app import app as config_app_
 from dorsal.cli.auth_app import app as auth_app_
 from dorsal.cli.model_app import app as model_app_
-from dorsal.cli.record_app import app as record_app_
+from dorsal.cli.hub_app import app as hub_app_
 from dorsal.cli.collection_app import app as collection_app_
 from dorsal.cli.config_app import theme_app as theme_app_
 from dorsal.cli.config_app import pipeline_app as pipeline_app_
 from dorsal.cli.annotation_app import app as annotation_app_
-from dorsal.cli.record_app.search_cmd import search_record
 from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.model_app.run_model_cmd import run_model
 from dorsal.cli.index_app.search_index_cmd import search_index_cmd
@@ -155,7 +154,7 @@ app.add_typer(auth_app_, name="auth")
 # app.add_typer(file_app_, name="file")
 app.add_typer(annotation_app_, name="annotation")
 # app.add_typer(dir_app_, name="dir")
-app.add_typer(record_app_, name="record")
+app.add_typer(hub_app_, name="hub")
 app.add_typer(collection_app_, name="collection")
 app.add_typer(model_app_, name="model")
 app.add_typer(adapter_app_, name="adapter")

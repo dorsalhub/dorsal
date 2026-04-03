@@ -38,6 +38,7 @@ pipeline_app = typer.Typer(
 )
 app.add_typer(pipeline_app)
 
+
 @app.command(name="show")
 def show_config(
     ctx: typer.Context,
@@ -101,15 +102,16 @@ def show_config(
     config_table.add_row(
         "Global Config File:", Text(config_data["global_config_path"], style=palette.get("primary_value", "default"))
     )
-    if config_data['index_compression_enabled']:
+    if config_data["index_compression_enabled"]:
         config_table.add_row(
-            "Index Compression:", 
-            Text(f"{config_data['index_compression_mode']} (Level {config_data['index_compression_level']})", style=palette.get("primary_value", "cyan"))
+            "Index Compression:",
+            Text(
+                f"{config_data['index_compression_mode']} (Level {config_data['index_compression_level']})",
+                style=palette.get("primary_value", "cyan"),
+            ),
         )
     else:
-        config_table.add_row(
-            "Index Compression: Not Enabled"
-        )
+        config_table.add_row("Index Compression: Not Enabled")
 
     is_none_style = borders == get_borders("none")
     title_text = f"[{palette.get('panel_title', 'bold')}]Dorsal Configuration[/]"

@@ -107,8 +107,13 @@ def get_index_record(
 
     if not record:
         console.print(
-            f"\n[{palette.get('warning', 'yellow')}]⚠️ Not Found:[/] No local records found matching '{identifier}'."
+            f"\n[{palette.get('warning', 'yellow')}]Not Found:[/] No local records found."
         )
+        if len(identifier) == 64:
+            hub_cmd = f"dorsal hub get {identifier}"
+            console.print(
+                f"\n[{palette.get('info', 'dim')}]Tip: To search DorsalHub:[/] [{palette.get('primary_value', 'cyan')}]{hub_cmd}[/]"
+            )
         exit_cli(code=EXIT_CODE_ERROR)
 
     try:

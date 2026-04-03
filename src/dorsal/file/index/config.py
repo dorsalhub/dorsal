@@ -92,11 +92,9 @@ def get_index_compression(compress: bool | None = None) -> bool:
 def get_index_compression_mode() -> Literal["zlib", "zstd"]:
     """Resolves the target compression mode for the search index."""
     merged_config, _ = load_config()
-    
-    config_val = merged_config.get(constants.CONFIG_SECTION_INDEX, {}).get(
-        constants.CONFIG_OPTION_COMPRESSION_MODE
-    )
-    
+
+    config_val = merged_config.get(constants.CONFIG_SECTION_INDEX, {}).get(constants.CONFIG_OPTION_COMPRESSION_MODE)
+
     mode = resolve_setting(
         setting_name="Index Compression Algorithm",
         explicit_value=None,
@@ -108,22 +106,20 @@ def get_index_compression_mode() -> Literal["zlib", "zstd"]:
     if mode not in ("zlib", "zstd"):
         logger.warning(f"Invalid index compression algorithm '{mode}'. Falling back to 'zlib'.")
         return "zlib"
-        
+
     return cast(Literal["zlib", "zstd"], mode)
 
 
 def get_index_compression_level(compression_mode: Literal["zlib", "zstd"] | None = None) -> int:
-    """Resolves the compression level. If no level is specified in the config, """
+    """Resolves the compression level. If no level is specified in the config,"""
     merged_config, _ = load_config()
-    
+
     if compression_mode is None:
         compression_mode = get_index_compression_mode()
-        
+
     default_level = 3 if compression_mode == "zstd" else 6
-    
-    config_val = merged_config.get(constants.CONFIG_SECTION_INDEX, {}).get(
-        constants.CONFIG_OPTION_COMPRESSION_LEVEL
-    )
+
+    config_val = merged_config.get(constants.CONFIG_SECTION_INDEX, {}).get(constants.CONFIG_OPTION_COMPRESSION_LEVEL)
 
     level_str = resolve_setting(
         setting_name="Index Compression Level",

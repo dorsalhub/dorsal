@@ -21,7 +21,7 @@ from rich.panel import Panel
 
 
 from dorsal.cli import app
-from dorsal.cli.record_app.remote_search import search_and_display
+from dorsal.cli.hub_app.remote_search import search_and_display
 from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenError
 
 runner = CliRunner()
@@ -49,7 +49,7 @@ def mock_search_cmd(mocker):
     mock_user_search = mocker.patch("dorsal.api.file.search_user_files", return_value=mock_response)
     mock_global_search = mocker.patch("dorsal.api.file.search_global_files", return_value=mock_response)
 
-    mock_save_helper = mocker.patch("dorsal.cli.record_app.remote_search._save_search_results")
+    mock_save_helper = mocker.patch("dorsal.cli.hub_app.remote_search._save_search_results")
 
     return {
         "user_search": mock_user_search,
@@ -143,7 +143,7 @@ def test_search_none_style_borders(mock_rich_console, mock_search_cmd, mocker):
         def __eq__(self, other):
             return True
 
-    mocker.patch("dorsal.cli.record_app.remote_search.get_borders", return_value=MatchAnyBorder())
+    mocker.patch("dorsal.cli.hub_app.remote_search.get_borders", return_value=MatchAnyBorder())
 
     result = runner.invoke(app, ["record", "search", QUERY])
 

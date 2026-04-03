@@ -18,25 +18,28 @@ from typing import Any, Protocol, runtime_checkable
 logger = logging.getLogger(__name__)
 
 # Follows open-validation-schemas
-SPLIT_LIMIT_DEFAULT = 100_000   # Max items for arrays (blocks, segments, objects, etc.)
-SPLIT_LIMIT_STRING = 262_144    # Max length for "long" strings (llm prompts, transcription text)
-SPLIT_LIMIT_GENERIC = 128       # Max properties for the 'data' dictionary in open/generic
+SPLIT_LIMIT_DEFAULT = 100_000  # Max items for arrays (blocks, segments, objects, etc.)
+SPLIT_LIMIT_STRING = 262_144  # Max length for "long" strings (llm prompts, transcription text)
+SPLIT_LIMIT_GENERIC = 128  # Max properties for the 'data' dictionary in open/generic
 
 
 @runtime_checkable
 class MergeStrategy(Protocol):
     """Protocol for reassembling multiple semantic chunks back into a single record."""
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]: ...
+
 
 @runtime_checkable
 class SplitStrategy(Protocol):
     """Protocol for safely chunking a bloated record to enforce schema limits."""
-    def split(self, record: dict[str, Any], limit: int) -> list[dict[str, Any]]: ...
 
+    def split(self, record: dict[str, Any], limit: int) -> list[dict[str, Any]]: ...
 
 
 class GenericListStrategy:
     """Handles arrays like 'objects', 'entities', 'labels', and 'points'."""
+
     def __init__(self, list_field: str):
         self.list_field = list_field
 
@@ -51,7 +54,7 @@ class GenericListStrategy:
         items = record.get(self.list_field, [])
         if len(items) <= limit:
             return [record]
-        
+
         chunks = []
         for i in range(0, len(items), limit):
             chunk = record.copy()
@@ -62,6 +65,7 @@ class GenericListStrategy:
 
 class StringStrategy:
     """Handles "long" strings like 'response_data' in LLM outputs."""
+
     def __init__(self, text_field: str):
         self.text_field = text_field
 
@@ -77,12 +81,12 @@ class StringStrategy:
         text = str(record.get(self.text_field, ""))
         if len(text) <= limit:
             return [record]
-        
+
         chunks = []
         for i in range(0, len(text), limit):
             chunk = record.copy()
             chunk[self.text_field] = text[i : i + limit]
-            
+
             if i > 0 and "prompt" in chunk:
                 del chunk["prompt"]
             chunks.append(chunk)
@@ -91,6 +95,7 @@ class StringStrategy:
 
 class DictUpdateStrategy:
     """Handles Key-Value maps like 'data' in the generic schema to respect maxProperties."""
+
     def __init__(self, dict_field: str):
         self.dict_field = dict_field
 
@@ -106,7 +111,7 @@ class DictUpdateStrategy:
         data = record.get(self.dict_field, {})
         if not isinstance(data, dict) or len(data) <= limit:
             return [record]
-            
+
         items = list(data.items())
         chunks = []
         for i in range(0, len(items), limit):
@@ -118,11 +123,20 @@ class DictUpdateStrategy:
 
 class DocumentExtractionStrategy:
     """Handles open/document-extraction."""
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["blocks"] = list(unified.get("blocks", []))
-        all_widths = unified.get("page_width", []) if isinstance(unified.get("page_width"), list) else [unified.get("page_width")]
-        all_heights = unified.get("page_height", []) if isinstance(unified.get("page_height"), list) else [unified.get("page_height")]
+        all_widths = (
+            unified.get("page_width", [])
+            if isinstance(unified.get("page_width"), list)
+            else [unified.get("page_width")]
+        )
+        all_heights = (
+            unified.get("page_height", [])
+            if isinstance(unified.get("page_height"), list)
+            else [unified.get("page_height")]
+        )
 
         for chunk in records[1:]:
             unified["blocks"].extend(chunk.get("blocks", []))
@@ -138,7 +152,9 @@ class DocumentExtractionStrategy:
 
         if "attributes" in unified and "attributes" in records[-1]:
             unified["attributes"] = unified["attributes"].copy()
-            unified["attributes"]["end_page"] = records[-1]["attributes"].get("end_page", unified["attributes"].get("end_page"))
+            unified["attributes"]["end_page"] = records[-1]["attributes"].get(
+                "end_page", unified["attributes"].get("end_page")
+            )
         return unified
 
     def split(self, record: dict[str, Any], limit: int = SPLIT_LIMIT_DEFAULT) -> list[dict[str, Any]]:
@@ -148,8 +164,10 @@ class DocumentExtractionStrategy:
 
         def _get_dim_info(key):
             val = record.get(key)
-            if isinstance(val, (int, float)): return val, None
-            if isinstance(val, list): return None, {item["value"]: item["pages"] for item in val if "value" in item and "pages" in item}
+            if isinstance(val, (int, float)):
+                return val, None
+            if isinstance(val, list):
+                return None, {item["value"]: item["pages"] for item in val if "value" in item and "pages" in item}
             return None, None
 
         w_const, w_map = _get_dim_info("page_width")
@@ -159,21 +177,23 @@ class DocumentExtractionStrategy:
         for i in range(0, len(all_blocks), limit):
             chunk_blocks = all_blocks[i : i + limit]
             pages_in_chunk = {b.get("page_number") for b in chunk_blocks if b.get("page_number") is not None}
-            
+
             chunk_record = record.copy()
             chunk_record["blocks"] = chunk_blocks
-            
+
             if pages_in_chunk:
                 chunk_record["attributes"] = record.get("attributes", {}).copy()
                 chunk_record["attributes"]["start_page"] = min(pages_in_chunk)
                 chunk_record["attributes"]["end_page"] = max(pages_in_chunk)
-                
+
                 for key, const, mapping in [("page_width", w_const, w_map), ("page_height", h_const, h_map)]:
                     if const:
                         chunk_record[key] = const
                     elif mapping:
-                        filtered = [{"value": v, "pages": [p for p in p_list if p in pages_in_chunk]} 
-                                    for v, p_list in mapping.items()]
+                        filtered = [
+                            {"value": v, "pages": [p for p in p_list if p in pages_in_chunk]}
+                            for v, p_list in mapping.items()
+                        ]
                         filtered = [item for item in filtered if item["pages"]]
                         if filtered:
                             chunk_record[key] = filtered
@@ -186,6 +206,7 @@ class DocumentExtractionStrategy:
 
 class AudioTranscriptionStrategy:
     """Handles open/audio-transcription."""
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["text"] = unified.get("text", "")
@@ -207,33 +228,34 @@ class AudioTranscriptionStrategy:
 
         seg_chunks = [segments[i : i + limit] for i in range(0, max(1, len(segments)), limit)]
         text_chunks = [text[i : i + SPLIT_LIMIT_STRING] for i in range(0, max(1, len(text)), SPLIT_LIMIT_STRING)]
-        
+
         chunks = []
         num_chunks = max(len(seg_chunks), len(text_chunks))
-        
+
         for i in range(num_chunks):
             chunk = record.copy()
             if i < len(seg_chunks) and seg_chunks[i]:
                 chunk["segments"] = seg_chunks[i]
             elif "segments" in chunk:
                 chunk["segments"] = []
-                
+
             if i < len(text_chunks) and text_chunks[i]:
                 chunk["text"] = text_chunks[i]
             elif "text" in chunk:
                 chunk["text"] = ""
-                
+
             chunks.append(chunk)
         return chunks
 
 
 class EmbeddingStrategy:
     """Handles open/embedding."""
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         if not unified.get("vector"):
             return unified
-            
+
         if isinstance(unified["vector"], list):
             unified["vector"] = list(unified["vector"])
             for chunk in records[1:]:
@@ -259,24 +281,24 @@ class EmbeddingStrategy:
             if len(vec) <= limit:
                 return [record]
             return [{**record, "vector": vec[i : i + limit]} for i in range(0, len(vec), limit)]
-            
+
         elif isinstance(vec, dict):
             indices = vec.get("indices", [])
             values = vec.get("values", [])
             if len(indices) <= limit:
                 return [record]
-                
+
             chunks = []
             for i in range(0, len(indices), limit):
                 chunk = record.copy()
                 chunk["vector"] = {
                     "dimensions": vec.get("dimensions"),
                     "indices": indices[i : i + limit],
-                    "values": values[i : i + limit]
+                    "values": values[i : i + limit],
                 }
                 chunks.append(chunk)
             return chunks
-            
+
         return [record]
 
 
@@ -318,17 +340,18 @@ def merge_chunked_records(records: list[dict[str, Any]], schema_id: str) -> dict
 
     logger.debug("Merging %d records for schema '%s'", len(records), schema_id)
     strategy = MERGE_STRATEGY_REGISTRY.get(schema_id)
-    
+
     if strategy:
         return strategy.merge(records)
-    
+
     logger.warning("No merge strategy for schema '%s'. Returning first chunk.", schema_id)
     return records[0]
+
 
 def chunk_record(record: dict[str, Any], schema_id: str) -> list[dict[str, Any]]:
     """Splits oversize record into valid chunks. Returns original if unsupported or small enough."""
     strategy = SPLIT_STRATEGY_REGISTRY.get(schema_id)
-    
+
     if strategy:
         if schema_id == "open/generic":
             limit = SPLIT_LIMIT_GENERIC
@@ -336,7 +359,7 @@ def chunk_record(record: dict[str, Any], schema_id: str) -> list[dict[str, Any]]
             limit = SPLIT_LIMIT_STRING
         else:
             limit = SPLIT_LIMIT_DEFAULT
-            
+
         return strategy.split(record, limit=limit)
-        
+
     return [record]

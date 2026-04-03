@@ -710,9 +710,7 @@ class ModelRunner:
                         error_log_level=log_level,
                     )
                 else:
-                    config_err_msg = (
-                        f"Unsupported validator type '{type(validation_model).__name__}' provided for model '{model_name}'."
-                    )
+                    config_err_msg = f"Unsupported validator type '{type(validation_model).__name__}' provided for model '{model_name}'."
                     logger.error(config_err_msg + " This indicates a misconfiguration in the pipeline step.")
                     raise ModelRunnerConfigError(config_err_msg)
 
@@ -724,11 +722,10 @@ class ModelRunner:
                     model_name=model_name,
                     file_path=file_path,
                 )
-                
+
                 if rescued_data is not None and rescue_errors is None:
                     validated_data = rescued_data
                     validation_error_payload = None
-
 
             if validation_error_payload is not None:
                 val_error = ModelOutputValidationError(
@@ -1187,7 +1184,7 @@ class ModelRunner:
         if "records" in base_dump:
             base_records = base_dump.pop("records")
             base_dump["record"] = base_records[0] if base_records else None
-            
+
         merged_data["annotations"][base_dataset_id] = base_dump
 
         successful_merges = 0

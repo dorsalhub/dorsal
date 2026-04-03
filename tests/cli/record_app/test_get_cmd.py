@@ -21,7 +21,7 @@ from rich.panel import Panel
 
 
 from dorsal.cli import app
-from dorsal.cli.record_app import get_cmd
+from dorsal.cli.hub_app import get_cmd
 from dorsal.common.exceptions import NotFoundError, AuthError, DorsalClientError
 
 runner = CliRunner()

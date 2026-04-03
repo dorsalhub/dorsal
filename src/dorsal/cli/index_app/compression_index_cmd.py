@@ -29,13 +29,13 @@ def set_index_compression_cmd(
     ] = None,
     global_scope: Annotated[
         bool, typer.Option("--global", "-g", help="Save to the global user config (~/.dorsal) instead of project.")
-    ] = False
+    ] = False,
 ):
     """View or set the compression algorithm and level for the local search index."""
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.api.config import set_compression
     from dorsal.cli.themes import UIContext
-    
+
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
@@ -46,9 +46,9 @@ def set_index_compression_cmd(
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
-        
+
         config_data = get_config_summary()
-        
+
         is_compressed = config_data.get("index_compression_enabled", False)
         current_mode = config_data.get("index_compression_mode", "zlib")
         current_level = config_data.get("index_compression_level", 6)
@@ -74,7 +74,7 @@ def set_index_compression_cmd(
                 border_style=palette.get("panel_border", "blue"),
                 box=borders,
                 expand=False,
-                padding=(0, 1)
+                padding=(0, 1),
             )
         )
 
@@ -82,12 +82,12 @@ def set_index_compression_cmd(
         raise typer.Exit()
 
     scope = "global" if global_scope else "project"
-    
+
     try:
         safe_mode = mode.lower() if mode else None
-        
+
         set_compression(mode=safe_mode, level=level, scope=scope)
-        
+
         updates = []
         if safe_mode:
             updates.append(f"Algorithm: [bold {palette.get('primary_value', 'cyan')}]{safe_mode}[/]")
@@ -98,13 +98,13 @@ def set_index_compression_cmd(
             f"[{palette.get('success', 'green')}]✅ Index compression settings updated in {scope} config:[/]\n  "
             + "\n  ".join(updates)
         )
-        
+
         console.print(
             "\n[dim]Newly indexed records will use these settings."
             "\nTo apply these changes to existing records in the index, run:[/] "
             f"[{palette.get('primary_value', 'cyan')}]dorsal index optimize[/]"
         )
-        
+
     except ValueError as e:
         console.print(f"[{palette.get('error', 'red')}]Validation Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)

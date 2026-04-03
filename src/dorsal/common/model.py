@@ -151,13 +151,7 @@ class AnnotationModel:
     def log(self, level: int, message: str, *args, **kwargs):
         """Base logging method with standardized model context."""
         logger.log(
-            level,
-            "Model '%s' (v%s) for file '%s': " + message,
-            self.id,
-            self.version,
-            self.file_path,
-            *args,
-            **kwargs
+            level, "Model '%s' (v%s) for file '%s': " + message, self.id, self.version, self.file_path, *args, **kwargs
         )
 
     def log_debug(self, message: str, *args, **kwargs):
@@ -171,7 +165,7 @@ class AnnotationModel:
     def log_warning(self, message: str, *args, **kwargs):
         """Logs a warning message with standardized model context."""
         self.log(logging.WARNING, message, *args, **kwargs)
-        
+
     def log_error(self, message: str, *args, **kwargs):
         """Logs an error message with standardized model context."""
         self.log(logging.ERROR, message, *args, **kwargs)

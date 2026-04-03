@@ -485,20 +485,20 @@ class FileAnnotator:
                     validated_annotations = [valid_ann]
                 except (AnnotationValidationError, ValidationError, PydanticValidationError) as original_err:
                     from dorsal.file.chunking import chunk_record
-                    
+
                     raw_dict = (
-                        ann.model_dump(by_alias=True, exclude_none=True) 
-                        if is_pydantic_model_instance(ann) 
+                        ann.model_dump(by_alias=True, exclude_none=True)
+                        if is_pydantic_model_instance(ann)
                         else cast(dict[str, Any], ann)
                     )
-                    
+
                     chunks = chunk_record(raw_dict, schema_id)
-                    
+
                     if len(chunks) > 1:
                         logger.info(
                             "Manual annotation validation failed. "
-                            "Attempting to rescue by semantically chunking into %d records.", 
-                            len(chunks)
+                            "Attempting to rescue by semantically chunking into %d records.",
+                            len(chunks),
                         )
                         validated_annotations = []
                         try:
