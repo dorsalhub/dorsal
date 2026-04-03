@@ -126,7 +126,7 @@ def get_index_compression_level(compression_mode: Literal["zlib", "zstd"] | None
         explicit_value=None,
         env_getter=lambda: os.getenv(constants.ENV_DORSAL_INDEX_COMPRESSION_LEVEL),
         config_getter=lambda: config_val,
-        default_value=default_level,
+        default_value=str(default_level),
     )
 
     try:

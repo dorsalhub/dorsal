@@ -100,8 +100,6 @@ def list_annotations(
     console.print(f"🔎 Found {found_count} annotation(s) for file [bold]{file_hash[:16]}...[/]\n")
     console.print(table)
 
-    
-        
     if first_anno:
         console.print(
             f"\n[dim]To view an annotation use[/] [{palette.get('primary_value', 'cyan')}]dorsal hub annotation get[/]"

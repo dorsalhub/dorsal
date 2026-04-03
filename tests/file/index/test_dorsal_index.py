@@ -155,7 +155,7 @@ def test_prune_removes_stale_records_and_indexes(
 
 
 @patch("dorsal.file.index.dorsal_index.DorsalIndex.prune")
-@patch("dorsal.file.index.dorsal_index.DorsalIndex._sync_compression")
+@patch("dorsal.file.index.dorsal_index.DorsalIndex.convert_compression")
 @patch("dorsal.file.index.dorsal_index.DorsalIndex.vacuum")
 def test_optimize_runs_all_maintenance(mock_vacuum, mock_sync, mock_prune, temp_index: DorsalIndex):
     """Test that optimize calls prune, sync, and vacuum."""
@@ -172,8 +172,7 @@ def test_optimize_runs_all_maintenance(mock_vacuum, mock_sync, mock_prune, temp_
     assert result["records_rewritten_for_compression"] == 2
 
 
-def test_sync_compression_compresses_records(temp_index: DorsalIndex):
-    """Test that _sync_compression correctly compresses uncompressed records."""
+def test_convert_compression_compresses_records(temp_index: DorsalIndex):
     temp_index.use_compression = True
     uncompressed_data = b'{"test": "data"}'
 
@@ -184,7 +183,7 @@ def test_sync_compression_compresses_records(temp_index: DorsalIndex):
     )
     temp_index.conn.commit()
 
-    rewritten_count = temp_index._sync_compression()
+    rewritten_count = temp_index.convert_compression(target_mode="zlib")
     assert rewritten_count == 1
 
     cursor.execute(
@@ -291,7 +290,6 @@ def test_default_db_path_and_mkdir(mocker, tmp_path):
 
 
 def test_ensure_connection_failure():
-    """Covers the RuntimeError when a connection completely fails to establish."""
     index = DorsalIndex()
 
     index.connect = lambda: None
@@ -301,7 +299,6 @@ def test_ensure_connection_failure():
 
 
 def test_finalize_connection_exception(mocker):
-    """Covers the silent Exception swallowing in the weakref finalizer."""
     mock_conn = mocker.MagicMock()
     mock_conn.close.side_effect = Exception("Simulated connection teardown error")
 
@@ -310,7 +307,6 @@ def test_finalize_connection_exception(mocker):
 
 
 def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
-    """Covers the OSError branch when the database file cannot be deleted."""
 
     mocker.patch("os.remove", side_effect=OSError("Simulated Permission Denied"))
 
@@ -320,33 +316,30 @@ def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
 
 
 def test_summary_file_not_found(temp_index: DorsalIndex, mocker):
-    """Covers the FileNotFoundError when generating a summary of a missing DB file."""
-
+    mocker.patch("dorsal.file.index.dorsal_index.get_index_compression_mode", return_value="zlib")
+    mocker.patch("dorsal.file.index.dorsal_index.get_index_compression_level", return_value=6)
     mocker.patch("os.stat", side_effect=FileNotFoundError())
 
-    summary = temp_index.summary()
+    summary = temp_index.summary(verbose=True)
 
     assert summary["database_size_bytes"] == 0
 
 
-def test_sync_compression_none_data_and_already_synced(temp_index: DorsalIndex):
-    """Covers the 'data is None' branch and the 'already synced' else branch."""
+def test_convert_compression_none_data_and_already_synced(temp_index: DorsalIndex):
     conn = temp_index.conn
     cursor = conn.cursor()
 
     cursor.execute("INSERT INTO cached_files (abspath, modified_time) VALUES (?, ?)", ("/fake/null.txt", 123.0))
     conn.commit()
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="zlib")
     assert rewritten == 0
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="zlib")
     assert rewritten == 0
 
 
-def test_sync_compression_decompression(temp_index: DorsalIndex):
-    """Covers the decompression branch in _sync_compression."""
-
+def test_convert_compression_decompression(temp_index: DorsalIndex):
     temp_index.use_compression = False
     conn = temp_index.conn
     cursor = conn.cursor()
@@ -360,7 +353,7 @@ def test_sync_compression_decompression(temp_index: DorsalIndex):
     )
     conn.commit()
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="none")
     assert rewritten == 1
 
     cursor.execute("SELECT record, is_compressed FROM cached_files WHERE abspath = ?", ("/fake/compressed.txt",))
@@ -548,7 +541,7 @@ def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_str
 
     assert "total_records" in summary
     assert summary["total_records"] == 1
-    assert "database_size_bytes" in summary
+    assert "database_size_bytes" not in summary
 
     assert "indexed_attributes" not in summary
     assert "total_tracked_file_bytes" not in summary

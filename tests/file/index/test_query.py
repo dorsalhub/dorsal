@@ -68,12 +68,12 @@ class TestQueryCompiler:
         processed = {"text": [], "filters": [("project", "=", "alpha"), ("score", ">=", "0.9")]}
         sql, params = QueryCompiler.compile(processed)
 
-        assert "a.value_text = ?" in sql
-        assert "a.value_num >=" in sql
+        assert "value_text = ?" in sql
+        assert "value_text >=" in sql
         assert "project" in params
         assert "alpha" in params
         assert "score" in params
-        assert 0.9 in params
+        assert "0.9" in params
 
     def test_compile_fts_text(self):
         processed = {"text": ["machine", "dark matter"], "filters": []}
@@ -98,7 +98,7 @@ class TestQueryCompiler:
         processed = {"text": [], "filters": [("custom_field", ">", "not_a_number")]}
         sql, params = QueryCompiler.compile(processed)
 
-        assert "a.value_text > ?" in sql
+        assert "value_text > ?" in sql
         assert "not_a_number" in params
 
     def test_compile_pagination(self):

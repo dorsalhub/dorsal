@@ -84,10 +84,10 @@ class ExtractorRegistry:
         if key in self._numeric_keys:
             try:
                 return (schema_id, key, None, float(value))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as err:
                 raise TypeError(
-                    f"Strict EAV Type Error: Key '{key}' is globally declared as numeric, but received non-numeric value '{value}' in schema '{schema_id}'."
-                )
+                    f"EAV Type Error: Key '{key}' is declared as numeric, but received non-numeric value '{value}' in schema '{schema_id}'."
+                ) from err
 
         if key not in self._text_keys:
             self._text_keys.add(key)
@@ -226,7 +226,7 @@ def _extract_obj(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTuple]]:
     return fts, eav
 
 
-@registry.register("open/regression")
+@registry.register("open/regression", numeric_keys=["regression_value"])
 def _extract_regression(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTuple]]:
     fts: list[str] = []
     eav: list[RawEAVTuple] = []
@@ -234,7 +234,7 @@ def _extract_regression(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTupl
     eav.append(("unit", rec.get("unit")))
     for point in rec.get("points", []):
         if isinstance(point, dict):
-            eav.append(("value", point.get("value")))
+            eav.append(("regression_value", point.get("value")))
     return fts, eav
 
 

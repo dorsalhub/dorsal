@@ -98,7 +98,7 @@ def test_summary_index_verbose_output(mock_rich_console, mock_summary_index_cmd_
     result = runner.invoke(app, ["index", "summary", "--verbose"])
 
     assert result.exit_code == 0
-    mock_summary_index_cmd_verbose.assert_called_once_with(verbose=True)
+    mock_summary_index_cmd_verbose.assert_called_once_with(verbose=True, limit=10)
 
     printed_objects = [call.args[0] for call in mock_rich_console.print.call_args_list if call.args]
 
@@ -117,7 +117,7 @@ def test_summary_index_verbose_compressed_records_fallback(mock_rich_console, mo
     result = runner.invoke(app, ["index", "summary", "--verbose"])
 
     assert result.exit_code == 0
-    mock_summary.assert_called_once_with(verbose=True)
+    mock_summary.assert_called_once_with(verbose=True, limit=10)
 
     assert mock_rich_console.print.called
 

@@ -30,11 +30,15 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-theme_app = typer.Typer(name="theme", help="[bold]list[/bold] and [bold]set[/bold] UI themes, icons, and borders.", no_args_is_help=True)
+theme_app = typer.Typer(
+    name="theme", help="[bold]list[/bold] and [bold]set[/bold] UI themes, icons, and borders.", no_args_is_help=True
+)
 app.add_typer(theme_app)
 
 pipeline_app = typer.Typer(
-    name="pipeline", help="[bold]show[/bold] and [bold]manage[/bold] the annotation model pipeline.", no_args_is_help=True
+    name="pipeline",
+    help="[bold]show[/bold] and [bold]manage[/bold] the annotation model pipeline.",
+    no_args_is_help=True,
 )
 app.add_typer(pipeline_app)
 

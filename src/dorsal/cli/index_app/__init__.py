@@ -27,7 +27,11 @@ from dorsal.cli.index_app.compression_index_cmd import set_index_compression_cmd
 from dorsal.cli.index_app.rebuild_index_cmd import rebuild_index_cmd
 
 
-app = typer.Typer(name="index", help="[bold]export[/bold], [bold]build[/bold] and manage local search index settings.", no_args_is_help=True)
+app = typer.Typer(
+    name="index",
+    help="[bold]export[/bold], [bold]build[/bold] and manage local search index settings.",
+    no_args_is_help=True,
+)
 
 app.command(name="get")(get_index_record)
 app.command(name="search")(search_index_cmd)

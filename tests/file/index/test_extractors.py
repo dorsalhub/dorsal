@@ -34,7 +34,7 @@ def test_registry_universal_attributes():
     assert fts == []
     assert ("unknown/schema", "producer", "test_runner", None) in eav
     assert ("unknown/schema", "color", "blue", None) in eav
-    assert ("unknown/schema", "count", None, 5.0) in eav
+    assert ("unknown/schema", "count", "5", None) in eav
 
 
 def test_extract_audio():
@@ -102,7 +102,7 @@ def test_extract_regression():
     fts, eav = registry.extract("open/regression", rec)
     assert ("open/regression", "target", "price", None) in eav
     assert ("open/regression", "unit", "usd", None) in eav
-    assert ("open/regression", "value", None, 100.5) in eav
+    assert ("open/regression", "regression_value", None, 100.5) in eav
 
 
 def test_extract_arxiv():

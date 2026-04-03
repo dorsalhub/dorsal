@@ -222,7 +222,7 @@ def search_index_cmd(
 
         if save:
             _save_local_search_results(
-                query=query,
+                query=display_query,
                 page_data=response_dict,
                 palette=palette,
                 output_path=output_path,

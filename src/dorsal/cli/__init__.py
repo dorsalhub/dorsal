@@ -73,6 +73,7 @@ def version_callback(value: bool):
         console.print(f"Dorsal Version {__version__}")
         raise typer.Exit()
 
+
 app = typer.Typer(
     name="dorsal",
     help="Extract, validate, and sync structured file metadata.",
@@ -80,27 +81,25 @@ app = typer.Typer(
     pretty_exceptions_enable=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
-    epilog=(
-        f"[dim]Powered by Dorsal v{__version__}[/dim]"
-    )
+    epilog=(f"[dim]Powered by Dorsal v{__version__}[/dim]"),
 )
 
 
 cli_apps = [
-    hub_app_, 
-    collection_app_, 
-    model_app_, 
-    pipeline_app_, 
-    adapter_app_, 
-    auth_app_, 
-    index_app_, 
-    config_app_, 
-    theme_app_
+    hub_app_,
+    collection_app_,
+    model_app_,
+    pipeline_app_,
+    adapter_app_,
+    auth_app_,
+    index_app_,
+    config_app_,
+    theme_app_,
 ]
 
-for cli_app in cli_apps:
-    if cli_app.info.help:
-        cli_app.info.help = f"... {cli_app.info.help}"
+for _cli_app in cli_apps:
+    if _cli_app.info.help:
+        _cli_app.info.help = f"... {_cli_app.info.help}"
 
 
 @app.callback()
@@ -170,25 +169,53 @@ def main(
 # ==============================================================================
 
 # --- Local Operations ---
-app.command(name="scan", help="Scan a local file or directory. Generates file metadata.", rich_help_panel="Local Operations")(scan_target)
-app.command(name="get", help="Get a file record from the local record cache.", rich_help_panel="Local Operations")(get_index_record)
+app.command(
+    name="scan", help="Scan a local file or directory. Generates file metadata.", rich_help_panel="Local Operations"
+)(scan_target)
+app.command(name="get", help="Get a file record from the local record cache.", rich_help_panel="Local Operations")(
+    get_index_record
+)
 app.command(name="hash", help="Generate file hashes.", rich_help_panel="Local Operations")(hash_target)
 app.command(name="search", help="Search local file index.", rich_help_panel="Local Operations")(search_index_cmd)
-app.command(name="dupes", help="Check for duplicate files in a directory.", rich_help_panel="Local Operations")(duplicates_target)
-app.command(name="duplicates", help="Scan a directory, checking for duplicate files.", hidden=True, rich_help_panel="Local Operations")(duplicates_target)
-app.command(name="info", help="High-level summary of a directory or a file.", rich_help_panel="Local Operations")(info_target)
-app.command(name="report", help="Generate HTML report for a local file or directory.", rich_help_panel="Local Operations")(report_target)
+app.command(name="dupes", help="Check for duplicate files in a directory.", rich_help_panel="Local Operations")(
+    duplicates_target
+)
+app.command(
+    name="duplicates",
+    help="Scan a directory, checking for duplicate files.",
+    hidden=True,
+    rich_help_panel="Local Operations",
+)(duplicates_target)
+app.command(name="info", help="High-level summary of a directory or a file.", rich_help_panel="Local Operations")(
+    info_target
+)
+app.command(
+    name="report", help="Generate HTML report for a local file or directory.", rich_help_panel="Local Operations"
+)(report_target)
 
 # --- DorsalHub & Cloud ---
 app.add_typer(hub_app_, name="hub", rich_help_panel="DorsalHub")
-app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.", rich_help_panel="DorsalHub")(identify_target)
-app.command(name="identify", help="Identify a local file by its hash. Queries DorsalHub.", hidden=True, rich_help_panel="DorsalHub")(identify_target)
-app.command(name="push", help="Push metadata for a local file or directory to DorsalHub.", rich_help_panel="DorsalHub")(push_target)
+app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.", rich_help_panel="DorsalHub")(
+    identify_target
+)
+app.command(
+    name="identify",
+    help="Identify a local file by its hash. Queries DorsalHub.",
+    hidden=True,
+    rich_help_panel="DorsalHub",
+)(identify_target)
+app.command(name="push", help="Push metadata for a local file or directory to DorsalHub.", rich_help_panel="DorsalHub")(
+    push_target
+)
 app.add_typer(collection_app_, name="collection", rich_help_panel="DorsalHub")
 
 # --- Models & Pipelines ---
-app.command(name="run", help="Run a model on a local file or directory.", rich_help_panel="Models & Pipelines")(run_model)
-app.command(name="install", help="Install a model from DorsalHub or a local folder.", rich_help_panel="Models & Pipelines")(install_model)
+app.command(name="run", help="Run a model on a local file or directory.", rich_help_panel="Models & Pipelines")(
+    run_model
+)
+app.command(
+    name="install", help="Install a model from DorsalHub or a local folder.", rich_help_panel="Models & Pipelines"
+)(install_model)
 app.add_typer(model_app_, name="model", rich_help_panel="Models & Pipelines")
 app.add_typer(pipeline_app_, name="pipeline", rich_help_panel="Models & Pipelines")
 app.add_typer(adapter_app_, name="adapter", rich_help_panel="Models & Pipelines")

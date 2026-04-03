@@ -252,7 +252,7 @@ def run_model(
 
                             if len(res.records or []) > 1:
                                 error_console.print(
-                                    f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(res.records)} records. The {export_format.upper()} export will currently only preview the first chunk."
+                                    f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(res.records or [])} records. The {export_format.upper()} export will currently only preview the first chunk."
                                 )
 
                             if not schema_id:

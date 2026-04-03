@@ -69,7 +69,7 @@ class DorsalIndex:
             self.db_path = Path.home() / ".dorsal" / "cache.db"
 
         self.use_compression = use_compression
-        self.compression_mode = compression_mode.lower()
+        self.compression_mode = compression_mode
         self.compression_level = compression_level
         self.conn: sqlite3.Connection | None = None
         self._ensure_db_directory_exists()
@@ -607,7 +607,7 @@ class DorsalIndex:
             summary_data["top_media_types"] = {row["media_type"]: row["count"] for row in cursor.fetchall()}
 
             cursor.execute(
-                f"""
+                """
                 SELECT schema_id, COUNT(DISTINCT abspath) as count 
                 FROM file_attributes 
                 WHERE schema_id != 'file/base'
@@ -781,8 +781,9 @@ class DorsalIndex:
         logger.info(f"Successfully reindexed {count} records.")
         return count
 
+    @staticmethod
     @functools.lru_cache(maxsize=4)
-    def _get_compressor(self, mode: str, level: int | None) -> tuple[Callable[[bytes], bytes], int]:
+    def _get_compressor(mode: str, level: int | None) -> tuple[Callable[[bytes], bytes], int]:
         """
         Returns a cached tuple of (compression_function, is_compressed_flag).
         """
@@ -793,27 +794,26 @@ class DorsalIndex:
         elif mode == "zstd":
             lvl = level if level is not None else 3
             try:
-                # Python 3.14+ Native
                 import compression.zstd as zstd
 
                 return (lambda data: zstd.compress(data, level=lvl)), 2
             except ImportError:
                 try:
-                    # PyPI Fallback
-                    import zstandard
+                    import zstandard  # type: ignore[import-not-found]
 
                     cctx = zstandard.ZstdCompressor(level=lvl)
                     return cctx.compress, 2
-                except ImportError:
+                except ImportError as err:
                     raise RuntimeError(
                         "zstd compression is enabled, but neither the Python 3.14+ "
                         "'compression.zstd' module nor the PyPI 'zstandard' package is available. "
                         "Run `pip install zstandard` or switch config back to 'zlib'."
-                    )
+                    ) from err
         raise ValueError(f"Unsupported compression mode: {mode}")
 
+    @staticmethod
     @functools.lru_cache(maxsize=4)
-    def _get_decompressor(self, flag: int) -> Callable[[bytes], bytes]:
+    def _get_decompressor(flag: int) -> Callable[[bytes], bytes]:
         """
         Returns a cached decompression function based on the database flag.
         """
@@ -828,16 +828,16 @@ class DorsalIndex:
                 return zstd.decompress
             except ImportError:
                 try:
-                    import zstandard
+                    import zstandard  # type: ignore[import-not-found]
 
                     dctx = zstandard.ZstdDecompressor()
                     return dctx.decompress
-                except ImportError:
+                except ImportError as err:
                     raise RuntimeError(
                         "Failed to read cache. This index contains 'zstd' compressed records, "
                         "but your current environment does not support it. "
                         "Please upgrade to Python 3.14+, `pip install zstandard`, or clear the cache."
-                    )
+                    ) from err
         raise ValueError(f"Unknown compression flag in database: {flag}")
 
     def convert_compression(
@@ -852,7 +852,7 @@ class DorsalIndex:
 
         if target_mode == "none":
             target_flag = 0
-            compress_fn = lambda d: d
+            compress_fn = lambda d: d  # noqa: E731
         else:
             compress_fn, target_flag = self._get_compressor(target_mode, target_level)
 
@@ -943,6 +943,9 @@ class DorsalIndex:
         count = 0
 
         try:
+            if format not in ("json", "json.gz"):
+                raise ValueError(f"Unsupported export format: {format}")
+
             if format == "json.gz":
                 import gzip
 

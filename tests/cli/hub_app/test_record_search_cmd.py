@@ -58,7 +58,7 @@ def mock_search_cmd(mocker):
     }
 
 
-@pytest.mark.parametrize("command_path", [["record", "search"]])
+@pytest.mark.parametrize("command_path", [["hub", "search"]])
 def test_search_user_scope_default(command_path, mock_rich_console, mock_search_cmd):
     """Tests a default search in the user scope, via both command paths."""
     result = runner.invoke(app, command_path + [QUERY])
@@ -82,7 +82,7 @@ def test_search_user_scope_default(command_path, mock_rich_console, mock_search_
 
 def test_search_global_scope(mock_rich_console, mock_search_cmd):
     """Tests a search in the global scope using the --global flag."""
-    result = runner.invoke(app, ["record", "search", QUERY, "--global"])
+    result = runner.invoke(app, ["hub", "search", QUERY, "--global"])
 
     assert result.exit_code == 0
     mock_search_cmd["global_search"].assert_called_once()
@@ -91,7 +91,7 @@ def test_search_global_scope(mock_rich_console, mock_search_cmd):
 
 def test_search_json_output(mock_rich_console, mock_search_cmd):
     """Tests a successful search with --json output."""
-    result = runner.invoke(app, ["record", "search", QUERY, "--json"])
+    result = runner.invoke(app, ["hub", "search", QUERY, "--json"])
 
     assert result.exit_code == 0
     assert mock_rich_console.print.call_count == 1
@@ -107,7 +107,7 @@ def test_search_no_results(mock_rich_console, mock_search_cmd):
     """Tests the output when a search yields no results."""
     mock_search_cmd["user_search"].return_value.results = []
 
-    result = runner.invoke(app, ["record", "search", QUERY])
+    result = runner.invoke(app, ["hub", "search", QUERY])
 
     assert result.exit_code == 0
     all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
@@ -118,7 +118,7 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
     """Tests the specific error handling for the premium feature gate."""
     mock_search_cmd["global_search"].side_effect = ForbiddenError("test")
 
-    result = runner.invoke(app, ["record", "search", QUERY, "--global"])
+    result = runner.invoke(app, ["hub", "search", QUERY, "--global"])
 
     assert result.exit_code == 0
 
@@ -129,7 +129,7 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
 
 def test_search_auto_save_with_json_output_path(mock_rich_console, mock_search_cmd):
     """Tests that --output with a .json file automatically enables the save routine."""
-    result = runner.invoke(app, ["record", "search", QUERY, "--output", "custom_results.json"])
+    result = runner.invoke(app, ["hub", "search", QUERY, "--output", "custom_results.json"])
 
     assert result.exit_code == 0
 
@@ -145,7 +145,7 @@ def test_search_none_style_borders(mock_rich_console, mock_search_cmd, mocker):
 
     mocker.patch("dorsal.cli.hub_app.remote_search.get_borders", return_value=MatchAnyBorder())
 
-    result = runner.invoke(app, ["record", "search", QUERY])
+    result = runner.invoke(app, ["hub", "search", QUERY])
 
     assert result.exit_code == 0
 
@@ -168,7 +168,7 @@ def test_search_narrow_console_and_missing_annotations(mock_rich_console, mock_s
     import logging
 
     with caplog.at_level(logging.WARNING):
-        result = runner.invoke(app, ["record", "search", QUERY])
+        result = runner.invoke(app, ["hub", "search", QUERY])
 
     assert result.exit_code == 0
 
@@ -193,7 +193,7 @@ def test_search_wide_console_missing_annotations(mock_rich_console, mock_search_
     import logging
 
     with caplog.at_level(logging.WARNING):
-        result = runner.invoke(app, ["record", "search", QUERY])
+        result = runner.invoke(app, ["hub", "search", QUERY])
 
     assert result.exit_code == 0
     assert "Search result with hash bad_hash_wide is missing base annotations, skipping." in caplog.text

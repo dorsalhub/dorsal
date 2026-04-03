@@ -16,7 +16,7 @@ import pytest
 import pathlib
 import sys
 from typer.testing import CliRunner
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, ANY
 
 
 from dorsal.cli import app
@@ -60,7 +60,7 @@ def test_export_index_with_output_path_inferred_format(mock_export_index_cmd, tm
 
     assert result.exit_code == 0
     mock_export_index_cmd["export_index"].assert_called_once_with(
-        output_path=output_file.resolve(), format="json", include_records=True
+        output_path=output_file.resolve(), format="json", include_records=True, progress_callback=ANY
     )
 
 
@@ -71,7 +71,7 @@ def test_export_index_with_format_override(mock_export_index_cmd, tmp_path):
 
     assert result.exit_code == 0
     mock_export_index_cmd["export_index"].assert_called_once_with(
-        output_path=output_file.resolve(), format="json.gz", include_records=True
+        output_path=output_file.resolve(), format="json.gz", include_records=True, progress_callback=ANY
     )
 
 

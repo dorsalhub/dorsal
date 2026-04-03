@@ -190,10 +190,13 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
             failed_rule = str(err.schema_path[-1]) if err.schema_path else "constraint"
             limit_value = "unknown"
             try:
-                curr = validator.schema
+                curr: Any = validator.schema
                 for segment in err.schema_path:
                     curr = curr[segment]
-                limit_value = f"{curr:,}"
+                if isinstance(curr, (int, float)) and not isinstance(curr, bool):
+                    limit_value = f"{curr:,}"
+                else:
+                    limit_value = str(curr)
             except (KeyError, TypeError):
                 pass
 

@@ -64,7 +64,7 @@ def mock_run_deps(mocker, mock_rich_console):
     default_result = RunModelResult(
         name="MockModel",
         source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
-        record={"summary": "Processed successfully"},
+        records=[{"summary": "Processed successfully"}],  # <--- CHANGED HERE
         schema_id="mock/schema",
     )
     mock_runner.return_value = default_result
@@ -164,7 +164,7 @@ def test_run_model_json_output(mock_rich_console, mock_run_deps):
         json_str = mock_rich_console.print.call_args.args[0]
         data = json.loads(json_str)
 
-        assert data["results"][0]["record"]["summary"] == "Processed successfully"
+        assert data["results"][0]["records"][0]["summary"] == "Processed successfully"
 
 
 def test_run_model_dorsal_error_handling(mock_run_deps):
@@ -221,7 +221,7 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
-        record={"text": "Transcribed string"},
+        records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
     mock_run_deps["run_logic"].return_value = mock_result
@@ -242,7 +242,7 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
-        record={"text": "Transcribed string"},
+        records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
     mock_run_deps["run_logic"].return_value = mock_result
@@ -267,7 +267,7 @@ def test_run_model_export_adapter_error(mock_run_deps, mocker):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
-        record={"text": "Transcribed string"},
+        records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
     mock_run_deps["run_logic"].return_value = mock_result
@@ -394,7 +394,7 @@ def test_run_model_export_model_error_validation(mock_run_deps):
     mock_result = RunModelResult(
         name="MockModel",
         source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
-        record={"summary": "Partial output"},
+        records=[{"summary": "Partial output"}],
         schema_id="mock/schema",
         error="Inference failed halfway.",
     )
@@ -419,7 +419,7 @@ def test_run_model_export_missing_schema_id(mock_run_deps):
     mock_result = RunModelResult(
         name="MockModel",
         source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
-        record={"summary": "Processed successfully"},
+        records=[{"summary": "Processed successfully"}],
         schema_id=None,
     )
     mock_run_deps["run_logic"].return_value = mock_result
@@ -502,7 +502,7 @@ def test_run_model_export_empty_record(mock_run_deps):
     mock_result = RunModelResult(
         name="MockModel",
         source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
-        record={},
+        records=[],
         schema_id="mock/schema",
     )
     mock_run_deps["run_logic"].return_value = mock_result

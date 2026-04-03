@@ -90,7 +90,7 @@ def search_local(
 
 
 def search_local_paginated(
-    query: str,
+    query: str | list[str],
     or_logic: bool = False,
     index: DorsalIndex | None = None,
     page: int = 1,

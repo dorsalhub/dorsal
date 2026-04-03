@@ -14,7 +14,7 @@
 
 import logging
 import typer
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 def set_index_compression_cmd(
     ctx: typer.Context,
     mode: Annotated[
-        Optional[str], typer.Option("--mode", help="The compression algorithm to use (zlib or zstd).")
+        Optional[Literal["zlib", "zstd"]],
+        typer.Option("--mode", help="The compression algorithm to use (zlib or zstd)."),
     ] = None,
     level: Annotated[
         Optional[int], typer.Option("--level", help="The compression level (zlib: 0-9, zstd: 1-22).")
@@ -81,10 +82,10 @@ def set_index_compression_cmd(
         console.print(ctx.get_help())
         raise typer.Exit()
 
-    scope = "global" if global_scope else "project"
+    scope: Literal["global", "project"] = "global" if global_scope else "project"
 
     try:
-        safe_mode = mode.lower() if mode else None
+        safe_mode = cast(Literal["zlib", "zstd"] | None, mode)
 
         set_compression(mode=safe_mode, level=level, scope=scope)
 

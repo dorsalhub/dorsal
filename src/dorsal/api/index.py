@@ -110,7 +110,7 @@ def export(
 
 
 def convert_compression(
-    target_algo: Literal["zlib", "zstd", "none"],
+    target_mode: Literal["zlib", "zstd", "none"],
     target_level: int | None = None,
     *,
     index: DorsalIndex | None = None,
@@ -120,7 +120,7 @@ def convert_compression(
     This will decompress and recompress all applicable records in the database.
 
     Args:
-        target_algo: The compression algorithm to use ("zlib", "zstd", or "none").
+        target_mode: The compression algorithm to use ("zlib", "zstd", or "none").
         target_level: Optional compression level. Defaults to algorithm's standard default.
         index: Optional custom DorsalIndex instance. Defaults to shared index.
 
@@ -128,7 +128,7 @@ def convert_compression(
         The total number of records successfully rewritten.
     """
     active_index = _get_active_index(index)
-    return active_index.convert_compression(target_algo=target_algo, target_level=target_level)
+    return active_index.convert_compression(target_mode=target_mode, target_level=target_level)
 
 
 def rebuild(

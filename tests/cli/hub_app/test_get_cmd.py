@@ -52,7 +52,7 @@ def mock_get_cmd(mocker):
 
 def test_get_record_success_default(mock_rich_console, mock_get_cmd):
     """Tests the default successful get, expecting a Rich Panel."""
-    result = runner.invoke(app, ["record", "get", HASH_STRING])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
     assert result.exit_code == 0
     mock_get_cmd["get_dorsal_file_record"].assert_called_once_with(
@@ -69,14 +69,14 @@ def test_get_record_success_default(mock_rich_console, mock_get_cmd):
 @pytest.mark.parametrize("flag, expected_scope", [("--private", False), ("--public", True)])
 def test_get_record_scopes(flag, expected_scope, mock_get_cmd):
     """Tests the --private and --public scope flags."""
-    runner.invoke(app, ["record", "get", HASH_STRING, flag])
+    runner.invoke(app, ["hub", "get", HASH_STRING, flag])
 
     assert mock_get_cmd["get_dorsal_file_record"].call_args.kwargs["public"] is expected_scope
 
 
 def test_get_record_json_output(mock_rich_console, mock_get_cmd):
     """Tests the --json flag, expecting raw JSON output."""
-    result = runner.invoke(app, ["record", "get", HASH_STRING, "--json"])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING, "--json"])
 
     assert result.exit_code == 0
     mock_rich_console.print.assert_called_once()
@@ -92,7 +92,7 @@ def test_get_record_json_output(mock_rich_console, mock_get_cmd):
 def test_get_record_save_to_output_file(mock_get_cmd, tmp_path):
     """Tests that the --output flag triggers the save helper with the correct path."""
     output_file = tmp_path / "record.json"
-    runner.invoke(app, ["record", "get", HASH_STRING, "--output", str(output_file)])
+    runner.invoke(app, ["hub", "get", HASH_STRING, "--output", str(output_file)])
 
     mock_get_cmd["save_get_report"].assert_called_once()
     assert mock_get_cmd["save_get_report"].call_args.kwargs["output_path"] == output_file
@@ -102,7 +102,7 @@ def test_get_record_not_found_panel(mock_rich_console, mock_get_cmd):
     """Tests the not-found case with standard output."""
     mock_get_cmd["get_dorsal_file_record"].side_effect = NotFoundError("No file found.")
 
-    result = runner.invoke(app, ["record", "get", HASH_STRING])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
     assert result.exit_code == 0  # Graceful exit with message
     assert "Not Found" in mock_rich_console.print.call_args.args[0]
@@ -112,7 +112,7 @@ def test_get_record_not_found_json(mock_rich_console, mock_get_cmd):
     """Tests the not-found case with --json output."""
     mock_get_cmd["get_dorsal_file_record"].side_effect = NotFoundError("No file found.")
 
-    result = runner.invoke(app, ["record", "get", HASH_STRING, "--json"])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING, "--json"])
 
     assert result.exit_code != 0
     json_str = mock_rich_console.print.call_args.args[0]
@@ -123,7 +123,7 @@ def test_get_record_not_found_json(mock_rich_console, mock_get_cmd):
 
 def test_get_record_flag_conflict():
     """Tests that using both --private and --public fails."""
-    result = runner.invoke(app, ["record", "get", HASH_STRING, "--private", "--public"])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING, "--private", "--public"])
 
     assert result.exit_code != 0
     assert "Cannot use --private and --public flags simultaneously" in result.output
@@ -133,7 +133,7 @@ def test_get_record_api_error(mock_get_cmd):
     """Tests that a generic DorsalClientError is handled correctly."""
     mock_get_cmd["get_dorsal_file_record"].side_effect = DorsalClientError("Connection failed.")
 
-    result = runner.invoke(app, ["record", "get", HASH_STRING])
+    result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
     assert result.exit_code != 0
     assert "API Error: Connection failed." in result.output

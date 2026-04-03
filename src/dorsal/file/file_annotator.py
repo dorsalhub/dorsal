@@ -481,7 +481,9 @@ class FileAnnotator:
                     validated_annotations = [cast(dict[str, Any], ann)]
             else:
                 try:
-                    valid_ann = self.validate_manual_annotation(annotation=ann, validator=validator)
+                    valid_ann = self.validate_manual_annotation(
+                        annotation=cast("BaseModel | dict[str, Any]", ann), validator=validator
+                    )
                     validated_annotations = [valid_ann]
                 except (AnnotationValidationError, ValidationError, PydanticValidationError) as original_err:
                     from dorsal.file.chunking import chunk_record
@@ -507,9 +509,9 @@ class FileAnnotator:
                                     self.validate_manual_annotation(annotation=chunk, validator=validator)
                                 )
                             logger.info("Rescue successful. Manual annotation was safely chunked and validated.")
-                        except (AnnotationValidationError, ValidationError, PydanticValidationError):
+                        except (AnnotationValidationError, ValidationError, PydanticValidationError) as err:
                             logger.warning("Rescue failed. The semantically chunked records still failed validation.")
-                            raise original_err
+                            raise original_err from err
                     else:
                         raise original_err
 
