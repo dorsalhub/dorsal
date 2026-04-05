@@ -518,3 +518,188 @@ def test_run_model_export_empty_record(mock_run_deps):
         printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
         assert any("Data Error" in msg for msg in printed_messages)
         assert any("No record data generated to export" in msg for msg in printed_messages)
+
+
+def test_run_model_filename_override_single(mock_run_deps, mocker):
+    """Covers --filename for JSON and export, plus --output dir creation."""
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        records=[{"part": 1}],
+        schema_id="open/generic",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+    mocker.patch("dorsal.api.adapters.export_record", return_value="exported text")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(
+            cli_app,
+            [
+                "run",
+                "dorsal/scanner",
+                str(test_file),
+                "--output",
+                "my_dir",
+                "--filename",
+                "custom_name",
+                "--export",
+                "txt",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert pathlib.Path("my_dir").is_dir()
+        assert pathlib.Path("my_dir/custom_name.dorsal.json").exists()
+        assert pathlib.Path("my_dir/custom_name.txt").exists()
+
+
+def test_run_model_batch_filename_warning(mock_run_deps):
+    """Covers the warning when --filename is used with a directory of files."""
+    with runner.isolated_filesystem():
+        test_dir = pathlib.Path("batch_input")
+        test_dir.mkdir()
+        (test_dir / "1.pdf").touch()
+        (test_dir / "2.pdf").touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--filename", "ignored_name"])
+
+        assert result.exit_code == 0
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("ignored during batch processing" in msg for msg in printed_messages)
+
+
+def test_run_model_chunked_export_iteration(mock_run_deps, mocker):
+    """Covers lines where len(records_to_export) > 1 loops and appends suffix _1, _2."""
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        records=[{"part": 1}, {"part": 2}],
+        schema_id="open/generic",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+    mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="chunked")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt"])
+
+        assert result.exit_code == 0
+        assert mock_export.call_count == 2
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("test_1.txt" in msg for msg in printed_messages)
+        assert any("test_2.txt" in msg for msg in printed_messages)
+
+
+def test_run_model_chunked_export_merge(mock_run_deps, mocker):
+    """Covers chunked export combined with the --merge flag."""
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        records=[{"part": 1}, {"part": 2}],
+        schema_id="open/generic",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+    mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records", return_value={"merged": "yes"})
+    mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="merged text")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt", "--merge"])
+
+        assert result.exit_code == 0
+        mock_merge.assert_called_once()
+        assert mock_export.call_count == 1
+
+        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+        assert any("test.txt" in msg for msg in printed_messages)
+
+
+def test_run_model_auth_error_propagation(mock_run_deps):
+    """Covers AuthError caught from the inner loop."""
+    mock_result = RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        records=[],
+        schema_id="open/generic",
+        error="Authentication failed: token expired",
+    )
+    mock_run_deps["run_logic"].return_value = mock_result
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+
+        # Typer catches unhandled explicit raises and stores them in result.exception
+        assert isinstance(result.exception, AuthError)
+
+
+def test_run_model_outer_unhandled_exception_json(mock_rich_console, mock_run_deps, mocker):
+    """Covers the global catch-all exception block formatted for --json."""
+    mocker.patch("rich.progress.Progress.__enter__", side_effect=Exception("Outer catastrophic crash"))
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
+
+        assert result.exit_code != 0
+        error_json = str(mock_run_deps["error_console"].print.call_args.args[0])
+        assert "Outer catastrophic crash" in error_json
+
+
+def test_run_model_batch_export_failed_row(mock_run_deps, mocker):
+    """Covers batch table displaying the 'Failed' text for export errors."""
+    mocker.patch("dorsal.api.adapters.export_record", side_effect=DorsalError("Adapter crashed"))
+
+    with runner.isolated_filesystem():
+        test_dir = pathlib.Path("batch_dir")
+        test_dir.mkdir()
+        (test_dir / "1.pdf").touch()
+        (test_dir / "2.pdf").touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--export", "txt"])
+
+        assert result.exit_code == 0
+
+
+def test_run_model_borders_none_padding(mock_run_deps):
+    """Covers applying padding to the table when borders are None."""
+    from dorsal.cli.themes.borders import get_borders
+
+    old_borders = DUMMY_UI_CONTEXT["borders"]
+    DUMMY_UI_CONTEXT["borders"] = get_borders("none")
+
+    try:
+        with runner.isolated_filesystem():
+            test_dir = pathlib.Path("batch_dir")
+            test_dir.mkdir()
+            (test_dir / "1.pdf").touch()
+            (test_dir / "2.pdf").touch()
+
+            result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
+            assert result.exit_code == 0
+    finally:
+        DUMMY_UI_CONTEXT["borders"] = old_borders
+
+
+def test_run_model_outer_typer_exit(mock_run_deps, mocker):
+    """Covers propagating typer.Exit from the outer execution loop."""
+    mocker.patch("rich.progress.Progress.__enter__", side_effect=typer.Exit(42))
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test.pdf")
+        test_file.touch()
+
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+        assert result.exit_code == 42

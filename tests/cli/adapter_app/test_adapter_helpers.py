@@ -85,3 +85,53 @@ def test_extract_single_raw_with_override():
     assert len(result) == 1
 
     assert result[0] == ("ForcedSchema", json_data, "raw.txt")
+
+
+def test_extract_batch_skips_non_dict_items():
+    """Tests that non-dictionary items in the 'results' list are safely ignored."""
+    json_data = {
+        "results": [
+            "this is a string, not a dict",
+            42,
+            {"file_path": "valid.txt", "schema_id": "ValidSchema", "record": {"data": "ok"}},
+        ]
+    }
+
+    result = extract_records(json_data)
+
+    assert len(result) == 1
+    assert result[0] == ("ValidSchema", {"data": "ok"}, "valid.txt")
+
+
+def test_extract_batch_with_chunked_records():
+    """Tests batch processing where an item uses the 'records' array for chunked outputs."""
+    json_data = {
+        "results": [
+            {
+                "file_path": "/test/chunked",
+                "schema_id": "ChunkSchema",
+                "records": [{"part": 1}, "invalid_string_chunk", {"part": 2}],
+            }
+        ]
+    }
+
+    result = extract_records(json_data)
+
+    assert len(result) == 2
+    assert result[0] == ("ChunkSchema", {"part": 1}, "/test/chunked")
+    assert result[1] == ("ChunkSchema", {"part": 2}, "/test/chunked")
+
+
+def test_extract_single_with_chunked_records():
+    """Tests extracting the 'records' array from a single payload wrapper."""
+    json_data = {
+        "schema_id": "SingleChunkSchema",
+        "file_path": "single_chunked.txt",
+        "records": [{"chunk": "A"}, ["invalid list chunk"], {"chunk": "B"}],
+    }
+
+    result = extract_records(json_data)
+
+    assert len(result) == 2
+    assert result[0] == ("SingleChunkSchema", {"chunk": "A"}, "single_chunked.txt")
+    assert result[1] == ("SingleChunkSchema", {"chunk": "B"}, "single_chunked.txt")

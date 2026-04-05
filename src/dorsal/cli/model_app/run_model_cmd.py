@@ -107,11 +107,20 @@ def run_model(
             rich_help_panel="Output Options",
         ),
     ] = False,
-    output_path: Annotated[
+    output_dir: Annotated[
         Optional[pathlib.Path],
         typer.Option(
             "--output",
-            help="Custom output file/directory path. Overrides auto-save naming.",
+            "-d",
+            help="Target directory to save outputs. Created if it doesn't exist.",
+            rich_help_panel="Output Options",
+        ),
+    ] = None,
+    filename: Annotated[
+        Optional[str],
+        typer.Option(
+            "--filename",
+            help="Override the base filename (single files only). Extensions are appended automatically.",
             rich_help_panel="Output Options",
         ),
     ] = None,
@@ -198,14 +207,15 @@ def run_model(
     results_data = []
     raw_results: list[RunModelResult | None] = []
     export_files_to_save = []
-    out_dir = pathlib.Path.cwd()
-    if output_path:
-        if is_batch or output_path.is_dir() or not output_path.suffix:
-            out_dir = output_path
-        else:
-            out_dir = output_path.parent
 
+    out_dir = output_dir if output_dir else pathlib.Path.cwd()
+    if not no_save:
         out_dir.mkdir(parents=True, exist_ok=True)
+
+    if is_batch and filename:
+        error_console.print(
+            f"[{palette.get('warning', 'yellow')}]Warning:[/] --filename is ignored during batch processing."
+        )
 
     try:
         with Progress(
@@ -279,15 +289,15 @@ def run_model(
                             ext = get_format_extension(schema_id, export_format)
 
                             for idx, rec_dict in enumerate(records_to_export):
-                                base_name = f.stem
+                                if not is_batch and filename:
+                                    base_name = filename
+                                else:
+                                    base_name = f.stem
+
                                 if len(records_to_export) > 1:
                                     base_name = f"{base_name}_{idx + 1}"
 
-                                save_path = (
-                                    output_path
-                                    if output_path and not is_batch and len(records_to_export) == 1
-                                    else out_dir / f"{base_name}.{ext}"
-                                )
+                                save_path = out_dir / f"{base_name}.{ext}"
 
                                 exported_text = export_record(
                                     record=rec_dict,
@@ -346,11 +356,12 @@ def run_model(
 
     saved_paths_msg = []
     if not no_save:
-        if output_path and not is_batch and not export_format:
-            json_save_path = output_path
+        if not is_batch and filename:
+            base_name = filename
         else:
             base_name = file_path.name + "_batch" if is_batch else file_path.stem
-            json_save_path = out_dir / f"{base_name}.dorsal.json"
+
+        json_save_path = out_dir / f"{base_name}.dorsal.json"
 
         json_save_path.write_text(
             json.dumps(final_json_data, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
@@ -392,6 +403,7 @@ def run_model(
             for item in display_results:
                 input_name = pathlib.Path(item["file_path"]).name
                 base_name = pathlib.Path(item["file_path"]).stem
+
                 row = []
 
                 if "error" in item and item["error"]:
@@ -405,7 +417,7 @@ def run_model(
                     status_text = f"[{palette.get('success', 'green')}]Success[/]"
                     row.extend([input_name, status_text])
                     if not no_save:
-                        json_path = out_dir / f"{base_name}.dorsal.json"
+                        json_path = out_dir / f"{file_path.name}_batch.dorsal.json"
                         row.append(f"[{palette.get('primary_value', 'cyan')}]{json_path.name}[/]")
 
                         if export_format:
