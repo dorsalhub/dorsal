@@ -190,6 +190,59 @@ class TestDocumentExtractionStrategy:
         assert len(chunks) == 2
         assert "attributes" not in chunks[0]
 
+    def test_merge_missing_dimensions(self):
+        """Covers lines 137->138: 'if not vals:' branch."""
+        records = [
+            {"page_width": None, "blocks": [{"page_number": 1}]},
+            {"blocks": [{"page_number": 2}]},
+        ]
+        merged = self.strategy.merge(records)
+        
+        assert "page_width" not in merged
+        assert "page_height" not in merged
+
+    def test_merge_complex_dimensions(self):
+        """Covers lines 141->144: the 'else' branch for differing or list-based dimensions."""
+        records = [
+            {
+                "blocks": [{"page_number": 1}],
+                "page_width": 800,  
+                "page_height": 600,
+            },
+            {
+                "blocks": [{"page_number": 2}],
+                "page_width": 1000,
+                "page_height": [{"value": 1200, "pages": [2]}],
+            },
+        ]
+        merged = self.strategy.merge(records)
+
+        assert merged["page_width"] == [
+            {"value": 800, "pages": [1]},
+            {"value": 1000, "pages": [2]},
+        ]
+
+        assert merged["page_height"] == [
+            {"value": 600, "pages": [1]},
+            {"value": 1200, "pages": [2]},
+        ]
+
+    def test_merge_complex_dimensions_empty_fallback(self):
+        """Covers the inner 'else: unified.pop(dim_key, None)' if grouping fails due to missing page numbers."""
+        records = [
+            {
+                "blocks": [{"text": "no page number here"}],
+                "page_width": 800,
+            },
+            {
+                "blocks": [{"text": "also no page number"}],
+                "page_width": 1000,
+            },
+        ]
+        merged = self.strategy.merge(records)
+
+        assert "page_width" not in merged
+
 
 class TestAudioTranscriptionStrategy:
     def setup_method(self):

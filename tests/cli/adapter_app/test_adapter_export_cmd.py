@@ -275,3 +275,53 @@ def test_export_usage_error_no_format_or_output(mock_export_deps):
         error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
         assert "Usage Error" in error_msg
         assert "target_format" in error_msg
+
+
+def test_export_merge_success(mocker, mock_export_deps):
+    """Tests that the --merge flag correctly condenses multiple records into one."""
+    mock_export_deps["extract"].return_value = [
+        ("MockSchema", {"part": 1}, "original_file.png"),
+        ("MockSchema", {"part": 2}, "original_file.png"),
+    ]
+
+    mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
+    mock_merge.return_value = {"merged": "data"}
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test_batch.dorsal.json")
+        test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
+
+        result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
+
+        assert result.exit_code == 0
+        
+        mock_merge.assert_called_once_with([{"part": 1}, {"part": 2}], "MockSchema")
+
+        mock_export_deps["export_file"].assert_called_once()
+        kwargs = mock_export_deps["export_file"].call_args.kwargs
+        assert kwargs["record"] == {"merged": "data"}
+        
+        assert kwargs["validate"] is False
+
+
+def test_export_merge_failure(mocker, mock_export_deps):
+    """Tests the try/except block if the merge process throws an exception."""
+    mock_export_deps["extract"].return_value = [
+        ("MockSchema", {"part": 1}, None),
+        ("MockSchema", {"part": 2}, None),
+    ]
+    
+    mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
+    mock_merge.side_effect = Exception("Simulated merge explosion")
+
+    with runner.isolated_filesystem():
+        test_file = pathlib.Path("test_batch.dorsal.json")
+        test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
+
+        result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
+
+        assert result.exit_code != 0
+        
+        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+        assert "Merge Error" in error_msg
+        assert "Simulated merge explosion" in error_msg
