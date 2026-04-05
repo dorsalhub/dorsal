@@ -231,7 +231,7 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.wav")
         test_file.touch()
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
+        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt", "--no-save"])
 
         assert result.exit_code == 0
         printed_text = mock_rich_console.print.call_args.args[0]

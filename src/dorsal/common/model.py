@@ -16,7 +16,7 @@ import inspect
 import logging
 import re
 from typing import Annotated, Any, Callable, Literal, Type, TypeGuard, TypeVar, Union, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_core import PydanticUndefined
@@ -195,7 +195,7 @@ class AnnotationSourceBase(BaseModel):
     version: String256 | None = None
     variant: String256 | None = None
     user_id: int | None = Field(default=None, validation_alias=AliasChoices("user_no", "user_id"))
-    execution_id: UUID | None = None
+    execution_id: UUID | None = Field(default_factory=uuid4)
 
 
 class AnnotationModelSource(AnnotationSourceBase):

@@ -127,34 +127,49 @@ class DocumentExtractionStrategy:
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["blocks"] = list(unified.get("blocks", []))
-        all_widths = (
-            unified.get("page_width", [])
-            if isinstance(unified.get("page_width"), list)
-            else [unified.get("page_width")]
-        )
-        all_heights = (
-            unified.get("page_height", [])
-            if isinstance(unified.get("page_height"), list)
-            else [unified.get("page_height")]
-        )
 
         for chunk in records[1:]:
             unified["blocks"].extend(chunk.get("blocks", []))
-            if "page_width" in chunk:
-                cw = chunk["page_width"]
-                all_widths.extend(cw if isinstance(cw, list) else [cw])
-            if "page_height" in chunk:
-                ch = chunk["page_height"]
-                all_heights.extend(ch if isinstance(ch, list) else [ch])
 
-        unified["page_width"] = [w for w in all_widths if w]
-        unified["page_height"] = [h for h in all_heights if h]
+        for dim_key in ["page_width", "page_height"]:
+            vals = [r.get(dim_key) for r in records if r.get(dim_key) is not None]
+
+            if not vals:
+                unified.pop(dim_key, None)
+                continue
+
+            if all(isinstance(v, (int, float)) for v in vals) and len(set(vals)) == 1:
+                unified[dim_key] = vals[0]
+            else:
+                complex_dims = []
+                for r in records:
+                    val = r.get(dim_key)
+                    if isinstance(val, (int, float)):
+                        pages = {b.get("page_number") for b in r.get("blocks", []) if b.get("page_number") is not None}
+                        if pages:
+                            complex_dims.append({"value": val, "pages": list(pages)})
+                    elif isinstance(val, list):
+                        complex_dims.extend(val)
+
+                grouped: dict[int | float, set[int]] = {}
+                for cd in complex_dims:
+                    cd_val = cd.get("value")
+                    cd_pages = cd.get("pages")
+
+                    if isinstance(cd_val, (int, float)) and isinstance(cd_pages, list):
+                        grouped.setdefault(cd_val, set()).update(cd_pages)
+
+                if grouped:
+                    unified[dim_key] = [{"value": k, "pages": sorted(list(v))} for k, v in grouped.items()]
+                else:
+                    unified.pop(dim_key, None)
 
         if "attributes" in unified and "attributes" in records[-1]:
             unified["attributes"] = unified["attributes"].copy()
             unified["attributes"]["end_page"] = records[-1]["attributes"].get(
                 "end_page", unified["attributes"].get("end_page")
             )
+
         return unified
 
     def split(self, record: dict[str, Any], limit: int = SPLIT_LIMIT_DEFAULT) -> list[dict[str, Any]]:

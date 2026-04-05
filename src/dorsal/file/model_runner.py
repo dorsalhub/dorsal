@@ -1213,9 +1213,7 @@ class ModelRunner:
                 continue
 
             try:
-                execution_id = str(uuid.uuid4())
                 source_data = result.source.model_dump(by_alias=True, exclude_none=True)
-                source_data["execution_id"] = execution_id
 
                 for record_data in result.records:
                     built_payload = build_annotation_or_annotationgroup(
@@ -1380,6 +1378,7 @@ def run_model(
         annotation_model=FileCoreAnnotationModel,
         validation_model=core_validation_model,
         file_path=file_path,
+        schema_id=constants.FILE_BASE_ANNOTATION_SCHEMA,
         options={"calculate_similarity_hash": requires_hashes, "calculate_hashes": requires_hashes},
     )
 

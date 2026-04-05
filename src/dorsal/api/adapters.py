@@ -51,7 +51,6 @@ def export_record(record: dict[str, Any] | BaseModel, schema_id: str, target_for
     logger.debug(f"Attempting to export '{schema_id}' to '{target_format}'.")
 
     try:
-        # Fetch the adapter and export
         adapter = get_adapter(schema_id, target_format)
         return adapter.export(record_dict, **kwargs)
     except Exception as e:

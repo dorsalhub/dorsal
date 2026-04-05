@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import functools
+import importlib
 import json
 import time
 from typing import Any, Type
@@ -875,9 +876,8 @@ class TestRunModelWrapper:
             if path_str in mock_import_map:
                 return mock_import_map[path_str]
 
-            import importlib
-
-            return importlib.import_module(path_obj.module)
+            module = importlib.import_module(path_obj.module)
+            return getattr(module, path_obj.name)
 
         mocker.patch("dorsal.file.model_runner.import_callable", side_effect=side_effect_import)
 
@@ -963,6 +963,19 @@ class TestRunModelWrapper:
         assert result.error is not None
         assert result.name == "MockBaseAnnotationModel"
         assert "Error executing model" in result.error
+
+    def test_run_model_with_real_dependency_checker(self, mock_fs):
+        from dorsal.file.configs.model_runner import check_media_type_dependency
+
+        real_dep_config = {
+            "type": "media_type",
+            "checker": {"module": "dorsal.file.configs.model_runner", "name": "check_media_type_dependency"},
+            "include": ["text/plain"],
+        }
+
+        result = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[real_dep_config])
+
+        assert result.error is None
 
 
 class TestResolvePipelineStepModels:

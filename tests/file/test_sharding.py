@@ -358,7 +358,7 @@ class TestBuildAnnotationOrGroup:
     def test_sharded_happy_path(self, detection_schema_id, large_payload_generator):
         """Tests successful creation of an AnnotationGroup from a massive payload."""
         record = {"objects": large_payload_generator(2000)}
-        source = {"type": "Model", "id": "test_mock"}
+        source = {"type": "Model", "id": "test_mock", "execution_id": "23456781-1234-5678-1234-567812345678"}
 
         result = build_annotation_or_annotationgroup(
             schema_id=detection_schema_id, record_data=record, source=source, schema_version="2.0", private=True

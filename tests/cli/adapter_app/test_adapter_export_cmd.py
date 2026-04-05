@@ -64,7 +64,7 @@ def mock_export_deps(mocker, mock_rich_console):
 
 
 def test_export_basic_success(mock_rich_console, mock_export_deps):
-    """Tests a standard single-file export to stdout and auto-save via the API wrapper."""
+    """Tests a standard single-file export and auto-save via the API wrapper."""
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test_file.dorsal.json")
         test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
@@ -79,8 +79,8 @@ def test_export_basic_success(mock_rich_console, mock_export_deps):
         assert kwargs["target_format"] == "srt"
         assert kwargs["output_path"] == pathlib.Path.cwd() / "test_file.srt"
 
-        printed_text = mock_rich_console.print.call_args.args[0]
-        assert "Mocked exported format content" in str(printed_text)
+        success_msg = mock_export_deps["error_console"].print.call_args.args[0]
+        assert "Outputs saved successfully" in success_msg
 
 
 def test_export_infer_format_from_output(mock_rich_console, mock_export_deps):

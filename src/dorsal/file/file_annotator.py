@@ -239,9 +239,7 @@ class FileAnnotator:
         if final_version is None and hasattr(run_model_result, "schema_version"):
             final_version = run_model_result.schema_version
 
-        execution_id = str(uuid4())
         source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
-        source_dict["execution_id"] = execution_id
 
         results = []
         if run_model_result.records:
@@ -317,9 +315,7 @@ class FileAnnotator:
             progress_callback=progress_callback,
         )
 
-        execution_id = str(uuid4())
         source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
-        source_dict["execution_id"] = execution_id
 
         results = []
         if run_model_result.records:
@@ -465,9 +461,7 @@ class FileAnnotator:
         if source_id is None:
             source_id = secrets.token_hex(12)
 
-        execution_id = str(uuid4())
         source = AnnotationManualSource(id=source_id).model_dump()
-        source["execution_id"] = execution_id
 
         annotations_to_process = annotation if isinstance(annotation, list) else [annotation]
         results = []

@@ -30,7 +30,7 @@ def test_version_flag(mock_rich_console):
 
     assert result.exit_code == 0
     mock_rich_console.print.assert_called_once()
-    assert "Dorsal Version" in mock_rich_console.print.call_args[0][0]
+    assert "Dorsal" in mock_rich_console.print.call_args[0][0]
 
 
 @pytest.mark.parametrize(

@@ -40,6 +40,7 @@ _DUMMY_BASE_URL = "http://dorsalhub.test"
 _DUMMY_SHA256 = "a" * 64
 
 _DUMMY_ANNOTATION_ID = "12345678-1234-5678-1234-567812345678"
+_EXECUTION_ID = "23456781-1234-5678-1234-567812345678"
 
 
 @pytest.fixture
@@ -71,13 +72,13 @@ def test_get_file_annotation_sharded_reassembly(client, requests_mock):
                 {
                     "record": {"text": "Part 1"},
                     "private": True,
-                    "source": {"type": "Model", "id": "test"},
+                    "source": {"type": "Model", "id": "test", "execution_id": _EXECUTION_ID},
                     "group": {"id": _DUMMY_ANNOTATION_ID, "index": 0, "total": 2},
                 },
                 {
                     "record": {"text": "Part 2"},
                     "private": True,
-                    "source": {"type": "Model", "id": "test"},
+                    "source": {"type": "Model", "id": "test", "execution_id": _EXECUTION_ID},
                     "group": {"id": _DUMMY_ANNOTATION_ID, "index": 1, "total": 2},
                 },
             ]
@@ -109,7 +110,7 @@ def test_get_file_annotation_reassembly_failure(client, requests_mock):
             "annotations": [
                 {
                     "record": {},
-                    "source": {"type": "Model", "id": "test_mock"},
+                    "source": {"type": "Model", "id": "test_mock", "execution_id": _EXECUTION_ID},
                     "private": True,
                     "group": {"id": "12345678-1234-5678-1234-567812345678", "index": 0, "total": 2},
                 }
@@ -143,13 +144,13 @@ def test_add_file_annotation_group(client, requests_mock):
             Annotation(
                 record=GenericFileAnnotation(a=1),
                 private=True,
-                source={"type": "Model", "id": "m"},
+                source={"type": "Model", "id": "m", "execution_id": _EXECUTION_ID},
                 group=AnnotationGroupInfo(id=_DUMMY_ANNOTATION_ID, index=0, total=2),
             ),
             Annotation(
                 record=GenericFileAnnotation(a=2),
                 private=True,
-                source={"type": "Model", "id": "m"},
+                source={"type": "Model", "id": "m", "execution_id": _EXECUTION_ID},
                 group=AnnotationGroupInfo(id=_DUMMY_ANNOTATION_ID, index=1, total=2),
             ),
         ]

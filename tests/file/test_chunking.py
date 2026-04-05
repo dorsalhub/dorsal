@@ -135,15 +135,17 @@ class TestDocumentExtractionStrategy:
             },
             {
                 "blocks": [{"page_number": 2}],
-                "page_width": [800],
-                "page_height": [600],
+                "page_width": 800,
+                "page_height": 600,
                 "attributes": {"start_page": 2, "end_page": 2},
             },
         ]
         merged = self.strategy.merge(records)
         assert len(merged["blocks"]) == 2
-        assert merged["page_width"] == [800, 800]
-        assert merged["page_height"] == [600, 600]
+
+        assert merged["page_width"] == 800
+        assert merged["page_height"] == 600
+
         assert merged["attributes"]["end_page"] == 2
 
     def test_split_under_limit(self):
