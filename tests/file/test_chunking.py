@@ -197,7 +197,7 @@ class TestDocumentExtractionStrategy:
             {"blocks": [{"page_number": 2}]},
         ]
         merged = self.strategy.merge(records)
-        
+
         assert "page_width" not in merged
         assert "page_height" not in merged
 
@@ -206,7 +206,7 @@ class TestDocumentExtractionStrategy:
         records = [
             {
                 "blocks": [{"page_number": 1}],
-                "page_width": 800,  
+                "page_width": 800,
                 "page_height": 600,
             },
             {

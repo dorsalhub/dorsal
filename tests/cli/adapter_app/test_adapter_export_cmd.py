@@ -294,13 +294,13 @@ def test_export_merge_success(mocker, mock_export_deps):
         result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
 
         assert result.exit_code == 0
-        
+
         mock_merge.assert_called_once_with([{"part": 1}, {"part": 2}], "MockSchema")
 
         mock_export_deps["export_file"].assert_called_once()
         kwargs = mock_export_deps["export_file"].call_args.kwargs
         assert kwargs["record"] == {"merged": "data"}
-        
+
         assert kwargs["validate"] is False
 
 
@@ -310,7 +310,7 @@ def test_export_merge_failure(mocker, mock_export_deps):
         ("MockSchema", {"part": 1}, None),
         ("MockSchema", {"part": 2}, None),
     ]
-    
+
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
     mock_merge.side_effect = Exception("Simulated merge explosion")
 
@@ -321,7 +321,7 @@ def test_export_merge_failure(mocker, mock_export_deps):
         result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
 
         assert result.exit_code != 0
-        
+
         error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
         assert "Merge Error" in error_msg
         assert "Simulated merge explosion" in error_msg
