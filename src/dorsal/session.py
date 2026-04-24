@@ -100,13 +100,23 @@ def set_shared_index(index: DorsalIndex) -> None:
     _DORSAL_INDEX = index
 
 
+def create_index_instance() -> DorsalIndex:
+    from dorsal.file.index.dorsal_index import DorsalIndex
+    from dorsal.file.index.config import get_index_compression, get_index_compression_level, get_index_compression_mode
+
+    compression_enabled = get_index_compression()
+    compression_mode = get_index_compression_mode()
+    compression_level = get_index_compression_level(compression_mode=compression_mode)
+
+    return DorsalIndex(
+        use_compression=compression_enabled, compression_level=compression_level, compression_mode=compression_mode
+    )
+
+
 def get_shared_index() -> DorsalIndex:
     global _DORSAL_INDEX
     if _DORSAL_INDEX is None:
-        from dorsal.file.index.dorsal_index import DorsalIndex
-        from dorsal.file.index.config import get_index_compression
-
-        _DORSAL_INDEX = DorsalIndex(use_compression=get_index_compression())
+        _DORSAL_INDEX = create_index_instance()
     return _DORSAL_INDEX
 
 

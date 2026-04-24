@@ -22,6 +22,7 @@ from dorsal.common.exceptions import DorsalError
 from dorsal.common.validators import Pagination
 from dorsal.file.index.dorsal_index import DorsalIndex, CachedFileRecord
 from dorsal.file.index.query import QueryParser, QueryCompiler
+from dorsal.session import create_index_instance
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class PaginatedSearchResults(BaseModel):
 
 
 def search_local(
-    query: str,
+    query: str | list[str],
     or_logic: bool = False,
     index: DorsalIndex | None = None,
     limit: int = 1000,
@@ -47,12 +48,14 @@ def search_local(
     """
     logger.debug(f"Starting standard local search for query: '{query}'")
 
-    if not query or not query.strip():
+    if not query:
+        return []
+    if isinstance(query, str) and not query.strip():
         return []
 
     close_after = False
     if index is None:
-        index = DorsalIndex()
+        index = create_index_instance()
         close_after = True
 
     try:
@@ -87,7 +90,7 @@ def search_local(
 
 
 def search_local_paginated(
-    query: str,
+    query: str | list[str],
     or_logic: bool = False,
     index: DorsalIndex | None = None,
     page: int = 1,
@@ -101,7 +104,7 @@ def search_local_paginated(
     """
     logger.debug(f"Starting paginated local search for query: '{query}' (Page {page})")
 
-    if not query or not query.strip():
+    if not query or (isinstance(query, str) and not query.strip()):
         empty_pagination = Pagination(
             current_page=page,
             record_count=0,
@@ -116,7 +119,7 @@ def search_local_paginated(
 
     close_after = False
     if index is None:
-        index = DorsalIndex()
+        index = create_index_instance()
         close_after = True
 
     try:

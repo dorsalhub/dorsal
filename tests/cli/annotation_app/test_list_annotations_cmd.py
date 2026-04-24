@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from rich.box import ROUNDED
 from rich.table import Table
 
-from dorsal.cli.annotation_app.list_annotations_cmd import list_annotations
+from dorsal.cli.hub_app.annotation_app.list_annotations_cmd import list_annotations
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError
 

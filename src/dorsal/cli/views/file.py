@@ -79,7 +79,7 @@ def _build_annotation_table(
             if data.get("url") and data.get("id"):
                 file_hash = data["url"].split("/")[2]
                 anno_id = data["id"]
-                cta = f"dorsal annotation get {file_hash} {anno_id}"
+                cta = f"dorsal hub annotation get {file_hash} {anno_id}"
                 table.add_row(f"{indent}To View:", Text(cta, style="cyan"))
         else:
             for dict_key, value in data.items():

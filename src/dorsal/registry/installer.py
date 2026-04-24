@@ -265,7 +265,7 @@ def install_model_from_package(
         if not toml_config:
             raise DorsalError(
                 f"Missing 'model_config.toml' in package '{package_name}'.\n"
-                "Modern Dorsal models must include this file via 'force-include' in pyproject.toml."
+                "Models must include this file via 'force-include' in pyproject.toml."
             )
 
         if "model_class" not in toml_config:

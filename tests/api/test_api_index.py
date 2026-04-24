@@ -116,7 +116,9 @@ def test_export_with_custom_args(mock_custom_index):
     result = api_index.export(output_path=out_path, format="json", include_records=False, index=mock_custom_index)
 
     assert result == 42
-    mock_custom_index.export.assert_called_once_with(output_path=out_path, format="json", include_records=False)
+    mock_custom_index.export.assert_called_once_with(
+        output_path=out_path, format="json", include_records=False, progress_callback=None
+    )
 
 
 def test_export_with_default_args(mock_shared_index):
@@ -128,4 +130,6 @@ def test_export_with_default_args(mock_shared_index):
 
     assert result == 99
 
-    mock_shared_index.export.assert_called_once_with(output_path=out_path, format="json.gz", include_records=True)
+    mock_shared_index.export.assert_called_once_with(
+        output_path=out_path, format="json.gz", include_records=True, progress_callback=None
+    )

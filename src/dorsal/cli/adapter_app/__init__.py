@@ -21,7 +21,7 @@ from dorsal.cli.adapter_app.parse_cmd import parse_adapter
 
 app = typer.Typer(
     name="adapter",
-    help="Transform model results into standard formats (SRT, VTT, Markdown, etc.).",
+    help="[bold]export[/bold] annotations into standard formats (SRT, VTT, Markdown, etc.).",
     no_args_is_help=True,
 )
 

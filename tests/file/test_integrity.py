@@ -21,6 +21,7 @@ from dorsal.file.validators.file_record import FileRecordStrict
 _DUMMY_SHA256 = "a" * 64
 _DUMMY_BLAKE3 = "b" * 64
 _GROUP_ID = uuid.uuid4()
+_EXECUTION_ID = str(uuid.uuid4())
 
 
 def _build_base_record(
@@ -68,13 +69,13 @@ def _build_base_record(
                     {
                         "record": {"part": 1},
                         "private": group_private,
-                        "source": {"type": "Model", "id": "custom_group"},
+                        "source": {"type": "Model", "id": "custom_group", "execution_id": _EXECUTION_ID},
                         "group": {"id": _GROUP_ID, "index": 0, "total": 2},
                     },
                     {
                         "record": {"part": 2},
                         "private": group_private,
-                        "source": {"type": "Model", "id": "custom_group"},
+                        "source": {"type": "Model", "id": "custom_group", "execution_id": _EXECUTION_ID},
                         "group": {"id": _GROUP_ID, "index": 1, "total": 2},
                     },
                 ]

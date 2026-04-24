@@ -155,7 +155,7 @@ def test_prune_removes_stale_records_and_indexes(
 
 
 @patch("dorsal.file.index.dorsal_index.DorsalIndex.prune")
-@patch("dorsal.file.index.dorsal_index.DorsalIndex._sync_compression")
+@patch("dorsal.file.index.dorsal_index.DorsalIndex.convert_compression")
 @patch("dorsal.file.index.dorsal_index.DorsalIndex.vacuum")
 def test_optimize_runs_all_maintenance(mock_vacuum, mock_sync, mock_prune, temp_index: DorsalIndex):
     """Test that optimize calls prune, sync, and vacuum."""
@@ -172,8 +172,7 @@ def test_optimize_runs_all_maintenance(mock_vacuum, mock_sync, mock_prune, temp_
     assert result["records_rewritten_for_compression"] == 2
 
 
-def test_sync_compression_compresses_records(temp_index: DorsalIndex):
-    """Test that _sync_compression correctly compresses uncompressed records."""
+def test_convert_compression_compresses_records(temp_index: DorsalIndex):
     temp_index.use_compression = True
     uncompressed_data = b'{"test": "data"}'
 
@@ -184,7 +183,7 @@ def test_sync_compression_compresses_records(temp_index: DorsalIndex):
     )
     temp_index.conn.commit()
 
-    rewritten_count = temp_index._sync_compression()
+    rewritten_count = temp_index.convert_compression(target_mode="zlib")
     assert rewritten_count == 1
 
     cursor.execute(
@@ -291,7 +290,6 @@ def test_default_db_path_and_mkdir(mocker, tmp_path):
 
 
 def test_ensure_connection_failure():
-    """Covers the RuntimeError when a connection completely fails to establish."""
     index = DorsalIndex()
 
     index.connect = lambda: None
@@ -301,7 +299,6 @@ def test_ensure_connection_failure():
 
 
 def test_finalize_connection_exception(mocker):
-    """Covers the silent Exception swallowing in the weakref finalizer."""
     mock_conn = mocker.MagicMock()
     mock_conn.close.side_effect = Exception("Simulated connection teardown error")
 
@@ -310,7 +307,6 @@ def test_finalize_connection_exception(mocker):
 
 
 def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
-    """Covers the OSError branch when the database file cannot be deleted."""
 
     mocker.patch("os.remove", side_effect=OSError("Simulated Permission Denied"))
 
@@ -320,33 +316,30 @@ def test_clear_os_error(temp_index: DorsalIndex, mocker, caplog):
 
 
 def test_summary_file_not_found(temp_index: DorsalIndex, mocker):
-    """Covers the FileNotFoundError when generating a summary of a missing DB file."""
-
+    mocker.patch("dorsal.file.index.dorsal_index.get_index_compression_mode", return_value="zlib")
+    mocker.patch("dorsal.file.index.dorsal_index.get_index_compression_level", return_value=6)
     mocker.patch("os.stat", side_effect=FileNotFoundError())
 
-    summary = temp_index.summary()
+    summary = temp_index.summary(verbose=True)
 
     assert summary["database_size_bytes"] == 0
 
 
-def test_sync_compression_none_data_and_already_synced(temp_index: DorsalIndex):
-    """Covers the 'data is None' branch and the 'already synced' else branch."""
+def test_convert_compression_none_data_and_already_synced(temp_index: DorsalIndex):
     conn = temp_index.conn
     cursor = conn.cursor()
 
     cursor.execute("INSERT INTO cached_files (abspath, modified_time) VALUES (?, ?)", ("/fake/null.txt", 123.0))
     conn.commit()
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="zlib")
     assert rewritten == 0
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="zlib")
     assert rewritten == 0
 
 
-def test_sync_compression_decompression(temp_index: DorsalIndex):
-    """Covers the decompression branch in _sync_compression."""
-
+def test_convert_compression_decompression(temp_index: DorsalIndex):
     temp_index.use_compression = False
     conn = temp_index.conn
     cursor = conn.cursor()
@@ -360,7 +353,7 @@ def test_sync_compression_decompression(temp_index: DorsalIndex):
     )
     conn.commit()
 
-    rewritten = temp_index._sync_compression()
+    rewritten = temp_index.convert_compression(target_mode="none")
     assert rewritten == 1
 
     cursor.execute("SELECT record, is_compressed FROM cached_files WHERE abspath = ?", ("/fake/compressed.txt",))
@@ -548,13 +541,13 @@ def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_str
 
     assert "total_records" in summary
     assert summary["total_records"] == 1
-    assert "database_size_bytes" in summary
-    assert "fts_indexed_records" in summary
+    assert "database_size_bytes" not in summary
 
     assert "indexed_attributes" not in summary
     assert "total_tracked_file_bytes" not in summary
     assert "compressed_records" not in summary
     assert "top_extensions" not in summary
+    assert "fts_indexed_records" not in summary
 
 
 def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_strict):
@@ -570,3 +563,302 @@ def test_summary_verbose_metrics(temp_index: DorsalIndex, mock_file_record_stric
     assert "top_extensions" in summary
     assert "top_media_types" in summary
     assert "top_schemas" in summary
+    assert "fts_indexed_records" in summary
+
+
+def test_get_record_null_or_corrupt_data(temp_index):
+    """Covers get_record returning None for missing data or corrupt compressed data."""
+    conn = temp_index.conn
+
+    conn.execute("INSERT INTO cached_files (abspath, modified_time) VALUES (?, ?)", ("/null_rec", 1.0))
+
+    conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/bad_zlib", 1.0, 1, b"not_zlib_data"),
+    )
+    conn.commit()
+
+    assert temp_index.get_record(path="/null_rec") is None
+    assert temp_index.get_record(path="/bad_zlib") is None
+
+
+def test_get_hash_coverage(temp_index, mocker):
+    """Covers get_hash branch paths including cache misses and stale files."""
+    import pytest
+
+    temp_index.upsert_hash(path="/fake.txt", modified_time=10.0, hash_function="SHA-256", hash_value="abc")
+
+    mocker.patch("os.lstat", return_value=mocker.Mock(st_mtime=10.0))
+    assert temp_index.get_hash(path="/fake.txt", hash_function="SHA-256") == "abc"
+
+    mocker.patch("os.lstat", side_effect=FileNotFoundError)
+    assert temp_index.get_hash(path="/fake.txt", hash_function="SHA-256") is None
+
+    mocker.patch("os.lstat", return_value=mocker.Mock(st_mtime=20.0))
+    assert temp_index.get_hash(path="/fake.txt", hash_function="SHA-256") is None
+
+    with pytest.raises(ValueError):
+        temp_index.get_hash(path="/fake.txt", hash_function="UNKNOWN")
+
+
+def test_rebuild_indexes(temp_index, mock_file_record_strict, mocker):
+    """Covers the rebuild() maintenance function and progress callback."""
+    from unittest.mock import MagicMock
+
+    temp_index.upsert_record(path="/test1", modified_time=10.0, record=mock_file_record_strict)
+
+    conn = temp_index.conn
+    conn.execute("DELETE FROM dorsal_fts")
+    conn.execute("DELETE FROM file_attributes")
+    conn.commit()
+
+    mocker.patch(
+        "dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", return_value=mock_file_record_strict
+    )
+
+    progress_mock = MagicMock()
+    count = temp_index.rebuild(batch_size=1, progress_callback=progress_mock)
+
+    assert count == 1
+    progress_mock.assert_called()
+
+    assert conn.execute("SELECT COUNT(*) FROM dorsal_fts").fetchone()[0] > 0
+    assert conn.execute("SELECT COUNT(*) FROM file_attributes").fetchone()[0] > 0
+
+
+def test_convert_compression_error_skip(temp_index):
+    """Covers graceful skipping of corrupt data during convert_compression."""
+    conn = temp_index.conn
+    conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/bad_comp", 1.0, 1, b"bad_zlib_data"),
+    )
+    conn.commit()
+
+    rewritten = temp_index.convert_compression(target_mode="none")
+    assert rewritten == 0
+
+
+def test_export_metadata_only_and_batching(temp_index, mock_file_record_strict, tmp_path):
+    """Covers export batching loops and the include_records=False branch."""
+    import json
+
+    temp_index.upsert_record(path="/test1", modified_time=1.0, record=mock_file_record_strict)
+    temp_index.upsert_record(path="/test2", modified_time=2.0, record=mock_file_record_strict)
+
+    out_path = tmp_path / "meta.json"
+    temp_index.export(output_path=out_path, format="json", include_records=False, batch_size=1)
+
+    with open(out_path, "r") as f:
+        data = json.load(f)
+
+    assert len(data) == 2
+    assert "record" not in data[0]
+
+
+def test_export_decompression_error(temp_index, tmp_path):
+    """Covers the JSON error injection when an exported record fails to decompress."""
+    import json
+
+    conn = temp_index.conn
+    conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/bad_zlib", 1.0, 1, b"not_zlib_data"),
+    )
+    conn.commit()
+
+    out_path = tmp_path / "bad.json"
+    temp_index.export(output_path=out_path, format="json")
+
+    with open(out_path, "r") as f:
+        data = json.load(f)
+
+    assert data[0]["record"]["error"] == "Could not decode record"
+
+
+def test_export_mkdir_failure(temp_index, tmp_path, mocker):
+    """Covers the graceful exit if the target export directory is unwritable."""
+    import pytest
+
+    mocker.patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied"))
+    with pytest.raises(IOError, match="not writable"):
+        temp_index.export(output_path=tmp_path / "test.json")
+
+
+def test_unsupported_compression_mode(temp_index):
+    """Covers the ValueError fallback inside the compressor factory."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Unsupported compression mode: lzma"):
+        temp_index._get_compressor(mode="lzma", level=1)
+
+
+def test_summary_operational_error(temp_index):
+    """Covers graceful summary generation if the index_meta table is missing or corrupt."""
+    temp_index.conn.execute("DROP TABLE index_meta")
+    summary = temp_index.summary()
+    assert "created_time" in summary
+
+
+def test_zstd_compressor_import_fallback(temp_index, mocker):
+    """Covers fallback from compression.zstd to zstandard library."""
+    import sys
+
+    mocker.patch.dict("sys.modules", {"compression.zstd": None})
+    mock_zstd = mocker.MagicMock()
+    mocker.patch.dict("sys.modules", {"zstandard": mock_zstd})
+
+    fn, flag = temp_index._get_compressor("zstd", 3)
+    assert flag == 2
+
+    fn = temp_index._get_decompressor(2)
+    assert fn is not None
+
+
+def test_summary_missing_created_at_value(temp_index):
+    """Hits the fallback branch when created_at exists in index_meta but is empty/falsy."""
+
+    temp_index.conn.execute("UPDATE index_meta SET value = '' WHERE key = 'created_at'")
+    temp_index.conn.commit()
+    summary = temp_index.summary()
+    assert "created_time" in summary
+
+
+def test_summary_verbose_compression_ratio(temp_index, mock_file_record_strict):
+    """Hits the decompression sampling logic and the 'except Exception: pass' branch."""
+
+    import zlib
+
+    valid_compressed = zlib.compress(b'{"dummy": "data"}')
+    temp_index.conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/good", 1.0, 1, valid_compressed),
+    )
+
+    temp_index.conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/bad", 1.0, 1, b"corrupt_zlib_data_that_will_fail"),
+    )
+    temp_index.conn.commit()
+
+    summary = temp_index.summary(verbose=True)
+    assert "compression_ratio_sample" in summary
+
+
+def test_rebuild_full_coverage(temp_index, mock_file_record_strict, mocker):
+    """Hits the rebuild exception log, loop flushes, and progress callbacks."""
+    import zlib
+
+    def mock_validate(json_str, *args, **kwargs):
+        if json_str == "{bad}":
+            raise ValueError("Simulated parse error")
+        return mock_file_record_strict
+
+    mocker.patch("dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", side_effect=mock_validate)
+
+    temp_index.upsert_record(path="/test1", modified_time=10.0, record=mock_file_record_strict)
+    temp_index.upsert_record(path="/test2", modified_time=10.0, record=mock_file_record_strict)
+
+    bad_json = zlib.compress(b"{bad}")
+    temp_index.conn.execute(
+        "INSERT INTO cached_files (abspath, modified_time, is_compressed, record) VALUES (?, ?, ?, ?)",
+        ("/bad_json", 1.0, 1, bad_json),
+    )
+    temp_index.conn.commit()
+
+    progress = mocker.MagicMock()
+
+    count = temp_index.rebuild(batch_size=2, progress_callback=progress)
+
+    assert count == 3
+
+    progress.assert_any_call(0, 3)
+    progress.assert_any_call(2, 3)
+    progress.assert_any_call(3, 3)
+    assert progress.call_count == 3
+
+
+def test_convert_compression_already_synced(temp_index, mock_file_record_strict):
+    """Hits the 'current_flag == target_flag and not force' skip branch."""
+
+    temp_index.upsert_record(path="/synced", modified_time=1.0, record=mock_file_record_strict)
+
+    rewritten = temp_index.convert_compression(target_mode="zlib", force=False)
+    assert rewritten == 0
+
+
+def test_zstd_compressor_import_native(temp_index, mocker):
+    """Hits the successful native 'compression.zstd' import branch."""
+    from dorsal.file.index.dorsal_index import DorsalIndex
+
+    DorsalIndex._get_compressor.cache_clear()
+
+    mock_zstd = mocker.MagicMock()
+    mock_zstd.compress = mocker.MagicMock(return_value=b"compressed")
+
+    mock_comp = mocker.MagicMock()
+    mock_comp.zstd = mock_zstd
+
+    mocker.patch.dict("sys.modules", {"compression": mock_comp, "compression.zstd": mock_zstd})
+
+    comp_fn, flag = temp_index._get_compressor("zstd", 3)
+    assert flag == 2
+    assert comp_fn(b"data") == b"compressed"
+
+
+def test_zstd_compressor_import_fallback(temp_index, mocker):
+    """Covers fallback from compression.zstd to zstandard library."""
+    from dorsal.file.index.dorsal_index import DorsalIndex
+
+    DorsalIndex._get_compressor.cache_clear()
+    DorsalIndex._get_decompressor.cache_clear()
+
+    mocker.patch.dict("sys.modules", {"compression.zstd": None})
+    mock_zstd = mocker.MagicMock()
+    mocker.patch.dict("sys.modules", {"zstandard": mock_zstd})
+
+    fn, flag = temp_index._get_compressor("zstd", 3)
+    assert flag == 2
+
+
+def test_zstd_compressor_import_total_failure(temp_index, mocker):
+    """Covers Runtime error when all zstd libraries are missing."""
+    import pytest
+    from dorsal.file.index.dorsal_index import DorsalIndex
+
+    DorsalIndex._get_compressor.cache_clear()
+    DorsalIndex._get_decompressor.cache_clear()
+
+    mocker.patch.dict("sys.modules", {"compression.zstd": None, "zstandard": None})
+
+    with pytest.raises(RuntimeError, match="zstd compression is enabled"):
+        temp_index._get_compressor("zstd", 3)
+
+    with pytest.raises(RuntimeError, match="Failed to read cache"):
+        temp_index._get_decompressor(2)
+
+
+def test_rebuild_post_loop_flush(temp_index, mock_file_record_strict, mocker):
+    """Hits the post-loop flush blocks (if batch_fts: ...) in rebuild."""
+    mocker.patch(
+        "dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", return_value=mock_file_record_strict
+    )
+
+    temp_index.upsert_record(path="/flush_me", modified_time=1.0, record=mock_file_record_strict)
+
+    count = temp_index.rebuild(batch_size=2)
+    assert count == 1
+
+
+def test_export_progress_callback(temp_index, mock_file_record_strict, tmp_path):
+    """Hits the progress_callback execution lines in the export method."""
+    from unittest.mock import MagicMock
+
+    temp_index.upsert_record(path="/exp1", modified_time=1.0, record=mock_file_record_strict)
+
+    progress = MagicMock()
+    out_path = tmp_path / "exp_prog.json"
+
+    temp_index.export(output_path=out_path, format="json", progress_callback=progress, batch_size=10)
+
+    assert progress.call_count >= 2

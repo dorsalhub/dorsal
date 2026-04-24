@@ -64,7 +64,7 @@ def test_search_index_default(mock_rich_console, mock_search_index_cmd):
 
     assert result.exit_code == 0
     mock_search_index_cmd["search_api"].assert_called_once_with(
-        query=QUERY,
+        query=[QUERY],
         or_logic=False,
         page=1,
         per_page=25,
@@ -126,14 +126,6 @@ def test_search_index_exception_handling(mock_rich_console, mock_search_index_cm
 
     assert result.exit_code != 0
     assert "An error occurred during local search: Corrupt Database" in result.output
-
-
-def test_search_index_empty_query(mock_rich_console, mock_search_index_cmd):
-    """Hits the early exit when an empty query string is provided."""
-    result = runner.invoke(app, ["index", "search", "   "])
-    assert result.exit_code != 0
-    output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
-    assert "Please provide a search query" in output
 
 
 def test_search_index_has_next_page(mock_rich_console, mock_search_index_cmd):

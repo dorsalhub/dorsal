@@ -56,7 +56,7 @@ def mock_delete_cmd(mocker):
 
 def test_delete_record_with_yes_flag(mock_rich_console, mock_delete_cmd):
     """Tests a non-interactive delete using the --yes flag."""
-    result = runner.invoke(app, ["record", "delete", HASH_STRING, "--yes"])
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING, "--yes"])
 
     assert result.exit_code == 0
     mock_delete_cmd["delete_record"].assert_called_once_with(
@@ -72,7 +72,7 @@ def test_delete_record_with_yes_flag(mock_rich_console, mock_delete_cmd):
 
 def test_delete_record_interactive_confirm(mock_rich_console, mock_delete_cmd):
     """Tests an interactive delete where the user confirms with 'y'."""
-    result = runner.invoke(app, ["record", "delete", HASH_STRING], input="y\n")
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING], input="y\n")
 
     assert result.exit_code == 0
     mock_delete_cmd["get_record"].assert_called_once()
@@ -87,7 +87,7 @@ def test_delete_record_interactive_confirm(mock_rich_console, mock_delete_cmd):
 
 def test_delete_record_interactive_abort(mock_rich_console, mock_delete_cmd):
     """Tests aborting an interactive delete."""
-    result = runner.invoke(app, ["record", "delete", HASH_STRING], input="n\n")
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING], input="n\n")
 
     assert result.exit_code == 0  # The command catches the abort and exits cleanly
     mock_delete_cmd["delete_record"].assert_not_called()
@@ -98,7 +98,7 @@ def test_delete_record_interactive_abort(mock_rich_console, mock_delete_cmd):
 
 def test_delete_record_success_json_output(mock_rich_console, mock_delete_cmd):
     """Tests a successful delete with --json output."""
-    result = runner.invoke(app, ["record", "delete", HASH_STRING, "--yes", "--json"])
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING, "--yes", "--json"])
 
     assert result.exit_code == 0
     mock_rich_console.print.assert_called_once()
@@ -110,7 +110,7 @@ def test_delete_record_not_found(mock_rich_console, mock_delete_cmd):
     """Tests error handling when the record to delete is not found in interactive mode."""
     mock_delete_cmd["get_record"].side_effect = NotFoundError("test")
 
-    result = runner.invoke(app, ["record", "delete", HASH_STRING])  # No --yes flag
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING])  # No --yes flag
 
     assert result.exit_code != 0
     printed_object = mock_rich_console.print.call_args.args[0]
@@ -124,7 +124,7 @@ def test_delete_record_flag_conflict(mock_rich_console):
     """Tests that using an invalid scope for a granular delete option fails."""
     result = runner.invoke(
         app,
-        ["record", "delete", HASH_STRING, "--record", "invalid-scope"],
+        ["hub", "delete", HASH_STRING, "--record", "invalid-scope"],
         env={"TERM": "dumb"},  # force plain-text
     )
 

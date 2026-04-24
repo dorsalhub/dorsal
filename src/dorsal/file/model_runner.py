@@ -21,6 +21,7 @@ import logging
 import os
 import time
 from typing import Any, Callable, NamedTuple, Sequence, Type, TYPE_CHECKING, TypeVar, cast
+import uuid
 
 from pydantic import BaseModel, Field, ConfigDict, TypeAdapter, ValidationInfo, field_validator
 
@@ -33,25 +34,19 @@ from dorsal.common.exceptions import (
     ModelExecutionError,
     ModelImportError,
     ModelOutputValidationError,
-    ModelRunnerError,
     ModelRunnerConfigError,
     MissingHashError,
-    ReadError,
     PipelineIntegrityError,
     PydanticValidationError,
-    ValidationError,
 )
 from dorsal.common.model import is_pydantic_model_class, AnnotationModel, AnnotationModelSource
 from dorsal.common.validators import (
     CallableImportPath,
     JsonSchemaValidator,
-    StringNotEmpty,
-    String4096,
     import_callable,
     json_schema_validate_records,
 )
 from dorsal.file.linters import apply_linter
-from dorsal.file.utils.hashes import HashFunction
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -377,93 +372,123 @@ class ModelRunner:
 
     def _pydantic_validate_raw_annotation_model_output(
         self,
-        raw_model_output: dict[str, Any],
+        raw_model_output: dict[str, Any] | list[dict[str, Any]],
         pydantic_class: Type[BaseModel],
         annotator_model_name: str,
         file_path: str,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+        error_log_level: int = logging.WARNING,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
         """Validate raw output using a Pydantic BaseModel class.
 
         Args:
-            raw_model_output: Raw dictionary output from the annotation model.
+            raw_model_output: Raw dictionary output or a list of dictionary outputs from the annotation model.
             pydantic_class: Pydantic class to validate against.
             annotator_model_name: Name of the annotation model.
             file_path: Path of the file being processed.
 
         Returns:
-            tuple[dict[str, Any] | None, list[dict[str, Any]] | None]: A tuple containing:
-                - Validated data as dict (after model_dump) if successful, else None.
-                - List of Pydantic error dicts if validation fails, else None.
+            tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]: A tuple containing:
+                - List of validated data as dicts (after model_dump) if successful, else None.
+                - List of Pydantic error dicts if validation fails for any record, else None.
         """
+        records_to_validate = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
+
         logger.debug(
-            "Validating output of annotator '%s' for file '%s' using Pydantic model '%s'.",
+            "Validating output of annotator '%s' for file '%s' using Pydantic model '%s'. Total records: %d.",
             annotator_model_name,
             file_path,
             pydantic_class.__name__,
+            len(records_to_validate),
         )
-        try:
-            validated_model_instance = pydantic_class.model_validate(raw_model_output)
-            logger.debug(
-                "Pydantic validation successful for annotator '%s', file '%s'.",
-                annotator_model_name,
-                file_path,
-            )
-            return (
-                validated_model_instance.model_dump(mode="json", exclude_none=self.exclude_none),
-                None,
-            )
-        except PydanticValidationError as err:
-            logger.warning(
-                "Pydantic validation failed for annotator '%s' output on file '%s' with validator '%s'. Errors: %s. Raw output snippet: %s",
+
+        validated_records = []
+        all_errors = []
+
+        for record in records_to_validate:
+            try:
+                validated_model_instance = pydantic_class.model_validate(record)
+                validated_records.append(
+                    validated_model_instance.model_dump(mode="json", exclude_none=self.exclude_none)
+                )
+            except PydanticValidationError as err:
+                all_errors.extend(err.errors())
+
+        if all_errors:
+            logger.log(
+                error_log_level,
+                "Pydantic validation failed for annotator '%s' output on file '%s' with validator '%s'. "
+                "Errors: %s. Raw output snippet: %s",
                 annotator_model_name,
                 file_path,
                 pydantic_class.__name__,
-                err.errors(),
+                all_errors,
                 str(raw_model_output)[:200],
             )
-            return None, cast(list[dict[str, Any]], err.errors())
+            return None, cast(list[dict[str, Any]], all_errors)
+
+        logger.debug(
+            "Pydantic validation successful for annotator '%s', file '%s'. Validated %d record(s).",
+            annotator_model_name,
+            file_path,
+            len(validated_records),
+        )
+        return validated_records, None
 
     def _json_schema_validate_raw_annotation_model_output(
         self,
-        raw_model_output: dict[str, Any],
+        raw_model_output: dict[str, Any] | list[dict[str, Any]],
         schema_validator_instance: JsonSchemaValidator,
         annotator_model_name: str,
         file_path: str,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+        error_log_level: int = logging.WARNING,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
         """Validate raw output using a JsonSchemaValidator instance.
 
         Args:
-            raw_model_output: Raw dictionary output from the annotation model.
+            raw_model_output: Raw dictionary output or a list of dictionary outputs from the annotation model.
             schema_validator_instance: Pre-configured JsonSchemaValidator instance.
             annotator_model_name: Name of the annotation model.
             file_path: Path of the file being processed.
 
         Returns:
-            tuple[dict[str, Any] | None, list[dict[str, Any]] | None]: A tuple containing:
-                - Raw model output if validation successful, else None.
-                - List of JSON Schema error detail dicts if validation fails, else None.
+            tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]: A tuple containing:
+                - List of raw model outputs if validation successful, else None.
+                - List of JSON Schema error detail dicts if validation fails for any record, else None.
         """
         validator_type_name = schema_validator_instance.__name__
+        records_to_validate = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
+
         logger.debug(
-            "Validating output of annotator '%s' for file '%s' using JsonSchemaValidator instance of type '%s'.",
+            "Validating %d output record(s) of annotator '%s' for file '%s' using JsonSchemaValidator instance of type '%s'.",
+            len(records_to_validate),
             annotator_model_name,
             file_path,
             validator_type_name,
         )
-        summary = json_schema_validate_records(records=[raw_model_output], validator=schema_validator_instance)
 
-        if summary.get("valid_records") == 1:
+        summary = json_schema_validate_records(records=records_to_validate, validator=schema_validator_instance)
+
+        if summary.get("invalid_records", 0) == 0:
             logger.debug(
-                "JSON Schema validation successful for annotator '%s', file '%s'.",
+                "JSON Schema validation successful for annotator '%s', file '%s'. All %d record(s) valid.",
                 annotator_model_name,
                 file_path,
+                len(records_to_validate),
             )
-            return raw_model_output, None
+            return records_to_validate, None
         else:
             error_details: list[dict[str, Any]] = summary.get("error_details", [])
             if error_details:
                 for err_detail in error_details:
-                    logger.warning(
+                    idx = err_detail.get("record_index", 0)
+                    snippet = (
+                        str(records_to_validate[idx])[:200]
+                        if idx < len(records_to_validate)
+                        else str(raw_model_output)[:200]
+                    )
+
+                    logger.log(
+                        error_log_level,
                         "JSON Schema validation failed for annotator '%s' on file '%s'. Record Index: %s, Path: %s, Validator: '%s', Message: %s. Raw output snippet: %s",
                         annotator_model_name,
                         file_path,
@@ -471,10 +496,11 @@ class ModelRunner:
                         err_detail.get("path"),
                         err_detail.get("validator"),
                         err_detail.get("error_message"),
-                        str(raw_model_output)[:200],
+                        snippet,
                     )
             else:
-                logger.warning(
+                logger.log(
+                    error_log_level,
                     "JSON Schema validation failed for annotator '%s' on file '%s' (no specific error details in summary). Summary: %s. Raw output snippet: %s",
                     annotator_model_name,
                     file_path,
@@ -482,6 +508,58 @@ class ModelRunner:
                     str(raw_model_output)[:200],
                 )
             return None, error_details
+
+    def _attempt_rescue_by_chunking(
+        self,
+        raw_model_output: dict[str, Any] | list[dict[str, Any]],
+        schema_id: str,
+        validation_model: Type[BaseModel] | JsonSchemaValidator,
+        model_name: str,
+        file_path: str,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
+        """
+        Attempts to rescue validation failures by chunking oversized records.
+        Returns:
+            (rescued_data, rescue_errors)
+        """
+        from dorsal.file.chunking import chunk_record
+
+        raw_records = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
+        rescued_records = []
+
+        for rec in raw_records:
+            rescued_records.extend(chunk_record(rec, schema_id))
+
+        if len(rescued_records) <= len(raw_records):
+            return None, None
+
+        logger.info(
+            "Validation failed for '%s'. Attempting to rescue by semantically chunking into %d records.",
+            model_name,
+            len(rescued_records),
+        )
+
+        if isinstance(validation_model, JsonSchemaValidator):
+            validated_data, rescue_error_payload = self._json_schema_validate_raw_annotation_model_output(
+                raw_model_output=rescued_records,
+                schema_validator_instance=validation_model,
+                annotator_model_name=model_name,
+                file_path=file_path,
+            )
+        else:
+            validated_data, rescue_error_payload = self._pydantic_validate_raw_annotation_model_output(
+                raw_model_output=rescued_records,
+                pydantic_class=validation_model,
+                annotator_model_name=model_name,
+                file_path=file_path,
+            )
+
+        if rescue_error_payload is None:
+            logger.info("Rescue successful. Model output was safely chunked and validated.")
+        else:
+            logger.warning("Rescue failed. The semantically chunked records still failed validation.")
+
+        return validated_data, rescue_error_payload
 
     @model_debug_timer
     def run_single_model(
@@ -539,13 +617,14 @@ class ModelRunner:
                 "variant": None,
                 "version": annotation_model.version,
             },
-            "record": None,
+            "records": None,
             "schema_id": schema_id,
             "schema_version": schema_version,
             "error": None,
         }
-        raw_model_output: dict[str, Any] | None = None
-        validated_data: dict[str, Any] | None = None
+
+        raw_model_output: dict[str, Any] | list[dict[str, Any]] | None = None
+        validated_data: list[dict[str, Any]] | None = None
         validation_error_payload: list[dict[str, Any]] | str | None = None
 
         try:
@@ -553,11 +632,10 @@ class ModelRunner:
             annotation_model_instance = annotation_model(file_path=file_path)  # type: ignore[call-arg]
 
             annotation_model_instance.follow_symlinks = follow_symlinks
-
             annotation_model_instance._progress_callback = progress_callback
 
-            if base_model_result and base_model_result.record:
-                for key, value in base_model_result.record.items():
+            if base_model_result and base_model_result.records:
+                for key, value in base_model_result.records[0].items():
                     if key == "all_hashes":
                         continue
                     setattr(annotation_model_instance, key, value)
@@ -609,28 +687,45 @@ class ModelRunner:
                     model_name,
                     file_path,
                 )
-                validated_data = raw_model_output
-            elif isinstance(validation_model, JsonSchemaValidator):
-                result_data["schema_version"] = validation_model.schema.get("version")
-                validated_data, validation_error_payload = self._json_schema_validate_raw_annotation_model_output(
-                    raw_model_output=raw_model_output,
-                    schema_validator_instance=validation_model,
-                    annotator_model_name=model_name,
-                    file_path=file_path,
-                )
-            elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
-                validated_data, validation_error_payload = self._pydantic_validate_raw_annotation_model_output(
-                    raw_model_output=raw_model_output,
-                    pydantic_class=validation_model,
-                    annotator_model_name=model_name,
-                    file_path=file_path,
-                )
+                validated_data = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
+
             else:
-                config_err_msg = (
-                    f"Unsupported validator type '{type(validation_model).__name__}' provided for model '{model_name}'."
+                can_rescue = bool(schema_id and validation_model)
+                log_level = logging.DEBUG if can_rescue else logging.WARNING
+                if isinstance(validation_model, JsonSchemaValidator):
+                    result_data["schema_version"] = validation_model.schema.get("version")
+                    validated_data, validation_error_payload = self._json_schema_validate_raw_annotation_model_output(
+                        raw_model_output=raw_model_output,
+                        schema_validator_instance=validation_model,
+                        annotator_model_name=model_name,
+                        file_path=file_path,
+                        error_log_level=log_level,
+                    )
+                elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
+                    validated_data, validation_error_payload = self._pydantic_validate_raw_annotation_model_output(
+                        raw_model_output=raw_model_output,
+                        pydantic_class=validation_model,
+                        annotator_model_name=model_name,
+                        file_path=file_path,
+                        error_log_level=log_level,
+                    )
+                else:
+                    config_err_msg = f"Unsupported validator type '{type(validation_model).__name__}' provided for model '{model_name}'."
+                    logger.error(config_err_msg + " This indicates a misconfiguration in the pipeline step.")
+                    raise ModelRunnerConfigError(config_err_msg)
+
+            if validation_error_payload is not None and schema_id and validation_model:
+                rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
+                    raw_model_output=raw_model_output,
+                    schema_id=schema_id,
+                    validation_model=validation_model,
+                    model_name=model_name,
+                    file_path=file_path,
                 )
-                logger.error(config_err_msg + " This indicates a misconfiguration in the pipeline step.")
-                raise ModelRunnerConfigError(config_err_msg)
+
+                if rescued_data is not None and rescue_errors is None:
+                    validated_data = rescued_data
+                    validation_error_payload = None
 
             if validation_error_payload is not None:
                 val_error = ModelOutputValidationError(
@@ -671,12 +766,12 @@ class ModelRunner:
                 if validated_data is not None:
                     try:
                         raise_on_linter_error = not ignore_linter_errors
-
-                        apply_linter(
-                            schema_id=schema_id,
-                            record=validated_data,
-                            raise_on_error=raise_on_linter_error,
-                        )
+                        for rec in validated_data:
+                            apply_linter(
+                                schema_id=schema_id,
+                                record=rec,
+                                raise_on_error=raise_on_linter_error,
+                            )
 
                     except DataQualityError as e:
                         logger.warning(
@@ -689,7 +784,7 @@ class ModelRunner:
                         result_data["error"] = str(e)
                         return RunModelResult(**result_data)
 
-                result_data["record"] = validated_data
+                result_data["records"] = validated_data
                 logger.debug(
                     "Model '%s' successfully executed for file '%s'. Output %s.",
                     model_name,
@@ -907,7 +1002,7 @@ class ModelRunner:
                                     "version": annotator_model_version,
                                 },
                                 schema_id=step_config.schema_id,
-                                record=None,
+                                records=None,
                                 error=error_msg,
                             )
                             all_model_results.append(error_result)
@@ -961,7 +1056,7 @@ class ModelRunner:
                         "version": annotator_model_version,
                     },
                     schema_id=step_config.schema_id,
-                    record=None,
+                    records=None,
                     error=f"Import failed: {err.callable_path_str}: {err.original_exception}",
                 )
                 all_model_results.append(error_result)
@@ -984,7 +1079,7 @@ class ModelRunner:
                         "version": source_model_version,
                     },
                     schema_id=step_config.schema_id,
-                    record=None,
+                    records=None,
                     error=str(err),
                 )
                 all_model_results.append(error_result)
@@ -1005,7 +1100,7 @@ class ModelRunner:
                         "version": annotator_model_version,
                     },
                     schema_id=step_config.schema_id,
-                    record=None,
+                    records=None,
                     error=f"Dependency checker failed: {err.checker_path_str}: {err.original_exception}",
                 )
                 all_model_results.append(error_result)
@@ -1042,9 +1137,9 @@ class ModelRunner:
         merged_data: dict[str, Any] = {"annotations": {}, "source": "disk"}
         base_model_output = model_results[0]
 
-        if base_model_output.error or base_model_output.record is None:
+        if base_model_output.error or not base_model_output.records:
             logger.error(
-                "Base model result has an error or no record for file '%s' at merge stage. Error: %s",
+                "Base model result has an error or no records for file '%s' at merge stage. Error: %s",
                 file_path_for_log,
                 base_model_output.error,
             )
@@ -1053,13 +1148,13 @@ class ModelRunner:
             )
 
         try:
-            base_file_data = FileCoreValidationModelStrict.model_validate(base_model_output.record)
+            base_file_data = FileCoreValidationModelStrict.model_validate(base_model_output.records[0])
         except PydanticValidationError as err:
             logger.error(
                 "Failed to validate base model's record during merge for file '%s'. Errors: %s. Record: %s",
                 file_path_for_log,
                 err.errors(),
-                base_model_output.record,
+                base_model_output.records[0],
                 exc_info=True,
             )
             raise PipelineIntegrityError(
@@ -1085,9 +1180,12 @@ class ModelRunner:
         merged_data["similarity_hash"] = base_file_data.similarity_hash
 
         base_dataset_id = constants.FILE_BASE_ANNOTATION_SCHEMA
-        merged_data["annotations"][base_dataset_id] = base_model_output.model_dump(
-            mode="json", exclude_none=self.exclude_none
-        )
+        base_dump = base_model_output.model_dump(mode="json", exclude_none=self.exclude_none)
+        if "records" in base_dump:
+            base_records = base_dump.pop("records")
+            base_dump["record"] = base_records[0] if base_records else None
+
+        merged_data["annotations"][base_dataset_id] = base_dump
 
         successful_merges = 0
         skipped_due_to_error = 0
@@ -1104,7 +1202,7 @@ class ModelRunner:
                     result.error = "No target dataset id"
                 skipped_due_to_error += 1
                 continue
-            if result.error or result.record is None:
+            if result.error or not result.records:
                 logger.debug(
                     "Skipping result from model '%s' for file '%s' (error or no record). Error: %s",
                     result.name,
@@ -1117,15 +1215,38 @@ class ModelRunner:
             try:
                 source_data = result.source.model_dump(by_alias=True, exclude_none=True)
 
-                built_payload = build_annotation_or_annotationgroup(
-                    schema_id=schema_id,
-                    record_data=result.record,
-                    source=source_data,
-                    schema_version=result.schema_version,
-                    private=None,
-                )
+                for record_data in result.records:
+                    built_payload = build_annotation_or_annotationgroup(
+                        schema_id=schema_id,
+                        record_data=record_data,
+                        source=source_data,
+                        schema_version=result.schema_version,
+                        private=None,
+                    )
 
-                result_dump = built_payload.model_dump(mode="json", exclude_none=self.exclude_none)
+                    result_dump = built_payload.model_dump(mode="json", exclude_none=self.exclude_none)
+
+                    is_core_schema = schema_id in CORE_MODEL_ANNOTATION_WRAPPERS
+
+                    if is_core_schema:
+                        if schema_id in merged_data["annotations"]:
+                            logger.warning(
+                                "Duplicate CORE dataset ID '%s' in merge for file '%s'. Overwriting.",
+                                schema_id,
+                                file_path_for_log,
+                            )
+                        merged_data["annotations"][schema_id] = result_dump
+                    else:
+                        if schema_id not in merged_data["annotations"]:
+                            merged_data["annotations"][schema_id] = [result_dump]
+                        else:
+                            current_val = merged_data["annotations"][schema_id]
+                            if isinstance(current_val, list):
+                                current_val.append(result_dump)
+                            else:
+                                merged_data["annotations"][schema_id] = [current_val, result_dump]
+
+                successful_merges += 1
 
             except Exception as err:
                 logger.error(
@@ -1137,28 +1258,6 @@ class ModelRunner:
                 )
                 skipped_due_to_error += 1
                 continue
-
-            is_core_schema = schema_id in CORE_MODEL_ANNOTATION_WRAPPERS
-
-            if is_core_schema:
-                if schema_id in merged_data["annotations"]:
-                    logger.warning(
-                        "Duplicate CORE dataset ID '%s' in merge for file '%s'. Overwriting.",
-                        schema_id,
-                        file_path_for_log,
-                    )
-                merged_data["annotations"][schema_id] = result_dump
-            else:
-                if schema_id not in merged_data["annotations"]:
-                    merged_data["annotations"][schema_id] = [result_dump]
-                else:
-                    current_val = merged_data["annotations"][schema_id]
-                    if isinstance(current_val, list):
-                        current_val.append(result_dump)
-                    else:
-                        merged_data["annotations"][schema_id] = [current_val, result_dump]
-
-            successful_merges += 1
 
         logger.debug(
             "Merge complete for file '%s'. Base model processed. Annotations from pipeline successfully merged: %d. Annotations from pipeline skipped due to errors/dependencies: %d.",
@@ -1255,7 +1354,7 @@ def run_model(
                     id=getattr(annotation_model, "id", "unknown"),
                     version=getattr(annotation_model, "version", "0.0.0"),
                 ),
-                record=None,
+                records=None,  # <--- FIXED
                 schema_id=schema_id,
                 schema_version=schema_version,
                 error=f"Configuration Error: Invalid dependencies format. {e}",
@@ -1279,10 +1378,11 @@ def run_model(
         annotation_model=FileCoreAnnotationModel,
         validation_model=core_validation_model,
         file_path=file_path,
+        schema_id=constants.FILE_BASE_ANNOTATION_SCHEMA,
         options={"calculate_similarity_hash": requires_hashes, "calculate_hashes": requires_hashes},
     )
 
-    if base_model_result.error or base_model_result.record is None:
+    if base_model_result.error or not base_model_result.records:  # <--- FIXED
         logger.error(f"Base model failed, cannot proceed: {base_model_result.error}")
         return base_model_result
 
@@ -1306,7 +1406,7 @@ def run_model(
                         version=getattr(annotation_model, "version", "0.0.0"),
                         variant=getattr(annotation_model, "variant", None),
                     ),
-                    record=None,
+                    records=None,  # <--- FIXED
                     schema_id=schema_id,
                     error=error_msg,
                 )
@@ -1323,7 +1423,7 @@ def run_model(
                         version=getattr(annotation_model, "version", "0.0.0"),
                         variant=getattr(annotation_model, "variant", None),
                     ),
-                    record=None,
+                    records=None,  # <--- FIXED
                     schema_id=schema_id,
                     error=error_msg,
                 )

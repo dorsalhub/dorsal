@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+import functools
 import gzip
 import json
 import sqlite3
@@ -20,12 +21,13 @@ import os
 import logging
 import weakref
 from pathlib import Path
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING, Callable
 import zlib
 
 from pydantic import BaseModel, Field
 
 from dorsal.file.index.extractors import registry, create_eav_tuple
+from dorsal.file.index.config import get_index_compression, get_index_compression_level, get_index_compression_mode
 
 if TYPE_CHECKING:
     from dorsal.file.validators.file_record import FileRecordStrict
@@ -54,13 +56,21 @@ class DorsalIndex:
     Manages the Dorsal SQLite Search Index.
     """
 
-    def __init__(self, db_path: Path | None = None, use_compression: bool = True):
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        use_compression: bool = True,
+        compression_mode: Literal["zlib", "zstd"] = "zlib",
+        compression_level: int | None = None,
+    ):
         if db_path:
             self.db_path = db_path
         else:
             self.db_path = Path.home() / ".dorsal" / "cache.db"
 
         self.use_compression = use_compression
+        self.compression_mode = compression_mode
+        self.compression_level = compression_level
         self.conn: sqlite3.Connection | None = None
         self._ensure_db_directory_exists()
         self._finalizer = weakref.finalize(self, self._finalize_connection, self.conn)
@@ -144,6 +154,22 @@ class DorsalIndex:
             """
         )
 
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS index_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO index_meta (key, value) 
+            VALUES ('created_at', datetime('now'))
+            """
+        )
+
         logger.debug("Ensuring all indexes exist...")
 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_sha256 ON cached_files (hash_sha256);")
@@ -212,14 +238,14 @@ class DorsalIndex:
         all_hashes = base_annotation.all_hash_ids or {}
 
         record_json_str = record.model_dump_json(by_alias=True, exclude_none=True)
-        is_compressed_flag = 0
 
         if self.use_compression:
-            logger.debug(f"Compressing record for path: {path}")
-            record_data = zlib.compress(record_json_str.encode("utf-8"))
-            is_compressed_flag = 1
+            compress_fn, is_compressed_flag = self._get_compressor(self.compression_mode, self.compression_level)
+            logger.debug(f"Compressing record for path: {path} with {self.compression_mode}")
+            record_data = compress_fn(record_json_str.encode("utf-8"))
         else:
             record_data = record_json_str.encode("utf-8")
+            is_compressed_flag = 0
 
         sql_data = {
             "abspath": path,
@@ -303,11 +329,13 @@ class DorsalIndex:
             logger.debug(f"Cache entry for path '{path}' has NULL data. Treating as a cache miss.")
             return None
 
-        if is_compressed_flag:
-            logger.debug(f"Decompressing record for path: {path}")
-            record_json_str = zlib.decompress(record_data).decode("utf-8")
-        else:
-            record_json_str = record_data.decode("utf-8")
+        decompress_fn = self._get_decompressor(is_compressed_flag)
+
+        try:
+            record_json_str = decompress_fn(record_data).decode("utf-8")
+        except Exception as e:
+            logger.error(f"Failed to decompress record for {path}: {e}")
+            return None
 
         row_dict["record"] = record_json_str
         return CachedFileRecord.model_validate(row_dict)
@@ -416,13 +444,13 @@ class DorsalIndex:
             self.conn.close()
             self.conn = None
 
-    def summary(self, verbose: bool = False) -> dict:
+    def summary(self, verbose: bool = False, limit: int = 10) -> dict:
         """Provides a summary of the index's current state."""
+        limit = int(limit)
         conn = self._ensure_connection()
         logger.debug(f"Generating index summary (verbose={verbose})...")
         cursor = conn.cursor()
 
-        # --- Base Metrics (Always Run) ---
         cursor.execute("SELECT COUNT(*) FROM cached_files")
         record_count = cursor.fetchone()[0] or 0
 
@@ -430,83 +458,159 @@ class DorsalIndex:
         full_records = cursor.fetchone()[0] or 0
         hash_only_records = record_count - full_records
 
-        cursor.execute("SELECT COUNT(*) FROM dorsal_fts")
-        fts_count = cursor.fetchone()[0] or 0
-
         try:
             stat = os.stat(self.db_path)
             db_size_bytes = stat.st_size
-            db_created_time = stat.st_ctime
             db_modified_time = stat.st_mtime
+            fallback_created_time = stat.st_ctime
         except FileNotFoundError:
             db_size_bytes = 0
-            db_created_time = 0
             db_modified_time = 0
+            fallback_created_time = 0
+
+        try:
+            cursor.execute("SELECT value FROM index_meta WHERE key = 'created_at'")
+            meta_row = cursor.fetchone()
+            if meta_row and meta_row[0]:
+                import datetime
+
+                dt = datetime.datetime.strptime(meta_row[0], "%Y-%m-%d %H:%M:%S")
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                db_created_time = dt.timestamp()
+            else:
+                db_created_time = fallback_created_time
+        except sqlite3.OperationalError:
+            db_created_time = fallback_created_time
+
+        cursor.execute("""
+            SELECT SUM(
+                LENGTH(CAST(abspath AS BLOB)) + 8 + 
+                COALESCE(LENGTH(CAST(record AS BLOB)), 0) + 4 + 
+                COALESCE(LENGTH(CAST(name AS BLOB)), 0) + 8 + 
+                COALESCE(LENGTH(CAST(extension AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(media_type AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_sha256 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_blake3 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_quick AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0)
+            ) FROM cached_files
+        """)
+        record_cache_bytes = int(cursor.fetchone()[0] or 0)
+        search_index_bytes = max(0, db_size_bytes - record_cache_bytes)
 
         summary_data = {
             "database_path": str(self.db_path),
+            "record_cache_size_bytes": record_cache_bytes,
+            "search_index_size_bytes": search_index_bytes,
             "total_records": record_count,
             "full_records": full_records,
             "hash_only_records": hash_only_records,
-            "database_size_bytes": db_size_bytes,
-            "fts_indexed_records": fts_count,
             "created_time": db_created_time,
             "modified_time": db_modified_time,
         }
 
-        # --- Extended Metrics (Verbose Only) ---
         if verbose:
+            summary_data["database_size_bytes"] = db_size_bytes
+
+            cursor.execute("SELECT COUNT(*) FROM dorsal_fts")
+            summary_data["fts_indexed_records"] = cursor.fetchone()[0] or 0
+
             cursor.execute("SELECT SUM(size) FROM cached_files")
             summary_data["total_tracked_file_bytes"] = cursor.fetchone()[0] or 0
 
-            cursor.execute("SELECT COUNT(*) FROM cached_files WHERE is_compressed = 1")
+            cursor.execute("SELECT COUNT(*) FROM cached_files WHERE is_compressed > 0")
             compressed_count = cursor.fetchone()[0] or 0
             summary_data["compressed_records"] = compressed_count
 
             cursor.execute("SELECT COUNT(*) FROM file_attributes")
             summary_data["indexed_attributes"] = cursor.fetchone()[0] or 0
 
+            cursor.execute("SELECT MAX(LENGTH(record)), AVG(LENGTH(record)) FROM cached_files WHERE record IS NOT NULL")
+            record_stats = cursor.fetchone()
+            if record_stats:
+                summary_data["max_record_size_bytes"] = record_stats[0] or 0
+                summary_data["avg_record_size_bytes"] = int(record_stats[1] or 0)
+
+            cursor.execute("SELECT COUNT(DISTINCT hash_blake3) FROM cached_files WHERE hash_blake3 IS NOT NULL")
+            unique_hashes = cursor.fetchone()[0] or 0
+
+            cursor.execute("SELECT COUNT(*) FROM cached_files WHERE hash_blake3 IS NOT NULL")
+            total_hashed = cursor.fetchone()[0] or 0
+
+            summary_data["unique_files_by_hash"] = unique_hashes
+            summary_data["duplicate_files_detected"] = max(0, total_hashed - unique_hashes)
+
+            cursor.execute("SELECT MIN(modified_time), MAX(modified_time) FROM cached_files")
+            time_stats = cursor.fetchone()
+            if time_stats:
+                summary_data["oldest_record_timestamp"] = time_stats[0]
+                summary_data["newest_record_timestamp"] = time_stats[1]
+
+            cursor.execute(f"""
+                SELECT key, COUNT(*) as count 
+                FROM file_attributes 
+                WHERE key IS NOT NULL
+                GROUP BY key 
+                ORDER BY count DESC LIMIT {limit}
+            """)
+            summary_data["top_attribute_keys"] = {row["key"]: row["count"] for row in cursor.fetchall()}
+
             if compressed_count > 0:
-                cursor.execute("SELECT record FROM cached_files WHERE is_compressed = 1 LIMIT 20")
+                cursor.execute("SELECT is_compressed, record FROM cached_files WHERE is_compressed > 0 LIMIT 100")
                 sample_rows = cursor.fetchall()
                 total_uncompressed = 0
                 total_compressed = 0
                 for r in sample_rows:
                     comp_data = r["record"]
+                    comp_flag = r["is_compressed"]
                     if comp_data:
                         total_compressed += len(comp_data)
                         try:
-                            total_uncompressed += len(zlib.decompress(comp_data))
+                            decompress_fn = self._get_decompressor(comp_flag)
+                            total_uncompressed += len(decompress_fn(comp_data))
                         except Exception:
                             pass
                 if total_compressed > 0 and total_uncompressed > 0:
                     summary_data["compression_ratio_sample"] = total_uncompressed / total_compressed
 
-            cursor.execute("""
+            compression_mode = get_index_compression_mode()
+            summary_data["compression_mode"] = compression_mode
+            summary_data["compression_level"] = get_index_compression_level(compression_mode=compression_mode)
+
+            cursor.execute(
+                """
                 SELECT extension, COUNT(*) as count 
                 FROM cached_files 
                 WHERE extension IS NOT NULL 
                 GROUP BY extension 
-                ORDER BY count DESC LIMIT 5
-            """)
+                ORDER BY count DESC LIMIT ?
+            """,
+                (limit,),
+            )
             summary_data["top_extensions"] = {row["extension"]: row["count"] for row in cursor.fetchall()}
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT media_type, COUNT(*) as count 
                 FROM cached_files 
                 WHERE media_type IS NOT NULL 
                 GROUP BY media_type 
-                ORDER BY count DESC LIMIT 5
-            """)
+                ORDER BY count DESC LIMIT ?
+            """,
+                (limit,),
+            )
             summary_data["top_media_types"] = {row["media_type"]: row["count"] for row in cursor.fetchall()}
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT schema_id, COUNT(DISTINCT abspath) as count 
                 FROM file_attributes 
-                WHERE schema_id NOT LIKE 'file/%'
+                WHERE schema_id != 'file/base'
                 GROUP BY schema_id 
-                ORDER BY count DESC LIMIT 5
-            """)
+                ORDER BY count DESC LIMIT ?
+            """,
+                (limit,),
+            )
             summary_data["top_schemas"] = {row["schema_id"]: row["count"] for row in cursor.fetchall()}
 
         logger.debug(f"Index summary generated: {summary_data}")
@@ -570,13 +674,18 @@ class DorsalIndex:
         conn.commit()
         logger.debug("Vacuum complete.")
 
-    def optimize(self) -> dict:
+    def optimize(self, force_recompression: bool = False) -> dict:
         """Runs a full maintenance routine on the index."""
         self._ensure_connection()
-        logger.debug("Starting full index optimization...")
+        logger.debug(f"Starting full index optimization (Force recompression: {force_recompression})...")
+
         size_before = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
         pruned_count, _ = self.prune()
-        rewritten_count = self._sync_compression()
+
+        rewritten_count = self.convert_compression(
+            self.compression_mode if self.use_compression else "none", self.compression_level, force=force_recompression
+        )
+
         self.vacuum()
         size_after = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
 
@@ -590,47 +699,191 @@ class DorsalIndex:
         logger.debug(f"Index optimization complete: {result}")
         return result
 
-    def _sync_compression(self) -> int:
-        """Internal helper to re-compress/de-compress records in a memory-efficient way."""
+    def rebuild(self, batch_size: int = 100, progress_callback: Callable[[int, int], None] | None = None) -> int:
+        """Rebuilds the FTS and EAV search indexes from the compressed cache."""
+        from dorsal.file.validators.file_record import FileRecordStrict
+
         conn = self._ensure_connection()
-        logger.debug("Starting compression sync...")
+        logger.info("Starting full search index rebuild...")
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM cached_files WHERE record IS NOT NULL")
+        total_records = cursor.fetchone()[0]
+
+        if progress_callback:
+            progress_callback(0, total_records)
+
+        cursor.execute("DELETE FROM dorsal_fts")
+        cursor.execute("DELETE FROM file_attributes")
+
+        read_cursor = conn.cursor()
+        read_cursor.execute("SELECT abspath, record, is_compressed FROM cached_files WHERE record IS NOT NULL")
+
+        count = 0
+        batch_fts = []
+        batch_eav = []
+
+        for row in read_cursor:
+            path = row["abspath"]
+            record_data = row["record"]
+            is_compressed_flag = row["is_compressed"]
+
+            try:
+                decompress_fn = self._get_decompressor(is_compressed_flag)
+                record_json_str = decompress_fn(record_data).decode("utf-8")
+                record_obj = FileRecordStrict.model_validate_json(record_json_str)
+
+                fts_texts, eav_attributes = self._extract_search_data(record_obj)
+
+                full_fts_text = " ".join([str(t) for t in fts_texts if t]).strip()
+                if full_fts_text:
+                    batch_fts.append((path, full_fts_text))
+
+                for attr in eav_attributes:
+                    batch_eav.append((path, attr[0], attr[1], attr[2], attr[3]))
+
+            except Exception as e:
+                logger.warning(f"Failed to reindex record {path}: {e}")
+
+            count += 1
+
+            if count % batch_size == 0:
+                if batch_fts:
+                    cursor.executemany("INSERT INTO dorsal_fts (abspath, content) VALUES (?, ?)", batch_fts)
+                if batch_eav:
+                    cursor.executemany(
+                        "INSERT INTO file_attributes (abspath, schema_id, key, value_text, value_num) VALUES (?, ?, ?, ?, ?)",
+                        batch_eav,
+                    )
+                batch_fts.clear()
+                batch_eav.clear()
+
+                if progress_callback:
+                    progress_callback(count, total_records)
+
+        if batch_fts:
+            cursor.executemany("INSERT INTO dorsal_fts (abspath, content) VALUES (?, ?)", batch_fts)
+        if batch_eav:
+            cursor.executemany(
+                "INSERT INTO file_attributes (abspath, schema_id, key, value_text, value_num) VALUES (?, ?, ?, ?, ?)",
+                batch_eav,
+            )
+
+        conn.commit()
+        if progress_callback:
+            progress_callback(count, total_records)
+
+        logger.info(f"Successfully reindexed {count} records.")
+        return count
+
+    @staticmethod
+    @functools.lru_cache(maxsize=4)
+    def _get_compressor(mode: str, level: int | None) -> tuple[Callable[[bytes], bytes], int]:
+        """
+        Returns a cached tuple of (compression_function, is_compressed_flag).
+        """
+        if mode == "zlib":
+            lvl = level if level is not None else 6
+            return (lambda data: zlib.compress(data, level=lvl)), 1
+
+        elif mode == "zstd":
+            lvl = level if level is not None else 3
+            try:
+                import compression.zstd as zstd  # type: ignore[import-not-found]
+
+                return (lambda data: zstd.compress(data, level=lvl)), 2  # pragma: no cover
+            except ImportError:
+                try:
+                    import zstandard  # type: ignore[import-not-found]
+
+                    cctx = zstandard.ZstdCompressor(level=lvl)  # pragma: no cover
+                    return cctx.compress, 2  # pragma: no cover
+                except ImportError as err:  # pragma: no cover
+                    raise RuntimeError(  # pragma: no cover
+                        "zstd compression is enabled, but neither the Python 3.14+ "
+                        "'compression.zstd' module nor the PyPI 'zstandard' package is available. "
+                        "Run `pip install zstandard` or switch config back to 'zlib'."
+                    ) from err
+        raise ValueError(f"Unsupported compression mode: {mode}")
+
+    @staticmethod
+    @functools.lru_cache(maxsize=4)
+    def _get_decompressor(flag: int) -> Callable[[bytes], bytes]:
+        """
+        Returns a cached decompression function based on the database flag.
+        """
+        if flag == 0:
+            return lambda data: data
+        elif flag == 1:
+            return zlib.decompress
+        elif flag == 2:
+            try:
+                import compression.zstd as zstd  # type: ignore[import-not-found]
+
+                return zstd.decompress  # pragma: no cover
+            except ImportError:
+                try:
+                    import zstandard  # type: ignore[import-not-found]
+
+                    dctx = zstandard.ZstdDecompressor()  # pragma: no cover
+                    return dctx.decompress  # pragma: no cover
+                except ImportError as err:  # pragma: no cover
+                    raise RuntimeError(  # pragma: no cover
+                        "Failed to read cache. This index contains 'zstd' compressed records, "
+                        "but your current environment does not support it. "
+                        "Please upgrade to Python 3.14+, `pip install zstandard`, or clear the cache."
+                    ) from err
+        raise ValueError(f"Unknown compression flag in database: {flag}")  # pragma: no cover
+
+    def convert_compression(
+        self, target_mode: Literal["zlib", "zstd", "none"], target_level: int | None = None, force: bool = False
+    ) -> int:
+        """
+        Converts the entire database to a target compression algorithm.
+        Returns the number of records rewritten.
+        """
+        conn = self._ensure_connection()
+        logger.info(f"Starting bulk compression conversion to: {target_mode} (Force: {force})")
+
+        if target_mode == "none":
+            target_flag = 0
+            compress_fn = lambda d: d  # noqa: E731
+        else:
+            compress_fn, target_flag = self._get_compressor(target_mode, target_level)
+
         read_cursor = conn.cursor()
         write_cursor = conn.cursor()
-        read_cursor.execute("SELECT abspath, record, is_compressed FROM cached_files")
+
+        read_cursor.execute("SELECT abspath, record, is_compressed FROM cached_files WHERE record IS NOT NULL")
 
         rewritten_count = 0
         for row in read_cursor:
-            path, data, is_compressed = (
-                row["abspath"],
-                row["record"],
-                row["is_compressed"],
-            )
+            path = row["abspath"]
+            data = row["record"]
+            current_flag = row["is_compressed"]
 
-            if data is None:
+            if current_flag == target_flag and not force:
                 continue
 
-            new_data = None
-            if self.use_compression and not is_compressed:
-                logger.debug(f"Compressing record during sync: {path}")
-                new_data = zlib.compress(data)
-                is_compressed_flag = 1
-            elif not self.use_compression and is_compressed:
-                logger.debug(f"Decompressing record during sync: {path}")
-                new_data = zlib.decompress(data)
-                is_compressed_flag = 0
+            try:
+                decompress_fn = self._get_decompressor(current_flag)
+                raw_bytes = decompress_fn(data)
+                new_data = compress_fn(raw_bytes)
 
-            if new_data is not None:
                 write_cursor.execute(
                     "UPDATE cached_files SET record = ?, is_compressed = ? WHERE abspath = ?",
-                    (new_data, is_compressed_flag, path),
+                    (new_data, target_flag, path),
                 )
                 rewritten_count += 1
+            except Exception as e:
+                logger.error(f"Failed to convert compression for {path}: {e}")
 
         if rewritten_count > 0:
             conn.commit()
-            logger.debug(f"Synced compression state for {rewritten_count} records.")
+            logger.info(f"Successfully converted {rewritten_count} records. Vacuuming database...")
+            self.vacuum()
         else:
-            logger.debug("All records already match the current compression setting.")
+            logger.debug("All records already match the target compression state.")
 
         return rewritten_count
 
@@ -639,20 +892,13 @@ class DorsalIndex:
         output_path: Path,
         format: Literal["json", "json.gz"] = "json.gz",
         include_records: bool = True,
+        progress_callback: Callable[[int, int], None] | None = None,
+        batch_size: int = 100,
     ) -> int:
         """
-        Exports the contents of the index to a file.
-
-        Args:
-            output_path: The path to save the exported file.
-            format: The desired output format. Defaults to "json.gz".
-            include_records: Whether to include the full metadata records.
-                             Defaults to True.
-
-        Returns:
-            The total number of records exported.
+        Exports the contents of the index to a file using memory-efficient, chunked writes.
         """
-        logger.debug(f"Starting export to '{output_path}' in '{format}' format.")
+        logger.debug(f"Starting export to '{output_path}' in '{format}' format (Batch size: {batch_size}).")
 
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -662,6 +908,12 @@ class DorsalIndex:
 
         conn = self._ensure_connection()
         cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM cached_files")
+        total_records = cursor.fetchone()[0]
+
+        if progress_callback:
+            progress_callback(0, total_records)
 
         columns = [
             "abspath",
@@ -681,39 +933,69 @@ class DorsalIndex:
         query = f"SELECT {', '.join(columns)} FROM cached_files"
         cursor.execute(query)
 
-        rows = cursor.fetchall()
-        total_records = len(rows)
-        logger.debug(f"Fetched {total_records} records from the database.")
-
-        data_to_export = []
-        for row in rows:
-            row_dict = dict(row)
-            if include_records and row_dict.get("record"):
-                record_data: bytes = row_dict["record"]
-                is_compressed = row_dict["is_compressed"]
-                try:
-                    if is_compressed:
-                        record_json_str = zlib.decompress(record_data).decode("utf-8")
-                    else:
-                        record_json_str = record_data.decode("utf-8")
-                    row_dict["record"] = json.loads(record_json_str)
-                except (zlib.error, json.JSONDecodeError, UnicodeDecodeError) as e:
-                    logger.warning(f"Could not decode record for {row_dict['abspath']}: {e}")
-                    row_dict["record"] = {"error": "Could not decode record"}
-            data_to_export.append(row_dict)
+        count = 0
 
         try:
-            if format == "json.gz":
-                with gzip.open(output_path, "wt", encoding="utf-8") as f:
-                    json.dump(data_to_export, f, indent=2, default=str)
-            elif format == "json":
-                with open(output_path, "w", encoding="utf-8") as f:
-                    json.dump(data_to_export, f, indent=2, default=str)
-            else:
+            if format not in ("json", "json.gz"):
                 raise ValueError(f"Unsupported export format: {format}")
 
-            logger.info(f"Successfully exported {total_records} records to {output_path}")
-            return total_records
+            if format == "json.gz":
+                import gzip
+
+                f = gzip.open(output_path, "wt", encoding="utf-8")
+            else:
+                f = open(output_path, "wt", encoding="utf-8")
+
+            with f:
+                f.write("[\n")
+                first_batch = True
+
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+
+                    batch_strings = []
+                    for row in rows:
+                        row_dict = dict(row)
+                        record_json_str = "null"
+
+                        if include_records and row_dict.get("record"):
+                            record_data: bytes = row_dict["record"]
+                            is_compressed_flag = row_dict["is_compressed"]
+                            try:
+                                decompress_fn = self._get_decompressor(is_compressed_flag)
+                                record_json_str = decompress_fn(record_data).decode("utf-8")
+                            except Exception as e:
+                                logger.warning(f"Could not decode record for {row_dict['abspath']}: {e}")
+                                record_json_str = '{"error": "Could not decode record"}'
+
+                        row_dict.pop("record", None)
+                        row_dict.pop("is_compressed", None)
+
+                        meta_json = json.dumps(row_dict, default=str)
+
+                        if include_records:
+                            final_row_json = f'{meta_json[:-1]}, "record": {record_json_str}}}'
+                        else:
+                            final_row_json = meta_json
+
+                        batch_strings.append(final_row_json)
+
+                    if batch_strings:
+                        if not first_batch:
+                            f.write(",\n")
+                        f.write(",\n".join(batch_strings))
+                        first_batch = False
+
+                    count += len(rows)
+                    if progress_callback:
+                        progress_callback(count, total_records)
+
+                f.write("\n]")
+
+            logger.info(f"Successfully exported {count} records to {output_path}")
+            return count
 
         except (IOError, ValueError):
             logger.exception(f"Failed to write export to '{output_path}'.")

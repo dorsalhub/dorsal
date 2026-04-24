@@ -81,6 +81,14 @@ def run_model(
             rich_help_panel="Output Options",
         ),
     ] = None,
+    merge: Annotated[
+        bool,
+        typer.Option(
+            "--merge",
+            help="Merge multiple chunked records into a single output file before exporting.",
+            rich_help_panel="Output Options",
+        ),
+    ] = False,
     max_length: Annotated[
         int,
         typer.Option(
@@ -99,11 +107,20 @@ def run_model(
             rich_help_panel="Output Options",
         ),
     ] = False,
-    output_path: Annotated[
+    output_dir: Annotated[
         Optional[pathlib.Path],
         typer.Option(
             "--output",
-            help="Custom output file/directory path. Overrides auto-save naming.",
+            "-d",
+            help="Target directory to save outputs. Created if it doesn't exist.",
+            rich_help_panel="Output Options",
+        ),
+    ] = None,
+    filename: Annotated[
+        Optional[str],
+        typer.Option(
+            "--filename",
+            help="Override the base filename (single files only). Extensions are appended automatically.",
             rich_help_panel="Output Options",
         ),
     ] = None,
@@ -165,7 +182,6 @@ def run_model(
                     "To bypass this interactive prompt in scripts, use the '--yes' flag."
                 )
 
-            # Pass ui_context here!
             check_and_confirm_model_install(target, ui_context, yes=yes)
     except typer.Exit:
         raise
@@ -191,14 +207,15 @@ def run_model(
     results_data = []
     raw_results: list[RunModelResult | None] = []
     export_files_to_save = []
-    out_dir = pathlib.Path.cwd()
-    if output_path:
-        if is_batch or output_path.is_dir() or not output_path.suffix:
-            out_dir = output_path
-        else:
-            out_dir = output_path.parent
 
+    out_dir = output_dir if output_dir else pathlib.Path.cwd()
+    if not no_save:
         out_dir.mkdir(parents=True, exist_ok=True)
+
+    if is_batch and filename:
+        error_console.print(
+            f"[{palette.get('warning', 'yellow')}]Warning:[/] --filename is ignored during batch processing."
+        )
 
     try:
         with Progress(
@@ -218,7 +235,6 @@ def run_model(
                 file_task = progress.add_task(f"Processing {f.name}...", total=None)
 
                 def progress_hook(current: float, total: float, description: str = "", task_id=file_task):
-
                     update_kwargs: dict[str, Any] = {"completed": current, "total": total}
                     if description:
                         update_kwargs["description"] = f"[{palette.get('info', 'dim')}]{description}"
@@ -242,32 +258,56 @@ def run_model(
                     res_dict["file_path"] = str(f)
                     results_data.append(res_dict)
 
+                    # --- Export Alignment Logic ---
                     if export_format:
                         try:
                             if res.error:
                                 raise ValueError(f"Cannot export due to model error: {res.error}")
 
                             schema_id = res.schema_id
-                            record_dict = res.record or {}
-
                             if not schema_id:
                                 raise ValueError("Missing schema_id for export.")
 
-                            if not record_dict:
+                            if not res.records:
                                 raise ValueError("No record data generated to export.")
 
-                            exported_text = export_record(
-                                record=record_dict,
-                                schema_id=schema_id,
-                                target_format=export_format,
-                                **parsed_export_options,
-                            )
+                            records_to_export = res.records
+                            is_merged = False
+
+                            if len(records_to_export) > 1:
+                                if merge:
+                                    from dorsal.file.chunking import merge_chunked_records
+
+                                    merged_payload = merge_chunked_records(records_to_export, schema_id)
+                                    records_to_export = [merged_payload]
+                                    is_merged = True
+                                else:
+                                    error_console.print(
+                                        f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(records_to_export)} records. Exporting as discrete chunks. Use --merge to combine them."
+                                    )
 
                             ext = get_format_extension(schema_id, export_format)
-                            base_name = f.stem
-                            save_path = output_path if output_path and not is_batch else out_dir / f"{base_name}.{ext}"
 
-                            export_files_to_save.append((save_path, exported_text))
+                            for idx, rec_dict in enumerate(records_to_export):
+                                if not is_batch and filename:
+                                    base_name = filename
+                                else:
+                                    base_name = f.stem
+
+                                if len(records_to_export) > 1:
+                                    base_name = f"{base_name}_{idx + 1}"
+
+                                save_path = out_dir / f"{base_name}.{ext}"
+
+                                exported_text = export_record(
+                                    record=rec_dict,
+                                    schema_id=schema_id,
+                                    target_format=export_format,
+                                    validate=not is_merged,
+                                    **parsed_export_options,
+                                )
+
+                                export_files_to_save.append((save_path, exported_text))
 
                         except DorsalError as err:
                             error_console.print(
@@ -277,6 +317,7 @@ def run_model(
                         except ValueError as err:
                             error_console.print(f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}")
                             res_dict["export_error"] = str(err)
+                    # ------------------------------
 
                 except (DorsalError, AuthError, typer.Exit):
                     raise
@@ -315,13 +356,16 @@ def run_model(
 
     saved_paths_msg = []
     if not no_save:
-        if output_path and not is_batch and not export_format:
-            json_save_path = output_path
+        if not is_batch and filename:
+            base_name = filename
         else:
             base_name = file_path.name + "_batch" if is_batch else file_path.stem
-            json_save_path = out_dir / f"{base_name}.dorsal.json"
 
-        json_save_path.write_text(json.dumps(final_json_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        json_save_path = out_dir / f"{base_name}.dorsal.json"
+
+        json_save_path.write_text(
+            json.dumps(final_json_data, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+        )
         saved_paths_msg.append(str(json_save_path))
 
         if export_format:
@@ -329,11 +373,11 @@ def run_model(
                 path.write_text(text, encoding="utf-8")
                 saved_paths_msg.append(str(path))
 
-    if export_format and not is_batch:
+    if export_format and not is_batch and no_save:
         for _, text in export_files_to_save:
             console.print(text, end="")
     elif json_output:
-        console.print(json.dumps(final_json_data, indent=2, ensure_ascii=False))
+        console.print(json.dumps(final_json_data, indent=2, ensure_ascii=False, default=str))
     else:
         if is_batch:
             table = Table(
@@ -359,6 +403,7 @@ def run_model(
             for item in display_results:
                 input_name = pathlib.Path(item["file_path"]).name
                 base_name = pathlib.Path(item["file_path"]).stem
+
                 row = []
 
                 if "error" in item and item["error"]:
@@ -372,7 +417,7 @@ def run_model(
                     status_text = f"[{palette.get('success', 'green')}]Success[/]"
                     row.extend([input_name, status_text])
                     if not no_save:
-                        json_path = out_dir / f"{base_name}.dorsal.json"
+                        json_path = out_dir / f"{file_path.name}_batch.dorsal.json"
                         row.append(f"[{palette.get('primary_value', 'cyan')}]{json_path.name}[/]")
 
                         if export_format:
@@ -380,6 +425,7 @@ def run_model(
                                 row.append(f"[{palette.get('error', 'bold red')}]Failed[/]")
                             else:
                                 exp_path = out_dir / f"{base_name}.{export_format}"
+                                # Note: For chunked outputs, this displays the base path as an indicator
                                 row.append(f"[{palette.get('primary_value', 'cyan')}]{exp_path.name}[/]")
 
                 table.add_row(*row)

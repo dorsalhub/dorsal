@@ -14,11 +14,13 @@
 
 import typer
 
-from dorsal.cli.annotation_app.get_annotation_cmd import get_annotation
-from dorsal.cli.annotation_app.list_annotations_cmd import list_annotations
+from dorsal.cli.hub_app.annotation_app.get_annotation_cmd import get_annotation
+from dorsal.cli.hub_app.annotation_app.list_annotations_cmd import list_annotations
 
 
-app = typer.Typer(name="annotation", help="View file annotations.", no_args_is_help=True)
+app = typer.Typer(
+    name="annotation", help="... [bold]get[/bold] and [bold]list[/bold] annotations.", no_args_is_help=True
+)
 
 app.command(name="get")(get_annotation)
 app.command(name="list")(list_annotations)

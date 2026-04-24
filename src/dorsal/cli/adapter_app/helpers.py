@@ -20,34 +20,59 @@ def extract_records(
 ) -> list[tuple[str, dict[str, Any], str | None]]:
     """
     Extracts the schema_id, record dictionary, and original file path from a JSON payload.
+    Supports both legacy single 'record' outputs and new chunked 'records' arrays.
 
     Returns:
         A list of tuples containing (schema_id, record_dict, file_path).
     """
-    if "results" in json_data and isinstance(json_data["results"], list):
-        extracted = []
-        for item in json_data["results"]:
-            annotation_meta = (
-                item.get("record", {})
-                if isinstance(item.get("record"), dict) and "schema_id" in item.get("record", {})
-                else item
-            )
+    extracted: list[tuple[str, dict[str, Any], str | None]] = []
 
-            schema_id = schema_override or annotation_meta.get("schema_id")
-            if not schema_id:
+    if "results" in json_data and isinstance(json_data["results"], list):
+        for item in json_data["results"]:
+            if not isinstance(item, dict):
+                continue
+
+            nested_record = item.get("record")
+            nested_schema_id = nested_record.get("schema_id") if isinstance(nested_record, dict) else None
+
+            schema_id = schema_override or item.get("schema_id") or nested_schema_id
+            if not schema_id or not isinstance(schema_id, str):
                 raise ValueError("Missing 'schema_id' in JSON wrapper. Please provide one using --schema-id.")
 
-            record_payload = annotation_meta.get("record", annotation_meta)
-            file_path = item.get("file_path")  # Grab the original file path
+            raw_file_path = item.get("file_path")
+            file_path = str(raw_file_path) if raw_file_path is not None else None
 
-            extracted.append((schema_id, record_payload, file_path))
+            if "records" in item and isinstance(item["records"], list):
+                for record_payload in item["records"]:
+                    if isinstance(record_payload, dict):
+                        extracted.append((schema_id, record_payload, file_path))
+
+            elif "record" in item and isinstance(item["record"], dict):
+                extracted.append((schema_id, item["record"], file_path))
+
+            else:
+                extracted.append((schema_id, item, file_path))
 
         return extracted
 
     if not schema_override:
-        if "schema_id" in json_data and "record" in json_data:
-            return [(json_data["schema_id"], json_data["record"], json_data.get("file_path"))]
+        schema_id = json_data.get("schema_id")
+        raw_file_path = json_data.get("file_path")
+        file_path = str(raw_file_path) if raw_file_path is not None else None
+
+        if isinstance(schema_id, str):
+            if "records" in json_data and isinstance(json_data["records"], list):
+                for record_payload in json_data["records"]:
+                    if isinstance(record_payload, dict):
+                        extracted.append((schema_id, record_payload, file_path))
+                return extracted
+
+            if "record" in json_data and isinstance(json_data["record"], dict):
+                return [(schema_id, json_data["record"], file_path)]
 
         raise ValueError("Raw record detected without a schema wrapper. You must explicitly provide a --schema-id.")
 
-    return [(schema_override, json_data, json_data.get("file_path"))]
+    raw_override_path = json_data.get("file_path")
+    override_file_path = str(raw_override_path) if raw_override_path is not None else None
+
+    return [(schema_override, json_data, override_file_path)]

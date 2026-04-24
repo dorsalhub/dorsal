@@ -16,7 +16,7 @@ import copy
 import inspect
 import logging
 import secrets
-from typing import Any, Callable, Type, cast
+from typing import Any, Callable, Sequence, Type, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -48,7 +48,7 @@ from dorsal.common.validators import (
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult, resolve_pipeline_step_models
 from dorsal.file.linters import apply_linter
-from dorsal.file.sharding import process_record_for_sharding
+from dorsal.file.sharding import build_annotation_or_annotationgroup, process_record_for_sharding
 from dorsal.file.validators.file_record import (
     Annotation,
     AnnotationGroup,
@@ -125,7 +125,7 @@ class FileAnnotator:
                     f"Model '{annotation_model.id}' returned an error: {run_model_result.error}"
                 )
 
-            if run_model_result.record is None:
+            if run_model_result.records is None:
                 raise AnnotationExecutionError(f"Model '{annotation_model.id}' returned no record and no error.")
 
             return run_model_result
@@ -133,56 +133,11 @@ class FileAnnotator:
             logger.exception("ModelRunner execution failed for model '%s'.", annotation_model.id)
             raise AnnotationExecutionError(f"Execution failed for model '{annotation_model.id}'.") from err
 
-    def _create_wrapped_annotation(
-        self,
-        *,
-        record_data: dict[str, Any],
-        wrapper_class: Type[Annotation],
-        schema_id: str | None,
-        source: dict,
-        private: bool | None,
-        schema_version: str | None = None,
-        group_info: AnnotationGroupInfo | None = None,
-    ) -> Annotation:
-        """
-        Helper method to instantiate a single Annotation object (or subclass).
-
-        This encapsulates the conversion of raw dict data into a GenericFileAnnotation
-        and then into the specific wrapper class (e.g. Annotation_PDF).
-        """
-        try:
-            annotation_record = GenericFileAnnotation(**record_data)
-        except PydanticValidationError as err:
-            group_info_str = f" (Chunk {group_info.index}/{group_info.total})" if group_info else ""
-            logger.exception(
-                "Failed to wrap validated model output into GenericFileAnnotation for dataset '%s'%s.",
-                schema_id,
-                group_info_str,
-            )
-            raise AnnotationExecutionError(
-                f"Output for dataset '{schema_id}'{group_info_str} is incompatible with the base annotation structure."
-            ) from err
-
-        try:
-            return wrapper_class(
-                record=annotation_record,
-                private=private,
-                source=source,
-                schema_id=schema_id,
-                schema_version=schema_version,
-                group=group_info,
-            )
-        except PydanticValidationError as err:
-            logger.exception("Failed to instantiate wrapper class '%s'.", wrapper_class.__name__)
-            raise AnnotationExecutionError(
-                f"Failed to create annotation wrapper for '{schema_id}': {str(err)}"
-            ) from err
-
     def _make_annotation(
         self,
         *,
         validated_annotation: dict,
-        schema_id: str | None,
+        schema_id: str,
         schema_version: str | None = None,
         source: dict,
         private: bool | None,
@@ -190,9 +145,6 @@ class FileAnnotator:
     ) -> Annotation | AnnotationGroup:
         """
         Constructs a final, typed Annotation object (or AnnotationGroup) from a validated record.
-
-        This method acts as the 'Sharding Controller'. It determines if the payload needs
-        splitting based on the schema and size constraints defined in `dorsal.file.sharding`.
 
         Args:
             validated_annotation: The actual annotation data.
@@ -213,55 +165,13 @@ class FileAnnotator:
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise AnnotationConfigurationError(f"Target dataset '{schema_id}' is not a valid dataset ID.")
 
-        try:
-            chunks = process_record_for_sharding(schema_id, validated_annotation)
-        except ValueError as e:
-            raise AnnotationExecutionError(f"Annotation processing failed for '{schema_id}': {e}") from e
-
-        annotation_wrapper_class: Type[Annotation] = CORE_MODEL_ANNOTATION_WRAPPERS.get(schema_id, Annotation)
-
-        if len(chunks) == 1:
-            logger.debug(
-                "Creating atomic annotation wrapper '%s' for dataset '%s'.",
-                annotation_wrapper_class.__name__,
-                schema_id,
-            )
-            return self._create_wrapped_annotation(
-                record_data=chunks[0],
-                wrapper_class=annotation_wrapper_class,
-                schema_id=schema_id,
-                source=source,
-                private=private,
-                schema_version=schema_version,
-                group_info=None,
-            )
-
-        group_uid = uuid4()
-        total_chunks = len(chunks)
-        group_items: list[Annotation] = []
-
-        logger.info(
-            "Payload for '%s' exceeds 1MiB. Splitting into %d chunks (Group ID: %s).",
-            schema_id,
-            total_chunks,
-            group_uid,
+        return build_annotation_or_annotationgroup(
+            schema_id=schema_id,
+            record_data=validated_annotation,
+            source=source,
+            schema_version=schema_version,
+            private=private,
         )
-
-        for index, chunk_data in enumerate(chunks):
-            chunk_meta = AnnotationGroupInfo(id=group_uid, index=index, total=total_chunks)
-
-            annotation = self._create_wrapped_annotation(
-                record_data=chunk_data,
-                wrapper_class=annotation_wrapper_class,
-                schema_id=schema_id,
-                source=source,
-                private=private,
-                schema_version=schema_version,
-                group_info=chunk_meta,
-            )
-            group_items.append(annotation)
-
-        return AnnotationGroup(annotations=group_items)
 
     def annotate_file_using_pipeline_step(
         self,
@@ -273,7 +183,7 @@ class FileAnnotator:
         schema_version: str | None = None,
         private: bool | None,
         progress_callback: Callable[[float, float, str], None] | None = None,
-    ) -> Annotation | AnnotationGroup:
+    ) -> list[Annotation | AnnotationGroup]:
         """
         Runs an annotation model defined by a single pipeline step.
 
@@ -286,7 +196,7 @@ class FileAnnotator:
             schema_id: Optional. Overrides the `schema_id` from the pipeline_step.
 
         Returns:
-            An `Annotation` object containing the model's output.
+            A list of `Annotation` or `AnnotationGroup` objects containing the model's output.
 
         Raises:
             AnnotationConfigurationError: If the pipeline_step config is invalid.
@@ -307,6 +217,9 @@ class FileAnnotator:
             )
 
         effective_schema_id = schema_id if schema_id is not None else pipeline_step_obj.schema_id
+        if effective_schema_id is None:
+            raise AnnotationConfigurationError("schema_id could not be resolved.")
+
         logger.debug("Validation schema: %s", effective_schema_id)
 
         annotator_class, validator = resolve_pipeline_step_models(pipeline_step_obj)
@@ -326,13 +239,21 @@ class FileAnnotator:
         if final_version is None and hasattr(run_model_result, "schema_version"):
             final_version = run_model_result.schema_version
 
-        return self._make_annotation(
-            validated_annotation=cast(dict, run_model_result.record),
-            schema_id=effective_schema_id,
-            schema_version=final_version,
-            private=private,
-            source=run_model_result.source.model_dump(),
-        )
+        source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
+
+        results = []
+        if run_model_result.records:
+            for record_data in run_model_result.records:
+                annotation_item = self._make_annotation(
+                    validated_annotation=cast(dict, record_data),
+                    schema_id=effective_schema_id,
+                    schema_version=final_version,
+                    private=private,
+                    source=source_dict,
+                )
+                results.append(annotation_item)
+
+        return results
 
     def annotate_file_using_model_and_validator(
         self,
@@ -347,7 +268,7 @@ class FileAnnotator:
         validation_model: Type[BaseModel] | JsonSchemaValidator | None = None,
         ignore_linter_errors: bool = False,
         progress_callback: Callable[[float, float, str], None] | None = None,
-    ) -> Annotation | AnnotationGroup:
+    ) -> list[Annotation | AnnotationGroup]:
         """
         Runs a given annotation model class directly.
 
@@ -360,7 +281,7 @@ class FileAnnotator:
             validation_model: Optional validator for the model's output.
 
         Returns:
-            An `Annotation` object with the model's output.
+            A list of `Annotation` or `AnnotationGroup` objects with the model's output.
 
         Raises:
             AnnotationConfigurationError: If `schema_id` is not provided.
@@ -394,13 +315,21 @@ class FileAnnotator:
             progress_callback=progress_callback,
         )
 
-        return self._make_annotation(
-            validated_annotation=cast(dict, run_model_result.record),
-            schema_id=schema_id,
-            schema_version=schema_version,
-            private=private,
-            source=run_model_result.source.model_dump(),
-        )
+        source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
+
+        results = []
+        if run_model_result.records:
+            for record_data in run_model_result.records:
+                annotation_item = self._make_annotation(
+                    validated_annotation=cast(dict, record_data),
+                    schema_id=schema_id,
+                    schema_version=schema_version,
+                    private=private,
+                    source=source_dict,
+                )
+                results.append(annotation_item)
+
+        return results
 
     def _jsonschema_validate(self, annotation: dict[str, Any], validator: JsonSchemaValidator) -> None:
         status = json_schema_validate_records(records=[annotation], validator=validator)
@@ -497,7 +426,7 @@ class FileAnnotator:
     def make_manual_annotation(
         self,
         *,
-        annotation: BaseModel | dict[str, Any],
+        annotation: BaseModel | dict[str, Any] | Sequence[BaseModel | dict[str, Any]],
         schema_id: str,
         schema_version: str | None = None,
         source_id: str | None,
@@ -505,7 +434,7 @@ class FileAnnotator:
         private: bool | None,
         ignore_linter_errors: bool = False,
         force: bool = False,
-    ) -> Annotation | AnnotationGroup:
+    ) -> list[Annotation | AnnotationGroup]:
         """
         Creates a fully-formed `Annotation` object from a manual payload.
 
@@ -527,33 +456,75 @@ class FileAnnotator:
             AnnotationValidationError: If the payload fails validation.
             DataQualityError: If the payload fails post-validation data quality linting.
         """
-        logger.debug("Creating manual annotation for validation schema '%s'.", schema_id)
-
-        if force:
-            logger.debug("`force=True: skipping all validation checks.")
-            if is_pydantic_model_instance(annotation):
-                validated_annotation = annotation.model_dump(by_alias=True, exclude_none=True)
-            else:
-                validated_annotation = cast(dict[str, Any], annotation)
-        else:
-            validated_annotation = self.validate_manual_annotation(annotation=annotation, validator=validator)
-
-            raise_on_error = not ignore_linter_errors
-            apply_linter(schema_id=schema_id, record=validated_annotation, raise_on_error=raise_on_error)
+        logger.debug("Creating manual annotation(s) for validation schema '%s'.", schema_id)
 
         if source_id is None:
             source_id = secrets.token_hex(12)
 
         source = AnnotationManualSource(id=source_id).model_dump()
 
-        return self._make_annotation(
-            validated_annotation=validated_annotation,
-            schema_id=schema_id,
-            schema_version=schema_version,
-            private=private,
-            source=source,
-            force=force,
-        )
+        annotations_to_process = annotation if isinstance(annotation, list) else [annotation]
+        results = []
+
+        for ann in annotations_to_process:
+            if force:
+                logger.debug("`force=True`: skipping all validation checks.")
+                if is_pydantic_model_instance(ann):
+                    validated_annotations = [ann.model_dump(by_alias=True, exclude_none=True)]
+                else:
+                    validated_annotations = [cast(dict[str, Any], ann)]
+            else:
+                try:
+                    valid_ann = self.validate_manual_annotation(
+                        annotation=cast("BaseModel | dict[str, Any]", ann), validator=validator
+                    )
+                    validated_annotations = [valid_ann]
+                except (AnnotationValidationError, ValidationError, PydanticValidationError) as original_err:
+                    from dorsal.file.chunking import chunk_record
+
+                    raw_dict = (
+                        ann.model_dump(by_alias=True, exclude_none=True)
+                        if is_pydantic_model_instance(ann)
+                        else cast(dict[str, Any], ann)
+                    )
+
+                    chunks = chunk_record(raw_dict, schema_id)
+
+                    if len(chunks) > 1:
+                        logger.info(
+                            "Manual annotation validation failed. "
+                            "Attempting to rescue by semantically chunking into %d records.",
+                            len(chunks),
+                        )
+                        validated_annotations = []
+                        try:
+                            for chunk in chunks:
+                                validated_annotations.append(
+                                    self.validate_manual_annotation(annotation=chunk, validator=validator)
+                                )
+                            logger.info("Rescue successful. Manual annotation was safely chunked and validated.")
+                        except (AnnotationValidationError, ValidationError, PydanticValidationError) as err:
+                            logger.warning("Rescue failed. The semantically chunked records still failed validation.")
+                            raise original_err from err
+                    else:
+                        raise original_err
+
+            for valid_rec in validated_annotations:
+                if not force:
+                    raise_on_error = not ignore_linter_errors
+                    apply_linter(schema_id=schema_id, record=valid_rec, raise_on_error=raise_on_error)
+
+                annotation_item = self._make_annotation(
+                    validated_annotation=valid_rec,
+                    schema_id=schema_id,
+                    schema_version=schema_version,
+                    private=private,
+                    source=source,
+                    force=force,
+                )
+                results.append(annotation_item)
+
+        return results
 
 
 FILE_ANNOTATOR = FileAnnotator()

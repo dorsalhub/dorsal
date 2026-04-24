@@ -69,7 +69,12 @@ def create_model_result_panel(
 
     if isinstance(result, RunModelResult):
         logger.debug("Extracting record directly from RunModelResult")
-        data = result.record
+        if result.records:
+            data = result.records[0]
+            if len(result.records) > 1:
+                group_info = f" (Chunk 1 of {len(result.records)})"
+        else:
+            data = None
         schema_id = getattr(result, "schema_id", "") or ""
 
     elif isinstance(result, FileAnnotationGroupResponse):

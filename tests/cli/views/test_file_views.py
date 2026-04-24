@@ -149,7 +149,7 @@ def test_build_annotation_table_stub_full():
     assert "manual (user_42)" in output
     assert "2024-05-20 14:30" in output
     assert "anno_123" in output
-    assert "dorsal annotation get somehash anno_123" in output
+    assert "dorsal hub annotation get somehash anno_123" in output
 
 
 def test_build_annotation_table_stub_minimal():

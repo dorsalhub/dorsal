@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 from rich.box import ROUNDED
 from typer.testing import CliRunner
 
-from dorsal.cli.annotation_app.get_annotation_cmd import get_annotation
+from dorsal.cli.hub_app.annotation_app.get_annotation_cmd import get_annotation
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError, NotFoundError, DorsalClientError
 

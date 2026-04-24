@@ -16,6 +16,7 @@ import inspect
 import logging
 import re
 from typing import Annotated, Any, Callable, Literal, Type, TypeGuard, TypeVar, Union, cast
+from uuid import UUID, uuid4
 
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_core import PydanticUndefined
@@ -147,27 +148,39 @@ class AnnotationModel:
         )
         self.error = message
 
-    def log_debug(self, message: str):
-        """Logs a debug message with standardized model context."""
-        logger.debug(
-            "Model '%s' (v%s) for file '%s': %s",
-            self.id,
-            self.version,
-            self.file_path,
-            message,
+    def log(self, level: int, message: str, *args, **kwargs):
+        """Base logging method with standardized model context."""
+        logger.log(
+            level, "Model '%s' (v%s) for file '%s': " + message, self.id, self.version, self.file_path, *args, **kwargs
         )
+
+    def log_debug(self, message: str, *args, **kwargs):
+        """Logs a debug message with standardized model context."""
+        self.log(logging.DEBUG, message, *args, **kwargs)
+
+    def log_info(self, message: str, *args, **kwargs):
+        """Logs an info message with standardized model context."""
+        self.log(logging.INFO, message, *args, **kwargs)
+
+    def log_warning(self, message: str, *args, **kwargs):
+        """Logs a warning message with standardized model context."""
+        self.log(logging.WARNING, message, *args, **kwargs)
+
+    def log_error(self, message: str, *args, **kwargs):
+        """Logs an error message with standardized model context."""
+        self.log(logging.ERROR, message, *args, **kwargs)
 
     def update_progress(self, current: float, total: float, description: str = "") -> None:
         """Generic hook for models to report intra-task progress."""
         if self._progress_callback:
             self._progress_callback(current, total, description)
 
-    def main(self, *args, **kwargs) -> dict | None:
+    def main(self, *args, **kwargs) -> dict[str, Any] | list[dict[str, Any]] | None:
         """
         The main entrypoint for the annotation model.
         This method must be implemented by the subclass.
 
-        - On success: return a dictionary of the annotation data.
+        - On success: return a dictionary, or list of dictionaries, of the annotation data.
         - On graceful failure: call self._set_error("reason") and return None.
         - On critical failure: raise an Exception (e.g., a missing dependency).
         """
@@ -182,6 +195,7 @@ class AnnotationSourceBase(BaseModel):
     version: String256 | None = None
     variant: String256 | None = None
     user_id: int | None = Field(default=None, validation_alias=AliasChoices("user_no", "user_id"))
+    execution_id: UUID | None = Field(default_factory=uuid4)
 
 
 class AnnotationModelSource(AnnotationSourceBase):

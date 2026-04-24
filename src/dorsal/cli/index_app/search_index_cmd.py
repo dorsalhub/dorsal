@@ -90,9 +90,9 @@ def _save_local_search_results(
 def search_index_cmd(
     ctx: typer.Context,
     query: Annotated[
-        str,
-        typer.Argument(help="The search query string. Queries with spaces must be enclosed in quotes."),
-    ] = "*",
+        Optional[list[str]],
+        typer.Argument(help="The search query terms."),
+    ] = None,
     page: Annotated[
         int,
         typer.Option(
@@ -177,6 +177,9 @@ def search_index_cmd(
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
 
+    query_list = query if query else ["*"]
+    display_query = " ".join(query_list)
+
     if output_path and not save:
         if str(output_path).lower().endswith(".json"):
             save = True
@@ -188,20 +191,16 @@ def search_index_cmd(
                     style=palette.get("warning", "yellow"),
                 )
 
-    if not query or not query.strip():
-        console.print(f"[{palette['error']}]Error:[/] Please provide a search query.")
-        exit_cli(code=EXIT_CODE_ERROR)
-
     try:
         if not json_output:
             console.print(
-                f"Checking [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{query}'[/]"
+                f"Checking [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{display_query}'[/]"
             )
 
         sort_desc = sort_order.lower() == "desc"
 
         response = search_local_paginated(
-            query=query,
+            query=query_list,
             or_logic=or_logic,
             page=page,
             per_page=per_page,
@@ -223,7 +222,7 @@ def search_index_cmd(
 
         if save:
             _save_local_search_results(
-                query=query,
+                query=display_query,
                 page_data=response_dict,
                 palette=palette,
                 output_path=output_path,

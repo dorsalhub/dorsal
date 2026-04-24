@@ -63,6 +63,14 @@ def export_adapter(
             help="Disable auto-saving results to disk (useful for read-only environments or pure piping).",
         ),
     ] = False,
+    merge: Annotated[
+        bool,
+        typer.Option(
+            "--merge",
+            "-m",
+            help="Merge multiple chunked records into a single output file before exporting.",
+        ),
+    ] = False,
 ):
     """
     Export a Dorsal JSON result into a different format using an adapter.
@@ -88,6 +96,21 @@ def export_adapter(
         error_console.print(f"[{palette.get('error', 'bold red')}]Validation Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
+    if merge and len(records_to_process) > 1:
+        from dorsal.file.chunking import merge_chunked_records
+
+        base_schema = records_to_process[0][0]
+        base_file_path = records_to_process[0][2]
+
+        try:
+            records_only = [record for _, record, _ in records_to_process]
+            merged_payload = merge_chunked_records(records_only, base_schema)
+            records_to_process = [(base_schema, merged_payload, base_file_path)]
+        except Exception as e:
+            logger.exception("Failed to merge chunked records.")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Merge Error:[/] {e}")
+            exit_cli(code=EXIT_CODE_ERROR)
+
     resolved_format = target_format
     if not resolved_format:
         if output_path and not output_path.is_dir() and output_path.suffix:
@@ -108,6 +131,7 @@ def export_adapter(
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
 
     for i, (current_schema_id, record, orig_file_path) in enumerate(records_to_process):
+        # Generate base name correctly
         if orig_file_path:
             input_name = pathlib.Path(orig_file_path).name
             base_name = pathlib.Path(orig_file_path).stem
@@ -118,8 +142,10 @@ def export_adapter(
                 if file_path.name.endswith(".dorsal.json")
                 else file_path.stem
             )
-            if is_batch:
-                base_name = f"{base_name}_{i + 1}"
+
+        # Apply batch suffix globally
+        if is_batch:
+            base_name = f"{base_name}_{i + 1}"
 
         if output_path and not output_path.is_dir() and not is_batch:
             save_path = output_path
@@ -129,10 +155,16 @@ def export_adapter(
 
         try:
             if no_save:
-                exported_text = export_record(record, current_schema_id, target_format=resolved_format)
+                exported_text = export_record(
+                    record, current_schema_id, target_format=resolved_format, validate=not merge
+                )
             else:
                 exported_text = export_record_to_file(
-                    record=record, output_path=save_path, schema_id=current_schema_id, target_format=resolved_format
+                    record=record,
+                    output_path=save_path,
+                    schema_id=current_schema_id,
+                    target_format=resolved_format,
+                    validate=not merge,
                 )
                 saved_paths_msg.append(str(save_path.resolve()))
 
@@ -150,7 +182,10 @@ def export_adapter(
                 exit_cli(code=EXIT_CODE_ERROR)
 
     if not is_batch:
-        console.print(terminal_outputs[0], end="")
+        # Only dump output to terminal if user requested no-save
+        if no_save:
+            console.print(terminal_outputs[0], end="")
+
         if not no_save and saved_paths_msg:
             error_console.print(
                 f"\n[{palette.get('info', 'dim')}]Outputs saved successfully:\n  ↳ {saved_paths_msg[0]}[/]"

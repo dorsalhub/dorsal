@@ -64,12 +64,16 @@ def list_annotations(
         table.add_column("Modified")
 
     found_count = 0
+    first_anno = None
 
-    for schema_id, items in annotations.items():
+    ann_items = list(annotations.items())
+    for schema_id, items in ann_items:
         if isinstance(items, list):
             for item in items:
                 found_count += 1
                 anno_id = item.get("id", "Unknown")
+                if found_count == 1:
+                    first_anno = anno_id
 
                 source_data = item.get("source", {})
                 source_str = f"{source_data.get('type', 'Unknown')} ({source_data.get('id', 'Unknown')})"
@@ -95,6 +99,9 @@ def list_annotations(
 
     console.print(f"🔎 Found {found_count} annotation(s) for file [bold]{file_hash[:16]}...[/]\n")
     console.print(table)
-    console.print(
-        f"\n💡 [dim]Tip: Use[/] dorsal annotation get {file_hash} <annotation_id> [dim]to view the full data.[/]"
-    )
+
+    if first_anno:
+        console.print(
+            f"\n[dim]To view an annotation use[/] [{palette.get('primary_value', 'cyan')}]dorsal hub annotation get[/]"
+            f"\n[dim]  Example:[/] [{palette.get('primary_value', 'cyan')}]dorsal hub annotation get {first_anno}[/]"
+        )

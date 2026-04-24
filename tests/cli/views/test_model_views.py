@@ -42,7 +42,11 @@ def render_to_string(renderable) -> str:
 
 def create_run_result(data: dict | None, schema_id: str = "") -> RunModelResult:
     """Constructs a real RunModelResult object."""
-    return RunModelResult(name="test-model", source=DUMMY_SOURCE, record=data, schema_id=schema_id)
+    if data:
+        records = [data]
+    else:
+        records = None
+    return RunModelResult(name="test-model", source=DUMMY_SOURCE, records=records, schema_id=schema_id)
 
 
 def test_render_classification():

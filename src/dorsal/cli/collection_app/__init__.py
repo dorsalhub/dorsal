@@ -28,7 +28,7 @@ from dorsal.cli.collection_app.update_cmd import update_collection
 
 app = typer.Typer(
     name="collection",
-    help="Show, list, export, manage and delete file collections on DorsalHub.",
+    help="[bold]show[/bold], [bold]list[/bold], [bold]export[/bold], [bold]delete[/bold] and manage file collections on DorsalHub.",
     no_args_is_help=True,
 )
 

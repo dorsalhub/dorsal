@@ -14,7 +14,6 @@
 
 
 import pytest
-from types import SimpleNamespace
 from pydantic import BaseModel, ValidationError as PydanticValidationError
 from dorsal.file.file_annotator import FileAnnotator
 from dorsal.common.exceptions import (
@@ -24,7 +23,7 @@ from dorsal.common.exceptions import (
     AnnotationValidationError,
     ModelRunnerError,
 )
-from dorsal.file.configs.model_runner import ModelRunnerPipelineStep
+from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult
 from dorsal.file.validators.file_record import GenericFileAnnotation, Annotation
 from dorsal.common.model import AnnotationModel, AnnotationModelSource, AnnotationManualSource
 from dorsal.common.validators import CallableImportPath
@@ -53,18 +52,14 @@ def annotator():
 @pytest.fixture
 def mock_runner(mocker):
     runner = mocker.MagicMock()
-    # Valid hash is 64 chars (sha256)
     valid_hash = "a" * 64
 
-    # Return a "dumb" object that mimics RunModelResult structure
-    # to bypass strict Pydantic validation of Source types during testing.
-    # We use a Model source here as that is what the Runner typically returns.
     source_obj = AnnotationModelSource(id="mock_model", version="1.0")
 
-    result = SimpleNamespace(
+    result = RunModelResult(
         name="mock_model",
         schema_id="test/schema",
-        record={"file_hash": valid_hash, "data": {"foo": "bar"}},
+        records=[{"file_hash": valid_hash, "data": {"foo": "bar"}}],
         source=source_obj,
         error=None,
     )
@@ -96,11 +91,11 @@ def test_execute_runner_raises_exception(annotator, mock_runner):
 
 
 def test_execute_runner_returns_error_string(annotator, mock_runner):
-    mock_runner.run_single_model.return_value = SimpleNamespace(
+    mock_runner.run_single_model.return_value = RunModelResult(
         name="mock_model",
         schema_id="test/schema",
-        record=None,
-        source=AnnotationManualSource(id="error"),
+        records=None,
+        source=AnnotationModelSource(type="Model", id="error", version="1.0"),
         error="Logic Error inside Model",
     )
     with pytest.raises(AnnotationExecutionError) as exc:
@@ -109,11 +104,11 @@ def test_execute_runner_returns_error_string(annotator, mock_runner):
 
 
 def test_execute_runner_returns_nothing(annotator, mock_runner):
-    mock_runner.run_single_model.return_value = SimpleNamespace(
+    mock_runner.run_single_model.return_value = RunModelResult(
         name="mock_model",
         schema_id="test/schema",
-        record=None,
-        source=AnnotationManualSource(id="empty"),
+        records=None,
+        source=AnnotationModelSource(type="Model", id="empty", version="1.0"),  # <-- Changed here
         error=None,
     )
     with pytest.raises(AnnotationExecutionError) as exc:
@@ -134,8 +129,8 @@ def test_annotate_direct_success(annotator, mock_runner, mocker):
         schema_id="test/direct",
         private=False,
     )
-    assert isinstance(result, Annotation)
-    assert result.record.file_hash == "a" * 64
+    assert isinstance(result[0], Annotation)
+    assert result[0].record.file_hash == "a" * 64
 
 
 def test_annotate_direct_missing_schema(annotator, mock_runner):
@@ -180,8 +175,8 @@ def test_annotate_pipeline_step_dict_success(annotator, mock_runner, mocker):
         file_path="f", model_runner=mock_runner, pipeline_step=step_config, private=True
     )
 
-    assert result.record.file_hash == "a" * 64
-    assert result.private is True
+    assert result[0].record.file_hash == "a" * 64
+    assert result[0].private is True
 
 
 def test_annotate_pipeline_import_error(annotator, mock_runner, mocker):
@@ -259,8 +254,8 @@ def test_make_manual_annotation_success(annotator, mocker):
         annotation=data, schema_id="manual/test", source_id="user input", private=False
     )
 
-    assert res.record.file_hash == valid_hash
-    assert res.source.id == "user input"
+    assert res[0].record.file_hash == valid_hash
+    assert res[0].source.id == "user input"
 
 
 def test_make_manual_annotation_force(annotator, mocker):
@@ -296,7 +291,6 @@ def test_make_annotation_wrapper_lookup(annotator, mocker):
     valid_hash = "b" * 64
     valid_data = {"file_hash": valid_hash, "data": {}}
 
-    # Use 'Manual' source to satisfy union in _make_annotation
     source_dict = {"type": "Manual", "id": "test"}
 
     res = annotator._make_annotation(
@@ -304,3 +298,68 @@ def test_make_annotation_wrapper_lookup(annotator, mocker):
     )
 
     assert isinstance(res, SpecialAnnotation)
+
+
+def test_make_manual_annotation_rescue_success(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+    mocker.patch("dorsal.file.file_annotator.apply_linter")
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+    chunk1 = {"file_hash": valid_hash, "data": {"status": "chunk1"}}
+    chunk2 = {"file_hash": valid_hash, "data": {"status": "chunk2"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[chunk1, chunk2])
+
+    def mock_validate(annotation, validator):
+        if annotation == original_data:
+            raise AnnotationValidationError("Original validation failed")
+        return annotation
+
+    mocker.patch.object(annotator, "validate_manual_annotation", side_effect=mock_validate)
+
+    res = annotator.make_manual_annotation(
+        annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+    )
+
+    assert len(res) == 2
+    assert res[0].record.data == {"status": "chunk1"}
+    assert res[1].record.data == {"status": "chunk2"}
+
+
+def test_make_manual_annotation_rescue_failed_chunks(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+    chunk1 = {"file_hash": valid_hash, "data": {"status": "chunk1"}}
+    chunk2 = {"file_hash": valid_hash, "data": {"status": "chunk2"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[chunk1, chunk2])
+
+    mocker.patch.object(
+        annotator, "validate_manual_annotation", side_effect=AnnotationValidationError("Always fails validation")
+    )
+
+    with pytest.raises(AnnotationValidationError):
+        annotator.make_manual_annotation(
+            annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+        )
+
+
+def test_make_manual_annotation_rescue_no_chunks(annotator, mocker):
+    mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
+
+    valid_hash = "a" * 64
+    original_data = {"file_hash": valid_hash, "data": {"status": "bad"}}
+
+    mocker.patch("dorsal.file.chunking.chunk_record", return_value=[original_data])
+
+    mocker.patch.object(
+        annotator, "validate_manual_annotation", side_effect=AnnotationValidationError("Original validation failed")
+    )
+
+    with pytest.raises(AnnotationValidationError):
+        annotator.make_manual_annotation(
+            annotation=original_data, schema_id="manual/test", source_id="user input", private=False
+        )

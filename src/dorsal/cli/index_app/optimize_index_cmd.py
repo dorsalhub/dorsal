@@ -29,6 +29,9 @@ def optimize_search_index(
         bool,
         typer.Option("--json", help="Output the optimization summary as a raw JSON object."),
     ] = False,
+    force_recompression: Annotated[
+        bool, typer.Option("--force-recompression", help="Recompress all records using current settings.")
+    ] = False,
 ):
     """
     Runs maintenance on the SQLite search index.
@@ -46,7 +49,7 @@ def optimize_search_index(
 
     try:
         with console.status("Optimizing search index... (this may take a moment)"):
-            results = optimize()
+            results = optimize(force_recompression=force_recompression)
 
         if json_output:
             console.print(json.dumps(results))
@@ -70,10 +73,18 @@ def optimize_search_index(
             "Size After Optimization:",
             human_filesize(results.get("size_after_bytes", 0)),
         )
-        summary_table.add_row(
-            "Disk Space Reclaimed:",
-            human_filesize(results.get("size_reclaimed_bytes", 0)),
-        )
+
+        reclaimed_bytes = results.get("size_reclaimed_bytes", 0)
+        if reclaimed_bytes < 0:
+            summary_table.add_row(
+                "Index Size Increased:",
+                human_filesize(abs(reclaimed_bytes)),
+            )
+        else:
+            summary_table.add_row(
+                "Index Size Decreased:",
+                human_filesize(reclaimed_bytes),
+            )
 
         console.print(
             Panel(

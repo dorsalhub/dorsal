@@ -30,7 +30,11 @@ from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(name="auth", help="Manage DorsalHub API Key authentication.", no_args_is_help=True)
+app = typer.Typer(
+    name="auth",
+    help="[bold]login[/bold], [bold]logout[/bold] and manage DorsalHub API Key authentication.",
+    no_args_is_help=True,
+)
 
 
 def _display_user_info(user_info: dict, title: str, ui_context: UIContext, console: Console):

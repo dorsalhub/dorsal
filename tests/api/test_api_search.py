@@ -71,10 +71,14 @@ def test_search_local_empty_query():
     assert search_local("   ") == []
 
 
-@patch("dorsal.api.search.DorsalIndex")
-def test_search_local_implicit_index_creation(mock_index_class):
+@patch("dorsal.api.search.create_index_instance")
+def test_search_local_implicit_index_creation(mock_create_index):
     """Hits the branch where index is None and must be initialized."""
-    mock_index_inst = mock_index_class.return_value
+    mock_index_inst = mock_create_index.return_value
+
+    mock_conn = MagicMock()
+    mock_index_inst._ensure_connection.return_value = mock_conn
+    mock_conn.cursor.return_value.fetchall.return_value = []
 
     with (
         patch("dorsal.api.search.QueryParser.parse"),
@@ -82,7 +86,7 @@ def test_search_local_implicit_index_creation(mock_index_class):
     ):
         search_local("test query", index=None)
 
-    mock_index_class.assert_called_once()
+    mock_create_index.assert_called_once()
     mock_index_inst.close.assert_called_once()
 
 
@@ -154,10 +158,10 @@ class TestSearchLocalPaginated:
         assert result.records == []
         assert result.pagination.record_count == 0
 
-    @patch("dorsal.api.search.DorsalIndex")
-    def test_implicit_index_creation_and_close(self, mock_index_class):
+    @patch("dorsal.api.search.create_index_instance")
+    def test_implicit_index_creation_and_close(self, mock_create_index):
         """Hits the branch where index is None and must be implicitly managed."""
-        mock_index_inst = mock_index_class.return_value
+        mock_index_inst = mock_create_index.return_value
 
         from dorsal.file.index.dorsal_index import CachedFileRecord
 
@@ -176,7 +180,7 @@ class TestSearchLocalPaginated:
 
             search_local_paginated("test query", index=None)
 
-        mock_index_class.assert_called_once()
+        mock_create_index.assert_called_once()  # <-- Assert against the new patch
         mock_index_inst.close.assert_called_once()
 
     def test_parse_compile_failure(self):

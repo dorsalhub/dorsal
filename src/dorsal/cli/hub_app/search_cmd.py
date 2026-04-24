@@ -16,7 +16,7 @@ from typing import Annotated, Optional
 import typer
 import pathlib
 
-from dorsal.cli.record_app.remote_search import search_and_display
+from dorsal.cli.hub_app.remote_search import search_and_display
 
 
 def search_record(
@@ -107,7 +107,7 @@ def search_record(
     ] = None,
 ):
     """
-    Search DorsalHub file records.
+    Search file records on DorsalHub.
     """
     scope = "global" if is_global else "user"
 
