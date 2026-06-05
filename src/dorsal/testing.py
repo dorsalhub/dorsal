@@ -36,7 +36,7 @@ def run_model(
     dependencies: list[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
     options: dict[str, Any] | None = None,
     debug: bool = True,
-) -> RunModelResult:
+) -> list[RunModelResult]:
     """Test wrapper for dorsal.file.run_model."""
     if annotation_model.__module__ == "__main__":
         import logging

@@ -67,7 +67,7 @@ def mock_run_deps(mocker, mock_rich_console):
         records=[{"summary": "Processed successfully"}],  # <--- CHANGED HERE
         schema_id="mock/schema",
     )
-    mock_runner.return_value = default_result
+    mock_runner.return_value = [default_result]
 
     mock_resolve = mocker.patch("dorsal.registry.resolution.resolve_target")
     mock_resolve.return_value = ("registry", "dorsal-receipt-scanner")
@@ -224,7 +224,7 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
         records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     mocker.patch("dorsal.api.adapters.export_record", return_value="1\n00:00:00 --> 00:00:01\nTranscribed string")
 
@@ -245,7 +245,7 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker):
         records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     mocker.patch(
         "dorsal.api.adapters.export_record",
@@ -270,7 +270,7 @@ def test_run_model_export_adapter_error(mock_run_deps, mocker):
         records=[{"text": "Transcribed string"}],
         schema_id="open/audio-transcription",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     mocker.patch(
         "dorsal.api.adapters.export_record",
@@ -398,7 +398,7 @@ def test_run_model_export_model_error_validation(mock_run_deps):
         schema_id="mock/schema",
         error="Inference failed halfway.",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.pdf")
@@ -422,7 +422,7 @@ def test_run_model_export_missing_schema_id(mock_run_deps):
         records=[{"summary": "Processed successfully"}],
         schema_id=None,
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.pdf")
@@ -505,7 +505,7 @@ def test_run_model_export_empty_record(mock_run_deps):
         records=[],
         schema_id="mock/schema",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.pdf")
@@ -528,7 +528,7 @@ def test_run_model_filename_override_single(mock_run_deps, mocker):
         records=[{"part": 1}],
         schema_id="open/generic",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
     mocker.patch("dorsal.api.adapters.export_record", return_value="exported text")
 
     with runner.isolated_filesystem():
@@ -579,7 +579,7 @@ def test_run_model_chunked_export_iteration(mock_run_deps, mocker):
         records=[{"part": 1}, {"part": 2}],
         schema_id="open/generic",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
     mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="chunked")
 
     with runner.isolated_filesystem():
@@ -604,7 +604,7 @@ def test_run_model_chunked_export_merge(mock_run_deps, mocker):
         records=[{"part": 1}, {"part": 2}],
         schema_id="open/generic",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records", return_value={"merged": "yes"})
     mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="merged text")
 
@@ -631,7 +631,7 @@ def test_run_model_auth_error_propagation(mock_run_deps):
         schema_id="open/generic",
         error="Authentication failed: token expired",
     )
-    mock_run_deps["run_logic"].return_value = mock_result
+    mock_run_deps["run_logic"].return_value = [mock_result]
 
     with runner.isolated_filesystem():
         test_file = pathlib.Path("test.pdf")

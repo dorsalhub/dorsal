@@ -63,7 +63,7 @@ def mock_runner(mocker):
         source=source_obj,
         error=None,
     )
-    runner.run_single_model.return_value = result
+    runner.run_single_model.return_value = [result]
     return runner
 
 
@@ -79,7 +79,7 @@ def test_execute_success(annotator, mock_runner):
         schema_id="test/schema",
         options={"opt": 1},
     )
-    assert res.record["file_hash"] == "a" * 64
+    assert res[0].records[0]["file_hash"] == "a" * 64
     mock_runner.run_single_model.assert_called_once()
 
 
@@ -91,26 +91,30 @@ def test_execute_runner_raises_exception(annotator, mock_runner):
 
 
 def test_execute_runner_returns_error_string(annotator, mock_runner):
-    mock_runner.run_single_model.return_value = RunModelResult(
-        name="mock_model",
-        schema_id="test/schema",
-        records=None,
-        source=AnnotationModelSource(type="Model", id="error", version="1.0"),
-        error="Logic Error inside Model",
-    )
+    mock_runner.run_single_model.return_value = [
+        RunModelResult(
+            name="mock_model",
+            schema_id="test/schema",
+            records=None,
+            source=AnnotationModelSource(type="Model", id="error", version="1.0"),
+            error="Logic Error inside Model",
+        )
+    ]
     with pytest.raises(AnnotationExecutionError) as exc:
         annotator._execute(mock_runner, MockAnnotationModel, None, "path", "id", {})
     assert "returned an error: Logic Error inside Model" in str(exc.value)
 
 
 def test_execute_runner_returns_nothing(annotator, mock_runner):
-    mock_runner.run_single_model.return_value = RunModelResult(
-        name="mock_model",
-        schema_id="test/schema",
-        records=None,
-        source=AnnotationModelSource(type="Model", id="empty", version="1.0"),  # <-- Changed here
-        error=None,
-    )
+    mock_runner.run_single_model.return_value = [
+        RunModelResult(
+            name="mock_model",
+            schema_id="test/schema",
+            records=None,
+            source=AnnotationModelSource(type="Model", id="empty", version="1.0"),
+            error=None,
+        )
+    ]
     with pytest.raises(AnnotationExecutionError) as exc:
         annotator._execute(mock_runner, MockAnnotationModel, None, "path", "id", {})
     assert "returned no record and no error" in str(exc.value)

@@ -241,7 +241,7 @@ def run_model(
                     progress.update(task_id, **update_kwargs)
 
                 try:
-                    res: RunModelResult = run_or_install_model(
+                    file_results = run_or_install_model(
                         target=target,
                         file_path=str(f),
                         options=parsed_options,
@@ -249,74 +249,77 @@ def run_model(
                         progress_callback=progress_hook,
                     )
 
-                    if res.error and "Authentication failed" in res.error:
-                        raise AuthError(res.error)
+                    for res in file_results:
+                        if res.error and "Authentication failed" in res.error:
+                            raise AuthError(res.error)
 
-                    raw_results.append(res)
+                        raw_results.append(res)
 
-                    res_dict = res.model_dump(exclude_none=True)
-                    res_dict["file_path"] = str(f)
-                    results_data.append(res_dict)
+                        res_dict = res.model_dump(exclude_none=True)
+                        res_dict["file_path"] = str(f)
+                        results_data.append(res_dict)
 
-                    # --- Export Alignment Logic ---
-                    if export_format:
-                        try:
-                            if res.error:
-                                raise ValueError(f"Cannot export due to model error: {res.error}")
+                        # --- Export Alignment Logic ---
+                        if export_format:
+                            try:
+                                if res.error:
+                                    raise ValueError(f"Cannot export due to model error: {res.error}")
 
-                            schema_id = res.schema_id
-                            if not schema_id:
-                                raise ValueError("Missing schema_id for export.")
+                                schema_id = res.schema_id
+                                if not schema_id:
+                                    raise ValueError("Missing schema_id for export.")
 
-                            if not res.records:
-                                raise ValueError("No record data generated to export.")
+                                if not res.records:
+                                    raise ValueError("No record data generated to export.")
 
-                            records_to_export = res.records
-                            is_merged = False
-
-                            if len(records_to_export) > 1:
-                                if merge:
-                                    from dorsal.file.chunking import merge_chunked_records
-
-                                    merged_payload = merge_chunked_records(records_to_export, schema_id)
-                                    records_to_export = [merged_payload]
-                                    is_merged = True
-                                else:
-                                    error_console.print(
-                                        f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(records_to_export)} records. Exporting as discrete chunks. Use --merge to combine them."
-                                    )
-
-                            ext = get_format_extension(schema_id, export_format)
-
-                            for idx, rec_dict in enumerate(records_to_export):
-                                if not is_batch and filename:
-                                    base_name = filename
-                                else:
-                                    base_name = f.stem
+                                records_to_export = res.records
+                                is_merged = False
 
                                 if len(records_to_export) > 1:
-                                    base_name = f"{base_name}_{idx + 1}"
+                                    if merge:
+                                        from dorsal.file.chunking import merge_chunked_records
 
-                                save_path = out_dir / f"{base_name}.{ext}"
+                                        merged_payload = merge_chunked_records(records_to_export, schema_id)
+                                        records_to_export = [merged_payload]
+                                        is_merged = True
+                                    else:
+                                        error_console.print(
+                                            f"[{palette.get('warning', 'yellow')}]Note on {f.name}:[/] Model returned {len(records_to_export)} records. Exporting as discrete chunks. Use --merge to combine them."
+                                        )
 
-                                exported_text = export_record(
-                                    record=rec_dict,
-                                    schema_id=schema_id,
-                                    target_format=export_format,
-                                    validate=not is_merged,
-                                    **parsed_export_options,
+                                ext = get_format_extension(schema_id, export_format)
+
+                                for idx, rec_dict in enumerate(records_to_export):
+                                    if not is_batch and filename:
+                                        base_name = filename
+                                    else:
+                                        base_name = f.stem
+
+                                    if len(records_to_export) > 1:
+                                        base_name = f"{base_name}_{idx + 1}"
+
+                                    save_path = out_dir / f"{base_name}.{ext}"
+
+                                    exported_text = export_record(
+                                        record=rec_dict,
+                                        schema_id=schema_id,
+                                        target_format=export_format,
+                                        validate=not is_merged,
+                                        **parsed_export_options,
+                                    )
+
+                                    export_files_to_save.append((save_path, exported_text))
+
+                            except DorsalError as err:
+                                error_console.print(
+                                    f"[{palette.get('warning', 'yellow')}]Export Error on {f.name}:[/] {err}"
                                 )
-
-                                export_files_to_save.append((save_path, exported_text))
-
-                        except DorsalError as err:
-                            error_console.print(
-                                f"[{palette.get('warning', 'yellow')}]Export Error on {f.name}:[/] {err}"
-                            )
-                            res_dict["export_error"] = str(err)
-                        except ValueError as err:
-                            error_console.print(f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}")
-                            res_dict["export_error"] = str(err)
+                                res_dict["export_error"] = str(err)
+                            except ValueError as err:
+                                error_console.print(
+                                    f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}"
+                                )
+                                res_dict["export_error"] = str(err)
                     # ------------------------------
 
                 except (DorsalError, AuthError, typer.Exit):

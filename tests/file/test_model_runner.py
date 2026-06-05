@@ -885,9 +885,10 @@ class TestRunModelWrapper:
         """Test a standard successful run with no dependencies."""
         result = run_model(MockSuccessAnnotationModel, "/test_file.txt")
 
-        assert result.error is None
-        assert result.record == {"status": "success", "data": 42}
-        assert result.source.id == "dorsal/success-model"
+        assert len(result) == 1
+        assert result[0].error is None
+        assert result[0].records[0] == {"status": "success", "data": 42}
+        assert result[0].source.id == "dorsal/success-model"
 
     def test_run_model_dependency_logic(self, mock_fs):
         """
@@ -899,16 +900,19 @@ class TestRunModelWrapper:
             "checker": {"module": "tests.unit.test_model_runner", "name": "mock_checker_true"},
         }
         result_met = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_met])
-        assert result_met.error is None
-        assert result_met.record["data"] == 42
+        assert len(result_met) == 1
+        assert result_met[0].error is None
+        assert result_met[0].records[0]["data"] == 42
+
         dep_unmet = {
             "type": "media_type",
             "checker": {"module": "tests.unit.test_model_runner", "name": "mock_checker_false"},
             "silent": False,
         }
         result_strict = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_unmet])
-        assert result_strict.record is None
-        assert "Dependency not met" in result_strict.error
+        assert len(result_strict) == 1
+        assert result_strict[0].records is None
+        assert "Dependency not met" in result_strict[0].error
 
         dep_silent = {
             "type": "media_type",
@@ -916,8 +920,9 @@ class TestRunModelWrapper:
             "silent": True,
         }
         result_silent = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[dep_silent])
-        assert result_silent.record is None
-        assert "Skipped: Silent Dependency not met" in result_silent.error
+        assert len(result_silent) == 1
+        assert result_silent[0].records is None
+        assert "Skipped: Silent Dependency not met" in result_silent[0].error
 
     def test_run_model_ambiguous_config_error(self, mock_fs):
         """Test guardrail against ambiguous 'open/' schema + custom validator."""
@@ -960,9 +965,10 @@ class TestRunModelWrapper:
 
         result = run_model(MockSuccessAnnotationModel, "/test_file.txt")
 
-        assert result.error is not None
-        assert result.name == "MockBaseAnnotationModel"
-        assert "Error executing model" in result.error
+        assert len(result) == 1
+        assert result[0].error is not None
+        assert result[0].name == "MockBaseAnnotationModel"
+        assert "Error executing model" in result[0].error
 
     def test_run_model_with_real_dependency_checker(self, mock_fs):
         from dorsal.file.configs.model_runner import check_media_type_dependency
@@ -975,7 +981,8 @@ class TestRunModelWrapper:
 
         result = run_model(MockSuccessAnnotationModel, "/test_file.txt", dependencies=[real_dep_config])
 
-        assert result.error is None
+        assert len(result) == 1
+        assert result[0].error is None
 
 
 class TestResolvePipelineStepModels:
@@ -1172,19 +1179,21 @@ class TestModelRunnerChunkRescueAndMultiOutput:
         result = base_model_runner.run_single_model(
             annotation_model=SingleOutputModel, validation_model=None, file_path="/fake/path"
         )
-        assert result.error is None
-        assert len(result.records) == 1
-        assert result.records[0]["text"] == "ok"
+        assert len(result) == 1
+        assert result[0].error is None
+        assert len(result[0].records) == 1
+        assert result[0].records[0]["text"] == "ok"
 
     def test_run_single_model_multiple_outputs(self, base_model_runner):
         """Tests that models returning a list of outputs are properly handled."""
         result = base_model_runner.run_single_model(
             annotation_model=MultiOutputModel, validation_model=MockStrictValidator, file_path="/fake/path"
         )
-        assert result.error is None
-        assert len(result.records) == 2
-        assert result.records[0]["text"] == "ok1"
-        assert result.records[1]["text"] == "ok2"
+        assert len(result) == 1
+        assert result[0].error is None
+        assert len(result[0].records) == 2
+        assert result[0].records[0]["text"] == "ok1"
+        assert result[0].records[1]["text"] == "ok2"
 
     def test_run_single_model_validation_failure_no_rescue(self, base_model_runner):
         """Tests that validation failures immediately return an error if chunk rescue is disabled."""
@@ -1196,9 +1205,9 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail",
         )
 
-        # Pipeline shouldn't crash, but it should return an error state
-        assert result.error is not None
-        assert result.records is None
+        assert len(result) == 1
+        assert result[0].error is not None
+        assert result[0].records is None
 
     def test_chunking_rescue_success_pydantic(self, base_model_runner, mocker):
         """Tests a successful chunk rescue using a Pydantic validation model."""
@@ -1212,10 +1221,11 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail",
         )
 
-        assert result.error is None
-        assert len(result.records) == 2
-        assert result.records[0]["text"] == "chk1"
-        assert result.records[1]["text"] == "chk2"
+        assert len(result) == 2
+        assert result[0].error is None
+        assert result[1].error is None
+        assert result[0].records[0]["text"] == "chk1"
+        assert result[1].records[0]["text"] == "chk2"
 
     def test_chunking_rescue_multi_output_mixed(self, base_model_runner, mocker):
         """Tests that chunk rescue correctly merges valid outputs with rescued chunks."""
@@ -1236,12 +1246,14 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail-multi",
         )
 
-        assert result.error is None
-        assert len(result.records) == 3
+        assert len(result) == 3
+        assert result[0].error is None
+        assert result[1].error is None
+        assert result[2].error is None
         # The valid one from the initial run, plus the two rescued chunks
-        assert result.records[0]["text"] == "ok1"
-        assert result.records[1]["text"] == "chk1"
-        assert result.records[2]["text"] == "chk2"
+        assert result[0].records[0]["text"] == "ok1"
+        assert result[1].records[0]["text"] == "chk1"
+        assert result[2].records[0]["text"] == "chk2"
 
     def test_chunking_rescue_cannot_chunk(self, base_model_runner, mocker):
         """Tests failure when the chunker cannot break the record down any further."""
@@ -1256,8 +1268,9 @@ class TestModelRunnerChunkRescueAndMultiOutput:
         )
 
         # It should fail validation a second time and exit gracefully
-        assert result.error is not None
-        assert result.records is None
+        assert len(result) == 1
+        assert result[0].error is not None
+        assert result[0].records is None
 
     def test_chunking_rescue_chunk_fails_validation(self, base_model_runner, mocker):
         """Tests failure when a rescued chunk STILL fails the validation schema."""
@@ -1271,8 +1284,9 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail",
         )
 
-        assert result.error is not None
-        assert result.records is None
+        assert len(result) == 1
+        assert result[0].error is not None
+        assert result[0].records is None
 
     def test_chunking_rescue_jsonschema(self, base_model_runner, mocker):
         """Tests a successful chunk rescue using a JsonSchemaValidator."""
@@ -1289,7 +1303,8 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail",
         )
 
-        assert result.error is None
-        assert len(result.records) == 2
-        assert result.records[0] == {"text": "chk1"}
-        assert result.records[1] == {"text": "chk2"}
+        assert len(result) == 2
+        assert result[0].error is None
+        assert result[1].error is None
+        assert result[0].records[0] == {"text": "chk1"}
+        assert result[1].records[0] == {"text": "chk2"}

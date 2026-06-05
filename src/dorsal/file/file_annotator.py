@@ -85,7 +85,7 @@ class FileAnnotator:
         options: dict | None,
         ignore_linter_errors: bool = False,
         progress_callback: Callable[[float, float, str], None] | None = None,
-    ) -> RunModelResult:
+    ) -> list[RunModelResult]:
         """
         Executes a single model via the ModelRunner.
 
@@ -111,7 +111,8 @@ class FileAnnotator:
             file_path,
         )
         try:
-            run_model_result: RunModelResult = model_runner.run_single_model(
+            # ModelRunner now returns a list of results (handling NamedOutputs and Pagination)
+            run_model_results: list[RunModelResult] = model_runner.run_single_model(
                 annotation_model=annotation_model,
                 validation_model=validation_model,
                 file_path=file_path,
@@ -120,15 +121,14 @@ class FileAnnotator:
                 ignore_linter_errors=ignore_linter_errors,
                 progress_callback=progress_callback,
             )
-            if run_model_result.error:
-                raise AnnotationExecutionError(
-                    f"Model '{annotation_model.id}' returned an error: {run_model_result.error}"
-                )
 
-            if run_model_result.records is None:
-                raise AnnotationExecutionError(f"Model '{annotation_model.id}' returned no record and no error.")
+            for res in run_model_results:
+                if res.error:
+                    raise AnnotationExecutionError(f"Model '{annotation_model.id}' returned an error: {res.error}")
+                if res.records is None:
+                    raise AnnotationExecutionError(f"Model '{annotation_model.id}' returned no record and no error.")
 
-            return run_model_result
+            return run_model_results
         except ModelRunnerError as err:
             logger.exception("ModelRunner execution failed for model '%s'.", annotation_model.id)
             raise AnnotationExecutionError(f"Execution failed for model '{annotation_model.id}'.") from err
@@ -224,7 +224,7 @@ class FileAnnotator:
 
         annotator_class, validator = resolve_pipeline_step_models(pipeline_step_obj)
 
-        run_model_result = self._execute(
+        run_model_results = self._execute(
             model_runner=model_runner,
             annotation_model=annotator_class,
             validation_model=validator,
@@ -235,23 +235,24 @@ class FileAnnotator:
             progress_callback=progress_callback,
         )
 
-        final_version = schema_version
-        if final_version is None and hasattr(run_model_result, "schema_version"):
-            final_version = run_model_result.schema_version
-
-        source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
-
         results = []
-        if run_model_result.records:
-            for record_data in run_model_result.records:
-                annotation_item = self._make_annotation(
-                    validated_annotation=cast(dict, record_data),
-                    schema_id=effective_schema_id,
-                    schema_version=final_version,
-                    private=private,
-                    source=source_dict,
-                )
-                results.append(annotation_item)
+        for res in run_model_results:
+            final_version = schema_version
+            if final_version is None and hasattr(res, "schema_version"):
+                final_version = res.schema_version
+
+            source_dict = res.source.model_dump(by_alias=True, exclude_none=True)
+
+            if res.records:
+                for record_data in res.records:
+                    annotation_item = self._make_annotation(
+                        validated_annotation=cast(dict, record_data),
+                        schema_id=effective_schema_id,
+                        schema_version=final_version,
+                        private=private,
+                        source=source_dict,
+                    )
+                    results.append(annotation_item)
 
         return results
 
@@ -304,7 +305,7 @@ class FileAnnotator:
                 "is missing a required, non-empty 'id' string attribute."
             )
 
-        run_model_result = self._execute(
+        run_model_results = self._execute(
             model_runner=model_runner,
             annotation_model=annotation_model_cls,
             validation_model=validation_model,
@@ -315,19 +316,20 @@ class FileAnnotator:
             progress_callback=progress_callback,
         )
 
-        source_dict = run_model_result.source.model_dump(by_alias=True, exclude_none=True)
-
         results = []
-        if run_model_result.records:
-            for record_data in run_model_result.records:
-                annotation_item = self._make_annotation(
-                    validated_annotation=cast(dict, record_data),
-                    schema_id=schema_id,
-                    schema_version=schema_version,
-                    private=private,
-                    source=source_dict,
-                )
-                results.append(annotation_item)
+        for res in run_model_results:
+            source_dict = res.source.model_dump(by_alias=True, exclude_none=True)
+
+            if res.records:
+                for record_data in res.records:
+                    annotation_item = self._make_annotation(
+                        validated_annotation=cast(dict, record_data),
+                        schema_id=schema_id,
+                        schema_version=schema_version,
+                        private=private,
+                        source=source_dict,
+                    )
+                    results.append(annotation_item)
 
         return results
 
@@ -509,17 +511,23 @@ class FileAnnotator:
                     else:
                         raise original_err
 
-            for valid_rec in validated_annotations:
+            for idx, valid_rec in enumerate(validated_annotations):
                 if not force:
                     raise_on_error = not ignore_linter_errors
                     apply_linter(schema_id=schema_id, record=valid_rec, raise_on_error=raise_on_error)
+
+                # Clone the source to inject manual pagination identity
+                chunk_source = copy.deepcopy(source)
+                if len(validated_annotations) > 1:
+                    chunk_source["execution_part"] = idx + 1
+                    chunk_source["execution_total_parts"] = len(validated_annotations)
 
                 annotation_item = self._make_annotation(
                     validated_annotation=valid_rec,
                     schema_id=schema_id,
                     schema_version=schema_version,
                     private=private,
-                    source=source,
+                    source=chunk_source,
                     force=force,
                 )
                 results.append(annotation_item)
