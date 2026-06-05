@@ -991,3 +991,85 @@ def test_add_url_invalid_format(mock_metadata_reader, mock_file_record_strict, f
 
     with pytest.raises(ValueError, match="Invalid URL data"):
         lf.add_url("not_a_valid_url")
+
+
+def test_local_file_push_triggers_heavy(mock_metadata_reader, mock_file_record_strict, fs, mocker):
+    """Test that push() delegates to _push_heavy when the 14 MiB threshold is crossed."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    lf = LocalFile(file_path, client=mock_client)
+
+    mocker.patch.object(lf.model, "model_dump_json", return_value="a" * (15 * 1024 * 1024))
+
+    mock_push_heavy = mocker.patch.object(lf, "_push_heavy", return_value=MagicMock())
+
+    lf.push()
+
+    mock_push_heavy.assert_called_once()
+    mock_client.index_private_file_records.assert_not_called()
+
+
+def test_push_heavy_logic_success(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that _push_heavy correctly strips dynamic annotations and uploads them sequentially."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+
+    mock_ann_1 = MagicMock()
+    mock_ann_2 = MagicMock()
+    mock_file_record_strict.annotations.__pydantic_extra__ = {
+        "open/document-extraction": [mock_ann_1, mock_ann_2]
+    }
+    
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_response = FileIndexResponse(total=1, success=1, error=0, unauthorized=0, results=[])
+    mock_client.index_private_file_records.return_value = mock_response
+
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+
+    response = lf._push_heavy(public=False)
+
+    mock_client.index_private_file_records.assert_called_once()
+    uploaded_lite_record = mock_client.index_private_file_records.call_args.kwargs["file_records"][0]
+
+    extra = getattr(uploaded_lite_record.annotations, "__pydantic_extra__", {}) or {}
+    assert "open/document-extraction" not in extra
+
+    assert mock_client.add_file_annotation.call_count == 2
+
+    assert response.total == 3
+    assert response.success == 3
+    assert response.error == 0
+
+
+def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that _push_heavy raises a PartialIndexingError if an individual chunk fails in strict mode."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+
+    mock_ann_1 = MagicMock()
+    mock_file_record_strict.annotations.__pydantic_extra__ = {
+        "open/document-extraction": [mock_ann_1]
+    }
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_response = FileIndexResponse(total=1, success=1, error=0, unauthorized=0, results=[])
+    mock_client.index_private_file_records.return_value = mock_response
+
+    mock_client.add_file_annotation.side_effect = DorsalClientError("Payload chunk rejected")
+
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+
+    with pytest.raises(PartialIndexingError) as exc_info:
+        lf._push_heavy(strict=True)
+        
+    assert "PARTIAL FAILURE" in str(exc_info.value)
+    assert mock_response.error == 1
+    assert mock_response.success == 1  # The base record still succeeded!
