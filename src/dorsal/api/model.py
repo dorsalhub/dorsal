@@ -42,7 +42,7 @@ def run_or_install_model(
     options: dict[str, Any] | None = None,
     ignore_linter_errors: bool = False,
     progress_callback: Callable[[float, float, str], None] | None = None,
-) -> RunModelResult:
+) -> list[RunModelResult]:
     """
     Resolve a model, installs if necessary, and execute it on a local file.
 

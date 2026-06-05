@@ -39,7 +39,7 @@ from dorsal.common.exceptions import (
     PipelineIntegrityError,
     PydanticValidationError,
 )
-from dorsal.common.model import is_pydantic_model_class, AnnotationModel, AnnotationModelSource
+from dorsal.common.model import is_pydantic_model_class, AnnotationModel, AnnotationModelSource, NamedOutput
 from dorsal.common.validators import (
     CallableImportPath,
     JsonSchemaValidator,
@@ -63,10 +63,10 @@ logger = logging.getLogger(__name__)
 
 
 def model_debug_timer(method):
-    """Decorates method - provides execution time.
+    """
+    Decorates method - provides execution time.
     - Stores execution time of each model in `time_taken` instance mapping
     - Requires: `self.debug = True` on ModelRunner instance
-
     """
 
     @wraps(method)
@@ -74,11 +74,12 @@ def model_debug_timer(method):
         if instance.debug:
             model_name = getattr(annotation_model, "__name__", "unknown")
             start_time = time.perf_counter()
-            result: RunModelResult = method(instance, annotation_model, *method_args, **method_kwargs)
+            results = method(instance, annotation_model, *method_args, **method_kwargs)
             end_time = time.perf_counter()
             instance.time_taken[model_name] = end_time - start_time
-            result.time_taken = instance.time_taken.get(model_name)
-            return result
+            for res in results:
+                res.time_taken = instance.time_taken.get(model_name)
+            return results
         return method(instance, annotation_model, *method_args, **method_kwargs)
 
     return _impl
@@ -574,7 +575,7 @@ class ModelRunner:
         ignore_linter_errors: bool = False,
         follow_symlinks: bool = True,
         progress_callback: Callable[[float, float, str], None] | None = None,
-    ) -> "RunModelResult":
+    ) -> list["RunModelResult"]:
         """
         Runs a single annotation model and validates its output.
 
@@ -607,30 +608,11 @@ class ModelRunner:
         from dorsal.file.schemas import normalize_schema_id
 
         schema_id = normalize_schema_id(schema_id)
-
         model_name = annotation_model.__name__
-        result_data: dict[str, Any] = {
-            "name": model_name,
-            "source": {
-                "type": "Model",
-                "id": annotation_model.id,
-                "variant": None,
-                "version": annotation_model.version,
-            },
-            "records": None,
-            "schema_id": schema_id,
-            "schema_version": schema_version,
-            "error": None,
-        }
-
-        raw_model_output: dict[str, Any] | list[dict[str, Any]] | None = None
-        validated_data: list[dict[str, Any]] | None = None
-        validation_error_payload: list[dict[str, Any]] | str | None = None
 
         try:
             logger.debug("Instantiating model '%s' for file '%s'", model_name, file_path)
             annotation_model_instance = annotation_model(file_path=file_path)  # type: ignore[call-arg]
-
             annotation_model_instance.follow_symlinks = follow_symlinks
             annotation_model_instance._progress_callback = progress_callback
 
@@ -640,191 +622,187 @@ class ModelRunner:
                         continue
                     setattr(annotation_model_instance, key, value)
 
-            logger.debug(
-                "Running model '%s' main method with options: %s",
-                model_name,
-                options or "None",
-            )
+            logger.debug("Running model '%s' main method with options: %s", model_name, options or "None")
 
-            raw_model_output = (
+            raw_model_output: Any = (
                 annotation_model_instance.main(**options) if options else annotation_model_instance.main()
             )
 
-            result_data["source"]["variant"] = annotation_model_instance.variant
-
+            named_outputs: list[tuple[str | None, Any]] = []
             if raw_model_output is None:
-                error_msg_from_instance = getattr(annotation_model_instance, "error", None)
-                error_msg = (
-                    error_msg_from_instance
-                    if error_msg_from_instance
-                    else f"Model '{model_name}' returned None without specific error."
-                )
-                logger.warning(
-                    "Model '%s' returned None for file '%s'. Detail: %s",
-                    model_name,
-                    file_path,
-                    error_msg,
-                )
-                result_data["error"] = error_msg
-                return RunModelResult(**result_data)
-
-            validator_display_name = "None"
-            if validation_model is not None:
-                if inspect.isclass(validation_model):
-                    validator_display_name = validation_model.__name__
-                else:
-                    validator_display_name = type(validation_model).__name__
-
-            logger.debug(
-                "Attempting to validate output of model '%s' with validator '%s'...",
-                model_name,
-                validator_display_name,
-            )
-
-            if validation_model is None:
-                logger.debug(
-                    "No validator provided for model '%s', file '%s'. Skipping output validation.",
-                    model_name,
-                    file_path,
-                )
-                validated_data = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
-
+                named_outputs.append((None, None))
+            elif (
+                isinstance(raw_model_output, list) and raw_model_output and isinstance(raw_model_output[0], NamedOutput)
+            ):
+                for out in raw_model_output:
+                    out_typed = cast(NamedOutput, out)
+                    named_outputs.append((out_typed.name, out_typed.data))
+            elif isinstance(raw_model_output, NamedOutput):
+                named_outputs.append((raw_model_output.name, raw_model_output.data))
             else:
-                can_rescue = bool(schema_id and validation_model)
-                log_level = logging.DEBUG if can_rescue else logging.WARNING
-                if isinstance(validation_model, JsonSchemaValidator):
-                    result_data["schema_version"] = validation_model.schema.get("version")
-                    validated_data, validation_error_payload = self._json_schema_validate_raw_annotation_model_output(
-                        raw_model_output=raw_model_output,
-                        schema_validator_instance=validation_model,
-                        annotator_model_name=model_name,
-                        file_path=file_path,
-                        error_log_level=log_level,
+                named_outputs.append((None, raw_model_output))
+
+            final_results: list[RunModelResult] = []
+
+            for output_name, raw_data in named_outputs:
+                result_data: dict[str, Any] = {
+                    "name": model_name,
+                    "source": {
+                        "type": "Model",
+                        "id": getattr(annotation_model_instance, "id", "unknown"),
+                        "variant": getattr(annotation_model_instance, "variant", None),
+                        "version": getattr(annotation_model_instance, "version", "0.0.0"),
+                        "name": output_name,  # Inject the parallel output name
+                    },
+                    "records": None,
+                    "schema_id": schema_id,
+                    "schema_version": schema_version,
+                    "error": None,
+                }
+
+                if raw_data is None:
+                    error_msg_from_instance = getattr(annotation_model_instance, "error", None)
+                    error_msg = error_msg_from_instance or f"Model '{model_name}' returned None without specific error."
+                    logger.warning(
+                        "Model '%s' returned None for file '%s'. Detail: %s", model_name, file_path, error_msg
                     )
-                elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
-                    validated_data, validation_error_payload = self._pydantic_validate_raw_annotation_model_output(
-                        raw_model_output=raw_model_output,
-                        pydantic_class=validation_model,
-                        annotator_model_name=model_name,
-                        file_path=file_path,
-                        error_log_level=log_level,
+                    result_data["error"] = error_msg
+                    final_results.append(RunModelResult(**result_data))
+                    continue
+
+                validator_display_name = "None"
+                if validation_model is not None:
+                    validator_display_name = (
+                        validation_model.__name__
+                        if inspect.isclass(validation_model)
+                        else type(validation_model).__name__
                     )
+
+                validated_data: list[dict[str, Any]] | None = None
+                validation_error_payload: list[dict[str, Any]] | str | None = None
+
+                if validation_model is None:
+                    validated_data = raw_data if isinstance(raw_data, list) else [raw_data]
                 else:
-                    config_err_msg = f"Unsupported validator type '{type(validation_model).__name__}' provided for model '{model_name}'."
-                    logger.error(config_err_msg + " This indicates a misconfiguration in the pipeline step.")
-                    raise ModelRunnerConfigError(config_err_msg)
+                    can_rescue = bool(schema_id and validation_model)
+                    log_level = logging.DEBUG if can_rescue else logging.WARNING
+                    if isinstance(validation_model, JsonSchemaValidator):
+                        result_data["schema_version"] = validation_model.schema.get("version")
+                        validated_data, validation_error_payload = (
+                            self._json_schema_validate_raw_annotation_model_output(
+                                raw_model_output=raw_data,
+                                schema_validator_instance=validation_model,
+                                annotator_model_name=model_name,
+                                file_path=file_path,
+                                error_log_level=log_level,
+                            )
+                        )
+                    elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
+                        validated_data, validation_error_payload = self._pydantic_validate_raw_annotation_model_output(
+                            raw_model_output=raw_data,
+                            pydantic_class=validation_model,
+                            annotator_model_name=model_name,
+                            file_path=file_path,
+                            error_log_level=log_level,
+                        )
+                    else:
+                        raise ModelRunnerConfigError(f"Unsupported validator type '{type(validation_model).__name__}'")
 
-            if validation_error_payload is not None and schema_id and validation_model:
-                rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
-                    raw_model_output=raw_model_output,
-                    schema_id=schema_id,
-                    validation_model=validation_model,
-                    model_name=model_name,
-                    file_path=file_path,
-                )
-
-                if rescued_data is not None and rescue_errors is None:
-                    validated_data = rescued_data
-                    validation_error_payload = None
-
-            if validation_error_payload is not None:
-                val_error = ModelOutputValidationError(
-                    model_name=model_name,
-                    validator_name=validator_display_name,
-                    errors=cast(list[Any], validation_error_payload),
-                    original_exception=None,
-                )
-
-                first_error_msg = ""
-                if isinstance(validation_error_payload, list) and validation_error_payload:
-                    first_error = validation_error_payload[0]
-                    if isinstance(first_error, dict):
-                        if "error_message" in first_error:
-                            first_error_msg = first_error["error_message"]
-                        elif "msg" in first_error:
-                            first_error_msg = first_error["msg"]
-
-                base_error_str = str(val_error)
-                if first_error_msg:
-                    result_data["error"] = f"{base_error_str}: {first_error_msg}"
-                else:
-                    result_data["error"] = base_error_str
-            elif validated_data is None and validation_model is not None:
-                internal_err_msg = (
-                    f"Validation failed for model '{model_name}' with validator '{validator_display_name}', "
-                    "but no specific error details were captured by helpers."
-                )
-                logger.error(internal_err_msg + " This may indicate an issue in the validation helper logic.")
-                result_data["error"] = str(
-                    ModelExecutionError(
+                # Semantic Chunking Rescue
+                if validation_error_payload is not None and schema_id and validation_model:
+                    rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
+                        raw_model_output=raw_data,
+                        schema_id=schema_id,
+                        validation_model=validation_model,
                         model_name=model_name,
                         file_path=file_path,
-                        original_exception=Exception(internal_err_msg),
                     )
-                )
-            else:
-                if validated_data is not None:
-                    try:
-                        raise_on_linter_error = not ignore_linter_errors
-                        for rec in validated_data:
-                            apply_linter(
-                                schema_id=schema_id,
-                                record=rec,
-                                raise_on_error=raise_on_linter_error,
-                            )
+                    if rescued_data is not None and rescue_errors is None:
+                        validated_data = rescued_data
+                        validation_error_payload = None
 
-                    except DataQualityError as e:
-                        logger.warning(
-                            "Model '%s' output for file '%s' passed schema validation "
-                            "but FAILED data quality linting. Error: %s",
-                            model_name,
-                            file_path,
-                            e,
+                        # --- SEMANTIC PAGINATION ---
+                        if len(validated_data) > 1:
+                            for idx, chunk_data in enumerate(validated_data):
+                                chunk_result_data = result_data.copy()
+                                chunk_result_data["source"] = result_data["source"].copy()
+                                chunk_result_data["source"]["execution_part"] = idx + 1
+                                chunk_result_data["source"]["execution_total_parts"] = len(validated_data)
+                                chunk_result_data["records"] = [chunk_data]
+                                final_results.append(RunModelResult(**chunk_result_data))
+                            continue  # Skip the standard append because we expanded the chunks
+
+                # Error Processing
+                if validation_error_payload is not None:
+                    val_error = ModelOutputValidationError(
+                        model_name=model_name,
+                        validator_name=validator_display_name,
+                        errors=cast(list[Any], validation_error_payload),
+                        original_exception=None,
+                    )
+                    first_error_msg = ""
+                    if isinstance(validation_error_payload, list) and validation_error_payload:
+                        first_error = validation_error_payload[0]
+                        if isinstance(first_error, dict):
+                            first_error_msg = str(first_error.get("error_message", first_error.get("msg", "")))
+                    base_error_str = str(val_error)
+                    result_data["error"] = f"{base_error_str}: {first_error_msg}" if first_error_msg else base_error_str
+                elif validated_data is None and validation_model is not None:
+                    result_data["error"] = str(
+                        ModelExecutionError(
+                            model_name=model_name,
+                            file_path=file_path,
+                            original_exception=Exception("Validation failed for model, no specific details."),
                         )
-                        result_data["error"] = str(e)
-                        return RunModelResult(**result_data)
+                    )
+                else:
+                    if validated_data is not None:
+                        try:
+                            raise_on_linter_error = not ignore_linter_errors
+                            for rec in validated_data:
+                                apply_linter(schema_id=schema_id, record=rec, raise_on_error=raise_on_linter_error)
+                        except DataQualityError as e:
+                            logger.warning("Data quality linting failed for '%s'. Error: %s", model_name, e)
+                            result_data["error"] = str(e)
+                            final_results.append(RunModelResult(**result_data))
+                            continue
+                    result_data["records"] = validated_data
 
-                result_data["records"] = validated_data
-                logger.debug(
-                    "Model '%s' successfully executed for file '%s'. Output %s.",
-                    model_name,
-                    file_path,
-                    ("validated" if validation_model is not None else "accepted (no validation)"),
-                )
+                final_results.append(RunModelResult(**result_data))
 
-        except ModelRunnerConfigError as err:
-            logger.debug("Propagating ModelRunnerConfigError from run_single_model: %s", err)
+            return final_results
+
+        except ModelRunnerConfigError:
             raise
         except PydanticValidationError as err:
-            error_payload = err.errors()
-            logger.exception(
-                "PydanticValidationError encountered, likely during RunModelResult creation for model '%s'.",
-                model_name,
-            )
-            val_name_for_err = "RunModelResultInternal"
-            if "validator_display_name" in locals() and validation_model:
-                val_name_for_err = validator_display_name
-            elif validation_model:
-                val_name_for_err = type(validation_model).__name__
-
+            logger.exception("PydanticValidationError encountered for model '%s'.", model_name)
             val_error = ModelOutputValidationError(
                 model_name=model_name,
-                validator_name=val_name_for_err,
-                errors=error_payload,
+                validator_name="RunModelResultInternal",
+                errors=err.errors(),
                 original_exception=err,
             )
-            result_data["error"] = str(val_error)
-
+            return [self._build_fallback_error_result(annotation_model, schema_id, schema_version, str(val_error))]
         except Exception as err:
-            logger.exception(
-                "Unexpected error during execution or instantiation of model '%s' for file '%s'.",
-                model_name,
-                file_path,
-            )
+            logger.exception("Unexpected error executing model '%s' for file '%s'.", model_name, file_path)
             exec_error = ModelExecutionError(model_name=model_name, file_path=file_path, original_exception=err)
-            result_data["error"] = str(exec_error)
+            return [self._build_fallback_error_result(annotation_model, schema_id, schema_version, str(exec_error))]
 
-        return RunModelResult(**result_data)
+    def _build_fallback_error_result(self, annotation_model, schema_id, schema_version, error_msg):
+        from dorsal.file.configs.model_runner import RunModelResult
+
+        return RunModelResult(
+            name=annotation_model.__name__,
+            source={
+                "type": "Model",
+                "id": str(getattr(annotation_model, "id", "unknown")),
+                "version": str(getattr(annotation_model, "version", "0.0.0")),
+            },
+            schema_id=schema_id,
+            schema_version=schema_version,
+            error=error_msg,
+            records=None,
+        )
 
     def _check_single_dependency(
         self,
@@ -927,7 +905,7 @@ class ModelRunner:
             )
             raise
 
-        base_model_result: "RunModelResult" = self.run_single_model(
+        base_model_results = self.run_single_model(
             annotation_model=base_annotator,
             validation_model=base_validator,
             file_path=file_path,
@@ -936,6 +914,7 @@ class ModelRunner:
             follow_symlinks=follow_symlinks,
         )
 
+        base_model_result = base_model_results[0]
         if base_model_result.error:
             logger.critical(
                 "Base file model ('%s') processing failed for file '%s'. Error: %s. Pipeline cannot continue for this file.",
@@ -944,7 +923,8 @@ class ModelRunner:
                 base_model_result.error,
             )
             raise BaseModelProcessingError(f"Base model '{base_annotator.__name__}' failed: {base_model_result.error}")
-        all_model_results.append(base_model_result)
+
+        all_model_results.extend(base_model_results)
         logger.debug("Base file model processed successfully.")
 
         if not self.pipeline:
@@ -1010,12 +990,9 @@ class ModelRunner:
                             break
 
                 if proceed_with_model:
-                    logger.debug(
-                        "Executing model: %s for file %s",
-                        annotator_class.__name__,
-                        file_path,
-                    )
-                    model_run_result = self.run_single_model(
+                    logger.debug("Executing model: %s for file %s", annotator_class.__name__, file_path)
+
+                    model_run_results = self.run_single_model(
                         annotation_model=annotator_class,
                         validation_model=validator_class,
                         file_path=file_path,
@@ -1026,19 +1003,15 @@ class ModelRunner:
                         ignore_linter_errors=step_config.ignore_linter_errors,
                         follow_symlinks=follow_symlinks,
                     )
-                    all_model_results.append(model_run_result)
-                    if model_run_result.error:
-                        self.errors[file_path] = model_run_result
-                        logger.warning(
-                            "Model '%s' completed with error: %s",
-                            annotator_class.__name__,
-                            model_run_result.error,
-                        )
-                    else:
-                        logger.debug(
-                            "Model '%s' completed successfully.",
-                            annotator_class.__name__,
-                        )
+
+                    all_model_results.extend(model_run_results)
+
+                    for res in model_run_results:
+                        if res.error:
+                            self.errors[file_path] = res
+                            logger.warning("Model '%s' completed with error: %s", annotator_class.__name__, res.error)
+                        else:
+                            logger.debug("Model '%s' completed successfully.", annotator_class.__name__)
 
             except ModelImportError as err:
                 logger.error(
@@ -1295,7 +1268,7 @@ def run_model(
     debug: bool = False,
     ignore_linter_errors: bool = False,
     progress_callback: Callable[[float, float, str], None] | None = None,
-) -> RunModelResult:
+) -> list["RunModelResult"]:
     """
     Execute a single AnnotationModel in isolation.
 
@@ -1347,18 +1320,20 @@ def run_model(
             adapter = TypeAdapter(list[ModelRunnerDependencyConfig])
             parsed_dependencies = adapter.validate_python(raw_input)
         except Exception as e:
-            return RunModelResult(
-                name=getattr(annotation_model, "id", annotation_model.__name__),
-                source=AnnotationModelSource(
-                    type="Model",
-                    id=getattr(annotation_model, "id", "unknown"),
-                    version=getattr(annotation_model, "version", "0.0.0"),
-                ),
-                records=None,  # <--- FIXED
-                schema_id=schema_id,
-                schema_version=schema_version,
-                error=f"Configuration Error: Invalid dependencies format. {e}",
-            )
+            return [
+                RunModelResult(
+                    name=getattr(annotation_model, "id", annotation_model.__name__),
+                    source=AnnotationModelSource(
+                        type="Model",
+                        id=getattr(annotation_model, "id", "unknown"),
+                        version=getattr(annotation_model, "version", "0.0.0"),
+                    ),
+                    records=None,  # <--- FIXED
+                    schema_id=schema_id,
+                    schema_version=schema_version,
+                    error=f"Configuration Error: Invalid dependencies format. {e}",
+                )
+            ]
 
     runner = ModelRunner(pipeline_config=None, debug=debug, single_model_mode=True)
 
@@ -1374,7 +1349,7 @@ def run_model(
     requires_hashes = annotation_model.requires_hashes
     if not requires_hashes:
         logger.debug("Skipping hash calculation, as model has no strict dependency.")
-    base_model_result = runner.run_single_model(
+    base_model_results = runner.run_single_model(
         annotation_model=FileCoreAnnotationModel,
         validation_model=core_validation_model,
         file_path=file_path,
@@ -1382,9 +1357,10 @@ def run_model(
         options={"calculate_similarity_hash": requires_hashes, "calculate_hashes": requires_hashes},
     )
 
-    if base_model_result.error or not base_model_result.records:  # <--- FIXED
+    base_model_result = base_model_results[0]
+    if base_model_result.error or not base_model_result.records:
         logger.error(f"Base model failed, cannot proceed: {base_model_result.error}")
-        return base_model_result
+        return base_model_results
 
     if parsed_dependencies:
         logger.info("Checking dependencies...")
@@ -1398,35 +1374,39 @@ def run_model(
             except DependencyNotMetError as e:
                 error_msg = f"Skipped: Dependency not met: {e}"
                 logger.warning(error_msg)
-                return RunModelResult(
-                    name=getattr(annotation_model, "id", annotation_model.__name__),
-                    source=AnnotationModelSource(
-                        type="Model",
-                        id=getattr(annotation_model, "id", annotation_model.__name__),
-                        version=getattr(annotation_model, "version", "0.0.0"),
-                        variant=getattr(annotation_model, "variant", None),
-                    ),
-                    records=None,  # <--- FIXED
-                    schema_id=schema_id,
-                    error=error_msg,
-                )
+                return [
+                    RunModelResult(
+                        name=getattr(annotation_model, "id", annotation_model.__name__),
+                        source=AnnotationModelSource(
+                            type="Model",
+                            id=getattr(annotation_model, "id", annotation_model.__name__),
+                            version=getattr(annotation_model, "version", "0.0.0"),
+                            variant=getattr(annotation_model, "variant", None),
+                        ),
+                        records=None,  # <--- FIXED
+                        schema_id=schema_id,
+                        error=error_msg,
+                    )
+                ]
 
             if not is_met:
                 dep_type = getattr(dep_config, "type", "Unknown")
                 error_msg = f"Skipped: Silent Dependency not met: {dep_type}"
                 logger.warning(error_msg)
-                return RunModelResult(
-                    name=getattr(annotation_model, "id", annotation_model.__name__),
-                    source=AnnotationModelSource(
-                        type="Model",
-                        id=getattr(annotation_model, "id", annotation_model.__name__),
-                        version=getattr(annotation_model, "version", "0.0.0"),
-                        variant=getattr(annotation_model, "variant", None),
-                    ),
-                    records=None,  # <--- FIXED
-                    schema_id=schema_id,
-                    error=error_msg,
-                )
+                return [
+                    RunModelResult(
+                        name=getattr(annotation_model, "id", annotation_model.__name__),
+                        source=AnnotationModelSource(
+                            type="Model",
+                            id=getattr(annotation_model, "id", annotation_model.__name__),
+                            version=getattr(annotation_model, "version", "0.0.0"),
+                            variant=getattr(annotation_model, "variant", None),
+                        ),
+                        records=None,  # <--- FIXED
+                        schema_id=schema_id,
+                        error=error_msg,
+                    )
+                ]
 
         logger.info("All dependencies met.")
 
@@ -1477,7 +1457,7 @@ def run_model(
 
     logger.info("Running %s on file: '%s'", annotation_model.__name__, file_path)
 
-    my_model_result = runner.run_single_model(
+    my_model_results = runner.run_single_model(
         annotation_model=annotation_model,
         validation_model=effective_validator,
         file_path=file_path,
@@ -1489,4 +1469,4 @@ def run_model(
         progress_callback=progress_callback,
     )
 
-    return my_model_result
+    return my_model_results

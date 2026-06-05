@@ -34,12 +34,13 @@ def mock_runner():
 
         base_result = MagicMock()
         base_result.error = None
-        base_result.record = {"hash": "123", "media_type": "text/plain", "size": 100, "name": "f.txt"}
+        base_result.records = [{"hash": "123", "media_type": "text/plain", "size": 100, "name": "f.txt"}]
 
         pipeline_result = MagicMock()
         pipeline_result.error = None
 
-        runner_instance.run_single_model.side_effect = [base_result, pipeline_result]
+        # Wrap the mocks in lists to match the new signature
+        runner_instance.run_single_model.side_effect = [[base_result], [pipeline_result]]
 
         yield runner_instance
 
@@ -56,10 +57,13 @@ def test_test_model_success(mock_runner):
 def test_test_model_base_failure(mock_runner):
     failure = MagicMock()
     failure.error = "Base failed"
-    mock_runner.run_single_model.side_effect = [failure]
+    # Wrap in a list
+    mock_runner.run_single_model.side_effect = [[failure]]
 
     result = run_model(DummyModel, "/tmp/fake.txt")
-    assert result.error == "Base failed"
+
+    # Assert against the first item in the returned list
+    assert result[0].error == "Base failed"
     assert mock_runner.run_single_model.call_count == 1
 
 
@@ -70,11 +74,14 @@ def test_test_model_dependency_check():
 
     base_result = MagicMock()
     base_result.error = None
-    base_result.record = {"name": "f.txt", "extension": ".txt", "media_type": "text/plain"}
+    base_result.records = [{"name": "f.txt", "extension": ".txt", "media_type": "text/plain"}]
 
-    with patch.object(ModelRunner, "run_single_model", side_effect=[base_result]) as mock_run:
+    # Wrap side_effect in a list
+    with patch.object(ModelRunner, "run_single_model", side_effect=[[base_result]]) as mock_run:
         result = run_model(DummyModel, "/f.txt", dependencies=deps)
-        assert "Dependency not met" in str(result.error)
+
+        # Assert against the first item in the returned list
+        assert "Dependency not met" in str(result[0].error)
         assert mock_run.call_count == 1
 
 

@@ -15,10 +15,10 @@
 import inspect
 import logging
 import re
-from typing import Annotated, Any, Callable, Literal, Type, TypeGuard, TypeVar, Union, cast
+from typing import Annotated, Any, Callable, Literal, Self, Type, TypeGuard, TypeVar, Union, cast
 from uuid import UUID, uuid4
 
-from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticUndefined
 
 from dorsal.common.exceptions import PydanticValidationError
@@ -197,6 +197,41 @@ class AnnotationSourceBase(BaseModel):
     user_id: int | None = Field(default=None, validation_alias=AliasChoices("user_no", "user_id"))
     execution_id: UUID | None = Field(default_factory=uuid4)
 
+    # --- Identity fields for parallel and paginated outputs ---
+    name: String256 | None = Field(
+        default=None, description="An optional logical name for this specific output from the source."
+    )
+    execution_part: int | None = Field(
+        default=None, description="The 1-indexed part number of this semantic extraction."
+    )
+    execution_total_parts: int | None = Field(default=None, description="The total number of semantic parts generated.")
+
+    @model_validator(mode="after")
+    def validate_pagination_state(self) -> Self:
+        part = self.execution_part
+        total = self.execution_total_parts
+
+        # XOR check: either both are None, or both are ints
+        if (part is None) != (total is None):
+            raise ValueError(
+                "Invalid pagination state: 'execution_part' and 'execution_total_parts' "
+                "must either both be provided, or both be omitted (None)."
+            )
+
+        # Sanity check the math
+        if part is not None and total is not None:
+            if part < 1:
+                raise ValueError(f"'execution_part' must be >= 1, got {part}")
+            if total < 1:
+                raise ValueError(f"'execution_total_parts' must be >= 1, got {total}")
+            if part > total:
+                raise ValueError(
+                    f"Invalid pagination: 'execution_part' ({part}) cannot be greater "
+                    f"than 'execution_total_parts' ({total})."
+                )
+
+        return self
+
 
 class AnnotationModelSource(AnnotationSourceBase):
     type: Literal["Model"] = "Model"
@@ -227,6 +262,21 @@ AnnotationSource = Annotated[
     ],
     Field(discriminator="type"),
 ]
+
+
+class NamedOutput(BaseModel):
+    """
+    A strictly typed wrapper for returning distinct, named outputs from an AnnotationModel.
+
+    Example:
+        return [
+            NamedOutput(name="original_german", data={"text": "Hallo"}),
+            NamedOutput(name="english_translation", data={"text": "Hello"})
+        ]
+    """
+
+    name: str
+    data: dict[str, Any] | list[dict[str, Any]]
 
 
 def is_pydantic_model_class(candidate: Any) -> TypeGuard[Type[BaseModel]]:
