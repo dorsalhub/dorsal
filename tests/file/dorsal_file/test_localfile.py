@@ -1073,4 +1073,114 @@ def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_recor
 
     assert "PARTIAL FAILURE" in str(exc_info.value)
     assert mock_response.error == 1
-    assert mock_response.success == 1  # The base record still succeeded!
+    assert mock_response.success == 1
+
+
+def test_push_heavy_extract_none_handling(mock_metadata_reader, mock_file_record_strict, fs):
+    """Covers the 'if item_or_list is None: return None' branch in _push_heavy's extract helper."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+
+    mock_file_record_strict.annotations.__pydantic_extra__ = {"open/document-extraction": None}
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.error = 0
+    mock_client.index_private_file_records.return_value = mock_response
+
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+
+    lf._push_heavy(public=False)
+
+    mock_client.index_private_file_records.assert_called_once()
+    mock_client.add_file_annotation.assert_not_called()
+
+
+def test_push_heavy_public_and_client_exception(mock_metadata_reader, mock_file_record_strict, fs):
+    """Covers the public=True branch and the DorsalClientError exception block."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_client = MagicMock()
+    mock_client.index_public_file_records.side_effect = DorsalClientError("Network timeout")
+
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+
+    with pytest.raises(DorsalClientError, match="Network timeout"):
+        lf._push_heavy(public=True, api_key="test_key")
+
+    mock_client.index_public_file_records.assert_called_once()
+    mock_client.index_private_file_records.assert_not_called()
+
+
+def test_push_heavy_error_details_iteration(mock_metadata_reader, mock_file_record_strict, fs):
+    """Covers the nested loops extracting specific annotation and tag errors from response.results."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_ann_error = MagicMock()
+    mock_ann_error.status = "error"
+    mock_ann_error.name = "open/document-extraction"
+    mock_ann_error.detail = "Payload validation failed"
+
+    mock_tag_error = MagicMock()
+    mock_tag_error.status = "error"
+    mock_tag_error.name = "important_tag"
+    mock_tag_error.detail = "Invalid tag format"
+
+    mock_result_item = MagicMock()
+    mock_result_item.annotations = [mock_ann_error]
+    mock_result_item.tags = [mock_tag_error]
+
+    mock_response = MagicMock()
+    mock_response.error = 2
+    mock_response.total = 2
+    mock_response.success = 0
+    mock_response.results = [mock_result_item]
+
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.return_value = mock_response
+
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+
+    with pytest.raises(PartialIndexingError) as exc_info:
+        lf._push_heavy(strict=True)
+
+    failures = exc_info.value.summary["failures"]
+    assert "Annotation 'open/document-extraction': Payload validation failed" in failures
+    assert "Tag 'important_tag': Invalid tag format" in failures
+
+
+def test_local_file_push_initializes_client(mock_metadata_reader, mock_file_record_strict, fs, mocker):
+    """Covers the 'if self._client is None' lazy initialization in LocalFile.push()."""
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    from dorsal.file.validators.file_record import FileRecordStrict
+
+    mocker.patch.object(FileRecordStrict, "model_dump_json", return_value="{}")
+
+    mock_get_client = mocker.patch("dorsal.file.dorsal_file.get_shared_dorsal_client")
+    mock_client_instance = MagicMock()
+
+    mock_response = MagicMock()
+    mock_response.error = 0
+    mock_client_instance.index_private_file_records.return_value = mock_response
+
+    mock_get_client.return_value = mock_client_instance
+
+    lf = LocalFile(file_path, client=None)
+    assert lf._client is None
+
+    lf.push(api_key="dynamic_test_key")
+
+    mock_get_client.assert_called_once_with(api_key="dynamic_test_key")
+    assert lf._client == mock_client_instance
+    mock_client_instance.index_private_file_records.assert_called_once()
