@@ -1002,12 +1002,17 @@ def test_local_file_push_triggers_heavy(mock_metadata_reader, mock_file_record_s
     mock_client = MagicMock()
     lf = LocalFile(file_path, client=mock_client)
 
-    mocker.patch.object(lf.model, "model_dump_json", return_value="a" * (15 * 1024 * 1024))
+    # FIX: Patch the class-level method instead of the instance to avoid Pydantic __setattr__ blocks
+    from dorsal.file.validators.file_record import FileRecordStrict
 
+    mocker.patch.object(FileRecordStrict, "model_dump_json", return_value="a" * (15 * 1024 * 1024))
+
+    # Spy on or patch _push_heavy to intercept the call
     mock_push_heavy = mocker.patch.object(lf, "_push_heavy", return_value=MagicMock())
 
     lf.push()
 
+    # Verify delegation
     mock_push_heavy.assert_called_once()
     mock_client.index_private_file_records.assert_not_called()
 
@@ -1019,10 +1024,8 @@ def test_push_heavy_logic_success(mock_metadata_reader, mock_file_record_strict,
 
     mock_ann_1 = MagicMock()
     mock_ann_2 = MagicMock()
-    mock_file_record_strict.annotations.__pydantic_extra__ = {
-        "open/document-extraction": [mock_ann_1, mock_ann_2]
-    }
-    
+    mock_file_record_strict.annotations.__pydantic_extra__ = {"open/document-extraction": [mock_ann_1, mock_ann_2]}
+
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
     mock_client = MagicMock()
@@ -1053,9 +1056,7 @@ def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_recor
     fs.create_file(file_path)
 
     mock_ann_1 = MagicMock()
-    mock_file_record_strict.annotations.__pydantic_extra__ = {
-        "open/document-extraction": [mock_ann_1]
-    }
+    mock_file_record_strict.annotations.__pydantic_extra__ = {"open/document-extraction": [mock_ann_1]}
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
     mock_client = MagicMock()
@@ -1069,7 +1070,7 @@ def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_recor
 
     with pytest.raises(PartialIndexingError) as exc_info:
         lf._push_heavy(strict=True)
-        
+
     assert "PARTIAL FAILURE" in str(exc_info.value)
     assert mock_response.error == 1
     assert mock_response.success == 1  # The base record still succeeded!
