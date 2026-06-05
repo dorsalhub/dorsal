@@ -275,8 +275,13 @@ def create_file_info_panel(
             if not items_to_render:
                 continue
 
-            first_item = items_to_render[0]
-            is_stub = isinstance(first_item, dict) and "record" not in first_item
+            unwrapped_items = []
+            for item in items_to_render:
+                if isinstance(item, dict) and "annotations" in item and "record" not in item:
+                    unwrapped_items.extend(item["annotations"])
+                else:
+                    unwrapped_items.append(item)
+            items_to_render = unwrapped_items
 
             title_part = key.split("/")[-1]
             anno_title = f"{title_part.replace('_', ' ').title()} Info"
@@ -287,42 +292,71 @@ def create_file_info_panel(
                 )
             )
 
-            if is_stub:
-                for i, item in enumerate(items_to_render):
-                    if not isinstance(item, dict):
-                        continue
-
-                    if i > 0:
-                        renderables.append(Rule(style=palette.get("info", "dim")))
-
-                    annotation_table = Table.grid(padding=(0, 1, 0, 2), expand=False)
-                    annotation_table.add_column(style=palette["key"], justify="right", width=12)
-                    annotation_table.add_column(style=palette["primary_value"])
-                    _build_annotation_table(
-                        key=key,
-                        table=annotation_table,
-                        data=item,
-                        is_stub=True,
-                        preserve_whitespace=preserve_whitespace,
-                    )
-                    renderables.append(annotation_table)
-            else:
-                record_to_render = items_to_render[0].get("record", items_to_render[0])
-                if not isinstance(record_to_render, dict):
+            for i, item in enumerate(items_to_render):
+                if not isinstance(item, dict):
                     continue
 
+                if i > 0:
+                    renderables.append(Rule(style=palette.get("info", "dim")))
+
+                record_to_render = item.get("record", item)
                 display_fields = MEDIAINFO_DISPLAY_FIELDS if key == "file/mediainfo" else None
-                max_width = _get_max_key_width(record_to_render, display_fields=display_fields)
+
+                # Filter out envelope metadata if it was flattened
+                envelope_keys = {
+                    "source",
+                    "private",
+                    "schema_version",
+                    "group",
+                    "id",
+                    "annotation_id",
+                    "date_created",
+                    "date_modified",
+                    "file_hash",
+                }
+                filtered_record = {k: v for k, v in record_to_render.items() if k not in envelope_keys}
+
+                # Calculate max width for alignment
+                max_width = _get_max_key_width(filtered_record, display_fields=display_fields)
+                if max_width < 7:
+                    max_width = 7
+
                 annotation_table = Table(box=None, show_header=False, padding=(0, 1))
                 annotation_table.add_column(style=palette["key"], justify="right", min_width=max_width + 2)
                 annotation_table.add_column(style=palette["primary_value"])
-                _build_annotation_table(
-                    key=key,
-                    table=annotation_table,
-                    data=record_to_render,
-                    display_fields=display_fields,
-                    preserve_whitespace=preserve_whitespace,
-                )
+
+                # --- High-Level Metadata ---
+                item_source = item.get("source", {})
+                if isinstance(item_source, dict):
+                    src_type = item_source.get("type", "Unknown")
+                    src_id = item_source.get("id", "Unknown")
+                    src_name = item_source.get("name")
+                    part = item_source.get("execution_part")
+                    total_parts = item_source.get("execution_total_parts")
+
+                    src_display = Text(f"{src_type} ({src_id})")
+                    if src_name:
+                        src_display.append(f" - {src_name}", style="italic")
+                    if part and total_parts:
+                        src_display.append(f" [Part {part} of {total_parts}]", style="dim italic")
+
+                    annotation_table.add_row("Source:", src_display)
+
+                anno_id = item.get("annotation_id") or item.get("id")
+                if anno_id:
+                    annotation_table.add_row("ID:", str(anno_id))
+
+                # --- Payload Data ---
+                if filtered_record:
+                    _build_annotation_table(
+                        key=key,
+                        table=annotation_table,
+                        data=filtered_record,
+                        is_stub=False,
+                        display_fields=display_fields,
+                        preserve_whitespace=preserve_whitespace,
+                    )
+
                 renderables.append(annotation_table)
 
             renderables.append(Text(""))

@@ -243,3 +243,48 @@ def test_build_annotation_table_list_root():
     assert "valA" in output
     assert "root_list_item2:" in output
     assert "valB" in output
+
+
+def test_create_file_info_panel_annotations_edge_cases():
+
+    record_with_edge_cases = {
+        "annotations": {
+            "test/empty_list": [],
+            "test/wrapped_data": [{"annotations": [{"record": {"hidden_key": "hidden_value"}}]}],
+            "test/non_dict_item": ["just a string, not a dict", 42],
+            "test/multi_and_source": [
+                {
+                    "record": {"first_item": "yes"},
+                    "source": {
+                        "type": "scanner",
+                        "id": "s1",
+                        "name": "SuperScan",
+                        "execution_part": 1,
+                        "execution_total_parts": 3,
+                    },
+                },
+                {"record": {"second_item": "yes"}, "source": {"type": "scanner", "id": "s2"}},
+            ],
+        }
+    }
+
+    panel = create_file_info_panel(
+        record_dict=record_with_edge_cases, title="Edge Case File", private=False, palette=DUMMY_PALETTE
+    )
+
+    console = Console()
+    with console.capture() as capture:
+        console.print(panel)
+
+    output = capture.get()
+
+    assert "hidden_key" in output
+    assert "hidden_value" in output
+
+    assert "SuperScan" in output
+    assert "Part 1 of 3" in output
+
+    assert "first_item" in output
+    assert "second_item" in output
+
+    assert "just a string, not a dict" not in output
