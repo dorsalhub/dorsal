@@ -1607,6 +1607,103 @@ class LocalFile(_DorsalFile):
         )
         return validation_result
 
+    def _push_heavy(
+        self, public: bool = False, api_key: str | None = None, strict: bool = False
+    ) -> "FileIndexResponse":
+        """
+        When file record exceeds the 15MiB limit (due to large annotations), this method pushes it in two phases:
+
+        1. Strips the large annotations from the file record and pushes the record, without non-core annotations
+
+        2. Pushes the large annotations via `add_file_annotation`
+
+        """
+        from dorsal.common.exceptions import PartialIndexingError
+
+        assert self._client is not None, "DorsalClient must be initialized before pushing."
+        assert self.hash is not None, "File hash must be computed before pushing."
+
+        client = self._client
+        file_hash = self.hash
+
+        logger.info("Payload exceeds 14 MiB threshold. Farming out to _push_heavy...")
+
+        lite_record = self.model.model_copy(deep=True)
+        extracted_annotations = {}
+
+        if lite_record.annotations is not None:
+
+            def extract(dataset_id, item_or_list):
+                if item_or_list is None:
+                    return None
+
+                if dataset_id not in extracted_annotations:
+                    extracted_annotations[dataset_id] = []
+
+                items = item_or_list if isinstance(item_or_list, list) else [item_or_list]
+                extracted_annotations[dataset_id].extend(items)
+
+                return None
+
+            extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
+            if extra is not None:  # Explicitly check for None
+                for field, val in list(extra.items()):
+                    extract(field, val)
+                    del extra[field]
+
+        try:
+            if public:
+                response = client.index_public_file_records(file_records=[lite_record], api_key=api_key)
+            else:
+                response = client.index_private_file_records(file_records=[lite_record], api_key=api_key)
+        except DorsalClientError as err:
+            logger.error("Failed to push lite file record for '%s'. Error: %s", self._file_path, err)
+            raise
+
+        failed_details = []
+
+        for dataset_id, items in extracted_annotations.items():
+            for item in items:
+                try:
+                    client.add_file_annotation(
+                        file_hash=file_hash, schema_id=dataset_id, annotation=item, overwrite=True, api_key=api_key
+                    )
+                    response.success += 1
+                    response.total += 1
+                except DorsalClientError as err:
+                    response.error += 1
+                    response.total += 1
+                    detail_str = f"Heavy Annotation Append '{dataset_id}': {err}"
+                    logger.warning("  > %s", detail_str)
+                    failed_details.append(detail_str)
+
+        if response.error > 0:
+            error_msg = f"PARTIAL FAILURE pushing file '{self._file_path}'. The base record was created, but {response.error} annotation(s) were rejected."
+            logger.warning(error_msg)
+
+            for result in response.results:
+                if result.annotations:
+                    for annotation in result.annotations:
+                        if annotation.status == "error":
+                            failed_details.append(f"Annotation '{annotation.name}': {annotation.detail}")
+                if result.tags:
+                    for result_tag in result.tags:
+                        if result_tag.status == "error":
+                            failed_details.append(f"Tag '{result_tag.name}': {result_tag.detail}")
+
+            if strict:
+                summary_data = {
+                    "total": response.total,
+                    "success": response.success,
+                    "error": response.error,
+                    "failures": failed_details,
+                }
+                raise PartialIndexingError(message=error_msg + " (Strict Mode enabled)", summary=summary_data)
+        else:
+            logger.info("Successfully pushed HEAVY file record for '%s' to DorsalHub.", self._file_path)
+
+        return response
+
     def push(self, public: bool = False, api_key: str | None = None, strict: bool = False) -> FileIndexResponse:
         """Indexes file's metadata (annotations and tags) to DorsalHub.
 
@@ -1655,6 +1752,10 @@ class LocalFile(_DorsalFile):
 
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
+
+        record_bytes = self.model.model_dump_json(exclude_none=True).encode("utf-8")
+        if len(record_bytes) > (14 * 1024 * 1024):  # Server rejects at 15MiB giving 1MiB of headroom for core record
+            return self._push_heavy(public=public, api_key=api_key, strict=strict)
 
         client = self._client
 
