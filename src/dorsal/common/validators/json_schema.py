@@ -250,7 +250,7 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
     }
 
     if invalid_records_count > 0:
-        logger.warning(
+        logger.debug(
             "Validation completed: %d valid, %d invalid out of %d total records.",
             valid_records_count,
             invalid_records_count,
