@@ -116,6 +116,16 @@ class MediaInfoAnnotationModel(AnnotationModel):
         )
         return grouped_tracks
 
+    def _sanitize_data(self, data: Any) -> Any:
+        """Recursively strips surrogate characters and invalid UTF-8 bytes from strings."""
+        if isinstance(data, str):
+            return data.encode("utf-8", "ignore").decode("utf-8")
+        elif isinstance(data, dict):
+            return {k: self._sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._sanitize_data(item) for item in data]
+        return data
+
     def main(self) -> dict[str, Any] | None:
         """
         Extract, normalize, and structure metadata from the media file.
@@ -133,8 +143,11 @@ class MediaInfoAnnotationModel(AnnotationModel):
         logger.debug("MediaInfoAnnotationModel: Starting parsing for '%s'", self.file_path)
 
         try:
-            raw_mediainfo_json_str: str = MediaInfo.parse(filename=self.file_path, output="JSON")
-            mediainfo_data = json.loads(raw_mediainfo_json_str)
+            raw_mediainfo_json_str: str = MediaInfo.parse(
+                filename=self.file_path, output="JSON", encoding_errors="ignore"
+            )
+            raw_data = json.loads(raw_mediainfo_json_str)
+            mediainfo_data = self._sanitize_data(raw_data)
             logger.debug("MediaInfo.parse and json.loads successful for '%s'", self.file_path)
 
         except FileNotFoundError:

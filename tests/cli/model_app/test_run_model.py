@@ -89,135 +89,135 @@ def mock_run_deps(mocker, mock_rich_console):
     }
 
 
-def test_run_model_basic_success(mock_rich_console, mock_run_deps):
+def test_run_model_basic_success(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
     """Tests a standard model run on a file in interactive mode."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, result.output
 
-        mock_run_deps["run_logic"].assert_called_once_with(
-            target="dorsal/scanner",
-            file_path=str(test_file.resolve()),
-            options={},
-            ignore_linter_errors=False,
-            progress_callback=ANY,
-        )
+    mock_run_deps["run_logic"].assert_called_once_with(
+        target="dorsal/scanner",
+        file_path=str(test_file.resolve()),
+        options={},
+        ignore_linter_errors=False,
+        progress_callback=ANY,
+    )
 
-        mock_run_deps["create_panel"].assert_called_once()
-        assert mock_rich_console.print.called
+    mock_run_deps["create_panel"].assert_called_once()
+    assert mock_rich_console.print.called
 
 
-def test_run_model_with_options_parsing(mock_run_deps):
+def test_run_model_with_options_parsing(mock_run_deps, tmp_path, monkeypatch):
     """Tests that --opt key=value pairs are parsed into a dictionary and malformed ones warned."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(
-            cli_app,
-            ["run", "dorsal/scanner", str(test_file), "--opt", "engine=ocr", "-o", "dpi=300", "-o", "invalid_opt"],
-        )
+    result = runner.invoke(
+        cli_app,
+        ["run", "dorsal/scanner", str(test_file), "--opt", "engine=ocr", "-o", "dpi=300", "-o", "invalid_opt"],
+    )
 
-        assert result.exit_code == 0
-        expected_options = {"engine": "ocr", "dpi": 300}
-        assert mock_run_deps["run_logic"].call_args.kwargs["options"] == expected_options
+    assert result.exit_code == 0
+    expected_options = {"engine": "ocr", "dpi": 300}
+    assert mock_run_deps["run_logic"].call_args.kwargs["options"] == expected_options
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Skipping malformed option 'invalid_opt'" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("Skipping malformed option 'invalid_opt'" in msg for msg in printed_messages)
 
 
-def test_run_model_triggers_safety_check_when_not_installed(mock_run_deps):
+def test_run_model_triggers_safety_check_when_not_installed(mock_run_deps, tmp_path, monkeypatch):
     """Tests that safety checks are triggered if the package isn't installed."""
     mock_run_deps["is_installed"].return_value = False
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        # Update DEFAULT_PALETTE to DUMMY_UI_CONTEXT here:
-        mock_run_deps["check_safety"].assert_called_once_with("dorsal/scanner", DUMMY_UI_CONTEXT, yes=False)
+    # Update DEFAULT_PALETTE to DUMMY_UI_CONTEXT here:
+    mock_run_deps["check_safety"].assert_called_once_with("dorsal/scanner", DUMMY_UI_CONTEXT, yes=False)
 
 
-def test_run_model_json_output(mock_rich_console, mock_run_deps):
+def test_run_model_json_output(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
     """Tests --json mode, verifying raw output and skipped safety UI."""
     mock_run_deps["is_installed"].return_value = False
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        mock_run_deps["check_safety"].assert_called_once()
+    mock_run_deps["check_safety"].assert_called_once()
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("requires installation" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("requires installation" in msg for msg in printed_messages)
 
-        json_str = mock_rich_console.print.call_args.args[0]
-        data = json.loads(json_str)
+    json_str = mock_rich_console.print.call_args.args[0]
+    data = json.loads(json_str)
 
-        assert data["results"][0]["records"][0]["summary"] == "Processed successfully"
+    assert data["results"][0]["records"][0]["summary"] == "Processed successfully"
 
 
-def test_run_model_dorsal_error_handling(mock_run_deps):
+def test_run_model_dorsal_error_handling(mock_run_deps, tmp_path, monkeypatch):
     """Tests handling of specific DorsalError exceptions in interactive mode."""
     mock_run_deps["run_logic"].side_effect = DorsalError("Model execution failed")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
-        assert "Model execution failed" in error_msg
+    error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
+    assert "Model execution failed" in error_msg
 
 
-def test_run_model_dorsal_error_json_mode(mock_run_deps):
+def test_run_model_dorsal_error_json_mode(mock_run_deps, tmp_path, monkeypatch):
     """Tests handling of specific DorsalError exceptions in JSON mode."""
     mock_run_deps["run_logic"].side_effect = DorsalError("API Limit Reached")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        error_json = mock_run_deps["error_console"].print.call_args.args[0]
-        data = json.loads(error_json)
-        assert data["error"] == "API Limit Reached"
+    error_json = mock_run_deps["error_console"].print.call_args.args[0]
+    data = json.loads(error_json)
+    assert data["error"] == "API Limit Reached"
 
 
-def test_run_model_unexpected_error_json_mode(mock_rich_console, mock_run_deps):
+def test_run_model_unexpected_error_json_mode(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
     """Tests error reporting in JSON mode for generic exceptions."""
     mock_run_deps["run_logic"].side_effect = Exception("Internal crash")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        error_json = mock_rich_console.print.call_args.args[0]
-        data = json.loads(error_json)
-        assert "Internal crash" in data["results"][0]["error"]
+    error_json = mock_rich_console.print.call_args.args[0]
+    data = json.loads(error_json)
+    assert "Internal crash" in data["results"][0]["error"]
 
 
-def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
+def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker, tmp_path, monkeypatch):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
@@ -228,17 +228,17 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker):
 
     mocker.patch("dorsal.api.adapters.export_record", return_value="1\n00:00:00 --> 00:00:01\nTranscribed string")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.wav")
-        test_file.touch()
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt", "--no-save"])
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.wav")
+    test_file.touch()
+    result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt", "--no-save"])
 
-        assert result.exit_code == 0
-        printed_text = mock_rich_console.print.call_args.args[0]
-        assert "Transcribed string" in printed_text
+    assert result.exit_code == 0
+    printed_text = mock_rich_console.print.call_args.args[0]
+    assert "Transcribed string" in printed_text
 
 
-def test_run_model_export_missing_adapters(mock_run_deps, mocker):
+def test_run_model_export_missing_adapters(mock_run_deps, mocker, tmp_path, monkeypatch):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
@@ -252,18 +252,18 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker):
         side_effect=DorsalError("Please pip install dorsalhub-adapters to enable exports."),
     )
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.wav")
-        test_file.touch()
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.wav")
+    test_file.touch()
+    result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("dorsalhub-adapters" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("dorsalhub-adapters" in msg for msg in printed_messages)
 
 
-def test_run_model_export_adapter_error(mock_run_deps, mocker):
+def test_run_model_export_adapter_error(mock_run_deps, mocker, tmp_path, monkeypatch):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
@@ -277,95 +277,93 @@ def test_run_model_export_adapter_error(mock_run_deps, mocker):
         side_effect=DorsalError("Failed to export record to pdf: Format 'pdf' not supported"),
     )
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.wav")
-        test_file.touch()
-        result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "pdf"])
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.wav")
+    test_file.touch()
+    result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "pdf"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
 
-        assert any("Export Error" in msg and "Format 'pdf' not supported" in msg for msg in printed_messages)
+    assert any("Export Error" in msg and "Format 'pdf' not supported" in msg for msg in printed_messages)
 
 
-def test_run_model_with_output_path(mock_rich_console, mock_run_deps):
+def test_run_model_with_output_path(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
     """Covers path resolution when using the --output flag (Snippet 1)."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        out_dir = pathlib.Path("custom_out")
-        out_path = out_dir / "custom_name.json"
+    out_dir = pathlib.Path("custom_out")
+    out_path = out_dir / "custom_name.json"
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--output", str(out_path)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--output", str(out_path)])
 
-        assert result.exit_code == 0
-        assert out_dir.exists()
-        assert out_path.exists()
+    assert result.exit_code == 0
+    assert out_dir.exists()
+    assert out_path.exists()
 
 
-def test_run_model_outer_unexpected_error(mock_run_deps, mocker):
+def test_run_model_outer_unexpected_error(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers global unexpected error catching outside the processing loop (Snippet 3)."""
 
     mocker.patch("rich.progress.Progress.__enter__", side_effect=Exception("Outer UI crash"))
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
-        assert "Unexpected Error:" in error_msg
-        assert "Outer UI crash" in error_msg
+    error_msg = str(mock_run_deps["error_console"].print.call_args.args[0])
+    assert "Unexpected Error:" in error_msg
+    assert "Outer UI crash" in error_msg
 
 
-def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker):
+def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers batch processing tables, truncation, error rows, and completion messages (Snippets 4 & 6)."""
 
     mocker.patch("dorsal.api.adapters.export_record", return_value="Simulated exported text")
 
-    with runner.isolated_filesystem():
-        test_dir = pathlib.Path("batch_input")
-        test_dir.mkdir()
+    monkeypatch.chdir(tmp_path)
+    test_dir = pathlib.Path("batch_input")
+    test_dir.mkdir()
 
-        for i in range(12):
-            (test_dir / f"test_{i}.pdf").touch()
+    for i in range(12):
+        (test_dir / f"test_{i}.pdf").touch()
 
-        def mock_run_logic(*args, **kwargs):
-            if "test_0.pdf" in kwargs.get("file_path", ""):
-                raise Exception("Simulated inner error")
-            return mock_run_deps["result"]
+    def mock_run_logic(*args, **kwargs):
+        if "test_0.pdf" in kwargs.get("file_path", ""):
+            raise Exception("Simulated inner error")
+        return mock_run_deps["result"]
 
-        mock_run_deps["run_logic"].side_effect = mock_run_logic
+    mock_run_deps["run_logic"].side_effect = mock_run_logic
 
-        result = runner.invoke(
-            cli_app, ["run", "dorsal/scanner", str(test_dir), "--max-length", "10", "--export", "txt"]
-        )
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--max-length", "10", "--export", "txt"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
 
-def test_run_model_single_file_inner_error_display(mock_run_deps):
+def test_run_model_single_file_inner_error_display(mock_run_deps, tmp_path, monkeypatch):
     """Covers single-file interactive display of unhandled inner loop errors (Snippet 5)."""
     mock_run_deps["run_logic"].side_effect = Exception("Inner crash during run")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        error_calls = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Error processing file: Inner crash during run" in msg for msg in error_calls)
+    error_calls = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("Error processing file: Inner crash during run" in msg for msg in error_calls)
 
 
-def test_run_model_progress_hook_coverage(mock_run_deps):
+def test_run_model_progress_hook_coverage(mock_run_deps, tmp_path, monkeypatch):
     """Tests the inner progress_hook function with and without descriptions."""
 
     def mock_run_with_progress(*args, **kwargs):
@@ -377,18 +375,18 @@ def test_run_model_progress_hook_coverage(mock_run_deps):
 
     mock_run_deps["run_logic"].side_effect = mock_run_with_progress
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        mock_run_deps["run_logic"].assert_called_once()
+    mock_run_deps["run_logic"].assert_called_once()
 
 
-def test_run_model_export_model_error_validation(mock_run_deps):
+def test_run_model_export_model_error_validation(mock_run_deps, tmp_path, monkeypatch):
     """Tests that exporting fails gracefully if the model returned an error state."""
 
     mock_result = RunModelResult(
@@ -400,20 +398,20 @@ def test_run_model_export_model_error_validation(mock_run_deps):
     )
     mock_run_deps["run_logic"].return_value = [mock_result]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Data Error on test.pdf" in msg for msg in printed_messages)
-        assert any("Cannot export due to model error: Inference failed halfway." in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("Data Error on test.pdf" in msg for msg in printed_messages)
+    assert any("Cannot export due to model error: Inference failed halfway." in msg for msg in printed_messages)
 
 
-def test_run_model_export_missing_schema_id(mock_run_deps):
+def test_run_model_export_missing_schema_id(mock_run_deps, tmp_path, monkeypatch):
     """Tests that exporting fails gracefully if the result lacks a schema_id."""
 
     mock_result = RunModelResult(
@@ -424,80 +422,80 @@ def test_run_model_export_missing_schema_id(mock_run_deps):
     )
     mock_run_deps["run_logic"].return_value = [mock_result]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Data Error on test.pdf" in msg for msg in printed_messages)
-        assert any("Missing schema_id for export." in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("Data Error on test.pdf" in msg for msg in printed_messages)
+    assert any("Missing schema_id for export." in msg for msg in printed_messages)
 
 
-def test_run_model_json_and_export_conflict():
+def test_run_model_json_and_export_conflict(tmp_path, monkeypatch):
     """Covers the Typer BadParameter raise when both --json and --export are provided."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json", "--export", "txt"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json", "--export", "txt"])
 
-        assert result.exit_code != 0
-        assert "cannot use" in result.output
-        assert "at the same time" in result.output
-        assert "standard output" in result.output
+    assert result.exit_code != 0
+    assert "cannot use" in result.output
+    assert "at the same time" in result.output
+    assert "standard output" in result.output
 
 
-def test_run_model_empty_directory(mock_run_deps, mocker):
+def test_run_model_empty_directory(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers the exit_cli and error print when no readable files are found in a directory."""
     mocker.patch("dorsal.common.cli.exit_cli", side_effect=typer.Exit(1))
 
-    with runner.isolated_filesystem():
-        empty_dir = pathlib.Path("empty_dir")
-        empty_dir.mkdir()
+    monkeypatch.chdir(tmp_path)
+    empty_dir = pathlib.Path("empty_dir")
+    empty_dir.mkdir()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(empty_dir)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(empty_dir)])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("No readable files found in target path" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("No readable files found in target path" in msg for msg in printed_messages)
 
 
-def test_run_model_install_check_aborted(mock_run_deps):
+def test_run_model_install_check_aborted(mock_run_deps, tmp_path, monkeypatch):
     """Covers the `except typer.Exit: raise` block when a user aborts the install prompt."""
     mock_run_deps["is_installed"].return_value = False
     mock_run_deps["check_safety"].side_effect = typer.Exit(1)
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code != 0
-        mock_run_deps["run_logic"].assert_not_called()
+    assert result.exit_code != 0
+    mock_run_deps["run_logic"].assert_not_called()
 
 
-def test_run_model_install_check_exception_passed(mock_run_deps):
+def test_run_model_install_check_exception_passed(mock_run_deps, tmp_path, monkeypatch):
     """Covers the `except Exception: pass` block if resolution or checking fails non-fatally."""
     mock_run_deps["is_installed"].return_value = False
     mock_run_deps["check_safety"].side_effect = Exception("Random unexpected error")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        assert result.exit_code == 0
-        mock_run_deps["run_logic"].assert_called_once()
+    assert result.exit_code == 0
+    mock_run_deps["run_logic"].assert_called_once()
 
 
-def test_run_model_export_empty_record(mock_run_deps):
+def test_run_model_export_empty_record(mock_run_deps, tmp_path, monkeypatch):
     """Covers the ValueError raise when a model returns no record dictionary to export."""
     mock_result = RunModelResult(
         name="MockModel",
@@ -507,20 +505,20 @@ def test_run_model_export_empty_record(mock_run_deps):
     )
     mock_run_deps["run_logic"].return_value = [mock_result]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "md"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("Data Error" in msg for msg in printed_messages)
-        assert any("No record data generated to export" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("Data Error" in msg for msg in printed_messages)
+    assert any("No record data generated to export" in msg for msg in printed_messages)
 
 
-def test_run_model_filename_override_single(mock_run_deps, mocker):
+def test_run_model_filename_override_single(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers --filename for JSON and export, plus --output dir creation."""
     mock_result = RunModelResult(
         name="MockModel",
@@ -531,47 +529,47 @@ def test_run_model_filename_override_single(mock_run_deps, mocker):
     mock_run_deps["run_logic"].return_value = [mock_result]
     mocker.patch("dorsal.api.adapters.export_record", return_value="exported text")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(
-            cli_app,
-            [
-                "run",
-                "dorsal/scanner",
-                str(test_file),
-                "--output",
-                "my_dir",
-                "--filename",
-                "custom_name",
-                "--export",
-                "txt",
-            ],
-        )
+    result = runner.invoke(
+        cli_app,
+        [
+            "run",
+            "dorsal/scanner",
+            str(test_file),
+            "--output",
+            "my_dir",
+            "--filename",
+            "custom_name",
+            "--export",
+            "txt",
+        ],
+    )
 
-        assert result.exit_code == 0
-        assert pathlib.Path("my_dir").is_dir()
-        assert pathlib.Path("my_dir/custom_name.dorsal.json").exists()
-        assert pathlib.Path("my_dir/custom_name.txt").exists()
+    assert result.exit_code == 0
+    assert pathlib.Path("my_dir").is_dir()
+    assert pathlib.Path("my_dir/custom_name.dorsal.json").exists()
+    assert pathlib.Path("my_dir/custom_name.txt").exists()
 
 
-def test_run_model_batch_filename_warning(mock_run_deps):
+def test_run_model_batch_filename_warning(mock_run_deps, tmp_path, monkeypatch):
     """Covers the warning when --filename is used with a directory of files."""
-    with runner.isolated_filesystem():
-        test_dir = pathlib.Path("batch_input")
-        test_dir.mkdir()
-        (test_dir / "1.pdf").touch()
-        (test_dir / "2.pdf").touch()
+    monkeypatch.chdir(tmp_path)
+    test_dir = pathlib.Path("batch_input")
+    test_dir.mkdir()
+    (test_dir / "1.pdf").touch()
+    (test_dir / "2.pdf").touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--filename", "ignored_name"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--filename", "ignored_name"])
 
-        assert result.exit_code == 0
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("ignored during batch processing" in msg for msg in printed_messages)
+    assert result.exit_code == 0
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("ignored during batch processing" in msg for msg in printed_messages)
 
 
-def test_run_model_chunked_export_iteration(mock_run_deps, mocker):
+def test_run_model_chunked_export_iteration(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers lines where len(records_to_export) > 1 loops and appends suffix _1, _2."""
     mock_result = RunModelResult(
         name="MockModel",
@@ -582,21 +580,21 @@ def test_run_model_chunked_export_iteration(mock_run_deps, mocker):
     mock_run_deps["run_logic"].return_value = [mock_result]
     mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="chunked")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt"])
 
-        assert result.exit_code == 0
-        assert mock_export.call_count == 2
+    assert result.exit_code == 0
+    assert mock_export.call_count == 2
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("test_1.txt" in msg for msg in printed_messages)
-        assert any("test_2.txt" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("test_1.txt" in msg for msg in printed_messages)
+    assert any("test_2.txt" in msg for msg in printed_messages)
 
 
-def test_run_model_chunked_export_merge(mock_run_deps, mocker):
+def test_run_model_chunked_export_merge(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers chunked export combined with the --merge flag."""
     mock_result = RunModelResult(
         name="MockModel",
@@ -608,21 +606,21 @@ def test_run_model_chunked_export_merge(mock_run_deps, mocker):
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records", return_value={"merged": "yes"})
     mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="merged text")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt", "--merge"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--export", "txt", "--merge"])
 
-        assert result.exit_code == 0
-        mock_merge.assert_called_once()
-        assert mock_export.call_count == 1
+    assert result.exit_code == 0
+    mock_merge.assert_called_once()
+    assert mock_export.call_count == 1
 
-        printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-        assert any("test.txt" in msg for msg in printed_messages)
+    printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
+    assert any("test.txt" in msg for msg in printed_messages)
 
 
-def test_run_model_auth_error_propagation(mock_run_deps):
+def test_run_model_auth_error_propagation(mock_run_deps, tmp_path, monkeypatch):
     """Covers AuthError caught from the inner loop."""
     mock_result = RunModelResult(
         name="MockModel",
@@ -633,47 +631,47 @@ def test_run_model_auth_error_propagation(mock_run_deps):
     )
     mock_run_deps["run_logic"].return_value = [mock_result]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-        # Typer catches unhandled explicit raises and stores them in result.exception
-        assert isinstance(result.exception, AuthError)
+    # Typer catches unhandled explicit raises and stores them in result.exception
+    assert isinstance(result.exception, AuthError)
 
 
-def test_run_model_outer_unhandled_exception_json(mock_rich_console, mock_run_deps, mocker):
+def test_run_model_outer_unhandled_exception_json(mock_rich_console, mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers the global catch-all exception block formatted for --json."""
     mocker.patch("rich.progress.Progress.__enter__", side_effect=Exception("Outer catastrophic crash"))
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--json"])
 
-        assert result.exit_code != 0
-        error_json = str(mock_run_deps["error_console"].print.call_args.args[0])
-        assert "Outer catastrophic crash" in error_json
+    assert result.exit_code != 0
+    error_json = str(mock_run_deps["error_console"].print.call_args.args[0])
+    assert "Outer catastrophic crash" in error_json
 
 
-def test_run_model_batch_export_failed_row(mock_run_deps, mocker):
+def test_run_model_batch_export_failed_row(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers batch table displaying the 'Failed' text for export errors."""
     mocker.patch("dorsal.api.adapters.export_record", side_effect=DorsalError("Adapter crashed"))
 
-    with runner.isolated_filesystem():
-        test_dir = pathlib.Path("batch_dir")
-        test_dir.mkdir()
-        (test_dir / "1.pdf").touch()
-        (test_dir / "2.pdf").touch()
+    monkeypatch.chdir(tmp_path)
+    test_dir = pathlib.Path("batch_dir")
+    test_dir.mkdir()
+    (test_dir / "1.pdf").touch()
+    (test_dir / "2.pdf").touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--export", "txt"])
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir), "--export", "txt"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
 
-def test_run_model_borders_none_padding(mock_run_deps):
+def test_run_model_borders_none_padding(mock_run_deps, tmp_path, monkeypatch):
     """Covers applying padding to the table when borders are None."""
     from dorsal.cli.themes.borders import get_borders
 
@@ -681,25 +679,25 @@ def test_run_model_borders_none_padding(mock_run_deps):
     DUMMY_UI_CONTEXT["borders"] = get_borders("none")
 
     try:
-        with runner.isolated_filesystem():
-            test_dir = pathlib.Path("batch_dir")
-            test_dir.mkdir()
-            (test_dir / "1.pdf").touch()
-            (test_dir / "2.pdf").touch()
+        monkeypatch.chdir(tmp_path)
+        test_dir = pathlib.Path("batch_dir")
+        test_dir.mkdir()
+        (test_dir / "1.pdf").touch()
+        (test_dir / "2.pdf").touch()
 
-            result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
-            assert result.exit_code == 0
+        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
+        assert result.exit_code == 0
     finally:
         DUMMY_UI_CONTEXT["borders"] = old_borders
 
 
-def test_run_model_outer_typer_exit(mock_run_deps, mocker):
+def test_run_model_outer_typer_exit(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers propagating typer.Exit from the outer execution loop."""
     mocker.patch("rich.progress.Progress.__enter__", side_effect=typer.Exit(42))
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.pdf")
-        test_file.touch()
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
-        assert result.exit_code == 42
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    assert result.exit_code == 42

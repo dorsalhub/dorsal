@@ -73,19 +73,19 @@ def test_init_model_success_default_dir(mock_rich_console, mock_init_cmd):
     assert "Model Initialized" in str(panel.title)
 
 
-def test_init_model_success_explicit_dir(mock_rich_console, mock_init_cmd):
+def test_init_model_success_explicit_dir(mock_rich_console, mock_init_cmd, tmp_path, monkeypatch):
     """Tests initializing a model with a specific target directory."""
-    with runner.isolated_filesystem():
-        target_path = pathlib.Path("my_projects")
-        target_path.mkdir()
+    monkeypatch.chdir(tmp_path)
+    target_path = pathlib.Path("my_projects")
+    target_path.mkdir()
 
-        result = runner.invoke(cli_app, ["init", "Receipt Scanner", str(target_path)])
+    result = runner.invoke(cli_app, ["init", "Receipt Scanner", str(target_path)])
 
-        assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, result.output
 
-        args = mock_init_cmd["create_project"].call_args
-        assert args.kwargs["name"] == "Receipt Scanner"
-        assert args.kwargs["target_dir"].name == "my_projects"
+    args = mock_init_cmd["create_project"].call_args
+    assert args.kwargs["name"] == "Receipt Scanner"
+    assert args.kwargs["target_dir"].name == "my_projects"
 
 
 def test_init_model_dorsal_error(mock_rich_console, mock_init_cmd):
