@@ -130,7 +130,9 @@ class TestMediaInfoAnnotationModel:
 
         result = model.main()
 
-        mock_media_info.parse.assert_called_once_with(filename="/fake/media.mp4", output="JSON")
+        mock_media_info.parse.assert_called_once_with(
+            filename="/fake/media.mp4", output="JSON", encoding_errors="ignore"
+        )
         assert result is not None
         assert result["Format"] == "MPEG-4"
         assert result["Video"][0]["Width"] == "1920"
