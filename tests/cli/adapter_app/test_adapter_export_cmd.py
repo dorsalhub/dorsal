@@ -63,161 +63,161 @@ def mock_export_deps(mocker, mock_rich_console):
     }
 
 
-def test_export_basic_success(mock_rich_console, mock_export_deps):
+def test_export_basic_success(mock_rich_console, mock_export_deps, tmp_path, monkeypatch):
     """Tests a standard single-file export and auto-save via the API wrapper."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_file.dorsal.json")
-        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test_file.dorsal.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
 
-        assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, result.output
 
-        mock_export_deps["export_file"].assert_called_once()
-        kwargs = mock_export_deps["export_file"].call_args.kwargs
-        assert kwargs["schema_id"] == "MockSchema"
-        assert kwargs["target_format"] == "srt"
-        assert kwargs["output_path"] == pathlib.Path.cwd() / "test_file.srt"
+    mock_export_deps["export_file"].assert_called_once()
+    kwargs = mock_export_deps["export_file"].call_args.kwargs
+    assert kwargs["schema_id"] == "MockSchema"
+    assert kwargs["target_format"] == "srt"
+    assert kwargs["output_path"] == pathlib.Path.cwd() / "test_file.srt"
 
-        success_msg = mock_export_deps["error_console"].print.call_args.args[0]
-        assert "Outputs saved successfully" in success_msg
+    success_msg = mock_export_deps["error_console"].print.call_args.args[0]
+    assert "Outputs saved successfully" in success_msg
 
 
-def test_export_infer_format_from_output(mock_rich_console, mock_export_deps):
+def test_export_infer_format_from_output(mock_rich_console, mock_export_deps, tmp_path, monkeypatch):
     """NEW TEST: Verifies that target_format can be completely omitted if inferred from --output."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_file.dorsal.json")
-        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test_file.dorsal.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "--output", "my_custom_subs.vtt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "--output", "my_custom_subs.vtt"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        kwargs = mock_export_deps["export_file"].call_args.kwargs
-        assert kwargs["target_format"] == "vtt"
-        assert kwargs["output_path"] == pathlib.Path("my_custom_subs.vtt")
+    kwargs = mock_export_deps["export_file"].call_args.kwargs
+    assert kwargs["target_format"] == "vtt"
+    assert kwargs["output_path"] == pathlib.Path("my_custom_subs.vtt")
 
 
-def test_export_batch_success(mock_rich_console, mock_export_deps):
+def test_export_batch_success(mock_rich_console, mock_export_deps, tmp_path, monkeypatch):
     """Tests batch processing which should render a table instead of raw text."""
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"text": "Rec 1"}, None),
         ("MockSchema", {"text": "Rec 2"}, None),
     ]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_file.dorsal.json")
-        test_file.write_text(json.dumps([{"dummy": "data1"}, {"dummy": "data2"}]), encoding="utf-8")
+    test_file = pathlib.Path("test_file.dorsal.json")
+    test_file.write_text(json.dumps([{"dummy": "data1"}, {"dummy": "data2"}]), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "md"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "md"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        assert mock_export_deps["export_file"].call_count == 2
-        call_1_kwargs = mock_export_deps["export_file"].call_args_list[0].kwargs
-        call_2_kwargs = mock_export_deps["export_file"].call_args_list[1].kwargs
+    assert mock_export_deps["export_file"].call_count == 2
+    call_1_kwargs = mock_export_deps["export_file"].call_args_list[0].kwargs
+    call_2_kwargs = mock_export_deps["export_file"].call_args_list[1].kwargs
 
-        assert call_1_kwargs["output_path"].name == "test_file_1.md"
-        assert call_2_kwargs["output_path"].name == "test_file_2.md"
+    assert call_1_kwargs["output_path"].name == "test_file_1.md"
+    assert call_2_kwargs["output_path"].name == "test_file_2.md"
 
-        table_call_arg = mock_rich_console.print.call_args.args[0]
-        assert type(table_call_arg).__name__ == "Table"
-        assert "Export Results" in str(table_call_arg.title)
+    table_call_arg = mock_rich_console.print.call_args.args[0]
+    assert type(table_call_arg).__name__ == "Table"
+    assert "Export Results" in str(table_call_arg.title)
 
 
-def test_export_invalid_json(mock_export_deps):
+def test_export_invalid_json(mock_export_deps, tmp_path, monkeypatch):
     """Tests handling of a malformed JSON input file."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("bad_file.json")
-        test_file.write_text("{ bad json : ", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("bad_file.json")
+    test_file.write_text("{ bad json : ", encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Invalid JSON file" in error_msg
+    assert result.exit_code != 0
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "Invalid JSON file" in error_msg
 
 
-def test_export_validation_error(mock_export_deps):
+def test_export_validation_error(mock_export_deps, tmp_path, monkeypatch):
     """Tests handling of ValueError thrown by the record extractor."""
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].side_effect = ValueError("Missing schema information")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"bad": "data"}), encoding="utf-8")
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"bad": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "vtt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "vtt"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Validation Error" in error_msg
-        assert "Missing schema information" in error_msg
+    assert result.exit_code != 0
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "Validation Error" in error_msg
+    assert "Missing schema information" in error_msg
 
 
-def test_export_missing_adapters_package(mock_export_deps):
+def test_export_missing_adapters_package(mock_export_deps, tmp_path, monkeypatch):
     """Tests graceful failure when the optional dorsalhub-adapters is missing."""
-
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["export_file"].side_effect = DorsalError(
         "Please pip install dorsalhub-adapters to enable exports."
     )
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "dorsalhub-adapters" in error_msg
+    assert result.exit_code != 0
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "dorsalhub-adapters" in error_msg
 
 
-def test_export_adapter_runtime_error(mock_export_deps):
+def test_export_adapter_runtime_error(mock_export_deps, tmp_path, monkeypatch):
     """Tests handling when a specific adapter fails to process the record."""
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["export_file"].side_effect = Exception("Format constraint violated")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "md"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "md"])
 
-        assert result.exit_code != 0
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Export Failed for schema" in error_msg
-        assert "Format constraint violated" in error_msg
+    assert result.exit_code != 0
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "Export Failed for schema" in error_msg
+    assert "Format constraint violated" in error_msg
 
 
-def test_export_no_save_flag(mock_export_deps):
+def test_export_no_save_flag(mock_export_deps, tmp_path, monkeypatch):
     """Tests that the --no-save flag routes to export_record instead of export_record_to_file."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--no-save"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--no-save"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        mock_export_deps["export_file"].assert_not_called()
-        mock_export_deps["export_record"].assert_called_once()
+    mock_export_deps["export_file"].assert_not_called()
+    mock_export_deps["export_record"].assert_called_once()
 
 
-def test_export_schema_override_passed_down(mock_export_deps):
+def test_export_schema_override_passed_down(mock_export_deps, tmp_path, monkeypatch):
     """Tests that --schema-id correctly passes the value to the extractor."""
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-id", "CustomSchema"])
+    runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-id", "CustomSchema"])
 
-        mock_export_deps["extract"].assert_called_once_with({"dummy": "data"}, schema_override="CustomSchema")
+    mock_export_deps["extract"].assert_called_once_with({"dummy": "data"}, schema_override="CustomSchema")
 
 
-def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps):
+def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps, tmp_path, monkeypatch):
     """
     Tests batch processing where one record fails to export.
     This triggers the table rendering logic for item["status"] == "Error" and row.append("-").
     """
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"text": "Rec 1"}, None),
         ("MockSchema", {"text": "Rec 2"}, None),
@@ -225,60 +225,60 @@ def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps):
 
     mock_export_deps["export_file"].side_effect = ["Mocked success content", Exception("Simulated batch failure")]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_batch.dorsal.json")
-        test_file.write_text(json.dumps([{"dummy": "data1"}, {"dummy": "data2"}]), encoding="utf-8")
+    test_file = pathlib.Path("test_batch.dorsal.json")
+    test_file.write_text(json.dumps([{"dummy": "data1"}, {"dummy": "data2"}]), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "md"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "md"])
 
-        assert result.exit_code == 0
-        assert mock_export_deps["export_file"].call_count == 2
+    assert result.exit_code == 0
+    assert mock_export_deps["export_file"].call_count == 2
 
-        table_call_arg = mock_rich_console.print.call_args.args[0]
-        assert type(table_call_arg).__name__ == "Table"
+    table_call_arg = mock_rich_console.print.call_args.args[0]
+    assert type(table_call_arg).__name__ == "Table"
 
 
-def test_export_with_orig_file_path(mock_export_deps):
+def test_export_with_orig_file_path(mock_export_deps, tmp_path, monkeypatch):
     """
     Tests that if the record has an orig_file_path, it derives the output
     file name from that path's stem instead of the raw JSON's name.
     """
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"text": "Rec"}, "internal_dir/my_custom_image_name.png")
     ]
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("generic_wrapper.dorsal.json")
-        test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+    test_file = pathlib.Path("generic_wrapper.dorsal.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        kwargs = mock_export_deps["export_file"].call_args.kwargs
-        assert kwargs["output_path"].name == "my_custom_image_name.srt"
+    kwargs = mock_export_deps["export_file"].call_args.kwargs
+    assert kwargs["output_path"].name == "my_custom_image_name.srt"
 
 
-def test_export_usage_error_no_format_or_output(mock_export_deps):
+def test_export_usage_error_no_format_or_output(mock_export_deps, tmp_path, monkeypatch):
     """
     NEW TEST: Tests the usage error check if the user omits the format AND
     doesn't provide an --output flag that can be inferred.
     """
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test.json")
-        test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"valid": "data"}), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file)])
+    result = runner.invoke(cli_app, ["export", str(test_file)])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Usage Error" in error_msg
-        assert "target_format" in error_msg
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "Usage Error" in error_msg
+    assert "target_format" in error_msg
 
 
-def test_export_merge_success(mocker, mock_export_deps):
+def test_export_merge_success(mocker, mock_export_deps, tmp_path, monkeypatch):
     """Tests that the --merge flag correctly condenses multiple records into one."""
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"part": 1}, "original_file.png"),
         ("MockSchema", {"part": 2}, "original_file.png"),
@@ -287,25 +287,25 @@ def test_export_merge_success(mocker, mock_export_deps):
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
     mock_merge.return_value = {"merged": "data"}
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_batch.dorsal.json")
-        test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
+    test_file = pathlib.Path("test_batch.dorsal.json")
+    test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
 
-        assert result.exit_code == 0
+    assert result.exit_code == 0
 
-        mock_merge.assert_called_once_with([{"part": 1}, {"part": 2}], "MockSchema")
+    mock_merge.assert_called_once_with([{"part": 1}, {"part": 2}], "MockSchema")
 
-        mock_export_deps["export_file"].assert_called_once()
-        kwargs = mock_export_deps["export_file"].call_args.kwargs
-        assert kwargs["record"] == {"merged": "data"}
+    mock_export_deps["export_file"].assert_called_once()
+    kwargs = mock_export_deps["export_file"].call_args.kwargs
+    assert kwargs["record"] == {"merged": "data"}
 
-        assert kwargs["validate"] is False
+    assert kwargs["validate"] is False
 
 
-def test_export_merge_failure(mocker, mock_export_deps):
+def test_export_merge_failure(mocker, mock_export_deps, tmp_path, monkeypatch):
     """Tests the try/except block if the merge process throws an exception."""
+    monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
         ("MockSchema", {"part": 1}, None),
         ("MockSchema", {"part": 2}, None),
@@ -314,14 +314,13 @@ def test_export_merge_failure(mocker, mock_export_deps):
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
     mock_merge.side_effect = Exception("Simulated merge explosion")
 
-    with runner.isolated_filesystem():
-        test_file = pathlib.Path("test_batch.dorsal.json")
-        test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
+    test_file = pathlib.Path("test_batch.dorsal.json")
+    test_file.write_text(json.dumps([{"part": 1}, {"part": 2}]), encoding="utf-8")
 
-        result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--merge"])
 
-        assert result.exit_code != 0
+    assert result.exit_code != 0
 
-        error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-        assert "Merge Error" in error_msg
-        assert "Simulated merge explosion" in error_msg
+    error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
+    assert "Merge Error" in error_msg
+    assert "Simulated merge explosion" in error_msg
