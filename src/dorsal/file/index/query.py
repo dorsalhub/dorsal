@@ -116,6 +116,7 @@ class QueryCompiler:
         "blake3": "hash_blake3",
         "quick": "hash_quick",
         "tlsh": "hash_tlsh",
+        "instance_id": "instance_id",
     }
 
     SORT_COLUMNS = {

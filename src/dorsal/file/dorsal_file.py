@@ -15,6 +15,7 @@
 from __future__ import annotations
 import datetime
 import logging
+import hashlib
 import json
 import pathlib
 import re
@@ -2773,6 +2774,9 @@ class LocalFile(_DorsalFile):
 
         try:
             stat_result = path_obj.lstat()
+
+            stat_string = f"{stat_result.st_dev}:{stat_result.st_ino}:{stat_result.st_size}".encode('utf-8')
+            local_info["instance_id"] = hashlib.sha256(stat_string).hexdigest()[:16]
 
             if path_obj.is_symlink():
                 local_info["is_symlink"] = True

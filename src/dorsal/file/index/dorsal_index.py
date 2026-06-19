@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 import functools
+import hashlib
 import gzip
 import json
 import sqlite3
@@ -49,6 +50,7 @@ class CachedFileRecord(BaseModel):
     hash_blake3: str | None = None
     hash_quick: str | None = None
     hash_tlsh: str | None = None
+    instance_id: str | None = None
 
 
 class DorsalIndex:
@@ -128,7 +130,8 @@ class DorsalIndex:
                 hash_sha256 TEXT,
                 hash_blake3 TEXT,
                 hash_quick TEXT,
-                hash_tlsh TEXT
+                hash_tlsh TEXT,
+                instance_id TEXT
             );
             """
         )
@@ -176,6 +179,7 @@ class DorsalIndex:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_blake3 ON cached_files (hash_blake3);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_quick ON cached_files (hash_quick);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_tlsh ON cached_files (hash_tlsh);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_instance_id ON cached_files (instance_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_name ON cached_files (name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_extension ON cached_files (extension);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_media_type ON cached_files (media_type);")
@@ -230,6 +234,15 @@ class DorsalIndex:
 
         return fts_texts, eav_attributes
 
+    def _get_instance_id(self, file_path: str) -> str:
+        """Generate file's instance ID: a 64 bit SHA-256 string based on the file's Inode and size."""
+        stat_result = os.lstat(file_path)
+        stat_string = f"{stat_result.st_dev}:{stat_result.st_ino}:{stat_result.st_size}".encode('utf-8')
+        instance_id = hashlib.sha256(stat_string).hexdigest()[:16]
+
+        return instance_id
+
+
     def upsert_record(self, *, path: str, modified_time: float, record: "FileRecordStrict"):
         """Inserts or replaces a record, updating search indexes and respecting compression."""
         conn = self._ensure_connection()
@@ -247,6 +260,8 @@ class DorsalIndex:
             record_data = record_json_str.encode("utf-8")
             is_compressed_flag = 0
 
+        instance_id = self._get_instance_id(path)
+
         sql_data = {
             "abspath": path,
             "modified_time": modified_time,
@@ -260,6 +275,7 @@ class DorsalIndex:
             "hash_blake3": all_hashes.get("BLAKE3"),
             "hash_quick": all_hashes.get("QUICK"),
             "hash_tlsh": all_hashes.get("TLSH"),
+            "instance_id": instance_id,
         }
 
         fts_texts, eav_attributes = self._extract_search_data(record)
@@ -278,11 +294,11 @@ class DorsalIndex:
             INSERT OR REPLACE INTO cached_files (
                 abspath, modified_time, record, is_compressed, name, size,
                 extension, media_type, hash_sha256, hash_blake3,
-                hash_quick, hash_tlsh
+                hash_quick, hash_tlsh, instance_id
             ) VALUES (
                 :abspath, :modified_time, :record, :is_compressed, :name, :size,
                 :extension, :media_type, :hash_sha256, :hash_blake3,
-                :hash_quick, :hash_tlsh
+                :hash_quick, :hash_tlsh, :instance_id
             )
             """,
             sql_data,
@@ -307,7 +323,7 @@ class DorsalIndex:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT abspath, modified_time, record, is_compressed, name, size,
+            SELECT abspath, instance_id, modified_time, record, is_compressed, name, size,
                    extension, media_type, hash_sha256, hash_blake3,
                    hash_quick, hash_tlsh
             FROM cached_files WHERE abspath = ?
@@ -492,7 +508,8 @@ class DorsalIndex:
                 COALESCE(LENGTH(CAST(hash_sha256 AS BLOB)), 0) + 
                 COALESCE(LENGTH(CAST(hash_blake3 AS BLOB)), 0) + 
                 COALESCE(LENGTH(CAST(hash_quick AS BLOB)), 0) + 
-                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0)
+                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0) +
+                COALESCE(LENGTH(CAST(instance_id AS BLOB)), 0)
             ) FROM cached_files
         """)
         record_cache_bytes = int(cursor.fetchone()[0] or 0)
