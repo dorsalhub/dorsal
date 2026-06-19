@@ -1141,6 +1141,7 @@ class DorsalClient:
         sort_by: Literal["date_modified", "date_created", "size", "name"] = "date_modified",
         sort_order: Literal["asc", "desc"] = "desc",
         match_any: bool,
+        deep: bool,
         api_key: str | None = None,
     ) -> "FileSearchResponse":
         """
@@ -1214,6 +1215,7 @@ class DorsalClient:
             "sort_by": sort_by,
             "sort_order": sort_order,
             "match_any": match_any,
+            "deep": deep,
         }
         logger.debug("Attempting to search files at: %s with params: %s", target_url, params)
 

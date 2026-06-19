@@ -137,7 +137,7 @@ def test_search_files_success(client, requests_mock):
     }
     requests_mock.get(f"{_DUMMY_BASE_URL}/v1/files/search", json=mock_response, status_code=200)
 
-    result = client.search_files(q="name:test", match_any=False)
+    result = client.search_files(q="name:test", match_any=False, deep=True)
     assert isinstance(result, FileSearchResponse)
     assert result.pagination.record_count == 1
 
@@ -145,10 +145,10 @@ def test_search_files_success(client, requests_mock):
 def test_search_files_client_validation(client):
     """Test invalid search parameters."""
     with pytest.raises(DorsalClientError, match="'per_page' must be between"):
-        client.search_files(q="test", per_page=1000, match_any=False)
+        client.search_files(q="test", per_page=1000, match_any=False, deep=False)
 
     with pytest.raises(DorsalClientError, match="non-empty string"):
-        client.search_files(q="", match_any=False)
+        client.search_files(q="", match_any=False, deep=False)
 
 
 def test_check_files_indexed(client, requests_mock):

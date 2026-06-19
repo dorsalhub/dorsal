@@ -75,6 +75,14 @@ def search_record(
             rich_help_panel="Search Options",
         ),
     ] = False,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            help="Search open and user-contributed file annotations.",
+            rich_help_panel="Search Options",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -121,6 +129,7 @@ def search_record(
         sort_order=sort_order,
         json_output=json_output,
         match_any=match_any,
+        deep=deep,
         save=save,
         output_path=output_path,
     )
