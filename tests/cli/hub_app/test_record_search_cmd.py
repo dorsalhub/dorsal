@@ -72,6 +72,7 @@ def test_search_user_scope_default(command_path, mock_rich_console, mock_search_
         sort_order="desc",
         match_any=False,
         mode="pydantic",
+        deep=False,
     )
     mock_search_cmd["global_search"].assert_not_called()
     mock_search_cmd["save_results"].assert_not_called()

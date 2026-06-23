@@ -106,6 +106,7 @@ def search_and_display(
     sort_order: str,
     json_output: bool,
     match_any: bool,
+    deep: bool,
     save: bool,
     output_path: Optional[pathlib.Path],
 ):
@@ -157,6 +158,7 @@ def search_and_display(
             sort_by=casted_sort_by,
             sort_order=casted_sort_order,
             match_any=match_any,
+            deep=deep,
             mode="pydantic",
         )
 

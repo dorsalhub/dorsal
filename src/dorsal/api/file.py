@@ -1118,6 +1118,7 @@ def search_user_files(
     sort_order: Literal["asc", "desc"] = "desc",
     *,
     match_any: bool = False,
+    deep: bool = False,
     api_key: str | None = None,
     mode: Literal["pydantic"],
     model_dump_exclude_none: bool = True,
@@ -1135,6 +1136,7 @@ def search_user_files(
     sort_order: Literal["asc", "desc"] = "desc",
     *,
     match_any: bool = False,
+    deep: bool = False,
     api_key: str | None = None,
     mode: Literal["dict"],
     model_dump_exclude_none: bool = True,
@@ -1152,6 +1154,7 @@ def search_user_files(
     sort_order: Literal["asc", "desc"] = "desc",
     *,
     match_any: bool = False,
+    deep: bool = False,
     api_key: str | None = None,
     mode: Literal["json"],
     model_dump_exclude_none: bool = True,
@@ -1168,6 +1171,7 @@ def search_user_files(
     sort_order: Literal["asc", "desc"] = "desc",
     *,
     match_any: bool = False,
+    deep: bool = False,
     api_key: str | None = None,
     mode: Literal["pydantic", "dict", "json"] = "pydantic",
     model_dump_exclude_none: bool = True,
@@ -1252,6 +1256,7 @@ def search_user_files(
             sort_by=sort_by,
             sort_order=sort_order,
             match_any=match_any,
+            deep=deep,
         )
 
         logger.debug(
@@ -1304,6 +1309,7 @@ def search_global_files(
     api_key: str | None = None,
     *,
     match_any: bool = False,
+    deep: bool = False,
     mode: Literal["pydantic"],
     model_dump_exclude_none: bool = True,
     model_dump_by_alias: bool = True,
@@ -1320,6 +1326,7 @@ def search_global_files(
     api_key: str | None = None,
     *,
     match_any: bool = False,
+    deep: bool = False,
     mode: Literal["dict"],
     model_dump_exclude_none: bool = True,
     model_dump_by_alias: bool = True,
@@ -1336,6 +1343,7 @@ def search_global_files(
     api_key: str | None = None,
     *,
     match_any: bool = False,
+    deep: bool = False,
     mode: Literal["json"],
     model_dump_exclude_none: bool = True,
     model_dump_by_alias: bool = True,
@@ -1351,6 +1359,7 @@ def search_global_files(
     api_key: str | None = None,
     *,
     match_any: bool = False,
+    deep: bool = False,
     mode: Literal["pydantic", "dict", "json"] = "pydantic",
     model_dump_exclude_none: bool = True,
     model_dump_by_alias: bool = True,
@@ -1430,6 +1439,7 @@ def search_global_files(
             sort_by=sort_by,
             sort_order=sort_order,
             match_any=match_any,
+            deep=deep,
         )
 
         logger.debug(
