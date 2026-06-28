@@ -253,12 +253,22 @@ class AnnotationUserRecordSource(AnnotationSourceBase):
     id: String256 | None = None
 
 
+class AnnotationWebSource(AnnotationSourceBase):
+    """Source definition for annotations submitted manually via the Web UI."""
+
+    type: Literal["Web"] = "Web"
+    id: String256
+    execution_part: Literal[None] = None
+    execution_total_parts: Literal[None] = None
+
+
 AnnotationSource = Annotated[
     Union[
         AnnotationModelSource,
         AnnotationManualSource,
         AnnotationUserUnknownSource,
         AnnotationUserRecordSource,
+        AnnotationWebSource,
     ],
     Field(discriminator="type"),
 ]
