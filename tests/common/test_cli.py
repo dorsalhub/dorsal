@@ -433,7 +433,7 @@ def test_render_model_help_panel_error(mock_ui_context):
     """Test the panel rendering when model resolution fails."""
     help_info = {"status": "error", "target": "my-target", "error": "Resolution failed"}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
-    
+
     assert isinstance(panel, Panel)
     assert "Resolution failed" in str(panel.renderable)
     assert "Model Resolution Failed" in str(panel.title)
@@ -443,7 +443,7 @@ def test_render_model_help_panel_not_installed(mock_ui_context):
     """Test the panel rendering when a model is resolved but not installed."""
     help_info = {"status": "not_installed", "target": "my-target", "package_name": "my-pkg"}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
-    
+
     assert isinstance(panel, Panel)
     assert "my-pkg" in str(panel.renderable)
     assert "dorsal model install my-target" in str(panel.renderable)
@@ -454,7 +454,7 @@ def test_render_model_help_panel_config_error(mock_ui_context):
     """Test the panel rendering when the model_config.toml is missing or invalid."""
     help_info = {"status": "config_error", "package_name": "my-pkg", "error": "Invalid TOML"}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
-    
+
     assert isinstance(panel, Panel)
     assert "Failed to load configuration for 'my-pkg'" in str(panel.renderable)
     assert "Invalid TOML" in str(panel.renderable)
@@ -463,14 +463,9 @@ def test_render_model_help_panel_config_error(mock_ui_context):
 
 def test_render_model_help_panel_success_no_options(mock_ui_context):
     """Test the panel rendering when a model successfully loads but has no options."""
-    help_info = {
-        "status": "success", 
-        "package_name": "my-pkg", 
-        "model_class": "MyClass", 
-        "options": {}
-    }
+    help_info = {"status": "success", "package_name": "my-pkg", "model_class": "MyClass", "options": {}}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
-    
+
     assert isinstance(panel, Panel)
     assert "does not define any default options" in str(panel.renderable)
     assert "Model: my-pkg" in str(panel.title)
@@ -479,25 +474,25 @@ def test_render_model_help_panel_success_no_options(mock_ui_context):
 def test_render_model_help_panel_success_with_options(mock_ui_context):
     """Test the full table rendering for a model with a valid configuration and options."""
     from rich.table import Table
-    
+
     help_info = {
         "status": "success",
         "package_name": "my-pkg",
         "model_class": "MyClass",
         "options": {
             "batch_size": {"default": 16, "help": "Batch size for inference"},
-            "language": {"help": "Target language"} 
-        }
+            "language": {"help": "Target language"},
+        },
     }
-    
+
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
-    
+
     assert isinstance(panel, Panel)
     assert isinstance(panel.renderable, Group)
     assert "Model Options: MyClass" in str(panel.title)
-    
+
     table = panel.renderable.renderables[0]
     assert isinstance(table, Table)
-    
+
     assert len(table.columns) == 3
     assert table.columns[0].header == "Option"
