@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.9.4"
-description = "Dorsal is a local-first metadata generation and management toolkit."
+version = "0.9.5"
+description = "Dorsal is a file annotation toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
