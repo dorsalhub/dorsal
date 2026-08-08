@@ -367,10 +367,10 @@ def test_dynamic_help_value_error_fallback(mock_get_model_help):
 def test_dynamic_help_ctx_args_fallback():
     """Test the safety net where click dumped unparsed args into ctx.args."""
     mock_ctx = MagicMock()
-    mock_ctx.params = {"target": None} 
+    mock_ctx.params = {"target": None}
     mock_ctx.parent = None
     mock_ctx.info_name = "run"
-    mock_ctx.args = ["--some-flag", "CtxFallbackModel"]  
+    mock_ctx.args = ["--some-flag", "CtxFallbackModel"]
     mock_ctx.find_object.return_value = {"palette": {}, "borders": "none"}
 
     mock_formatter = MagicMock()
