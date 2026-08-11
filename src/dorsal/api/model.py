@@ -21,7 +21,7 @@ from typing import Any, Callable, cast
 from packaging.utils import canonicalize_name
 
 from dorsal.api.config import get_model_pipeline
-from dorsal.common.exceptions import DorsalError, DorsalConfigError
+from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError
 from dorsal.common.validators import CallableImportPath
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pipeline_step_models, RunModelResult
 from dorsal.file.file_annotator import FILE_ANNOTATOR
@@ -163,7 +163,10 @@ def _load_package_config(module_name: str, package_name: str) -> dict[str, Any]:
 
 
 def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_name: str) -> ModelRunnerPipelineStep:
-    """Validate configuration data and constructs the ModelRunnerPipelineStep object."""
+    """Validate configuration data and constructs the ModelRunnerPipelineStep object.
+
+    Supports both legacy (flat, string) and modern `model_config.toml` formats.
+    """
     class_name = config_data.get("model_class")
     schema_id = config_data.get("schema_id")
 
@@ -172,6 +175,16 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
 
     if not schema_id:
         raise DorsalConfigError(f"Invalid config in '{package_name}': missing required field 'schema_id'")
+
+    raw_options = config_data.get("options", {})
+    parsed_options = {}
+
+    for key, value in raw_options.items():
+        if isinstance(value, dict) and ("default" in value or "help" in value):
+            if "default" in value:
+                parsed_options[key] = value["default"]
+        else:
+            parsed_options[key] = value
 
     try:
         return ModelRunnerPipelineStep(
@@ -185,3 +198,61 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
         )
     except Exception as e:
         raise DorsalError(f"Failed to construct pipeline step for '{package_name}': {e}") from e
+
+
+def get_model_help(target: str) -> dict[str, Any]:
+    """
+    Retrieve structured options and metadata for a specific model target.
+
+    Returns a dictionary containing the model's status, package info,
+    and normalized options (default values & help strings).
+    """
+    try:
+        strategy, package_name = resolve_target(target)
+    except (DorsalError, AuthError) as e:
+        return {
+            "status": "error",
+            "target": target,
+            "error": str(e),
+        }
+
+    if not is_package_installed(package_name):
+        return {
+            "status": "not_installed",
+            "target": target,
+            "package_name": package_name,
+        }
+
+    try:
+        module_name = _resolve_module_from_package(package_name)
+        config_data = _load_package_config(module_name, package_name)
+    except Exception as e:
+        return {
+            "status": "config_error",
+            "target": target,
+            "package_name": package_name,
+            "error": str(e),
+        }
+
+    raw_options = config_data.get("options", {})
+    normalized_options: dict[str, dict[str, Any]] = {}
+
+    for opt_key, opt_val in raw_options.items():
+        if isinstance(opt_val, dict):
+            normalized_options[opt_key] = {
+                "default": opt_val.get("default", ""),
+                "help": opt_val.get("help", "No description provided."),
+            }
+        else:
+            normalized_options[opt_key] = {
+                "default": opt_val,
+                "help": "No description provided.",
+            }
+
+    return {
+        "status": "success",
+        "target": target,
+        "package_name": package_name,
+        "model_class": config_data.get("model_class", "UnknownClass"),
+        "options": normalized_options,
+    }

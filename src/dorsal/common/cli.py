@@ -16,14 +16,16 @@ import json
 import sys
 from typing import Any, NoReturn, Sequence, TYPE_CHECKING
 
+import typer
+from typer.core import TyperCommand
+
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 from dorsal.common.exceptions import AuthError
 
-import typer
-
 if TYPE_CHECKING:
+    import typer._click as _click
     from dorsal.cli.themes import UIContext
 
 
@@ -258,3 +260,163 @@ class DummyContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
+
+
+class DynamicHelpCommand(TyperCommand):
+    """
+    Base Typer command class for injecting dynamic, context-sensitive help.
+    Subclasses must define `target_param_name` and override `get_dynamic_renderable`.
+    """
+
+    target_param_name: str = "target"
+
+    def get_dynamic_renderable(self, target: str, ui_context: Any) -> Any | None:
+        """Override this to return a Rich renderable for the extra help."""
+        raise NotImplementedError("Subclasses must implement get_dynamic_renderable")
+
+    def format_help(self, ctx: "_click.Context", formatter: "_click.HelpFormatter") -> None:
+
+        super().format_help(ctx, formatter)
+
+        target_val = ctx.params.get(self.target_param_name)
+
+        if not target_val:
+            cmd_chain = []
+            current_ctx: "_click.Context | None" = ctx
+
+            while current_ctx and current_ctx.info_name:
+                cmd_chain.append(current_ctx.info_name)
+                current_ctx = current_ctx.parent
+
+            cmd_chain.reverse()
+            subcommands = cmd_chain[1:]
+
+            cmd_idx = -1
+            if subcommands:
+                match_idx = 0
+                for i, arg in enumerate(sys.argv):
+                    if arg == subcommands[match_idx]:
+                        match_idx += 1
+                        if match_idx == len(subcommands):
+                            cmd_idx = i
+                            break
+            else:
+                try:
+                    if self.name is not None:
+                        cmd_idx = sys.argv.index(self.name)
+                except ValueError:
+                    pass
+
+            if cmd_idx != -1:
+                for arg in sys.argv[cmd_idx + 1 :]:
+                    if not arg.startswith("-"):
+                        target_val = arg
+                        break
+
+            if not target_val and getattr(ctx, "args", None):
+                for arg in ctx.args:
+                    if not arg.startswith("-"):
+                        target_val = arg
+                        break
+
+        if target_val:
+            ui_context: "UIContext | None" = ctx.find_object(dict)  # type: ignore[assignment]
+            if ui_context is None:
+                from dorsal.cli.themes import get_ui_theme
+
+                ui_context = get_ui_theme()
+
+            extra_help = self.get_dynamic_renderable(target_val, ui_context)
+            if extra_help:
+                console = get_rich_console()
+                console.print()
+                console.print(extra_help)
+
+
+def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any]) -> Panel | None:
+    """Renders a Rich Panel for model help data returned by get_model_help."""
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.console import Group
+    from rich.text import Text
+
+    palette = ui_context.get("palette", {})
+    borders = ui_context.get("borders", "rounded")
+    status = help_info.get("status")
+
+    if status == "error":
+        return Panel(
+            f"Could not resolve model target '{help_info['target']}': {help_info.get('error')}",
+            title="[bold yellow]Model Resolution Failed[/]",
+            border_style="yellow",
+            box=borders,
+        )
+
+    if status == "not_installed":
+        target = help_info["target"]
+        pkg = help_info["package_name"]
+        return Panel(
+            f"Model [bold cyan]{pkg}[/] is not installed locally.\n"
+            f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options.",
+            title=f"Model: {target}",
+            border_style="cyan",
+            box=borders,
+        )
+
+    if status == "config_error":
+        return Panel(
+            f"Failed to load configuration for '{help_info['package_name']}': {help_info.get('error')}",
+            title="[bold red]Configuration Error[/]",
+            border_style="red",
+            box=borders,
+        )
+
+    options = help_info.get("options", {})
+    model_class = help_info.get("model_class", "UnknownClass")
+
+    if not options:
+        return Panel(
+            f"The model [bold]{model_class}[/] does not define any default options.",
+            title=f"Model: {help_info['package_name']}",
+            border_style="green",
+            box=borders,
+        )
+
+    table = Table(show_header=True, header_style="bold", box=None, expand=True)
+    table.add_column("Option", style=palette.get("primary_value", "cyan"), width=20)
+    table.add_column("Default Value", style="magenta", width=15)
+    table.add_column("Description", style="default")
+
+    for opt_key, opt_data in options.items():
+        table.add_row(opt_key, str(opt_data.get("default", "N/A")), opt_data.get("help", "No description provided."))
+
+    footer = Text("\nNote: You can pass additional, undeclared keyword arguments via --opt.", style="dim")
+
+    return Panel(
+        Group(table, footer),
+        title=f"Model Options: {model_class}",
+        title_align="left",
+        border_style=palette.get("panel_border_info", "green"),
+        padding=(1, 2),
+        box=borders,
+    )
+
+
+class ModelHelpCommand(DynamicHelpCommand):
+    target_param_name = "target"
+
+    def get_dynamic_renderable(self, target: str, ui_context: dict) -> Any | None:
+        from dorsal.api.model import get_model_help
+
+        help_info = get_model_help(target=target)
+
+        return render_model_help_panel(help_info, ui_context)
+
+
+class AdapterHelpCommand(DynamicHelpCommand):
+    target_param_name = "target_format"
+
+    def get_dynamic_renderable(self, target: str, ui_context: dict) -> Any | None:
+        from dorsal.api.adapters import get_adapter_help
+
+        return get_adapter_help(target, ui_context)

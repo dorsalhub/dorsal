@@ -148,3 +148,7 @@ def get_supported_formats(schema_id: str) -> list[tuple[str, str]]:
     """Returns a list of (format_name, description) for all supported formats of a given schema."""
     resolved_schema_id = ALIAS_MAPPING.get(schema_id, schema_id)
     return list_formats(resolved_schema_id)
+
+
+def get_adapter_help(target: str, ui_context: dict) -> Any | None:
+    pass

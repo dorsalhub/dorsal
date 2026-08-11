@@ -233,11 +233,7 @@ if lf.pdf:
 lf.add_private_tag(name="project_id", value=12345)
 
 # Add a structured annotation (validates against the 'open/classification' schema)
-lf.add_classification(
-    labels=[{"label": "urgent", "score": 1.0}],
-    vocabulary=["urgent", "review"],
-    private=True
-)
+lf.add_classification(labels=[{"label": "urgent", "score": 1.0}], vocabulary=["urgent", "review"], private=True)
 
 # Sync the enriched record to DorsalHub
 lf.push()
@@ -252,11 +248,7 @@ Generate self-contained HTML dashboards for local directories.
 ```python
 from dorsal.api import generate_html_directory_report
 
-generate_html_directory_report(
-    dir_path="./projects",
-    output_path="storage_audit.html",
-    recursive=True
-)
+generate_html_directory_report(dir_path="./projects", output_path="storage_audit.html", recursive=True)
 ```
 
 
@@ -276,24 +268,19 @@ from dorsal import AnnotationModel
 from dorsal.testing import run_model
 from dorsal.file.helpers import build_generic_record
 
+
 class HelloWord(AnnotationModel):
     def main(self):
-        with open(self.file_path, 'r') as f:
+        with open(self.file_path, "r") as f:
             words = f.read().split()
-            
-        data = {str(i+1): v[0] for i, v in enumerate(Counter(words).most_common(5))}
-        
-        return build_generic_record(
-            description="Top 5 most common words",
-            data=data
-        )
+
+        data = {str(i + 1): v[0] for i, v in enumerate(Counter(words).most_common(5))}
+
+        return build_generic_record(description="Top 5 most common words", data=data)
+
 
 # Validate the model
-result = run_model(
-    annotation_model=HelloWord,
-    file_path="./path/to/test/file.txt",
-    schema_id="open/generic"
-)
+result = run_model(annotation_model=HelloWord, file_path="./path/to/test/file.txt", schema_id="open/generic")
 
 assert not result.error
 ```
@@ -304,10 +291,7 @@ from dorsal.api import register_model
 from helloword import HelloWord
 
 # Add the model to your pipeline
-register_model(
-    annotation_model=HelloWord,
-    schema_id="open/generic"
-)
+register_model(annotation_model=HelloWord, schema_id="open/generic")
 ```
 
 -----
