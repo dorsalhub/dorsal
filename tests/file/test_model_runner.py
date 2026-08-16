@@ -1308,3 +1308,122 @@ class TestModelRunnerChunkRescueAndMultiOutput:
         assert result[1].error is None
         assert result[0].records[0] == {"text": "chk1"}
         assert result[1].records[0] == {"text": "chk2"}
+
+
+class TestModelRunnerTypeCoercion:
+    """Tests for the new schema extraction and type coercion logic."""
+
+    def test_coerce_options_basic_types(self):
+        """Tests that string options are correctly coerced based on the expected schema."""
+        schema = {
+            "is_bool_1": "bool",
+            "is_bool_2": "boolean",
+            "is_int_1": "int",
+            "is_int_2": "integer",
+            "is_float_1": "float",
+            "is_float_2": "double",
+            "is_str": "str",
+        }
+
+        raw_options = {
+            "is_bool_1": "true",
+            "is_bool_2": "1",
+            "is_int_1": "42",
+            "is_int_2": "invalid_int_fallback",  # Should fall back to string safely
+            "is_float_1": "3.14",
+            "is_float_2": "invalid_float_fallback",
+            "is_str": "100",  # Should remain string
+            "undeclared": "passthrough",  # Not in schema, should pass through
+            "already_parsed_dict": {"complex": "data"},  # Non-strings should be left alone
+        }
+
+        coerced = ModelRunner._coerce_options(raw_options, schema)
+
+        assert coerced["is_bool_1"] is True
+        assert coerced["is_bool_2"] is True
+        assert coerced["is_int_1"] == 42
+        assert coerced["is_int_2"] == "invalid_int_fallback"
+        assert coerced["is_float_1"] == 3.14
+        assert coerced["is_float_2"] == "invalid_float_fallback"
+        assert coerced["is_str"] == "100"
+        assert coerced["undeclared"] == "passthrough"
+        assert coerced["already_parsed_dict"] == {"complex": "data"}
+
+    def test_get_schema_for_model_success(self, mocker):
+        """Tests that the schema is correctly extracted from a mocked model_config.toml."""
+
+        mock_file = MagicMock()
+        mock_file.is_file.return_value = True
+
+        import textwrap
+
+        mock_file.read_text.return_value = textwrap.dedent("""
+            [options]
+            explicit_int = {type = "int"}
+            inferred_bool = {default = true}
+            inferred_str = {default = "hello"}
+            missing_type_dict = {}
+            flat_str_fallback = "flat_string_value"
+        """).strip()
+
+        mock_dir = MagicMock()
+        mock_dir.__truediv__.return_value = mock_file
+
+        mocker.patch("importlib.resources.files", return_value=mock_dir)
+
+        schema = ModelRunner._get_schema_for_model(MockSuccessAnnotationModel)
+
+        assert schema["explicit_int"] == "int"
+        assert schema["inferred_bool"] == "bool"
+        assert schema["inferred_str"] == "str"
+        assert schema["missing_type_dict"] == "str"
+        assert schema["flat_str_fallback"] == "str"
+
+    def test_get_schema_for_model_no_file(self, mocker):
+        """Tests that an empty dictionary is returned if model_config.toml is missing."""
+        mock_file = MagicMock()
+        mock_file.is_file.return_value = False
+
+        mock_dir = MagicMock()
+        mock_dir.__truediv__.return_value = mock_file
+
+        mocker.patch("importlib.resources.files", return_value=mock_dir)
+
+        schema = ModelRunner._get_schema_for_model(MockSuccessAnnotationModel)
+        assert schema == {}
+
+    def test_run_single_model_coercion_integration(self, base_model_runner, mocker):
+        """Tests that run_single_model intercepts string options and passes coerced values to main()."""
+        mocker.patch.object(ModelRunner, "_get_schema_for_model", return_value={"threshold": "float"})
+
+        spy = mocker.spy(SingleOutputModel, "main")
+
+        base_model_runner.run_single_model(
+            annotation_model=SingleOutputModel,
+            validation_model=None,
+            file_path="/fake/path",
+            options={"threshold": "0.95", "passthrough": "123"},
+        )
+
+        spy.assert_called_once()
+        kwargs = spy.call_args.kwargs
+
+        assert kwargs["threshold"] == 0.95
+        assert kwargs["passthrough"] == "123"
+
+    def test_coerce_options_strict_fallback(self):
+        """Tests that fields falling back to 'str' are not accidentally cast to ints or bools."""
+        schema = {"batch_size": "str", "language": "str"}
+
+        raw_options = {
+            "batch_size": "8",
+            "language": "true",
+        }
+
+        coerced = ModelRunner._coerce_options(raw_options, schema)
+
+        assert coerced["batch_size"] == "8"
+        assert coerced["language"] == "true"
+
+        assert isinstance(coerced["batch_size"], str)
+        assert isinstance(coerced["language"], str)

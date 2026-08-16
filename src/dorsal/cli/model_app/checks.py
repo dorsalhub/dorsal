@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from __future__ import annotations
 import logging
 import sys
 import shutil
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 from rich.panel import Panel
 from rich.console import Group
@@ -26,21 +26,28 @@ import typer
 from dorsal.cli.themes import UIContext
 from dorsal.cli.themes.borders import get_borders
 
+if TYPE_CHECKING:
+    from dorsal.api.model import ModelTargetResolution
+
 
 logger = logging.getLogger(__name__)
 
 
-def check_and_confirm_model_install(target: str, ui_context: UIContext, force: bool = False, yes: bool = False) -> None:
+def check_and_confirm_model_install(
+    resolution: "ModelTargetResolution", ui_context: UIContext, force: bool = False, yes: bool = False
+) -> None:
     """
-    Checks if a model target is safe to install and prompts the user for confirmation.
+    Renders security prompts using the structured intent payload from the API.
     """
-    from dorsal.common.constants import WEB_URL
-    from dorsal.common.exceptions import AuthError
-    from dorsal.common.cli import exit_cli, get_error_console
-    from dorsal.session import get_shared_dorsal_client
-    from dorsal.registry.validators import is_registry_id
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
 
-    if force or yes:
+    is_unverified = resolution.strategy == "local_path" or (
+        resolution.strategy == "registry_id"
+        and resolution.metadata
+        and not (resolution.metadata.is_verified or resolution.metadata.is_official)
+    )
+
+    if force or yes or not is_unverified:
         return
 
     error_console = get_error_console()
@@ -53,48 +60,32 @@ def check_and_confirm_model_install(target: str, ui_context: UIContext, force: b
             "The model will be available to the CLI, but NOT to external Python scripts.[/]"
         )
 
-    display_meta = {"Model": target, "Source": "Local Path"}
+    display_meta = {"Model": resolution.target, "Source": "Local Path"}
     status_badge = f"[{palette.get('warning', 'bold yellow')}]Unverified[/]"
     border_style = palette.get("panel_border_warning", "yellow")
     link_style = palette.get("link", "blue underline")
 
-    if is_registry_id(target):
-        try:
-            with error_console.status(f"[{palette.get('info', 'dim')}]Fetching model details...[/]"):
-                client = get_shared_dorsal_client()
-                reg_data = client.get_registry_model(target)
+    if resolution.metadata:
+        meta = resolution.metadata
+        if meta.is_official or meta.is_verified:
+            status_badge = f"[{palette.get('panel_border', 'bold blue')}]Verified[/]"
+            border_style = palette.get("panel_border", "blue")
 
-                if reg_data.is_official or reg_data.is_verified:
-                    status_badge = f"[{palette.get('panel_border', 'bold blue')}]Verified[/]"
-                    border_style = palette.get("panel_border", "blue")
+        display_meta = {
+            "Model": resolution.target,
+            "Status": status_badge,
+        }
+        if meta.url:
+            display_meta["URL"] = f"[{link_style} link={meta.url}]{meta.url}[/]"
+        display_meta["Description"] = meta.description or "No description provided."
 
-                dorsalhub_url = f"{WEB_URL}/models/{reg_data.namespace}/{reg_data.name}"
-                display_meta = {
-                    "Model": f"{reg_data.namespace}/{reg_data.name}",
-                    "Status": status_badge,
-                    "URL": f"[{link_style} link={dorsalhub_url}]{dorsalhub_url}[/]",
-                    "Description": reg_data.description or "No description provided.",
-                }
+        if meta.source_url:
+            if not shutil.which("git"):
+                _handle_missing_git(ui_context)
+            display_meta["Source Code"] = f"[{link_style} link={meta.source_url}]{meta.source_url}[/]"
 
-                if reg_data.install_url:
-                    if reg_data.install_url.startswith("git+") and not shutil.which("git"):
-                        _handle_missing_git(ui_context)
-
-                    raw_url = reg_data.install_url.replace("git+", "").split("@")[0]
-                    display_meta["Source Code"] = f"[{link_style} link={raw_url}]{raw_url}[/]"
-
-                if reg_data.created_at:
-                    display_meta["Published"] = reg_data.created_at.date().isoformat()
-
-        except AuthError:
-            raise
-        except typer.Exit:
-            raise
-        except Exception as e:
-            logger.debug(f"Metadata fetch failed: {e}")
-            if "/" in target:
-                _handle_registry_error(target, e, ui_context)
-            display_meta["Warning"] = "Could not fetch remote metadata."
+        if meta.published_date:
+            display_meta["Published"] = meta.published_date
 
     msg_lines = []
     for k, v in display_meta.items():
@@ -111,13 +102,7 @@ def check_and_confirm_model_install(target: str, ui_context: UIContext, force: b
         error_console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup("\n".join(msg_lines))))
     else:
         error_console.print(
-            Panel(
-                "\n".join(msg_lines),
-                title=title_text,
-                border_style=border_style,
-                expand=False,
-                box=borders,
-            )
+            Panel("\n".join(msg_lines), title=title_text, border_style=border_style, expand=False, box=borders)
         )
 
     if not Confirm.ask("Do you trust this source and want to proceed?", console=error_console):

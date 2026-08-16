@@ -131,19 +131,17 @@ def run_model(
     """
     Run a model on a local file or directory.
 
-    If the model is not installed locally, Dorsal will attempt to fetch
-    and install it from the registry automatically.
+    If the model is not installed, Dorsal will attempt to fetch and install it.
     """
     if json_output and export_format:
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
     from dorsal.common.exceptions import DorsalError, AuthError
     from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console, get_error_console, parse_cli_options
-    from dorsal.api.model import run_or_install_model
+    from dorsal.api.model import prepare_model_target, run_or_install_model
     from dorsal.api.adapters import export_record, get_format_extension
     from dorsal.cli.views.model import create_model_result_panel
     from dorsal.file.configs.model_runner import RunModelResult
-    from dorsal.registry.resolution import resolve_target, is_package_installed
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
     from dorsal.cli.themes import UIContext
     from dorsal.cli.themes.borders import get_borders
@@ -174,15 +172,32 @@ def run_model(
     parsed_export_options = parse_cli_options(options=export_options, palette=palette)
 
     try:
-        _strategy, package_name = resolve_target(target)
-        if not is_package_installed(package_name):
+        resolution = prepare_model_target(target)
+
+        if resolution.strategy == "error":
+            error_console.print(f"[{palette.get('error', 'bold red')}]Error:[/] {resolution.error_message}")
+            exit_cli(code=EXIT_CODE_ERROR)
+
+        if not resolution.is_installed:
             if (json_output or export_format) and not yes:
                 error_console.print(
                     f"[{palette.get('info', 'dim')}]Running a model for the first time requires installation. "
                     "To bypass this interactive prompt in scripts, use the '--yes' flag."
                 )
 
-            check_and_confirm_model_install(target, ui_context, yes=yes)
+            is_unverified = resolution.strategy == "local_path" or (
+                resolution.strategy == "registry_id"
+                and resolution.metadata
+                and not (resolution.metadata.is_verified or resolution.metadata.is_official)
+            )
+
+            if is_unverified and not yes:
+                check_and_confirm_model_install(resolution, ui_context, yes=yes)
+            elif not yes and not is_unverified:
+                error_console.print(
+                    f"[{palette.get('info', 'dim')}]First time running '{target}'. It will be installed automatically.[/]"
+                )
+
     except typer.Exit:
         raise
     except Exception:
@@ -259,7 +274,6 @@ def run_model(
                         res_dict["file_path"] = str(f)
                         results_data.append(res_dict)
 
-                        # --- Export Alignment Logic ---
                         if export_format:
                             try:
                                 if res.error:
@@ -320,7 +334,6 @@ def run_model(
                                     f"[{palette.get('warning', 'yellow')}]Data Error on {f.name}:[/] {err}"
                                 )
                                 res_dict["export_error"] = str(err)
-                    # ------------------------------
 
                 except (DorsalError, AuthError, typer.Exit):
                     raise
@@ -428,7 +441,6 @@ def run_model(
                                 row.append(f"[{palette.get('error', 'bold red')}]Failed[/]")
                             else:
                                 exp_path = out_dir / f"{base_name}.{export_format}"
-                                # Note: For chunked outputs, this displays the base path as an indicator
                                 row.append(f"[{palette.get('primary_value', 'cyan')}]{exp_path.name}[/]")
 
                 table.add_row(*row)

@@ -279,12 +279,20 @@ def install_model_from_package(
                 f"Config defines model_class='{class_name}', but it was not exported by module '{module_name}' - {err}"
             ) from err
 
+        raw_options = toml_config.get("options", {})
+        flat_options = {}
+        for key, value in raw_options.items():
+            if isinstance(value, dict) and "default" in value:
+                flat_options[key] = value["default"]
+            elif not isinstance(value, dict):
+                flat_options[key] = value
+
         merged_config = {
             "model_class": model_class,
             "schema_id": toml_config.get("schema_id", "open/generic"),
             "schema_version": toml_config.get("schema_version"),
             "dependencies": toml_config.get("dependencies"),
-            "options": toml_config.get("options", {}),
+            "options": flat_options,  # <--- FIXED
         }
 
         spec = ModelSpec(**merged_config)

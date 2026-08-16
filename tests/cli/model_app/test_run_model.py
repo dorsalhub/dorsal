@@ -27,7 +27,7 @@ from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError, AuthError
 from dorsal.file.configs.model_runner import RunModelResult
 from dorsal.common.model import AnnotationModelSource
-
+from dorsal.api.model import ModelTargetResolution, ModelMetadata
 
 cli_app = typer.Typer()
 
@@ -64,16 +64,20 @@ def mock_run_deps(mocker, mock_rich_console):
     default_result = RunModelResult(
         name="MockModel",
         source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
-        records=[{"summary": "Processed successfully"}],  # <--- CHANGED HERE
+        records=[{"summary": "Processed successfully"}],
         schema_id="mock/schema",
     )
     mock_runner.return_value = [default_result]
 
-    mock_resolve = mocker.patch("dorsal.registry.resolution.resolve_target")
-    mock_resolve.return_value = ("registry", "dorsal-receipt-scanner")
-
-    mock_is_installed = mocker.patch("dorsal.registry.resolution.is_package_installed")
-    mock_is_installed.return_value = True
+    mock_prepare = mocker.patch("dorsal.api.model.prepare_model_target")
+    default_resolution = ModelTargetResolution(
+        target="dorsal/scanner",
+        strategy="registry_id",
+        package_name="dorsal-scanner",
+        is_installed=True,
+        metadata=ModelMetadata(is_official=True, is_verified=True),
+    )
+    mock_prepare.return_value = default_resolution
 
     mock_check_safety = mocker.patch("dorsal.cli.model_app.checks.check_and_confirm_model_install")
     mock_create_panel = mocker.patch("dorsal.cli.views.model.create_model_result_panel")
@@ -81,8 +85,8 @@ def mock_run_deps(mocker, mock_rich_console):
     return {
         "run_logic": mock_runner,
         "result": default_result,
-        "resolve": mock_resolve,
-        "is_installed": mock_is_installed,
+        "prepare": mock_prepare,
+        "resolution": default_resolution,
         "check_safety": mock_check_safety,
         "create_panel": mock_create_panel,
         "error_console": mock_error_console,
@@ -123,7 +127,7 @@ def test_run_model_with_options_parsing(mock_run_deps, tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    expected_options = {"engine": "ocr", "dpi": 300}
+    expected_options = {"engine": "ocr", "dpi": "300"}
     assert mock_run_deps["run_logic"].call_args.kwargs["options"] == expected_options
 
     printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
@@ -131,22 +135,36 @@ def test_run_model_with_options_parsing(mock_run_deps, tmp_path, monkeypatch):
 
 
 def test_run_model_triggers_safety_check_when_not_installed(mock_run_deps, tmp_path, monkeypatch):
-    """Tests that safety checks are triggered if the package isn't installed."""
-    mock_run_deps["is_installed"].return_value = False
+    """Tests that safety checks are triggered if the package isn't installed and is unverified."""
+
+    res = ModelTargetResolution(
+        target="user/scanner",
+        strategy="registry_id",
+        package_name="user-scanner",
+        is_installed=False,
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
+    mock_run_deps["prepare"].return_value = res
 
     monkeypatch.chdir(tmp_path)
     test_file = pathlib.Path("test.pdf")
     test_file.touch()
 
-    runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
+    runner.invoke(cli_app, ["run", "user/scanner", str(test_file)])
 
-    # Update DEFAULT_PALETTE to DUMMY_UI_CONTEXT here:
-    mock_run_deps["check_safety"].assert_called_once_with("dorsal/scanner", DUMMY_UI_CONTEXT, yes=False)
+    mock_run_deps["check_safety"].assert_called_once_with(res, DUMMY_UI_CONTEXT, yes=False)
 
 
 def test_run_model_json_output(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
     """Tests --json mode, verifying raw output and skipped safety UI."""
-    mock_run_deps["is_installed"].return_value = False
+    res = ModelTargetResolution(
+        target="dorsal/scanner",
+        strategy="registry_id",
+        package_name="user-scanner",
+        is_installed=False,
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
+    mock_run_deps["prepare"].return_value = res
 
     monkeypatch.chdir(tmp_path)
     test_file = pathlib.Path("test.pdf")
@@ -338,7 +356,7 @@ def test_run_model_batch_processing(mock_rich_console, mock_run_deps, mocker, tm
     def mock_run_logic(*args, **kwargs):
         if "test_0.pdf" in kwargs.get("file_path", ""):
             raise Exception("Simulated inner error")
-        return mock_run_deps["result"]
+        return [mock_run_deps["result"]]
 
     mock_run_deps["run_logic"].side_effect = mock_run_logic
 
@@ -371,7 +389,7 @@ def test_run_model_progress_hook_coverage(mock_run_deps, tmp_path, monkeypatch):
         if cb:
             cb(10.0, 100.0)
             cb(50.0, 100.0, "Downloading model weights...")
-        return mock_run_deps["result"]
+        return [mock_run_deps["result"]]
 
     mock_run_deps["run_logic"].side_effect = mock_run_with_progress
 
@@ -467,7 +485,14 @@ def test_run_model_empty_directory(mock_run_deps, mocker, tmp_path, monkeypatch)
 
 def test_run_model_install_check_aborted(mock_run_deps, tmp_path, monkeypatch):
     """Covers the `except typer.Exit: raise` block when a user aborts the install prompt."""
-    mock_run_deps["is_installed"].return_value = False
+    res = ModelTargetResolution(
+        target="user/scanner",
+        strategy="registry_id",
+        package_name="user-scanner",
+        is_installed=False,
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
+    mock_run_deps["prepare"].return_value = res
     mock_run_deps["check_safety"].side_effect = typer.Exit(1)
 
     monkeypatch.chdir(tmp_path)
@@ -482,7 +507,14 @@ def test_run_model_install_check_aborted(mock_run_deps, tmp_path, monkeypatch):
 
 def test_run_model_install_check_exception_passed(mock_run_deps, tmp_path, monkeypatch):
     """Covers the `except Exception: pass` block if resolution or checking fails non-fatally."""
-    mock_run_deps["is_installed"].return_value = False
+    res = ModelTargetResolution(
+        target="user/scanner",
+        strategy="registry_id",
+        package_name="user-scanner",
+        is_installed=False,
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
+    mock_run_deps["prepare"].return_value = res
     mock_run_deps["check_safety"].side_effect = Exception("Random unexpected error")
 
     monkeypatch.chdir(tmp_path)
@@ -637,7 +669,6 @@ def test_run_model_auth_error_propagation(mock_run_deps, tmp_path, monkeypatch):
 
     result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
 
-    # Typer catches unhandled explicit raises and stores them in result.exception
     assert isinstance(result.exception, AuthError)
 
 
@@ -693,11 +724,11 @@ def test_run_model_borders_none_padding(mock_run_deps, tmp_path, monkeypatch):
 
 def test_run_model_outer_typer_exit(mock_run_deps, mocker, tmp_path, monkeypatch):
     """Covers propagating typer.Exit from the outer execution loop."""
-    mocker.patch("rich.progress.Progress.__enter__", side_effect=typer.Exit(42))
+    mocker.patch("rich.progress.Progress.__enter__", side_effect=typer.Exit(9000))
 
     monkeypatch.chdir(tmp_path)
     test_file = pathlib.Path("test.pdf")
     test_file.touch()
 
     result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
-    assert result.exit_code == 42
+    assert result.exit_code == 9000

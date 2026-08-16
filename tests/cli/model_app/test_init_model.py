@@ -18,11 +18,9 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-
 from dorsal.cli.model_app.init_model_cmd import init_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.common.exceptions import DorsalError
-
 
 cli_app = typer.Typer()
 
@@ -42,10 +40,10 @@ def mock_init_cmd(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the `init_model` command.
     """
-
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
 
-    mock_create_project = mocker.patch("dorsal.registry.initialize.create_new_annotation_model_project")
+    # FIX: Patch the true source of the API wrapper, since it is locally imported inside the command.
+    mock_create_project = mocker.patch("dorsal.api.model.init_model_project")
 
     mock_result = MagicMock()
     mock_result.clean_name = "receipt-scanner"

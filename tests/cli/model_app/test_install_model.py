@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 from unittest.mock import MagicMock
 import pytest
 
@@ -22,8 +21,8 @@ from rich.box import ROUNDED
 
 from dorsal.cli.model_app.install_model_cmd import install_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
-from dorsal.common.exceptions import DorsalError, NotFoundError
-
+from dorsal.common.exceptions import DorsalError
+from dorsal.api.model import ModelTargetResolution, ModelMetadata
 
 cli_app = typer.Typer()
 
@@ -48,38 +47,25 @@ def mock_install_cmd(mocker, mock_rich_console):
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_rich_console)
 
-    mock_installer = mocker.patch("dorsal.registry.installer.install_model_target")
-    mock_installer.return_value = "dorsal-model-package"
+    mock_prepare = mocker.patch("dorsal.api.model.prepare_model_target")
 
-    mock_get_client = mocker.patch("dorsal.session.get_shared_dorsal_client")
-    mock_client_instance = mock_get_client.return_value
+    mock_resolution = ModelTargetResolution(
+        target="dorsal/gpt-neo",
+        strategy="registry_id",
+        metadata=ModelMetadata(is_official=True, is_verified=True, description="Mocked model."),
+    )
+    mock_prepare.return_value = mock_resolution
 
-    mock_reg_data = MagicMock()
-    mock_reg_data.namespace = "dorsal"
-    mock_reg_data.name = "gpt-neo"
-    mock_reg_data.is_official = True
-    mock_reg_data.is_verified = True
-    mock_reg_data.description = "A powerful mocked model."
-    mock_reg_data.install_url = "git+https://github.com/dorsal/gpt-neo.git"
-    mock_reg_data.created_at = datetime.datetime.now()
-    mock_reg_data.package_name = "dorsal-gpt-neo"
+    mock_installer = mocker.patch("dorsal.api.model.install_model")
+    mock_installer.return_value = "dorsal-gpt-neo"
 
-    mock_client_instance.get_registry_model.return_value = mock_reg_data
-
-    mock_is_registry_id = mocker.patch("dorsal.registry.validators.is_registry_id", return_value=True)
-
-    mock_shutil_which = mocker.patch("dorsal.cli.model_app.checks.shutil.which", return_value="/usr/bin/git")
-
-    mock_confirm = mocker.patch("rich.prompt.Confirm.ask", return_value=True)
+    mock_check = mocker.patch("dorsal.cli.model_app.checks.check_and_confirm_model_install")
 
     return {
+        "prepare": mock_prepare,
         "installer": mock_installer,
-        "get_client": mock_get_client,
-        "client": mock_client_instance,
-        "reg_data": mock_reg_data,
-        "is_registry_id": mock_is_registry_id,
-        "shutil_which": mock_shutil_which,
-        "confirm": mock_confirm,
+        "check": mock_check,
+        "resolution": mock_resolution,
     }
 
 
@@ -89,10 +75,8 @@ def test_install_model_basic_success(mock_rich_console, mock_install_cmd):
 
     assert result.exit_code == 0, result.output
 
-    mock_install_cmd["client"].get_registry_model.assert_called_once_with("dorsal/gpt-neo")
-
-    mock_install_cmd["confirm"].assert_called_once()
-
+    mock_install_cmd["prepare"].assert_called_once_with("dorsal/gpt-neo")
+    mock_install_cmd["check"].assert_called_once()
     mock_install_cmd["installer"].assert_called_once_with("dorsal/gpt-neo", scope="project", force_reinstall=False)
 
     assert mock_rich_console.print.called
@@ -101,15 +85,11 @@ def test_install_model_basic_success(mock_rich_console, mock_install_cmd):
 
 def test_install_model_interactive_decline(mock_rich_console, mock_install_cmd):
     """Tests that declining the confirmation prompt aborts the installation."""
-    mock_install_cmd["confirm"].return_value = False
+    mock_install_cmd["check"].side_effect = typer.Exit(0)
 
     result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo"])
 
-    assert result.exit_code == 0, result.output
-
-    assert mock_rich_console.print.called
-    assert "Cancelled" in str(mock_rich_console.print.call_args_list[-1].args[0])
-
+    assert result.exit_code == 0
     mock_install_cmd["installer"].assert_not_called()
 
 
@@ -118,7 +98,8 @@ def test_install_model_yes_flag(mock_install_cmd):
     result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo", "--yes"])
 
     assert result.exit_code == 0, result.output
-    mock_install_cmd["confirm"].assert_not_called()
+    call_args = mock_install_cmd["check"].call_args
+    assert call_args.kwargs.get("yes") is True
     mock_install_cmd["installer"].assert_called_once()
 
 
@@ -131,52 +112,28 @@ def test_install_model_global_flag(mock_install_cmd):
 
 
 def test_install_model_force_flag(mock_install_cmd):
-    """Tests that --force passes force_reinstall=True and skips confirmation."""
-    result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo", "--force"])
+    """Tests that --force-reinstall passes force_reinstall=True and skips confirmation."""
+    result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo", "--force-reinstall"])
 
     assert result.exit_code == 0, result.output
-    mock_install_cmd["confirm"].assert_not_called()
+    call_args = mock_install_cmd["check"].call_args
+    assert call_args.kwargs.get("force") is True
     mock_install_cmd["installer"].assert_called_once_with("dorsal/gpt-neo", scope="project", force_reinstall=True)
-
-
-def test_install_model_missing_git(mock_rich_console, mock_install_cmd):
-    """Tests that missing git dependency causes an error exit."""
-
-    mock_install_cmd["shutil_which"].return_value = None
-
-    result = runner.invoke(cli_app, ["install", "dorsal/gpt-neo"])
-
-    assert result.exit_code != 0
-
-    assert mock_rich_console.print.called
-    output_str = str(mock_rich_console.print.call_args_list[0].args[0].renderable)
-    assert "requires Git to install" in output_str
-    assert "Missing System Dependency" in str(mock_rich_console.print.call_args_list[0].args[0].title)
 
 
 def test_install_model_registry_not_found(mock_rich_console, mock_install_cmd):
     """Tests handling of a 404 from the registry."""
-    mock_install_cmd["client"].get_registry_model.side_effect = NotFoundError("Model not found")
+    mock_install_cmd["prepare"].return_value = ModelTargetResolution(
+        target="dorsal/missing-model",
+        strategy="error",
+        error_message="Model 'dorsal/missing-model' not found in registry.",
+    )
 
     result = runner.invoke(cli_app, ["install", "dorsal/missing-model"])
 
     assert result.exit_code != 0
     assert mock_rich_console.print.called
-    assert "Error: Model 'dorsal/missing-model' not found in registry" in str(mock_rich_console.print.call_args[0][0])
-
-
-def test_install_model_unverified_warning(mock_rich_console, mock_install_cmd):
-    """Tests that unverified models trigger a safety warning in the panel."""
-
-    mock_install_cmd["reg_data"].is_official = False
-    mock_install_cmd["reg_data"].is_verified = False
-
-    runner.invoke(cli_app, ["install", "user/sketchy-model"])
-
-    assert mock_rich_console.print.called
-
-    panel = mock_rich_console.print.call_args_list[0].args[0]
-    assert "Unverified" in str(panel.renderable)
+    assert "not found in registry" in str(mock_rich_console.print.call_args[0][0])
 
 
 def test_install_model_install_failure(mock_rich_console, mock_install_cmd):

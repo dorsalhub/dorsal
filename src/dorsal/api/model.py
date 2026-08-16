@@ -13,15 +13,18 @@
 # limitations under the License.
 
 import logging
+import pathlib
 import importlib.metadata
 import importlib.resources
 import tomllib
-from typing import Any, Callable, cast
+from typing import Any, Callable, Literal, cast
 
 from packaging.utils import canonicalize_name
+from pydantic import BaseModel
 
 from dorsal.api.config import get_model_pipeline
-from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError
+from dorsal.common.constants import WEB_URL
+from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError, NotFoundError
 from dorsal.common.validators import CallableImportPath
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pipeline_step_models, RunModelResult
 from dorsal.file.file_annotator import FILE_ANNOTATOR
@@ -29,10 +32,143 @@ from dorsal.file.model_runner import ModelRunner, run_model
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 from dorsal.registry.installer import install_model_target
 from dorsal.registry.resolution import resolve_target, is_package_installed
+from dorsal.registry.validators import is_registry_id, is_valid_local_path
+from dorsal.registry.uninstaller import uninstall_model_target
+from dorsal.registry.initialize import create_new_annotation_model_project
+from dorsal.session import get_shared_dorsal_client
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["run_or_install_model"]
+__all__ = ["get_model_help", "run_or_install_model", "install_model", "uninstall_model", "init_model_project"]
+
+
+class ModelMetadata(BaseModel):
+    """Encapsulates display metadata for the CLI security prompts."""
+
+    description: str | None = None
+    url: str | None = None
+    source_url: str | None = None
+    is_verified: bool = False
+    is_official: bool = False
+    published_date: str | None = None
+
+
+class ModelTargetResolution(BaseModel):
+    """The structured intent payload instructing the CLI how to proceed."""
+
+    target: str
+    strategy: Literal["pipeline", "registry_id", "local_path", "package", "error"]
+    package_name: str | None = None
+
+    is_installed: bool = False
+
+    metadata: ModelMetadata | None = None
+    error_message: str | None = None
+
+
+def prepare_model_target(target: str) -> ModelTargetResolution:
+    """
+    Evaluates a user string, fetches relevant metadata, and returns a
+    structured resolution plan without executing or installing anything.
+    """
+    pipeline = get_model_pipeline(scope="effective")
+    for step in pipeline:
+        if step.annotation_model.name == target:
+            return ModelTargetResolution(
+                target=target,
+                strategy="pipeline",
+                package_name=step.package_name or "dorsal",
+                is_installed=True,
+            )
+
+    if is_registry_id(target):
+        try:
+            _, package_name = resolve_target(target)
+            is_installed = is_package_installed(package_name)
+            client = get_shared_dorsal_client()
+            reg_data = client.get_registry_model(target)
+
+            source_url = None
+            if reg_data.install_url:
+                source_url = reg_data.install_url.replace("git+", "").split("@")[0]
+
+            metadata = ModelMetadata(
+                description=reg_data.description,
+                url=f"{WEB_URL}/models/{reg_data.namespace}/{reg_data.name}",
+                source_url=source_url,
+                is_verified=reg_data.is_verified,
+                is_official=reg_data.is_official,
+                published_date=reg_data.created_at.date().isoformat() if reg_data.created_at else None,
+            )
+
+            return ModelTargetResolution(
+                target=target,
+                strategy="registry_id",
+                package_name=package_name,
+                is_installed=is_installed,
+                metadata=metadata,
+            )
+        except (AuthError, NotFoundError) as e:
+            return ModelTargetResolution(target=target, strategy="error", error_message=str(e))
+        except Exception as e:
+            logger.debug(f"Failed to fetch metadata for {target}: {e}")
+            return ModelTargetResolution(
+                target=target, strategy="error", error_message=f"Registry connection failed: {e}"
+            )
+
+    if target.startswith((".", "/", "~")) or is_valid_local_path(target):
+        return ModelTargetResolution(
+            target=target,
+            strategy="local_path",
+            is_installed=False,
+        )
+
+    safe_pkg_name = canonicalize_name(target)
+
+    if is_package_installed(safe_pkg_name):
+        return ModelTargetResolution(
+            target=target,
+            strategy="package",
+            package_name=safe_pkg_name,
+            is_installed=True,
+        )
+
+    return ModelTargetResolution(
+        target=target,
+        strategy="error",
+        error_message=f"Model '{target}' is not installed.",
+    )
+
+
+def init_model_project(name: str, target_dir: pathlib.Path | None = None):
+    """API wrapper to scaffold a new model directory."""
+    return create_new_annotation_model_project(name=name, target_dir=target_dir)
+
+
+def install_model(target: str, scope: Literal["project", "global"] = "project", force_reinstall: bool = False) -> str:
+    """API wrapper to install and register a model."""
+    res = prepare_model_target(target)
+
+    if res.strategy == "error":
+        raise DorsalError(res.error_message or f"Failed to resolve target '{target}'.")
+    if res.strategy == "pipeline":
+        raise DorsalError(f"Target '{target}' is a built-in core model and cannot be installed via pip.")
+
+    return install_model_target(target=target, scope=scope, force_reinstall=force_reinstall)
+
+
+def uninstall_model(target: str, scope: Literal["project", "global"] = "project") -> str:
+    """API wrapper to unregister and uninstall a model."""
+    res = prepare_model_target(target)
+
+    if res.strategy == "error":
+        raise DorsalError(res.error_message or f"Failed to resolve target '{target}'.")
+    if res.strategy == "pipeline":
+        raise DorsalError(
+            f"Target '{target}' is a built-in core model. Use 'dorsal config pipeline remove' instead of uninstalling."
+        )
+
+    return uninstall_model_target(target=target, scope=scope)
 
 
 def run_or_install_model(
@@ -43,39 +179,30 @@ def run_or_install_model(
     ignore_linter_errors: bool = False,
     progress_callback: Callable[[float, float, str], None] | None = None,
 ) -> list[RunModelResult]:
-    """
-    Resolve a model, installs if necessary, and execute it on a local file.
 
-    Args:
-        target: A Registry ID ('dorsalhub/whisper'), Package Name ('dorsal-whisper'),
-                or Class Name ('FasterWhisperTranscriber').
-        file_path: Path to the file to process.
-        api_key: Optional API key.
-        options: Runtime options to override the model's defaults.
-        ignore_linter_errors: If True, bypasses data quality checks.
-
-    Returns:
-        Annotation | AnnotationGroup: The final, validated annotation object(s).
-    """
     logger.info(f"Requesting run for model target '{target}' on file '{file_path}'")
 
-    strategy, package_name = resolve_target(target)
+    res = prepare_model_target(target)
 
-    if not is_package_installed(package_name):
-        if strategy == "registry_id":
-            logger.info(f"Model package '{package_name}' is not installed. Installing from '{target}'...")
-            try:
-                install_model_target(target)
-                logger.info(f"Successfully installed '{package_name}'.")
-            except Exception as e:
-                raise DorsalError(f"Failed to auto-install model '{target}': {e}") from e
+    if res.strategy == "error":
+        raise DorsalError(res.error_message or f"Failed to resolve target '{target}'.")
+
+    if not res.is_installed:
+        if res.strategy in ("registry_id", "local_path"):
+            logger.info(f"Model '{target}' is not installed. Auto-installing...")
+            res.package_name = install_model_target(target)
+            res.is_installed = True
         else:
-            message = f"The model '{target}' is not installed locally.\n"
-            if target == ".":
-                message += "For local development, install the model before running it."
-            raise DorsalError(message)
+            raise DorsalError(f"Model '{target}' is not installed and cannot be auto-installed.")
 
-    pipeline_step = _get_execution_step(package_name)
+    if res.strategy == "pipeline":
+        pipeline = get_model_pipeline(scope="effective")
+        pipeline_step = next(step for step in pipeline if step.annotation_model.name == target)
+        logger.debug(f"Target '{target}' resolved directly to active pipeline step.")
+    else:
+        if not res.package_name:
+            raise DorsalError(f"Could not determine package name for target '{target}'.")
+        pipeline_step = _construct_step_from_package(res.package_name)
 
     if options or ignore_linter_errors:
         pipeline_step = pipeline_step.model_copy(deep=True)
@@ -85,14 +212,11 @@ def run_or_install_model(
             pipeline_step.ignore_linter_errors = True
 
     annotator_class, validator = resolve_pipeline_step_models(pipeline_step)
+    effective_validator = (
+        None if (pipeline_step.schema_id and pipeline_step.schema_id.startswith("open/")) else validator
+    )
 
-    if pipeline_step.schema_id and pipeline_step.schema_id.startswith("open/"):
-        effective_validator = None
-    else:
-        effective_validator = validator
-
-    # 2. Delegate directly to run_model
-    run_result = run_model(
+    return run_model(
         annotation_model=annotator_class,
         file_path=file_path,
         schema_id=pipeline_step.schema_id,
@@ -104,22 +228,20 @@ def run_or_install_model(
         progress_callback=progress_callback,
     )
 
-    return run_result
 
-
-def _get_execution_step(package_name: str) -> ModelRunnerPipelineStep:
-    """Retrieves ModelRunnerPipelineStep for the given package."""
-
+def _find_pipeline_step_by_target(target: str) -> ModelRunnerPipelineStep | None:
+    """Finds a target model directly within the effective pipeline configuration."""
     pipeline = get_model_pipeline(scope="effective")
-    safe_pkg_name = canonicalize_name(package_name)
+    safe_target = canonicalize_name(target)
 
     for step in pipeline:
-        if step.package_name and canonicalize_name(step.package_name) == safe_pkg_name:
-            logger.debug(f"Found existing pipeline configuration for '{package_name}'.")
+        if step.annotation_model.name == target:
             return step
 
-    logger.debug(f"No pipeline config found for '{package_name}'. Constructing ephemeral step from package.")
-    return _construct_step_from_package(package_name)
+        if step.package_name and canonicalize_name(step.package_name) == safe_target:
+            return step
+
+    return None
 
 
 def _construct_step_from_package(package_name: str) -> ModelRunnerPipelineStep:
@@ -180,9 +302,8 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
     parsed_options = {}
 
     for key, value in raw_options.items():
-        if isinstance(value, dict) and ("default" in value or "help" in value):
-            if "default" in value:
-                parsed_options[key] = value["default"]
+        if isinstance(value, dict) and "default" in value:
+            parsed_options[key] = value["default"]
         else:
             parsed_options[key] = value
 
@@ -193,7 +314,7 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
             schema_version=config_data.get("schema_version"),
             dependencies=config_data.get("dependencies"),
             validation_model=None,
-            options=config_data.get("options"),
+            options=parsed_options,
             package_name=package_name,
         )
     except Exception as e:
@@ -207,45 +328,63 @@ def get_model_help(target: str) -> dict[str, Any]:
     Returns a dictionary containing the model's status, package info,
     and normalized options (default values & help strings).
     """
-    try:
-        strategy, package_name = resolve_target(target)
-    except (DorsalError, AuthError) as e:
-        return {
-            "status": "error",
-            "target": target,
-            "error": str(e),
-        }
+    res = prepare_model_target(target)
 
-    if not is_package_installed(package_name):
-        return {
-            "status": "not_installed",
-            "target": target,
-            "package_name": package_name,
-        }
+    if res.strategy == "error":
+        return {"status": "error", "target": target, "error": res.error_message or "Unknown error"}
 
-    try:
-        module_name = _resolve_module_from_package(package_name)
-        config_data = _load_package_config(module_name, package_name)
-    except Exception as e:
-        return {
-            "status": "config_error",
-            "target": target,
-            "package_name": package_name,
-            "error": str(e),
-        }
+    if not res.is_installed:
+        return {"status": "not_installed", "target": target, "package_name": res.package_name}
+
+    package_name: str
+    if res.strategy == "pipeline":
+        pipeline = get_model_pipeline(scope="effective")
+        pipeline_step = next((step for step in pipeline if step.annotation_model.name == target), None)
+
+        if pipeline_step:
+            package_name = pipeline_step.package_name or "dorsal"
+            module_name = pipeline_step.annotation_model.module
+            model_class = pipeline_step.annotation_model.name
+
+            try:
+                config_data = _load_package_config(module_name, package_name)
+            except DorsalConfigError:
+                logger.debug(f"No model_config.toml found for {model_class}, using pipeline options.")
+                config_data = {"model_class": model_class, "options": pipeline_step.options or {}}
+        else:
+            return {"status": "error", "target": target, "error": f"Failed to retrieve pipeline step for {target}"}
+    else:
+        if not res.package_name:
+            return {"status": "error", "target": target, "error": f"No package name found for target '{target}'."}
+        package_name = res.package_name
+        try:
+            module_name = _resolve_module_from_package(package_name)
+            config_data = _load_package_config(module_name, package_name)
+        except Exception as e:
+            return {"status": "config_error", "target": target, "package_name": package_name, "error": str(e)}
 
     raw_options = config_data.get("options", {})
     normalized_options: dict[str, dict[str, Any]] = {}
 
     for opt_key, opt_val in raw_options.items():
         if isinstance(opt_val, dict):
+            opt_type = opt_val.get("type")
+
+            if not opt_type and "default" in opt_val:
+                opt_type = type(opt_val["default"]).__name__
+
+            elif not opt_type:
+                opt_type = "str"
+
             normalized_options[opt_key] = {
-                "default": opt_val.get("default", ""),
+                "default": opt_val.get("default", None),
+                "type": opt_type,
                 "help": opt_val.get("help", "No description provided."),
             }
         else:
             normalized_options[opt_key] = {
                 "default": opt_val,
+                "type": type(opt_val).__name__,
                 "help": "No description provided.",
             }
 

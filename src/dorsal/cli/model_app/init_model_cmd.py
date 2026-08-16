@@ -42,13 +42,14 @@ def init_model(
     from rich.panel import Panel
     from dorsal.common.exceptions import DorsalError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
-    from dorsal.registry.initialize import create_new_annotation_model_project
+
+    from dorsal.api.model import init_model_project
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
-        result = create_new_annotation_model_project(name=name, target_dir=target_dir)
+        result = init_model_project(name=name, target_dir=target_dir)
 
         console.print(
             Panel(

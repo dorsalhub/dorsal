@@ -126,8 +126,8 @@ def clear_shared_index() -> None:
     if _DORSAL_INDEX is not None:
         try:
             _DORSAL_INDEX.close()
-        except Exception as e:
-            logger.warning(f"Error closing shared index: {e}")
+        except Exception as err:
+            logger.warning(f"Error closing shared index: {err}")
 
     _DORSAL_INDEX = None
     logger.debug("Cleared shared DorsalIndex instance")

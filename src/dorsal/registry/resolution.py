@@ -18,8 +18,8 @@ from typing import Literal
 
 from packaging.utils import canonicalize_name
 
-from dorsal.api.config import find_package_name_by_class
-from dorsal.common.exceptions import DorsalError, AuthError
+from dorsal.api.config import find_package_name_by_class, get_model_pipeline
+from dorsal.common.exceptions import DorsalError, AuthError, NotFoundError
 from dorsal.registry.validators import is_registry_id
 from dorsal.session import get_shared_dorsal_client
 
@@ -59,10 +59,12 @@ def resolve_target(target: str) -> tuple[TargetModelStrategy, str]:
             raw_package_name = reg_data.package_name
             strategy = "registry_id"
             logger.debug(f"Registry ID '{target}' resolved to '{raw_package_name}'")
-        except AuthError as e:
-            raise e
-        except Exception as e:
-            raise DorsalError(f"Failed to resolve model '{target}' in registry: {e}") from e
+        except AuthError as err:
+            raise err
+        except NotFoundError as err:
+            raise DorsalError(f"Remote model '{target}' not found.") from err
+        except Exception as err:
+            raise DorsalError(f"Failed to resolve model '{target}' in registry: {err}") from err
 
     if not raw_package_name:
         resolved_from_config = find_package_name_by_class(target)
@@ -70,6 +72,14 @@ def resolve_target(target: str) -> tuple[TargetModelStrategy, str]:
             raw_package_name = resolved_from_config
             strategy = "package"
             logger.debug(f"Class Name '{target}' resolved to '{raw_package_name}'")
+        else:
+            pipeline = get_model_pipeline(scope="effective")
+            for step in pipeline:
+                if step.annotation_model.name == target:
+                    raw_package_name = "dorsal"
+                    strategy = "class_name"
+                    logger.debug(f"Target '{target}' resolved to built-in package 'dorsal'")
+                    break
 
     if not raw_package_name:
         raw_package_name = target

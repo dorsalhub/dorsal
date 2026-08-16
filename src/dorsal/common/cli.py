@@ -226,28 +226,14 @@ def parse_cli_options(options: Sequence[str] | None, palette: dict[str, str]) ->
         key = key.strip()
         value = value.strip()
 
-        val_lower = value.lower()
-        if val_lower in ("true", "yes"):
-            result[key] = True
-        elif val_lower in ("false", "no"):
-            result[key] = False
-        elif val_lower in ("null", "none"):
-            result[key] = None
-        else:
-            if (value.startswith("{") and value.endswith("}")) or (value.startswith("[") and value.endswith("]")):
-                try:
-                    result[key] = json.loads(value)
-                    continue
-                except json.JSONDecodeError:
-                    pass
-
+        if (value.startswith("{") and value.endswith("}")) or (value.startswith("[") and value.endswith("]")):
             try:
-                if "." in value:
-                    result[key] = float(value)
-                else:
-                    result[key] = int(value)
-            except ValueError:
-                result[key] = value
+                result[key] = json.loads(value)
+                continue
+            except json.JSONDecodeError:
+                pass
+
+        result[key] = value
 
     return result
 
@@ -345,8 +331,9 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
     status = help_info.get("status")
 
     if status == "error":
+        # Cleaned up error title and payload
         return Panel(
-            f"Could not resolve model target '{help_info['target']}': {help_info.get('error')}",
+            help_info.get("error", "Unknown error"),
             title="[bold yellow]Model Resolution Failed[/]",
             border_style="yellow",
             box=borders,
@@ -355,13 +342,23 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
     if status == "not_installed":
         target = help_info["target"]
         pkg = help_info["package_name"]
-        return Panel(
-            f"Model [bold cyan]{pkg}[/] is not installed locally.\n"
-            f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options.",
-            title=f"Model: {target}",
-            border_style="cyan",
-            box=borders,
-        )
+
+        if "/" in target:
+            return Panel(
+                f"Registry model [bold cyan]{target}[/] (package: [bold]{pkg}[/]) is not installed.\n"
+                f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options.",
+                title=f"Model: {target}",
+                border_style="cyan",
+                box=borders,
+            )
+        else:
+            return Panel(
+                f"Model [bold cyan]{target}[/] is not installed.\n"
+                f"To install a model from DorsalHub, use its full model ID in [bold]organization/project[/] format, e.g. [bold]dorsalhub/whisper[/]",
+                title=f"Model: {target}",
+                border_style="cyan",
+                box=borders,
+            )
 
     if status == "config_error":
         return Panel(
@@ -384,13 +381,34 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
 
     table = Table(show_header=True, header_style="bold", box=None, expand=True)
     table.add_column("Option", style=palette.get("primary_value", "cyan"), width=20)
-    table.add_column("Default Value", style="magenta", width=15)
+    table.add_column("Type", style="green", width=10)
+    table.add_column("Default", style="magenta", width=15)
     table.add_column("Description", style="default")
 
-    for opt_key, opt_data in options.items():
-        table.add_row(opt_key, str(opt_data.get("default", "N/A")), opt_data.get("help", "No description provided."))
+    type_ui_mapping = {
+        "str": "String",
+        "int": "Integer",
+        "float": "Float",
+        "bool": "Boolean",
+        "dict": "JSON",
+        "list": "Array",
+    }
 
-    footer = Text("\nNote: You can pass additional, undeclared keyword arguments via --opt.", style="dim")
+    for opt_key, opt_data in options.items():
+        raw_type = opt_data.get("type", "str")
+        display_type = type_ui_mapping.get(raw_type, raw_type.capitalize())
+
+        default_val = opt_data.get("default")
+        if default_val is None:
+            default_str = "<unassigned>"
+        elif default_val == "":
+            default_str = '""'
+        else:
+            default_str = str(default_val)
+
+        table.add_row(opt_key, display_type, default_str, opt_data.get("help", "No description provided."))
+
+    footer = Text("\nPass model options via --opt.", style="dim")
 
     return Panel(
         Group(table, footer),

@@ -40,11 +40,25 @@ def uninstall_model(
     from rich.prompt import Confirm
     from dorsal.common.exceptions import DorsalError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
-    from dorsal.registry.uninstaller import uninstall_model_target
+
+    from dorsal.api.model import prepare_model_target, uninstall_model as api_uninstall_model
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
+
+    resolution = prepare_model_target(target)
+
+    if resolution.strategy == "error":
+        console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {resolution.error_message}")
+        exit_cli(code=EXIT_CODE_ERROR)
+
+    if resolution.strategy == "pipeline":
+        console.print(
+            f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] "
+            f"Target '{target}' is a built-in core model. Use 'dorsal config pipeline remove' instead of uninstalling."
+        )
+        exit_cli(code=EXIT_CODE_ERROR)
 
     if not yes:
         message = (
@@ -60,7 +74,7 @@ def uninstall_model(
 
     with console.status(f"Uninstalling [{status_color}]{target}[/]..."):
         try:
-            package_name = uninstall_model_target(target, scope=scope)
+            package_name = api_uninstall_model(target, scope=scope)
 
         except DorsalError as e:
             console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {e}")

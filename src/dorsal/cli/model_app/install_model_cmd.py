@@ -31,7 +31,7 @@ def install_model(
     global_install: Annotated[
         bool, typer.Option("--global", "-g", help="Install to global user config instead of project config.")
     ] = False,
-    force: Annotated[bool, typer.Option("--force", "-f", help="Force reinstall the pip package.")] = False,
+    force: Annotated[bool, typer.Option("--force-reinstall", "-f", help="Force reinstall the pip package.")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip the safety confirmation prompt.")] = False,
 ):
     """
@@ -43,7 +43,8 @@ def install_model(
     from rich.panel import Panel
     from dorsal.common.exceptions import DorsalError, AuthError
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
-    from dorsal.registry.installer import install_model_target
+
+    from dorsal.api.model import prepare_model_target, install_model as api_install_model
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
 
     console = get_rich_console()
@@ -53,13 +54,17 @@ def install_model(
 
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
-    # Pass the full ui_context to the checker so it can render borderless!
-    check_and_confirm_model_install(target, ui_context, force=force, yes=yes)
+    resolution = prepare_model_target(target)
+    if resolution.strategy == "error":
+        console.print(f"[{palette.get('error', 'bold red')}]Install Failed:[/] {resolution.error_message}")
+        exit_cli(code=EXIT_CODE_ERROR)
+
+    check_and_confirm_model_install(resolution, ui_context, force=force, yes=yes)
 
     status_color = palette.get("primary_value", "bold cyan")
     with console.status(f"Installing model from [{status_color}]{target}[/]..."):
         try:
-            package_name = install_model_target(target, scope=scope, force_reinstall=force)
+            package_name = api_install_model(target, scope=scope, force_reinstall=force)
 
         except AuthError:
             raise
