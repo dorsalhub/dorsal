@@ -23,11 +23,13 @@ from dorsal.api.model import (
     run_or_install_model,
     install_model,
     uninstall_model,
+    init_model_project,
     _build_pipeline_step,
+    _find_pipeline_step_by_target,
     get_model_help,
     ModelTargetResolution,
 )
-from dorsal.common.exceptions import DorsalError, DorsalConfigError
+from dorsal.common.exceptions import DorsalError, DorsalConfigError, AuthError, NotFoundError
 from dorsal.common.validators import CallableImportPath
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep
 
@@ -116,12 +118,52 @@ def test_prepare_model_target_registry(mock_client, mock_installed, mock_resolve
     assert res.metadata.source_url == "https://github.com/a/b.git"
 
 
+@patch("dorsal.api.model.get_shared_dorsal_client")
+@patch("dorsal.api.model.resolve_target")
+@patch("dorsal.api.model.get_model_pipeline")
+def test_prepare_model_target_registry_exceptions(mock_pipeline, mock_resolve, mock_client):
+    mock_pipeline.return_value = []
+    mock_resolve.return_value = ("registry_id", "my-pkg")
+
+    mock_client.return_value.get_registry_model.side_effect = AuthError("Bad token")
+    res = prepare_model_target("dorsalhub/whisper")
+    assert res.strategy == "error"
+    assert "Bad token" in res.error_message
+
+    mock_client.return_value.get_registry_model.side_effect = Exception("Boom")
+    res = prepare_model_target("dorsalhub/whisper")
+    assert res.strategy == "error"
+    assert "Registry connection failed: Boom" in res.error_message
+
+
 @patch("dorsal.api.model.get_model_pipeline")
 def test_prepare_model_target_local_path(mock_pipeline):
     mock_pipeline.return_value = []
     res = prepare_model_target("./local-model-dir")
     assert res.strategy == "local_path"
     assert res.is_installed is False
+
+
+@patch("dorsal.api.model.is_package_installed")
+@patch("dorsal.api.model.get_model_pipeline")
+def test_prepare_model_target_package_and_fallback(mock_pipeline, mock_is_installed):
+    mock_pipeline.return_value = []
+    mock_is_installed.return_value = True
+    res = prepare_model_target("some-package")
+    assert res.strategy == "package"
+    assert res.package_name == "some-package"
+
+    mock_is_installed.return_value = False
+    res = prepare_model_target("some-package")
+    assert res.strategy == "error"
+    assert "is not installed" in res.error_message
+
+
+@patch("dorsal.api.model.create_new_annotation_model_project")
+def test_init_model_project(mock_create):
+    mock_create.return_value = "success"
+    assert init_model_project("MyModel", None) == "success"
+    mock_create.assert_called_once_with(name="MyModel", target_dir=None)
 
 
 @patch("dorsal.api.model.prepare_model_target")
@@ -140,6 +182,10 @@ def test_install_model_wrapper(mock_install_target, mock_prepare):
     with pytest.raises(DorsalError, match="Network Fail"):
         install_model("foo")
 
+    mock_prepare.return_value = ModelTargetResolution(target="foo", strategy="error", error_message=None)
+    with pytest.raises(DorsalError, match="Failed to resolve target 'foo'."):
+        install_model("foo")
+
 
 @patch("dorsal.api.model.prepare_model_target")
 @patch("dorsal.api.model.uninstall_model_target")
@@ -151,6 +197,10 @@ def test_uninstall_model_wrapper(mock_uninstall_target, mock_prepare):
     mock_prepare.return_value = ModelTargetResolution(target="BuiltIn", strategy="pipeline")
     with pytest.raises(DorsalError, match="Use 'dorsal config pipeline remove'"):
         uninstall_model("BuiltIn")
+
+    mock_prepare.return_value = ModelTargetResolution(target="foo", strategy="error", error_message=None)
+    with pytest.raises(DorsalError, match="Failed to resolve target 'foo'."):
+        uninstall_model("foo")
 
 
 def test_run_or_install_model_happy_path_existing_pipeline(
@@ -273,6 +323,14 @@ def test_run_or_install_model_auto_install_failure(mock_prepare_model_target, mo
         run_or_install_model(target, "file.txt")
 
 
+def test_run_or_install_model_cannot_autoinstall(mock_prepare_model_target):
+    mock_prepare_model_target.return_value = ModelTargetResolution(
+        target="my-pkg", strategy="package", is_installed=False
+    )
+    with pytest.raises(DorsalError, match="cannot be auto-installed"):
+        run_or_install_model("my-pkg", "f.txt")
+
+
 def test_construct_step_missing_entry_point(mock_prepare_model_target, mock_entry_points):
     target = "dorsal-ghost"
     mock_prepare_model_target.return_value = ModelTargetResolution(
@@ -326,6 +384,23 @@ def test_build_pipeline_step_options_parsing():
     assert step.options == {"flat_val": "value", "dict_with_default": 42, "dict_no_default": {"help": "just help text"}}
 
 
+@patch("dorsal.api.model.get_model_pipeline")
+def test_find_pipeline_step_by_target(mock_pipeline):
+    step1 = MagicMock()
+    step1.annotation_model.name = "ModelOne"
+    step1.package_name = "pkg-one"
+
+    step2 = MagicMock()
+    step2.annotation_model.name = "ModelTwo"
+    step2.package_name = "pkg-two"
+
+    mock_pipeline.return_value = [step1, step2]
+
+    assert _find_pipeline_step_by_target("ModelOne") == step1
+    assert _find_pipeline_step_by_target("pkg-two") == step2
+    assert _find_pipeline_step_by_target("Missing") is None
+
+
 @patch("dorsal.api.model.prepare_model_target")
 def test_get_model_help_resolve_error(mock_prepare):
     mock_prepare.return_value = ModelTargetResolution(
@@ -344,6 +419,39 @@ def test_get_model_help_not_installed(mock_prepare):
     res = get_model_help("my-pkg")
     assert res["status"] == "not_installed"
     assert res["package_name"] == "my-pkg"
+
+
+@patch("dorsal.api.model.prepare_model_target")
+def test_get_model_help_no_package_name(mock_prepare):
+    mock_prepare.return_value = ModelTargetResolution(
+        target="tgt", strategy="package", is_installed=True, package_name=None
+    )
+    res = get_model_help("tgt")
+    assert res["status"] == "error"
+    assert "No package name found" in res["error"]
+
+
+@patch("dorsal.api.model.prepare_model_target")
+@patch("dorsal.api.model.get_model_pipeline")
+@patch("dorsal.api.model._load_package_config")
+def test_get_model_help_pipeline_branches(mock_load, mock_pipeline, mock_prepare):
+    mock_prepare.return_value = ModelTargetResolution(target="Missing", strategy="pipeline", is_installed=True)
+    mock_pipeline.return_value = []
+    res = get_model_help("Missing")
+    assert res["status"] == "error"
+    assert "Failed to retrieve pipeline step" in res["error"]
+
+    mock_prepare.return_value = ModelTargetResolution(target="Found", strategy="pipeline", is_installed=True)
+    step = MagicMock()
+    step.annotation_model.name = "Found"
+    step.package_name = "pkg"
+    step.options = {"my_opt": 1}
+    mock_pipeline.return_value = [step]
+
+    mock_load.side_effect = DorsalConfigError("No config")
+    res = get_model_help("Found")
+    assert res["status"] == "success"
+    assert res["options"]["my_opt"]["default"] == 1
 
 
 @patch("dorsal.api.model.prepare_model_target")
