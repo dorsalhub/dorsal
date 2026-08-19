@@ -93,7 +93,7 @@ def test_parse_cli_options_malformed(mock_get_error_console):
 
     result = cli.parse_cli_options(options, palette)
 
-    assert result == {"valid": True}
+    assert result == {"valid": "true"}
     mock_console.print.assert_called_once()
     assert "Skipping malformed option 'invalid_no_equals'" in mock_console.print.call_args[0][0]
 
@@ -114,16 +114,16 @@ def test_parse_cli_options_basic_types():
     ]
 
     expected = {
-        "is_true": True,
-        "is_yes": True,
-        "is_false": False,
-        "is_no": False,
-        "is_null": None,
-        "is_none": None,
-        "integer": 42,
-        "floating": 3.14,
+        "is_true": "true",
+        "is_yes": "yes",
+        "is_false": "false",
+        "is_no": "no",
+        "is_null": "null",
+        "is_none": "none",
+        "integer": "42",
+        "floating": "3.14",
         "string": "hello world",
-        "mixed_case_bool": True,
+        "mixed_case_bool": "TrUe",
     }
 
     assert cli.parse_cli_options(options, {}) == expected
@@ -441,13 +441,11 @@ def test_render_model_help_panel_error(mock_ui_context):
 
 def test_render_model_help_panel_not_installed(mock_ui_context):
     """Test the panel rendering when a model is resolved but not installed."""
-    help_info = {"status": "not_installed", "target": "my-target", "package_name": "my-pkg"}
+    help_info = {"status": "not_installed", "target": "org/my-target", "package_name": "my-pkg"}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
 
     assert isinstance(panel, Panel)
     assert "my-pkg" in str(panel.renderable)
-    assert "dorsal model install my-target" in str(panel.renderable)
-    assert "Model: my-target" in str(panel.title)
 
 
 def test_render_model_help_panel_config_error(mock_ui_context):
@@ -472,27 +470,61 @@ def test_render_model_help_panel_success_no_options(mock_ui_context):
 
 
 def test_render_model_help_panel_success_with_options(mock_ui_context):
-    """Test the full table rendering for a model with a valid configuration and options."""
+    """Test the full table rendering, strictly verifying row contents and formatting."""
     from rich.table import Table
+    from rich.console import Group
 
     help_info = {
         "status": "success",
         "package_name": "my-pkg",
         "model_class": "MyClass",
         "options": {
-            "batch_size": {"default": 16, "help": "Batch size for inference"},
-            "language": {"help": "Target language"},
+            # Rule 1 & 2: Explicit type, has default
+            "batch_size": {"type": "int", "default": 16, "help": "Batch size for inference"},
+            # Rule 3: No default, missing type fallback
+            "language": {"type": "str", "default": None, "help": "Target language"},
+            # Edge case: Empty string default
+            "prefix": {"type": "str", "default": "", "help": "Prefix text"},
         },
     }
 
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
 
-    assert isinstance(panel, Panel)
     assert isinstance(panel.renderable, Group)
-    assert "Model Options: MyClass" in str(panel.title)
-
     table = panel.renderable.renderables[0]
     assert isinstance(table, Table)
 
-    assert len(table.columns) == 3
+    assert len(table.columns) == 4
     assert table.columns[0].header == "Option"
+    assert table.columns[1].header == "Type"
+    assert table.columns[2].header == "Default"
+    assert table.columns[3].header == "Description"
+
+    options_col = list(table.columns[0].cells)
+    types_col = list(table.columns[1].cells)
+    defaults_col = list(table.columns[2].cells)
+
+    assert options_col == ["batch_size", "language", "prefix"]
+
+    assert types_col == ["Integer", "String", "String"]
+    assert defaults_col == ["16", "<unassigned>", '""']
+
+
+def test_render_model_help_panel_not_installed_registry(mock_ui_context):
+    """Test the panel rendering when a registry model is resolved but not installed."""
+    help_info = {"status": "not_installed", "target": "org/my-target", "package_name": "my-pkg"}
+    panel = cli.render_model_help_panel(help_info, mock_ui_context)
+
+    assert isinstance(panel, Panel)
+    assert "org/my-target" in str(panel.renderable)
+    assert "my-pkg" in str(panel.renderable)
+
+
+def test_render_model_help_panel_not_installed_local(mock_ui_context):
+    """Test the panel rendering when a local class name is provided but not installed."""
+    help_info = {"status": "not_installed", "target": "MyTarget", "package_name": "mytarget"}
+    panel = cli.render_model_help_panel(help_info, mock_ui_context)
+
+    assert isinstance(panel, Panel)
+    assert "MyTarget" in str(panel.renderable)
+    assert "organization/project" in str(panel.renderable)

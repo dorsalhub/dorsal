@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
+import sys
 import pytest
 import typer
 from unittest.mock import MagicMock
@@ -22,7 +22,7 @@ from rich.panel import Panel
 
 from dorsal.cli.model_app.checks import check_and_confirm_model_install
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
-from dorsal.common.exceptions import NotFoundError
+from dorsal.api.model import ModelTargetResolution, ModelMetadata
 
 DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
 
@@ -31,68 +31,70 @@ DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
 def mock_checks_deps(mocker, mock_rich_console):
     """
     Mocks backend dependencies for the model installation checks.
-    Targeting patches locally within the module to prevent network leakage.
     """
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_rich_console)
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_rich_console)
 
-    mock_get_client = mocker.patch("dorsal.session.get_shared_dorsal_client")
-    mock_client_instance = mock_get_client.return_value
-
-    mock_reg_data = MagicMock()
-    mock_reg_data.namespace = "dorsal"
-    mock_reg_data.name = "gpt-neo"
-    mock_reg_data.is_official = True
-    mock_reg_data.is_verified = True
-    mock_reg_data.description = "A powerful mocked model."
-    mock_reg_data.install_url = "git+https://github.com/dorsal/gpt-neo.git"
-    mock_reg_data.created_at = datetime.datetime.now()
-
-    mock_client_instance.get_registry_model.return_value = mock_reg_data
-
-    mock_is_registry_id = mocker.patch("dorsal.registry.validators.is_registry_id", return_value=True)
-
     mock_shutil_which = mocker.patch("dorsal.cli.model_app.checks.shutil.which", return_value="/usr/bin/git")
-
     mock_confirm = mocker.patch("dorsal.cli.model_app.checks.Confirm.ask", return_value=True)
 
     return {
-        "client": mock_client_instance,
-        "reg_data": mock_reg_data,
-        "is_registry_id": mock_is_registry_id,
         "shutil_which": mock_shutil_which,
         "confirm": mock_confirm,
     }
 
 
 def test_check_install_verified_registry_model(mock_rich_console, mock_checks_deps):
-    """Tests check logic for a verified model from the registry."""
-    check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
+    """Tests that verified models silently bypass the security prompt."""
+    res = ModelTargetResolution(
+        target="dorsal/gpt-neo",
+        strategy="registry_id",
+        metadata=ModelMetadata(is_official=True, is_verified=True, description="A powerful mocked model."),
+    )
 
-    mock_checks_deps["client"].get_registry_model.assert_called_once_with("dorsal/gpt-neo")
+    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
-    assert mock_rich_console.print.called
-    panel = mock_rich_console.print.call_args.args[0]
-    assert "Verified" in panel.renderable
-    assert "gpt-neo" in panel.renderable
+    assert not mock_rich_console.print.called
 
 
 def test_check_install_unverified_warning(mock_rich_console, mock_checks_deps):
     """Tests that unverified models trigger the Safety Warning."""
-    mock_checks_deps["reg_data"].is_official = False
-    mock_checks_deps["reg_data"].is_verified = False
+    res = ModelTargetResolution(
+        target="user/experimental-model",
+        strategy="registry_id",
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
 
-    check_and_confirm_model_install("user/experimental-model", DUMMY_UI_CONTEXT)
+    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
     panel = mock_rich_console.print.call_args.args[0]
     assert "Unverified" in panel.renderable
 
 
+def test_check_install_local_path_warning(mock_rich_console, mock_checks_deps):
+    """Tests that local directories always trigger the Safety Warning."""
+    res = ModelTargetResolution(
+        target="./my-local-model",
+        strategy="local_path",
+    )
+
+    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
+
+    panel = mock_rich_console.print.call_args.args[0]
+    assert "unverified source" in panel.renderable
+    assert "Local Path" in panel.renderable
+
+
 def test_check_install_skip_via_flags(mock_rich_console, mock_checks_deps):
     """Tests that 'force' or 'yes' flags bypass checks entirely."""
-    check_and_confirm_model_install("dorsal/gpt-neo", DEFAULT_PALETTE, yes=True)
+    res = ModelTargetResolution(
+        target="user/sketchy-model",
+        strategy="registry_id",
+        metadata=ModelMetadata(is_official=False, is_verified=False),
+    )
 
-    mock_checks_deps["client"].get_registry_model.assert_not_called()
+    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT, yes=True)
+
     assert not mock_rich_console.print.called
 
 
@@ -100,8 +102,16 @@ def test_check_install_missing_git_dependency(mock_rich_console, mock_checks_dep
     """Tests handling of models requiring Git when Git is missing."""
     mock_checks_deps["shutil_which"].return_value = None
 
+    res = ModelTargetResolution(
+        target="dorsal/gpt-neo",
+        strategy="registry_id",
+        metadata=ModelMetadata(
+            is_official=False, is_verified=False, source_url="https://github.com/dorsal/gpt-neo.git"
+        ),
+    )
+
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
+        check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
     panel_calls = [c for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Panel)]
     assert len(panel_calls) > 0, "Missing System Dependency Panel was never printed"
@@ -111,22 +121,13 @@ def test_check_install_missing_git_dependency(mock_rich_console, mock_checks_dep
     assert "requires Git to install" in str(panel.renderable)
 
 
-def test_check_install_registry_not_found(mock_rich_console, mock_checks_deps):
-    """Tests 404 error handling from the registry."""
-    mock_checks_deps["client"].get_registry_model.side_effect = NotFoundError("404 Not Found")
-
-    with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/missing", DUMMY_UI_CONTEXT)
-
-    assert "Model 'dorsal/missing' not found in registry" in str(mock_rich_console.print.call_args.args[0])
-
-
 def test_check_install_user_cancels(mock_rich_console, mock_checks_deps):
     """Tests that the user can decline the confirmation prompt."""
     mock_checks_deps["confirm"].return_value = False
+    res = ModelTargetResolution(target="./sketchy", strategy="local_path")
 
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
+        check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
     assert "Cancelled" in str(mock_rich_console.print.call_args.args[0])
 
@@ -134,8 +135,9 @@ def test_check_install_user_cancels(mock_rich_console, mock_checks_deps):
 def test_check_install_pipx_note(mock_rich_console, mock_checks_deps, mocker):
     """Tests that a note is displayed when running in a pipx environment."""
     mocker.patch("sys.prefix", "/home/user/.local/pipx/venvs/dorsal")
+    res = ModelTargetResolution(target="./my-model", strategy="local_path")
 
-    check_and_confirm_model_install("dorsal/gpt-neo", DUMMY_UI_CONTEXT)
+    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
     printed_text = str(mock_rich_console.print.call_args_list[0].args[0])
     assert "running inside a pipx environment" in printed_text

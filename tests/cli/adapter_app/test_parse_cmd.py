@@ -125,8 +125,8 @@ def test_parse_cmd_with_options(mock_parse_deps, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
     kwargs = mock_parse_deps["parse_api"].call_args.kwargs
-    assert kwargs["strict"] is True
-    assert kwargs["chunk"] == 5
+    assert kwargs["strict"] == "true"
+    assert kwargs["chunk"] == "5"
 
 
 def test_parse_cmd_no_save_flag(mock_parse_deps, tmp_path, monkeypatch):

@@ -170,6 +170,62 @@ class ModelRunner:
             self.pipeline_config_source,
         )
 
+    @staticmethod
+    def _get_schema_for_model(annotator_class: Type[AnnotationModel]) -> dict[str, str]:
+        """Extracts expected types from the model's model_config.toml, if available."""
+        import importlib.resources
+        import tomllib
+
+        try:
+            resource_path = importlib.resources.files(annotator_class.__module__) / "model_config.toml"
+            if resource_path.is_file():
+                config_data = tomllib.loads(resource_path.read_text(encoding="utf-8"))
+                raw_options = config_data.get("options", {})
+                schema = {}
+                for k, v in raw_options.items():
+                    if isinstance(v, dict):
+                        if "type" in v:
+                            schema[k] = v["type"]
+                        elif "default" in v:
+                            schema[k] = type(v["default"]).__name__
+                        else:
+                            schema[k] = "str"
+                    else:
+                        schema[k] = type(v).__name__
+                return schema
+        except Exception as e:
+            logger.debug("Could not extract schema for %s: %s", annotator_class.__name__, e)
+
+        return {}
+
+    @staticmethod
+    def _coerce_options(raw_options: dict[str, Any], schema: dict[str, str]) -> dict[str, Any]:
+        """Safely coerces string options into their expected types based on the schema."""
+        coerced = {}
+        for key, val in raw_options.items():
+            if key not in schema or not isinstance(val, str):
+                coerced[key] = val
+                continue
+
+            expected_type = schema[key].lower()
+
+            if expected_type in ("bool", "boolean"):
+                coerced[key] = val.lower() in ("true", "yes", "1", "t", "y")
+            elif expected_type in ("int", "integer"):
+                try:
+                    coerced[key] = int(val)
+                except ValueError:
+                    coerced[key] = val
+            elif expected_type in ("float", "double"):
+                try:
+                    coerced[key] = float(val)
+                except ValueError:
+                    coerced[key] = val
+            else:
+                coerced[key] = val
+
+        return coerced
+
     def _load_pre_pipeline_model_step(self) -> ModelRunnerPipelineStep:
         from dorsal.file.configs.model_runner import (
             BASE_ANNOTATION_MODEL,
@@ -622,10 +678,13 @@ class ModelRunner:
                         continue
                     setattr(annotation_model_instance, key, value)
 
-            logger.debug("Running model '%s' main method with options: %s", model_name, options or "None")
+            expected_schema = self._get_schema_for_model(annotation_model)
+            safe_options = self._coerce_options(options, expected_schema) if options else {}
+
+            logger.debug("Running model '%s' main method with safe options: %s", model_name, safe_options or "None")
 
             raw_model_output: Any = (
-                annotation_model_instance.main(**options) if options else annotation_model_instance.main()
+                annotation_model_instance.main(**safe_options) if safe_options else annotation_model_instance.main()
             )
 
             named_outputs: list[tuple[str | None, Any]] = []
