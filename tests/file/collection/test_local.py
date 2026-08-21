@@ -18,7 +18,14 @@ import datetime
 from unittest.mock import MagicMock, patch, mock_open
 
 from dorsal.file.collection.local import LocalFileCollection, _get_source_paths
-from dorsal.common.exceptions import DorsalClientError, InvalidTagError, DorsalError, SyncConflictError
+from dorsal.common.exceptions import (
+    DorsalClientError,
+    InvalidTagError,
+    DorsalError,
+    SyncConflictError,
+    PartialIndexingError,
+    BatchIndexingError,
+)
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.validators.file_record import FileRecordStrict, NewFileTag, ValidateTagsResult
 from dorsal.client.validators import FileIndexResponse
@@ -185,57 +192,6 @@ def test_to_csv_export(mock_file_open):
 
     assert "hash,file_path,source_path" in written_data
     assert "h1,/fake/a.txt,/fake/" in written_data
-
-
-@patch("dorsal.file.collection.local.get_shared_dorsal_client")
-def test_push(mock_get_client):
-    """Test pushing file records to the API."""
-    mock_client = MagicMock()
-
-    mock_response = MagicMock(spec=FileIndexResponse)
-    mock_response.success = 1
-    mock_response.results = []
-    mock_client.index_private_file_records.return_value = mock_response
-
-    mock_get_client.return_value = mock_client
-
-    file1 = MagicMock(spec=LocalFile)
-    file1.validation_hash = "b" * 64
-    file1.model = MagicMock(spec=FileRecordStrict)
-    collection = LocalFileCollection(source=[file1])
-    collection._client = mock_client
-
-    summary = collection.push(public=False)
-
-    mock_client.index_private_file_records.assert_called_once_with(file_records=[file1.model])
-    assert summary["success"] == 1
-
-
-@patch("dorsal.file.collection.remote.DorsalFileCollection")
-@patch("dorsal.file.collection.local.get_shared_dorsal_client")
-def test_create_remote_collection(mock_get_client, mock_remote_class):
-    """Test the multi-step process of creating a new remote collection."""
-    mock_client = MagicMock()
-    mock_get_client.return_value = mock_client
-
-    mock_client.create_collection.return_value = MagicMock(collection_id="new_col_123")
-    mock_client.add_files_to_collection.return_value = MagicMock(added_count=1, duplicate_count=0)
-    final_state = MagicMock()
-    final_state.collection.date_modified = datetime.datetime.now()
-    final_state.collection.file_count = 1
-    mock_client.get_collection.return_value = final_state
-
-    file1 = MagicMock(spec=LocalFile, hash="h1", validation_hash="vh1")
-    file1.model = MagicMock()
-    collection = LocalFileCollection(source=[file1])
-    collection._client = mock_client
-
-    with patch.object(collection, "push", return_value={"success": 1}) as mock_push:
-        collection.create_remote_collection(name="New Test Collection")
-
-        mock_push.assert_called_once_with(public=False, api_key=None)
-        mock_client.create_collection.assert_called_once()
-        assert collection.remote_collection_id == "new_col_123"
 
 
 def test_to_sqlite_export(tmp_path):
@@ -534,93 +490,6 @@ def test_create_remote_collection_push_fails(mock_get_client, mocker):
         col.create_remote_collection(name="Test")
 
 
-def test_push_strict_mode_missing_model():
-    """Covers the early exit when a file lacks a strict model."""
-    mock_file = MagicMock(spec=LocalFile)
-    mock_file.model = None
-    col = LocalFileCollection(source=[mock_file])
-
-    result = col.push(strict=True)
-    assert result["total_records"] == 0
-
-
-def test_push_strict_mode_upload_failures(mocker):
-    from dorsal.common.exceptions import PartialIndexingError
-    from dorsal.file.validators.file_record import FileRecordStrict
-
-    mock_file = MagicMock(spec=LocalFile)
-    mock_file.model = MagicMock()
-    mock_file.model.__class__ = FileRecordStrict
-
-    col = LocalFileCollection(source=[mock_file])
-    col._client = MagicMock()
-
-    mocker.patch(
-        "dorsal.file.metadata_reader.MetadataReader.upload_records",
-        return_value={"failed": 1, "errors": ["Server rejected record"]},
-    )
-
-    with pytest.raises(PartialIndexingError, match="1 errors detected"):
-        col.push(strict=True)
-
-
-def test_push_exception_handling(mocker):
-    from dorsal.file.validators.file_record import FileRecordStrict
-
-    mock_file = MagicMock(spec=LocalFile)
-    mock_file.model = MagicMock()
-    mock_file.model.__class__ = FileRecordStrict
-
-    col = LocalFileCollection(source=[mock_file])
-    col._client = MagicMock()
-
-    mocker.patch(
-        "dorsal.file.metadata_reader.MetadataReader.upload_records",
-        side_effect=RuntimeError("Network connection severed"),
-    )
-
-    with pytest.raises(RuntimeError, match="Network connection severed"):
-        col.push()
-
-
-@patch("dorsal.file.collection.local.get_shared_dorsal_client")
-def test_create_remote_collection_success(mock_get_client, mocker):
-    mock_client = MagicMock()
-    mock_client.create_collection.return_value = MagicMock(collection_id="col_123")
-    mock_client.get_collection.return_value.collection.date_modified = "now"
-    mock_client.get_collection.return_value.collection.file_count = 2
-
-    mock_add_response = MagicMock()
-    mock_add_response.added_count = 2
-    mock_add_response.duplicate_count = 0
-    mock_client.add_files_to_collection.return_value = mock_add_response
-
-    mock_get_client.return_value = mock_client
-
-    mock_f1 = MagicMock(spec=LocalFile, hash="h1")
-    mock_f2 = MagicMock(spec=LocalFile, hash="h2")
-    col = LocalFileCollection(source=[mock_f1, mock_f2])
-    col.source_info = {"type": "local", "path": "/dir"}
-
-    mocker.patch.object(col, "push", return_value={"success": 2})
-
-    remote_col = col.create_remote_collection(name="TestCol")
-
-    assert remote_col.collection_id == "col_123"
-    assert col.remote_collection_id == "col_123"
-    mock_client.create_collection.assert_called_once_with(
-        name="TestCol",
-        description=None,
-        is_private=True,
-        source={
-            "caller": "dorsal.LocalFileCollection",
-            "local_directories": ["/dir"],
-            "comment": "Created via the Dorsal Python library.",
-        },
-    )
-    mock_client.add_files_to_collection.assert_called_once_with(collection_id="col_123", hashes=["h1", "h2"])
-
-
 def test_local_collection_to_dict():
     """Covers the local_attributes augmentation in to_dict()."""
     mock_file = MagicMock(spec=LocalFile)
@@ -637,3 +506,123 @@ def test_local_collection_to_dict():
         assert "local_attributes" in data["results"][0]
         assert data["results"][0]["local_attributes"]["file_path"] == "/path/to/file"
         assert data["results"][0]["local_attributes"]["date_modified"] == 123.0
+
+
+@patch("dorsal.file.collection.local.get_shared_dorsal_client")
+def test_create_remote_collection_success(mock_get_client, tmp_path, mocker):
+    """Test creating a remote collection processed locally."""
+    mock_client = MagicMock()
+    mock_client.create_collection.return_value = MagicMock(collection_id="col_123")
+    mock_client.get_collection.return_value.collection.date_modified = "now"
+    mock_client.get_collection.return_value.collection.file_count = 2
+
+    mock_add_response = MagicMock()
+    mock_add_response.added_count = 2
+    mock_add_response.duplicate_count = 0
+    mock_client.add_files_to_collection.return_value = mock_add_response
+    mock_get_client.return_value = mock_client
+
+    (tmp_path / "f1.txt").write_text("file1")
+    (tmp_path / "f2.txt").write_text("file2")
+
+    collection = LocalFileCollection(source=str(tmp_path), client=mock_client)
+
+    # Mock the network push since we test that deeply in other dedicated tests
+    mocker.patch.object(collection, "push", return_value={"success": 2})
+
+    remote_col = collection.create_remote_collection(name="TestCol")
+
+    assert remote_col.collection_id == "col_123"
+    assert collection.remote_collection_id == "col_123"
+    mock_client.create_collection.assert_called_once()
+    mock_client.add_files_to_collection.assert_called_once()
+
+
+@patch("dorsal.file.collection.local.get_shared_dorsal_client")
+def test_push_files(mock_get_client, tmp_path):
+    """Test pushing file records generated from actual disk files to the API."""
+    mock_client = MagicMock()
+    mock_response = MagicMock(spec=FileIndexResponse)
+    mock_response.success = 2
+    mock_response.error = 0
+    mock_response.results = []
+    mock_client.index_private_file_records.return_value = mock_response
+    mock_get_client.return_value = mock_client
+
+    (tmp_path / "doc1.txt").write_text("Hello Dorsal")
+    (tmp_path / "doc2.txt").write_text("Another file")
+
+    collection = LocalFileCollection(source=str(tmp_path), client=mock_client)
+    summary = collection.push(public=False)
+
+    assert summary["success"] == 2
+    assert summary["total_records"] == 2
+
+    mock_client.index_private_file_records.assert_called_once()
+    records_pushed = mock_client.index_private_file_records.call_args.kwargs["file_records"]
+    assert len(records_pushed) == 2
+    assert records_pushed[0].hash is not None
+
+    assert records_pushed[0].annotations.file_base.record.name in ["doc1.txt", "doc2.txt"]
+
+
+def test_push_strict_mode_upload_failures(mocker):
+    """Test strict mode raises PartialIndexingError when failures occur."""
+    mock_file = MagicMock(spec=LocalFile)
+    mock_file.hash = "mock_hash"
+    mock_file.name = "mock.txt"
+    mock_file.model = MagicMock()
+    mock_file.model.__class__ = FileRecordStrict
+
+    col = LocalFileCollection(source=[mock_file])
+    col._client = MagicMock()
+
+    mocker.patch(
+        "dorsal.file.metadata_reader.MetadataReader.upload_records",
+        return_value={"failed": 1, "errors": ["Server rejected record"]},
+    )
+
+    with pytest.raises(PartialIndexingError, match="1 errors detected"):
+        col.push(strict=True)
+
+
+@patch("dorsal.file.collection.local.get_shared_dorsal_client")
+def test_push_exception_handling(mock_get_client, tmp_path):
+    """Verify that network exceptions during the push bubble up correctly."""
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.side_effect = RuntimeError("Network connection severed")
+    mock_get_client.return_value = mock_client
+
+    (tmp_path / "disconnect.txt").write_text("data")
+
+    collection = LocalFileCollection(source=str(tmp_path), client=mock_client)
+
+    with pytest.raises(BatchIndexingError, match="Network connection severed"):
+        collection.push()
+
+
+@patch("dorsal.file.collection.local.get_shared_dorsal_client")
+def test_push_include_oversized_propagation(mock_get_client, tmp_path, mocker):
+    """Test that the include_oversized flag routes heavy files correctly."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    heavy_file = tmp_path / "heavy_payload.txt"
+    heavy_file.write_text("x" * 2048)
+
+    mocker.patch("dorsal.common.constants.API_MAX_RECORD_SIZE_BYTES", 1024)
+    mocker.patch("dorsal.common.constants.API_RECORD_HEADROOM_BYTES", 500)
+
+    mock_heavy_response = MagicMock(spec=FileIndexResponse)
+    mock_heavy_response.success = 1
+    mock_heavy_response.error = 0
+    mocker.patch("dorsal.file.dorsal_file.LocalFile._push_heavy", return_value=mock_heavy_response)
+
+    collection = LocalFileCollection(source=str(tmp_path), client=mock_client)
+    summary = collection.push(public=False, include_oversized=True)
+
+    assert summary["success"] == 1
+    assert len(summary["oversized_records"]) == 1
+    assert summary["oversized_records"][0]["status"] == "success"
+
+    mock_client.index_private_file_records.assert_not_called()

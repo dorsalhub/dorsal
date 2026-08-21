@@ -18,7 +18,7 @@ import json
 import logging
 import pathlib
 import typer
-from typing import Annotated, TYPE_CHECKING, cast
+from typing import Annotated, Any, TYPE_CHECKING, cast
 
 from rich.panel import Panel
 from rich.table import Table
@@ -136,6 +136,15 @@ def push_target(
             rich_help_panel="Directory Push Options",
         ),
     ] = True,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="[Dir Only] Bypass API limits and upload oversized files individually.",
+            rich_help_panel="Directory Push Options",
+        ),
+    ] = False,
     lazy: Annotated[
         bool,
         typer.Option(
@@ -241,6 +250,7 @@ def push_target(
             dry_run=dry_run,
             ignore_duplicates=ignore_duplicates,
             fail_fast=fail_fast,
+            force=force,
             lazy=lazy,
             ui_context=ui_context,
             console=console,
@@ -258,7 +268,7 @@ def _process_file_push(
 
     if not json_output:
         console.print(
-            f"📡 Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/] as a {access_level_str} record..."
+            f"Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/] as a {access_level_str} record..."
         )
 
     try:
@@ -345,9 +355,11 @@ def _process_dir_push(
     ignore_duplicates,
     fail_fast,
     lazy,
+    force,
     ui_context,
     console,
 ) -> None:
+    from dorsal.common.exceptions import ExceedsApiLimitError
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
@@ -365,7 +377,7 @@ def _process_dir_push(
     if not json_output:
         action_verb = "publish" if create_collection else "push"
         console.print(
-            f"📡 Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
+            f"Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
         )
 
     try:
@@ -437,7 +449,12 @@ def _process_dir_push(
 
         if not create_collection:
             summary = collection.push(
-                public=public, console=progress_console, palette=palette, fail_fast=fail_fast, strict=strict
+                public=public,
+                console=progress_console,
+                palette=palette,
+                fail_fast=fail_fast,
+                strict=strict,
+                include_oversized=force,
             )
 
             is_duplicate_error = False
@@ -481,10 +498,49 @@ def _process_dir_push(
             else:
                 _display_summary_panel(summary, public, ui_context, use_cache_value, collection, console)
 
+    except ExceedsApiLimitError as e:
+        if json_output:
+            error_output = {"error": "ExceedsApiLimitError", "message": str(e), "excess": e.excess}
+            console.print(json.dumps(error_output, indent=2, default=str, ensure_ascii=False))
+        else:
+            from dorsal.file.utils.size import human_filesize
+
+            error_text = Text.from_markup(
+                f"[bold]Push failed: {len(e.excess)} file(s) exceed the API batch size limit.[/]\n\n"
+                "To push this directory anyway, run the command with the [bold]--force[/] flag.\n\n"
+                f"[{palette.get('warning', 'yellow')}]Oversized Records:[/]\n"
+            )
+
+            for item in e.excess[:5]:
+                error_text.append(f"  - {item['path']} ({human_filesize(item['size'])})\n")
+            if len(e.excess) > 5:
+                error_text.append(f"  ... and {len(e.excess) - 5} more.\n")
+
+            title_text = f"[{palette.get('panel_title_error', 'bold red')}]Check Failed[/]"
+
+            is_none_style = borders == get_borders("none")
+            if is_none_style:
+                console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
+            else:
+                console.print(
+                    Panel(
+                        error_text,
+                        title=title_text,
+                        border_style=palette.get("panel_border_error", "red"),
+                        expand=False,
+                        box=borders,
+                    )
+                )
+        exit_cli(code=EXIT_CODE_ERROR)
+
     except PartialIndexingError as e:
         if json_output:
-            error_output = {"error": "PartialIndexingError", "message": e, "summary": e.summary}
-            console.print(json.dumps(error_output, indent=2, default=str, ensure_ascii=False))
+            partial_error_output: dict[str, Any] = {
+                "error": "PartialIndexingError",
+                "message": str(e),
+                "summary": e.summary,
+            }
+            console.print(json.dumps(partial_error_output, indent=2, default=str, ensure_ascii=False))
         else:
             console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Failed:[/] {e}")
             summary = e.summary
@@ -595,6 +651,21 @@ def _display_summary_panel(summary, public, ui_context, use_cache, collection, c
         )
         if failed_batches := len(batches) - successful_batches:
             summary_table.add_row("Failed Batches:", Text(str(failed_batches), style=palette.get("error", "red")))
+
+    oversized = summary.get("oversized_records", [])
+    if oversized:
+        summary_table.add_row()
+        summary_table.add_row("Oversized File Records:", str(len(oversized)))
+
+        successful_oversized = sum(1 for r in oversized if r.get("status") == "success")
+        if successful_oversized:
+            summary_table.add_row(
+                "  Successful:", Text(str(successful_oversized), style=palette.get("success", "green"))
+            )
+
+        failed_oversized = sum(1 for r in oversized if r.get("status") in ("failure", "partial_failure"))
+        if failed_oversized:
+            summary_table.add_row("  Failed/Partial:", Text(str(failed_oversized), style=palette.get("error", "red")))
 
     is_none_style = borders == get_borders("none")
     title_text = f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]"

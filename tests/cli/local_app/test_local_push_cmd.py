@@ -24,7 +24,14 @@ from rich.panel import Panel
 from rich.table import Table
 
 from dorsal.cli import app
-from dorsal.common.exceptions import DorsalClientError, AuthError, DorsalError, PartialIndexingError, DorsalOfflineError
+from dorsal.common.exceptions import (
+    DorsalClientError,
+    ExceedsApiLimitError,
+    AuthError,
+    DorsalError,
+    PartialIndexingError,
+    DorsalOfflineError,
+)
 
 runner = CliRunner()
 
@@ -413,6 +420,7 @@ def test_push_dir_defensive_collection_name(mock_dir_deps, mock_exit_cli):
             dry_run=False,
             ignore_duplicates=False,
             fail_fast=False,
+            force=False,
             lazy=False,
             ui_context={"palette": {}, "borders": get_borders("rounded")},
             console=MagicMock(),
@@ -527,6 +535,7 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
         dry_run=False,
         ignore_duplicates=False,
         fail_fast=False,
+        force=False,
         lazy=False,
         ui_context=borderless_context,
         console=console,
@@ -553,6 +562,7 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
             dry_run=False,
             ignore_duplicates=False,
             fail_fast=False,
+            force=False,
             lazy=False,
             ui_context=borderless_context,
             console=console,
@@ -578,6 +588,33 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
             dry_run=False,
             ignore_duplicates=False,
             fail_fast=False,
+            force=False,
+            lazy=False,
+            ui_context=borderless_context,
+            console=console,
+        )
+
+    mock_dir_deps["collection_instance"].push.side_effect = ExceedsApiLimitError(
+        "Too big", [{"path": "/test.pdf", "size": 100000000}]
+    )
+    with pytest.raises(typer.Exit):
+        _process_dir_push(
+            ctx=ctx,
+            path=dir_path,
+            use_cache_value=False,
+            overwrite_cache=False,
+            public=False,
+            strict=False,
+            json_output=False,
+            resolve_links=True,
+            recursive=False,
+            create_collection=False,
+            collection_name=None,
+            collection_desc=None,
+            dry_run=False,
+            ignore_duplicates=False,
+            fail_fast=False,
+            force=False,
             lazy=False,
             ui_context=borderless_context,
             console=console,
@@ -596,3 +633,113 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
 
     group_calls = [c for c in console.print.call_args_list if isinstance(c.args[0], Group)]
     assert len(group_calls) > 0
+
+
+def test_push_dir_force_flag_propagation(mock_rich_console, mock_dir_deps, tmp_path):
+    """Test that the --force flag properly passes include_oversized=True down to the collection."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "push", str(target), "--force"])
+
+    assert result.exit_code == 0
+    mock_dir_deps["collection_instance"].push.assert_called_once()
+
+    kwargs = mock_dir_deps["collection_instance"].push.call_args.kwargs
+    assert kwargs.get("include_oversized") is True
+
+
+def test_push_dir_exceeds_api_limit_error(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
+    """Test that ExceedsApiLimitError is caught and renders the check panel."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    excess_data = [
+        {"path": "/fake/huge1.pdf", "size": 30000000},
+        {"path": "/fake/huge2.pdf", "size": 30000000},
+        {"path": "/fake/huge3.pdf", "size": 30000000},
+        {"path": "/fake/huge4.pdf", "size": 30000000},
+        {"path": "/fake/huge5.pdf", "size": 30000000},
+        {"path": "/fake/huge6.pdf", "size": 30000000},
+    ]
+    error = ExceedsApiLimitError("Check failed", excess=excess_data)
+    mock_dir_deps["collection_instance"].push.side_effect = error
+
+    runner.invoke(app, ["local", "push", str(target)])
+    mock_exit_cli.assert_called()
+
+    panel_output = None
+    for call in mock_rich_console.print.call_args_list:
+        if isinstance(call.args[0], Panel):
+            panel_output = call.args[0]
+            break
+
+    assert panel_output is not None
+    assert "Check Failed" in str(panel_output.title)
+
+    rendered_text = str(panel_output.renderable)
+    assert "exceed the API batch size limit" in rendered_text
+    assert "--force" in rendered_text
+    assert "huge1.pdf" in rendered_text
+    assert "and 1 more" in rendered_text
+
+
+def test_push_dir_exceeds_api_limit_error_json(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
+    """Test that ExceedsApiLimitError outputs the correct structured JSON when requested."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    excess_data = [{"path": "/fake/huge.pdf", "size": 30000000}]
+    error = ExceedsApiLimitError("Check failed", excess=excess_data)
+    mock_dir_deps["collection_instance"].push.side_effect = error
+
+    runner.invoke(app, ["local", "push", str(target), "--json"])
+    mock_exit_cli.assert_called()
+
+    json_output_str = mock_rich_console.print.call_args_list[0].args[0]
+    assert "ExceedsApiLimitError" in json_output_str
+
+    data = json.loads(json_output_str)
+    assert data["excess"] == excess_data
+    assert data["excess"][0]["path"] == "/fake/huge.pdf"
+
+
+def test_display_summary_panel_with_oversized_records(mocker):
+    """Test that the summary panel correctly renders the oversized records breakdown."""
+    mock_console = MagicMock()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
+
+    from dorsal.cli.local_app.push_cmd import _display_summary_panel
+    from dorsal.cli.themes.borders import get_borders
+
+    summary_data = {
+        "total_records": 10,
+        "success": 10,
+        "failed": 0,
+        "errors": [],
+        "batches": [{"status": "success"}],
+        "oversized_records": [{"status": "success"}, {"status": "partial_failure"}],
+    }
+
+    mock_collection = MagicMock()
+    mock_collection.__iter__.return_value = iter([])
+
+    mock_ui_context = {"palette": {}, "borders": get_borders("rounded")}
+
+    _display_summary_panel(summary_data, True, mock_ui_context, False, mock_collection, mock_console)
+
+    assert mock_console.print.call_count == 1
+    panel_arg = mock_console.print.call_args_list[0].args[0]
+
+    from rich.console import Console
+
+    test_console = Console(force_terminal=False)
+    with test_console.capture() as capture:
+        test_console.print(panel_arg)
+
+    rendered_text = capture.get()
+
+    assert "Push Complete" in rendered_text
+    assert "Oversized File Records" in rendered_text
+    assert "Successful" in rendered_text
+    assert "Failed/Partial" in rendered_text
