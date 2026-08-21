@@ -483,7 +483,7 @@ class MetadataReader:
         """
         Uploads a list of file records to DorsalHub in managed batches.
 
-        This method performs a pre-flight size check before initiating any network calls.
+        This method performs a size check before initiating any network calls.
         By default, if any records exceed the API's maximum record size, the operation is
         halted immediately to protect API quotas.
 
@@ -494,7 +494,7 @@ class MetadataReader:
             records: List of validated FileRecordStrict objects to upload.
             public: If True, uploads to the public index instead of the private index.
             fail_fast: If True, immediately aborts and raises a BatchIndexingError if a
-                network request fails mid-flight. If False, records the failure and proceeds
+                network request fails. If False, records the failure and proceeds
                 to the next batch.
             hash_to_path_map: Optional mapping of {hash: local_path} for richer error reporting.
             include_oversized: If True, records exceeding the size limits are automatically
@@ -542,12 +542,11 @@ class MetadataReader:
         if not records:
             return summary
 
-        standard_records_with_sizes = []  # CHANGED: Store tuples of (record, size)
+        standard_records_with_sizes = []
         oversized_records = []
         oversized_details = []
         safe_threshold = constants.API_MAX_RECORD_SIZE_BYTES - constants.API_RECORD_HEADROOM_BYTES
 
-        # 1. Pre-flight Partitioning
         for record in records:
             record_bytes = record.model_dump_json(exclude_none=True, by_alias=True).encode("utf-8")
             rec_size = len(record_bytes)
@@ -559,23 +558,19 @@ class MetadataReader:
             else:
                 standard_records_with_sizes.append((record, rec_size))
 
-        # 2. Pre-flight Safety Check
         if oversized_records and not include_oversized:
             raise ExceedsApiLimitError(
-                message=f"Pre-flight check failed: {len(oversized_records)} file(s) exceed the {constants.API_MAX_RECORD_SIZE_BYTES // (1024 * 1024)} MiB batch limit.",
+                message=f"Check failed: {len(oversized_records)} file(s) exceed the {constants.API_MAX_RECORD_SIZE_BYTES // (1024 * 1024)} MiB batch limit.",
                 excess=oversized_details,
             )
 
-        # 3. Dynamic Batch Packing (NEW)
         batches: list[list[FileRecordStrict]] = []
         current_batch: list[FileRecordStrict] = []
         current_batch_size = 0
 
-        # Give the payload limit 1 MiB of headroom to account for JSON array syntax overhead
         safe_payload_limit = constants.API_MAX_PAYLOAD_SIZE_BYTES - (1024 * 1024)
 
         for rec, rec_size in standard_records_with_sizes:
-            # If adding this record exceeds EITHER the count limit OR the byte limit, seal the batch
             if (len(current_batch) >= constants.API_MAX_BATCH_SIZE) or (
                 current_batch_size + rec_size > safe_payload_limit
             ):
@@ -731,7 +726,6 @@ class MetadataReader:
                         summary["success"] += 1
                         summary["processed"] += 1
 
-                        # NEW: Record the successful/partial outcome
                         summary["oversized_records"].append(
                             {
                                 "file_hash": heavy_rec.hash,
@@ -756,7 +750,6 @@ class MetadataReader:
                         summary["failed"] += 1
                         summary["processed"] += 1
 
-                        # NEW: Record the complete failure
                         summary["oversized_records"].append(
                             {
                                 "file_hash": heavy_rec.hash,

@@ -650,7 +650,7 @@ def test_push_dir_force_flag_propagation(mock_rich_console, mock_dir_deps, tmp_p
 
 
 def test_push_dir_exceeds_api_limit_error(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
-    """Test that ExceedsApiLimitError is caught and renders the friendly pre-flight panel."""
+    """Test that ExceedsApiLimitError is caught and renders the check panel."""
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -662,7 +662,7 @@ def test_push_dir_exceeds_api_limit_error(mock_rich_console, mock_dir_deps, mock
         {"path": "/fake/huge5.pdf", "size": 30000000},
         {"path": "/fake/huge6.pdf", "size": 30000000},
     ]
-    error = ExceedsApiLimitError("Pre-flight check failed", excess=excess_data)
+    error = ExceedsApiLimitError("Check failed", excess=excess_data)
     mock_dir_deps["collection_instance"].push.side_effect = error
 
     runner.invoke(app, ["local", "push", str(target)])
@@ -675,7 +675,7 @@ def test_push_dir_exceeds_api_limit_error(mock_rich_console, mock_dir_deps, mock
             break
 
     assert panel_output is not None
-    assert "Pre-flight Check Failed" in str(panel_output.title)
+    assert "Check Failed" in str(panel_output.title)
 
     rendered_text = str(panel_output.renderable)
     assert "exceed the API batch size limit" in rendered_text
@@ -690,7 +690,7 @@ def test_push_dir_exceeds_api_limit_error_json(mock_rich_console, mock_dir_deps,
     target.mkdir()
 
     excess_data = [{"path": "/fake/huge.pdf", "size": 30000000}]
-    error = ExceedsApiLimitError("Pre-flight check failed", excess=excess_data)
+    error = ExceedsApiLimitError("Check failed", excess=excess_data)
     mock_dir_deps["collection_instance"].push.side_effect = error
 
     runner.invoke(app, ["local", "push", str(target), "--json"])

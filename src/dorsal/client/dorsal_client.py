@@ -2683,7 +2683,7 @@ class DorsalClient:
 
     def make_collection_public(self, collection_id: str, api_key: str | None = None) -> "CollectionWebLocationResponse":
         """
-        Converts a private collection to public after performing a pre-flight check.
+        Converts a private collection to public after performing a check.
 
         Args:
             collection_id (str): The ID of the collection to make public.
@@ -2704,7 +2704,7 @@ class DorsalClient:
             raise ConflictError(f"Collection '{collection_id}' is already public.")
 
         target_url = self._make_collection_action_url(collection_id, "make-public")
-        logger.debug("Pre-flight check passed. Posting to: %s", target_url)
+        logger.debug("Check passed. Posting to: %s", target_url)
 
         try:
             headers = self._make_request_headers(api_key=api_key)
@@ -2734,7 +2734,7 @@ class DorsalClient:
         self, collection_id: str, api_key: str | None = None
     ) -> "CollectionWebLocationResponse":
         """
-        Converts a public collection to private after performing a pre-flight check.
+        Converts a public collection to private after performing a check.
 
         Args:
             collection_id (str): The ID of the collection to make private.
@@ -2755,7 +2755,7 @@ class DorsalClient:
             raise ConflictError(f"Collection '{collection_id}' is already private.")
 
         target_url = self._make_collection_action_url(collection_id, "make-private")
-        logger.debug("Pre-flight check passed. Posting to: %s", target_url)
+        logger.debug("Check passed. Posting to: %s", target_url)
 
         try:
             headers = self._make_request_headers(api_key=api_key)

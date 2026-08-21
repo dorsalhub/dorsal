@@ -797,7 +797,7 @@ class TestMetadataReaderReadMethods:
 
 
 class TestMetadataReaderOversizedHandling:
-    def test_upload_records_preflight_blocks_oversized(self, metadata_reader_base, mocker):
+    def test_upload_records_check_blocks_oversized(self, metadata_reader_base, mocker):
         """Verify that records exceeding the size limit raise ExceedsApiLimitError by default."""
         reader = metadata_reader_base
         mock_record = MagicMock(spec=FileRecordStrict)
@@ -809,7 +809,7 @@ class TestMetadataReaderOversizedHandling:
         with pytest.raises(ExceedsApiLimitError) as exc_info:
             reader.upload_records([mock_record], include_oversized=False)
 
-        assert "Pre-flight check failed" in str(exc_info.value)
+        assert "Check failed" in str(exc_info.value)
         assert len(exc_info.value.excess) == 1
         assert exc_info.value.excess[0]["size"] > dorsal_constants.API_MAX_RECORD_SIZE_BYTES
 
@@ -865,7 +865,7 @@ class TestMetadataReaderOversizedHandling:
 
 
 class TestMetadataReaderSmartBatching:
-    def test_upload_records_preflight_blocks_oversized(self, metadata_reader_base, mocker):
+    def test_upload_records_check_blocks_oversized(self, metadata_reader_base, mocker):
         """Verify that records exceeding the size limit raise ExceedsApiLimitError by default."""
         reader = metadata_reader_base
         mock_record = MagicMock(spec=FileRecordStrict)
@@ -878,7 +878,7 @@ class TestMetadataReaderSmartBatching:
         with pytest.raises(ExceedsApiLimitError) as exc_info:
             reader.upload_records([mock_record], include_oversized=False)
 
-        assert "Pre-flight check failed" in str(exc_info.value)
+        assert "Check failed" in str(exc_info.value)
         assert len(exc_info.value.excess) == 1
         assert exc_info.value.excess[0]["path"] == "oversizedhash123"
         assert exc_info.value.excess[0]["size"] == safe_threshold + 1

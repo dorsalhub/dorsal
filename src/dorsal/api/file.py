@@ -772,7 +772,7 @@ def index_directory(
     2. Generates rich metadata for each file locally (offline).
     3. Uploads the records to DorsalHub in managed batches.
 
-    It implements a pre-flight safety check to prevent oversized payloads from
+    It implements a safety check to prevent oversized payloads from
     burning through network bandwidth and failing at the server level.
 
     Example:
@@ -809,11 +809,11 @@ def index_directory(
         use_cache (bool, optional): If True, uses cached metadata for files
             that haven't changed. Defaults to True.
         fail_fast (bool, optional): If True, raises `BatchIndexingError` immediately
-            if a network request fails mid-flight. Defaults to True.
+            if a network request fails. Defaults to True.
         strict (bool, optional): If True, raises `PartialIndexingError` if any partial
             failures (e.g. invalid annotations) occur during indexing. Defaults to False.
-        include_oversized (bool, optional): If True, bypasses the pre-flight size limits
-            and uploads oversized records individually via multi-part requests. Defaults to False.
+        include_oversized (bool, optional): If True, uploads oversized records individually
+            via multi-part requests. Defaults to False.
 
     Returns:
         dict: A summary dictionary detailing the results of the operation.

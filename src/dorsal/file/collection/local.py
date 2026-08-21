@@ -458,7 +458,7 @@ class LocalFileCollection(_BaseFileCollection):
 
         logger.debug(f"Starting synchronization for remote collection: {self.remote_collection_id}")
 
-        logger.debug("Step 1/3: Performing pre-flight check...")
+        logger.debug("Step 1/3: Checking...")
         remote_state = self._client.get_collection(self.remote_collection_id, api_key=api_key, hydrate=False)
 
         is_state_synced = (
@@ -473,7 +473,7 @@ class LocalFileCollection(_BaseFileCollection):
         elif not is_state_synced and force:
             logger.warning("`force=True` provided. Overwriting remote changes.")
         else:
-            logger.debug("Pre-flight check passed. Remote collection is in expected state.")
+            logger.debug("Check passed. Remote collection is in expected state.")
 
         logger.info("Step 2/3: Pushing local file records to ensure they exist on the server...")
         is_remote_private = remote_state.collection.is_private

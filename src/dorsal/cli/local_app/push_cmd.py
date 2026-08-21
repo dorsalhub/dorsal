@@ -516,7 +516,7 @@ def _process_dir_push(
             if len(e.excess) > 5:
                 error_text.append(f"  ... and {len(e.excess) - 5} more.\n")
 
-            title_text = f"[{palette.get('panel_title_error', 'bold red')}]Pre-flight Check Failed[/]"
+            title_text = f"[{palette.get('panel_title_error', 'bold red')}]Check Failed[/]"
 
             is_none_style = borders == get_borders("none")
             if is_none_style:
