@@ -25,10 +25,13 @@ import tomlkit
 import tomllib
 
 from dorsal.api import file as file_api
+from dorsal.common import constants
 from dorsal.common.exceptions import (
+    BatchIndexingError,
     DorsalError,
     DorsalClientError,
     DorsalConfigError,
+    ExceedsApiLimitError,
     NotFoundError,
     ConflictError,
 )
@@ -41,6 +44,7 @@ from dorsal.client.validators import (
 )
 from dorsal.file.validators.base import FileCoreValidationModel
 from dorsal.file.validators.file_record import (
+    FileRecordStrict,
     FileRecordDateTime,
     FileSearchResponse,
     Annotations,
@@ -407,11 +411,26 @@ def test_index_directory_success(mock_get_reader):
 
     mock_get_reader.assert_called_once()
 
+    # FIXED: Added include_oversized=False to the assertion
     mock_reader.index_directory.assert_called_once_with(
-        dir_path=dir_path, recursive=False, public=False, skip_cache=False, fail_fast=True
+        dir_path=dir_path, recursive=False, public=False, skip_cache=False, fail_fast=True, include_oversized=False
     )
-
     assert summary == mock_summary
+
+
+@patch("dorsal.api.file.get_metadata_reader")
+def test_index_directory_include_oversized_propagation(mock_get_reader):
+    """Test that the include_oversized flag propagates correctly to the reader."""
+    dir_path = "/tmp/assets"
+    mock_reader = MagicMock()
+    mock_get_reader.return_value = mock_reader
+
+    file_api.index_directory(dir_path, public=False, include_oversized=True)
+
+    # Verify the flag is passed down as True
+    mock_reader.index_directory.assert_called_once_with(
+        dir_path=dir_path, recursive=False, public=False, skip_cache=False, fail_fast=True, include_oversized=True
+    )
 
 
 def test_find_duplicates_success(fs):

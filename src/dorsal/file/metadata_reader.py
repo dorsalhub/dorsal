@@ -475,25 +475,46 @@ class MetadataReader:
         public: bool = False,
         fail_fast: bool = True,
         hash_to_path_map: dict[str, str] | None = None,
+        include_oversized: bool = False,
         console: "Console | None" = None,
         show_progress: bool | None = None,
         palette: dict | None = None,
     ) -> dict[str, Any]:
         """
-        Uploads a list of file records to DorsalHub in batches.
+        Uploads a list of file records to DorsalHub in managed batches.
+
+        This method performs a pre-flight size check before initiating any network calls.
+        By default, if any records exceed the API's maximum record size, the operation is
+        halted immediately to protect API quotas.
+
+        To bypass this safety check and upload the oversized records using multi-part requests,
+        set `include_oversized=True`.
 
         Args:
             records: List of validated FileRecordStrict objects to upload.
-            public: If True, uploads to the public index.
-            fail_fast: If True, raises BatchIndexingError on the first failed batch.
-            hash_to_path_map: Optional mapping of {hash: local_path}.
+            public: If True, uploads to the public index instead of the private index.
+            fail_fast: If True, immediately aborts and raises a BatchIndexingError if a
+                network request fails mid-flight. If False, records the failure and proceeds
+                to the next batch.
+            hash_to_path_map: Optional mapping of {hash: local_path} for richer error reporting.
+            include_oversized: If True, records exceeding the size limits are automatically
+                partitioned and uploaded individually using multi-part API calls.
             console: Rich Console instance for progress reporting.
+            show_progress: Whether to render the progress UI.
             palette: Theme palette for the progress bar.
 
         Returns:
-            dict: A summary of the upload operation.
+            dict: A summary of the upload operation containing file-level metrics:
+                'total_records', 'processed', 'success', 'failed', 'batches', and 'errors'.
+                Note: 'success' reflects the number of files indexed, regardless of how many
+                underlying multipart API requests were required to push them.
+
+        Raises:
+            ExceedsApiLimitError: If `include_oversized` is False and records exceed the size limit.
+            BatchIndexingError: If `fail_fast` is True and an HTTP request fails.
         """
-        from dorsal.common.exceptions import BatchIndexingError
+        from dorsal.common import constants
+        from dorsal.common.exceptions import ExceedsApiLimitError, BatchIndexingError
         from dorsal.client.validators import FileIndexResponse
         from dorsal.common.environment import is_jupyter_environment
         from rich.progress import (
@@ -514,15 +535,63 @@ class MetadataReader:
             "success": 0,
             "failed": 0,
             "batches": [],
+            "oversized_records": [],
             "errors": [],
         }
 
         if not records:
             return summary
 
-        batches = [
-            records[i : i + constants.API_MAX_BATCH_SIZE] for i in range(0, total_records, constants.API_MAX_BATCH_SIZE)
-        ]
+        standard_records_with_sizes = []  # CHANGED: Store tuples of (record, size)
+        oversized_records = []
+        oversized_details = []
+        safe_threshold = constants.API_MAX_RECORD_SIZE_BYTES - constants.API_RECORD_HEADROOM_BYTES
+
+        # 1. Pre-flight Partitioning
+        for record in records:
+            record_bytes = record.model_dump_json(exclude_none=True, by_alias=True).encode("utf-8")
+            rec_size = len(record_bytes)
+            file_path = hash_to_path_map.get(record.hash, record.hash) if hash_to_path_map else record.hash
+
+            if rec_size > safe_threshold:
+                oversized_records.append(record)
+                oversized_details.append({"path": file_path, "size": rec_size})
+            else:
+                standard_records_with_sizes.append((record, rec_size))
+
+        # 2. Pre-flight Safety Check
+        if oversized_records and not include_oversized:
+            raise ExceedsApiLimitError(
+                message=f"Pre-flight check failed: {len(oversized_records)} file(s) exceed the {constants.API_MAX_RECORD_SIZE_BYTES // (1024 * 1024)} MiB batch limit.",
+                excess=oversized_details,
+            )
+
+        # 3. Dynamic Batch Packing (NEW)
+        batches: list[list[FileRecordStrict]] = []
+        current_batch: list[FileRecordStrict] = []
+        current_batch_size = 0
+
+        # Give the payload limit 1 MiB of headroom to account for JSON array syntax overhead
+        safe_payload_limit = constants.API_MAX_PAYLOAD_SIZE_BYTES - (1024 * 1024)
+
+        for rec, rec_size in standard_records_with_sizes:
+            # If adding this record exceeds EITHER the count limit OR the byte limit, seal the batch
+            if (len(current_batch) >= constants.API_MAX_BATCH_SIZE) or (
+                current_batch_size + rec_size > safe_payload_limit
+            ):
+                batches.append(current_batch)
+                current_batch = []
+                current_batch_size = 0
+
+            current_batch.append(rec)
+            current_batch_size += rec_size
+
+        if current_batch:
+            batches.append(current_batch)
+
+        total_tasks = len(batches)
+        if oversized_records and include_oversized:
+            total_tasks += len(oversized_records)
 
         logger.debug(
             "Uploading %d records in %d batches (Public: %s).",
@@ -532,14 +601,14 @@ class MetadataReader:
         )
 
         should_display = should_show_progress(show_progress, console)
-
         rich_progress = None
-        iterator: Iterable[list[FileRecordStrict]]
+        tqdm_bar = None
+        iterator: Iterable[list[FileRecordStrict]] = batches
 
         if should_display and is_jupyter_environment():
             from tqdm import tqdm
 
-            iterator = tqdm(batches, desc="Pushing batches")
+            tqdm_bar = tqdm(total=total_tasks, desc="Pushing records")
         elif should_display:
             from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 
@@ -547,10 +616,7 @@ class MetadataReader:
 
             progress_columns = (
                 SpinnerColumn(),
-                TextColumn(
-                    "{task.description}",
-                    style=active_palette.get("progress_description", "default"),
-                ),
+                TextColumn("{task.description}", style=active_palette.get("progress_description", "default")),
                 BarColumn(complete_style=active_palette.get("progress_bar", "default")),
                 TaskProgressColumn(style=active_palette.get("progress_percentage", "default")),
                 MofNCompleteColumn(),
@@ -564,10 +630,7 @@ class MetadataReader:
                 transient=True,
                 redirect_stderr=True,
             )
-            task_id = rich_progress.add_task("Initializing...", total=len(batches))
-            iterator = batches
-        else:
-            iterator = batches
+            task_id = rich_progress.add_task("Initializing...", total=total_tasks)
 
         with rich_progress if rich_progress else open(os.devnull, "w"):
             for i, batch in enumerate(iterator):
@@ -639,6 +702,94 @@ class MetadataReader:
 
                 if rich_progress:
                     rich_progress.advance(task_id)
+                elif tqdm_bar is not None:
+                    tqdm_bar.update(1)
+
+            if oversized_records and include_oversized:
+                logger.info("Processing %d heavy records individually...", len(oversized_records))
+
+                for j, heavy_rec in enumerate(oversized_records):
+                    if rich_progress:
+                        rich_progress.update(
+                            task_id, description=f"Pushing heavy record {j + 1}/{len(oversized_records)}..."
+                        )
+
+                    file_path = (
+                        hash_to_path_map.get(heavy_rec.hash, heavy_rec.hash) if hash_to_path_map else heavy_rec.hash
+                    )
+
+                    transient_file = self._file_class(
+                        file_path=file_path,
+                        client=self._client,
+                        offline=self.offline,
+                        _file_record=heavy_rec,
+                    )
+
+                    try:
+                        api_response = transient_file._push_heavy(public=public, strict=False)
+
+                        summary["success"] += 1
+                        summary["processed"] += 1
+
+                        # NEW: Record the successful/partial outcome
+                        summary["oversized_records"].append(
+                            {
+                                "file_hash": heavy_rec.hash,
+                                "file_path": file_path,
+                                "status": "success" if api_response.error == 0 else "partial_failure",
+                                "annotations_pushed": api_response.success,
+                                "annotations_failed": api_response.error,
+                            }
+                        )
+
+                        if api_response.error > 0:
+                            summary["errors"].append(
+                                {
+                                    "batch_index": "heavy_fallback",
+                                    "status": "partial_failure",
+                                    "file_hash": heavy_rec.hash,
+                                    "file_path": file_path,
+                                    "error_message": f"Heavy push encountered {api_response.error} annotation errors.",
+                                }
+                            )
+                    except Exception as err:
+                        summary["failed"] += 1
+                        summary["processed"] += 1
+
+                        # NEW: Record the complete failure
+                        summary["oversized_records"].append(
+                            {
+                                "file_hash": heavy_rec.hash,
+                                "file_path": file_path,
+                                "status": "failure",
+                                "error_message": str(err),
+                            }
+                        )
+
+                        error_entry = {
+                            "batch_index": "heavy_fallback",
+                            "status": "failure",
+                            "file_hash": heavy_rec.hash,
+                            "file_path": file_path,
+                            "error_type": type(err).__name__,
+                            "error_message": str(err),
+                        }
+                        summary["errors"].append(error_entry)
+
+                        if fail_fast:
+                            raise BatchIndexingError(
+                                f"Heavy file indexing failed: {err}",
+                                summary=summary,
+                                original_error=err,
+                            ) from err
+
+                    if rich_progress:
+                        rich_progress.advance(task_id)
+                    elif tqdm_bar is not None:
+                        tqdm_bar.update(1)
+
+        if tqdm_bar is not None:
+            tqdm_bar.close()
 
         return summary
 
@@ -650,6 +801,7 @@ class MetadataReader:
         public: bool = False,
         skip_cache: bool = False,
         fail_fast: bool = True,
+        include_oversized: bool = False,
         console: "Console | None" = None,
         show_progress: bool | None = None,
         palette: dict | None = None,
@@ -752,6 +904,7 @@ class MetadataReader:
             public=public,
             fail_fast=fail_fast,
             hash_to_path_map=file_hash_to_path_map,
+            include_oversized=include_oversized,
             console=console,
             palette=palette,
         )

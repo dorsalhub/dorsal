@@ -762,6 +762,7 @@ def index_directory(
     use_cache: bool = True,
     fail_fast: bool = True,
     strict: bool = False,
+    include_oversized: bool = False,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
@@ -771,28 +772,28 @@ def index_directory(
     2. Generates rich metadata for each file locally (offline).
     3. Uploads the records to DorsalHub in managed batches.
 
-    It supports a **Fail-Fast** mode (default) for debugging and a **Best-Effort**
-    mode for bulk operations.
+    It implements a pre-flight safety check to prevent oversized payloads from
+    burning through network bandwidth and failing at the server level.
 
     Example:
         ```python
         from dorsal.api import index_directory
-        from dorsal.common.exceptions import BatchIndexingError
+        from dorsal.common.exceptions import BatchIndexingError, ExceedsApiLimitError
 
-        # Scenario 1: Standard usage (Fail-Fast)
+        # Scenario 1: Standard usage (Safe defaults)
         try:
-            summary = index_directory("path/to/project_assets", recursive=True)
+            summary = index_directory("path/to/project_assets")
             print(f"Success! {summary['success']} files indexed.")
-        except BatchIndexingError as e:
-            print(f"Indexing failed at batch {e.summary['batches'][-1]['batch_index']}.")
-            print(f"Error: {e}")
+        except ExceedsApiLimitError as e:
+            print(f"Directory contains oversized files: {e.excess}")
+            print("Run again with include_oversized=True to push them.")
 
-        # Scenario 2: Bulk Upload (Best-Effort)
-        # Continue processing even if individual batches fail.
+        # Scenario 2: Bulk Upload with Multi-part Fallback
+        # Process heavy files individually and continue on network errors.
         summary = index_directory(
             "path/to/massive_dataset",
-            recursive=True,
-            fail_fast=False
+            fail_fast=False,
+            include_oversized=True
         )
         print(f"Completed. Success: {summary['success']}, Failed: {summary['failed']}")
         ```
@@ -808,9 +809,11 @@ def index_directory(
         use_cache (bool, optional): If True, uses cached metadata for files
             that haven't changed. Defaults to True.
         fail_fast (bool, optional): If True, raises `BatchIndexingError` immediately
-            if a batch fails (HTTP error). Defaults to True.
+            if a network request fails mid-flight. Defaults to True.
         strict (bool, optional): If True, raises `PartialIndexingError` if any partial
-            failures (e.g. invalid annotations) occur. Defaults to False.
+            failures (e.g. invalid annotations) occur during indexing. Defaults to False.
+        include_oversized (bool, optional): If True, bypasses the pre-flight size limits
+            and uploads oversized records individually via multi-part requests. Defaults to False.
 
     Returns:
         dict: A summary dictionary detailing the results of the operation.
@@ -818,7 +821,8 @@ def index_directory(
 
     Raises:
         FileNotFoundError: If the directory does not exist.
-        BatchIndexingError: If `fail_fast` is True and a batch fails.
+        ExceedsApiLimitError: If `include_oversized` is False and a file payload is too large.
+        BatchIndexingError: If `fail_fast` is True and a network batch fails.
         PartialIndexingError: If `strict` is True and partial errors occur.
         DorsalClientError: For critical errors preventing the operation from starting.
     """
@@ -845,6 +849,7 @@ def index_directory(
         public=public,
         skip_cache=not use_cache,
         fail_fast=fail_fast,
+        include_oversized=include_oversized,
     )
 
     if strict:

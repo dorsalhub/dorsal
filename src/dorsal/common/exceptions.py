@@ -68,6 +68,14 @@ class BatchSizeError(ValidationError):
     """The size of the request is too large."""
 
 
+class ExceedsApiLimitError(ValidationError):
+    """One or more items exceeds a limit imposed by the API."""
+
+    def __init__(self, message: str, excess: list[dict[str, Any]]):
+        super().__init__(message)
+        self.excess = excess
+
+
 class SchemaFormatError(ValidationError):
     """Indicates that a JSON schema document is structurally invalid or unprocessable."""
 

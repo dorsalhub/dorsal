@@ -335,6 +335,7 @@ class LocalFileCollection(_BaseFileCollection):
         palette: dict | None = None,
         fail_fast: bool = True,
         strict: bool = False,
+        include_oversized: bool = False,
     ) -> dict:
         """Pushes all file records in the collection to DorsalHub for indexing.
 
@@ -345,6 +346,7 @@ class LocalFileCollection(_BaseFileCollection):
             palette: Color palette for progress display.
             fail_fast: If True (default), aborts immediately on the first batch error.
             strict: If True, raises PartialIndexingError the response contains any errors.
+            include_oversized  If True, uploads oversized records via multi-part requests.
 
         Returns:
             dict: Summary of the push operation.
@@ -397,6 +399,10 @@ class LocalFileCollection(_BaseFileCollection):
 
         records_to_upload = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
 
+        hash_to_path_map: dict[str, str] = {
+            str(f.hash): str(getattr(f, "_file_path", f.name) or f.hash) for f in self.files if f.hash
+        }
+
         if not records_to_upload:
             logger.info("No valid records in the collection to push.")
             return {
@@ -412,6 +418,8 @@ class LocalFileCollection(_BaseFileCollection):
             records=records_to_upload,
             public=public,
             fail_fast=fail_fast,
+            include_oversized=include_oversized,
+            hash_to_path_map=hash_to_path_map,
             console=console,
             palette=palette,
         )

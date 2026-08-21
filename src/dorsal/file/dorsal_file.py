@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dorsal.client import DorsalClient
 from dorsal.client.validators import FileAnnotationResponse, FileDeleteResponse, FileIndexResponse
 from dorsal.common.auth import is_offline_mode
-from dorsal.common.constants import BASE_URL
+from dorsal.common import constants
 from dorsal.common.exceptions import (
     APIError as DorsalClientAPIError,
     AttributeConflictError,
@@ -114,7 +114,7 @@ class FileAnnotationStub:
         self.url: str = self._make_url()
 
     def _make_url(self) -> str:
-        return f"{BASE_URL}/file/{self.parent_hash}/annotations/{self.id}"
+        return f"{constants.BASE_URL}/file/{self.parent_hash}/annotations/{self.id}"
 
     @property
     def info(self) -> dict:
@@ -1754,7 +1754,10 @@ class LocalFile(_DorsalFile):
             self._client = get_shared_dorsal_client(api_key=api_key)
 
         record_bytes = self.model.model_dump_json(exclude_none=True).encode("utf-8")
-        if len(record_bytes) > (14 * 1024 * 1024):  # Server rejects at 15MiB giving 1MiB of headroom for core record
+
+        safe_threshold = constants.API_MAX_RECORD_SIZE_BYTES - constants.API_RECORD_HEADROOM_BYTES
+
+        if len(record_bytes) > safe_threshold:
             return self._push_heavy(public=public, api_key=api_key, strict=strict)
 
         client = self._client

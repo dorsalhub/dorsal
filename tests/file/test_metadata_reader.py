@@ -19,7 +19,6 @@ from pathlib import Path
 import requests
 
 from dorsal.common import constants as dorsal_constants
-from dorsal.version import __version__ as dorsal_actual_VERSION
 from dorsal.client import DorsalClient
 from dorsal.client.validators import FileIndexResponse
 from dorsal.client.validators import IndexResult as ActualIndexResultItem
@@ -28,6 +27,7 @@ from dorsal.common.exceptions import (
     DorsalError,
     DorsalClientError,
     DuplicateFileError,
+    ExceedsApiLimitError,
     ModelRunnerConfigError,
     BaseModelProcessingError,
     PipelineIntegrityError,
@@ -86,9 +86,6 @@ class MockAnnotationsModel(BaseModel):
     file_base: MockAnnotationRecordBase = Field(default_factory=MockAnnotationRecordBase)
     file_mediainfo: MockAnnotationRecordBase | None = None
     file_pdf: MockAnnotationRecordBase | None = None
-
-
-# --- Pytest Fixtures ---
 
 
 @pytest.fixture(autouse=True)
@@ -192,7 +189,6 @@ def temp_dir_with_files(tmp_path: Path):
     return tmp_path
 
 
-# --- Tests for make_dorsalhub_file_url ---
 def test_make_dorsalhub_file_url_basic(mocker):
     mocker.patch.object(dorsal_constants, "BASE_URL", "http://example.com")
     assert make_dorsalhub_file_url("somehash123") == "http://example.com/file/somehash123"
@@ -798,3 +794,219 @@ class TestMetadataReaderReadMethods:
 
         assert exc_info.value is fnf_error
         assert "Directory not found" in caplog.text
+
+
+class TestMetadataReaderOversizedHandling:
+    def test_upload_records_preflight_blocks_oversized(self, metadata_reader_base, mocker):
+        """Verify that records exceeding the size limit raise ExceedsApiLimitError by default."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = "oversizedhash123"
+
+        oversized_json = "x" * (dorsal_constants.API_MAX_RECORD_SIZE_BYTES + 1024)
+        mock_record.model_dump_json.return_value = oversized_json
+
+        with pytest.raises(ExceedsApiLimitError) as exc_info:
+            reader.upload_records([mock_record], include_oversized=False)
+
+        assert "Pre-flight check failed" in str(exc_info.value)
+        assert len(exc_info.value.excess) == 1
+        assert exc_info.value.excess[0]["size"] > dorsal_constants.API_MAX_RECORD_SIZE_BYTES
+
+    def test_upload_records_include_oversized_triggers_fallback(self, metadata_reader_base, mocker):
+        """Verify that include_oversized=True routes heavy records to _push_heavy instead of failing."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = "heavyhash123"
+
+        oversized_json = "x" * (dorsal_constants.API_MAX_RECORD_SIZE_BYTES + 1024)
+        mock_record.model_dump_json.return_value = oversized_json
+
+        mock_transient_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.success = 1
+        mock_response.error = 0
+        mock_transient_instance._push_heavy.return_value = mock_response
+
+        mock_file_class = mocker.patch.object(reader, "_file_class", return_value=mock_transient_instance)
+
+        summary = reader.upload_records([mock_record], include_oversized=True)
+
+        mock_file_class.assert_called_once()
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+
+        assert summary["success"] == 1
+        assert summary["processed"] == 1
+        assert summary["failed"] == 0
+
+    def test_dynamic_batch_packing_respects_batch_limits(self, metadata_reader_base, mocker):
+        """Verify that batches are split correctly when hitting count limits."""
+        reader = metadata_reader_base
+        mocker.patch("dorsal.file.metadata_reader.constants.API_MAX_BATCH_SIZE", 2)
+
+        mock_rec1 = MagicMock(spec=FileRecordStrict, hash="h1")
+        mock_rec1.model_dump_json.return_value = '{"data": "small1"}'
+        mock_rec2 = MagicMock(spec=FileRecordStrict, hash="h2")
+        mock_rec2.model_dump_json.return_value = '{"data": "small2"}'
+        mock_rec3 = MagicMock(spec=FileRecordStrict, hash="h3")
+        mock_rec3.model_dump_json.return_value = '{"data": "small3"}'
+
+        mock_index_response = MagicMock(spec=FileIndexResponse)
+        mock_index_response.success = 2
+        mock_index_response.error = 0
+        mock_index_response.results = []
+        reader._test_mock_client.index_private_file_records.return_value = mock_index_response
+
+        summary = reader.upload_records([mock_rec1, mock_rec2, mock_rec3], include_oversized=False)
+
+        assert len(summary["batches"]) == 2
+        assert summary["batches"][0]["records_in_batch"] == 2
+        assert summary["batches"][1]["records_in_batch"] == 1
+
+
+class TestMetadataReaderSmartBatching:
+    def test_upload_records_preflight_blocks_oversized(self, metadata_reader_base, mocker):
+        """Verify that records exceeding the size limit raise ExceedsApiLimitError by default."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = "oversizedhash123"
+
+        safe_threshold = dorsal_constants.API_MAX_RECORD_SIZE_BYTES - dorsal_constants.API_RECORD_HEADROOM_BYTES
+        oversized_json = "x" * (safe_threshold + 1)
+        mock_record.model_dump_json.return_value = oversized_json
+
+        with pytest.raises(ExceedsApiLimitError) as exc_info:
+            reader.upload_records([mock_record], include_oversized=False)
+
+        assert "Pre-flight check failed" in str(exc_info.value)
+        assert len(exc_info.value.excess) == 1
+        assert exc_info.value.excess[0]["path"] == "oversizedhash123"
+        assert exc_info.value.excess[0]["size"] == safe_threshold + 1
+
+    def test_upload_records_include_oversized_triggers_fallback(self, metadata_reader_base, mocker):
+        """Verify that include_oversized=True routes heavy records to _push_heavy instead of failing."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = "heavyhash123"
+
+        safe_threshold = dorsal_constants.API_MAX_RECORD_SIZE_BYTES - dorsal_constants.API_RECORD_HEADROOM_BYTES
+        oversized_json = "x" * (safe_threshold + 1024)
+        mock_record.model_dump_json.return_value = oversized_json
+
+        mock_transient_instance = MagicMock()
+        mock_response = MagicMock(spec=FileIndexResponse)
+        mock_response.success = 1
+        mock_response.error = 0
+        mock_transient_instance._push_heavy.return_value = mock_response
+
+        mock_file_class = mocker.patch.object(reader, "_file_class", return_value=mock_transient_instance)
+
+        summary = reader.upload_records([mock_record], include_oversized=True)
+
+        mock_file_class.assert_called_once()
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+
+        assert summary["success"] == 1
+        assert summary["processed"] == 1
+        assert summary["failed"] == 0
+
+        assert len(summary["oversized_records"]) == 1
+        assert summary["oversized_records"][0]["file_hash"] == "heavyhash123"
+        assert summary["oversized_records"][0]["status"] == "success"
+        assert summary["oversized_records"][0]["annotations_pushed"] == 1
+        assert summary["oversized_records"][0]["annotations_failed"] == 0
+
+    def test_dynamic_batch_packing_respects_payload_limits(self, metadata_reader_base, mocker):
+        """Verify that batches are split when cumulative byte size approaches the 500 MiB limit."""
+        reader = metadata_reader_base
+
+        record_size = 13 * 1024 * 1024
+        num_records = 39
+
+        mock_recs = []
+        for i in range(num_records):
+            rec = MagicMock(spec=FileRecordStrict, hash=f"h{i}")
+            rec.model_dump_json.return_value = "x" * record_size
+            mock_recs.append(rec)
+
+        mock_index_response = MagicMock(spec=FileIndexResponse)
+        mock_index_response.success = len(mock_recs)
+        mock_index_response.error = 0
+        mock_index_response.results = []
+        reader._test_mock_client.index_private_file_records.return_value = mock_index_response
+
+        summary = reader.upload_records(mock_recs, include_oversized=False)
+
+        assert len(summary["batches"]) > 1
+
+        safe_payload_limit = dorsal_constants.API_MAX_PAYLOAD_SIZE_BYTES - (1024 * 1024)
+        for batch_info in summary["batches"]:
+            assert (batch_info["records_in_batch"] * record_size) <= safe_payload_limit
+
+        assert summary["processed"] == num_records
+
+    def test_dynamic_batch_packing_respects_count_limits(self, metadata_reader_base, mocker):
+        """Verify that batches are split when cumulative count reaches API_MAX_BATCH_SIZE (1000)."""
+        reader = metadata_reader_base
+
+        num_records = dorsal_constants.API_MAX_BATCH_SIZE + 5
+
+        mock_recs = []
+        for i in range(num_records):
+            rec = MagicMock(spec=FileRecordStrict, hash=f"h{i}")
+            rec.model_dump_json.return_value = '{"tiny": "payload"}'
+            mock_recs.append(rec)
+
+        mock_index_response = MagicMock(spec=FileIndexResponse)
+        mock_index_response.success = dorsal_constants.API_MAX_BATCH_SIZE
+        mock_index_response.error = 0
+        mock_index_response.results = []
+        reader._test_mock_client.index_private_file_records.return_value = mock_index_response
+
+        summary = reader.upload_records(mock_recs, include_oversized=False)
+
+        assert len(summary["batches"]) == 2
+        assert summary["batches"][0]["records_in_batch"] == dorsal_constants.API_MAX_BATCH_SIZE
+        assert summary["batches"][1]["records_in_batch"] == 5
+
+    def test_upload_records_heavy_fallback_fails_fast(self, metadata_reader_base, mocker):
+        """Verify that a failure during the heavy fallback obeys the fail_fast directive."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict, hash="heavy")
+
+        safe_threshold = dorsal_constants.API_MAX_RECORD_SIZE_BYTES - dorsal_constants.API_RECORD_HEADROOM_BYTES
+        mock_record.model_dump_json.return_value = "x" * (safe_threshold + 10)
+
+        mock_transient_instance = MagicMock()
+        mock_transient_instance._push_heavy.side_effect = Exception("Heavy upload failed")
+        mocker.patch.object(reader, "_file_class", return_value=mock_transient_instance)
+
+        with pytest.raises(BatchIndexingError) as exc_info:
+            reader.upload_records([mock_record], include_oversized=True, fail_fast=True)
+
+        assert len(exc_info.value.summary["oversized_records"]) == 1
+        assert exc_info.value.summary["oversized_records"][0]["status"] == "failure"
+        assert exc_info.value.summary["oversized_records"][0]["error_message"] == "Heavy upload failed"
+
+    def test_upload_records_heavy_fallback_continues(self, metadata_reader_base, mocker):
+        """Verify that a failure during the heavy fallback continues when fail_fast=False."""
+        reader = metadata_reader_base
+        mock_record = MagicMock(spec=FileRecordStrict, hash="heavy")
+
+        safe_threshold = dorsal_constants.API_MAX_RECORD_SIZE_BYTES - dorsal_constants.API_RECORD_HEADROOM_BYTES
+        mock_record.model_dump_json.return_value = "x" * (safe_threshold + 10)
+
+        mock_transient_instance = MagicMock()
+        mock_transient_instance._push_heavy.side_effect = Exception("Heavy upload failed")
+        mocker.patch.object(reader, "_file_class", return_value=mock_transient_instance)
+
+        summary = reader.upload_records([mock_record], include_oversized=True, fail_fast=False)
+
+        assert summary["failed"] == 1
+        assert summary["success"] == 0
+        assert len(summary["errors"]) == 1
+        assert summary["errors"][0]["batch_index"] == "heavy_fallback"
+
+        assert len(summary["oversized_records"]) == 1
+        assert summary["oversized_records"][0]["status"] == "failure"
+        assert summary["oversized_records"][0]["error_message"] == "Heavy upload failed"
