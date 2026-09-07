@@ -32,6 +32,7 @@ def get_cpu_info() -> str:
     if platform.system() == "Windows":
         try:
             import winreg
+
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
                 val, _ = winreg.QueryValueEx(key, "ProcessorNameString")
                 return val.strip()
@@ -127,7 +128,7 @@ def run_benchmark(target_dir: Path, cap_gb: float, threads: int | None) -> None:
     files_processed = 0
 
     print(f"Scanning '{target_dir}' and hashing files...\n")
-    
+
     start_wall_time = time.perf_counter()
 
     for file_path, size_bytes in find_files(target_dir):
@@ -136,11 +137,11 @@ def run_benchmark(target_dir: Path, cap_gb: float, threads: int | None) -> None:
 
         try:
             t0 = time.perf_counter()
-            
+
             hasher.hash(str(file_path), file_size=size_bytes, threads=threads)
             t1 = time.perf_counter()
 
-            total_hash_time += (t1 - t0)
+            total_hash_time += t1 - t0
             total_bytes += size_bytes
             files_processed += 1
 
@@ -152,8 +153,8 @@ def run_benchmark(target_dir: Path, cap_gb: float, threads: int | None) -> None:
             continue
 
     total_wall_time = time.perf_counter() - start_wall_time
-    print(" " * 60 + "\r", end="")  
-    
+    print(" " * 60 + "\r", end="")
+
     if files_processed == 0:
         print("No files were processed. Ensure the directory contains readable files.")
         return
@@ -174,22 +175,13 @@ def run_benchmark(target_dir: Path, cap_gb: float, threads: int | None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Standalone benchmark for Dorsal unified FileHasher.")
-    parser.add_argument(
-        "target_dir",
-        type=Path,
-        help="The root directory containing real files to hash."
-    )
-    parser.add_argument(
-        "--cap",
-        type=float,
-        default=50.0,
-        help="Maximum total data to hash in GB (default: 50.0)"
-    )
+    parser.add_argument("target_dir", type=Path, help="The root directory containing real files to hash.")
+    parser.add_argument("--cap", type=float, default=50.0, help="Maximum total data to hash in GB (default: 50.0)")
     parser.add_argument(
         "--threads",
         type=int,
         default=None,
-        help="Max worker threads to use. Omit to auto-detect based on cores/algorithms. Set to 1 to force synchronous mode."
+        help="Max worker threads to use. Omit to auto-detect based on cores/algorithms. Set to 1 to force synchronous mode.",
     )
     args = parser.parse_args()
 
