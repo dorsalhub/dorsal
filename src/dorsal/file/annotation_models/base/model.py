@@ -17,7 +17,7 @@ import os
 from typing import Any
 
 from dorsal.common.model import AnnotationModel
-from dorsal.file.utils import get_quick_hash, multi_hash
+from dorsal.file.utils import multi_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
 
 logger = logging.getLogger(__name__)
