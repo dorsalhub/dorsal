@@ -22,7 +22,6 @@ import xml.etree.ElementTree as ET
 
 from dorsal.file.preprocessing.office import extract_docx_text
 
-# --- Helpers ---
 
 DOC_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
@@ -49,26 +48,22 @@ def mock_zip():
     """
     with patch("zipfile.ZipFile") as MockZipFile:
         mock_instance = MockZipFile.return_value
-        # Setup context manager protocol
+
         mock_instance.__enter__.return_value = mock_instance
         mock_instance.__exit__.return_value = None
         yield mock_instance
 
 
-# --- Tests ---
-
-
 class TestExtractDocxText:
     def test_single_page_simple_text(self, mock_zip):
         """Test basic extraction of paragraphs and text."""
-        # <w:p><w:r><w:t>Hello World</w:t></w:r></w:p>
+
         content = "<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>"
 
         mock_zip.read.return_value = build_docx_xml(content)
 
         pages = extract_docx_text("dummy.docx")
 
-        # The function logic:
         # <w:p> adds "\n"
         # <w:t> adds "Hello World"
         # Result "Hello World" (stripped)
@@ -108,13 +103,7 @@ class TestExtractDocxText:
 
     def test_handles_invalid_zip(self, mock_zip):
         """Test that BadZipFile is caught and logs error."""
-        # Make the constructor raise, simulating a corrupt file
-        # We need to patch the constructor directly, but since our fixture
-        # already mocked the class, we can set the side_effect on the mock class calls
-        # However, it's cleaner to patch specific behavior for this test.
 
-        # Resetting logic: The function does `with zipfile.ZipFile(...)`.
-        # If construction fails:
         with patch("zipfile.ZipFile", side_effect=zipfile.BadZipFile("Bad zip")):
             pages = extract_docx_text("corrupt.docx")
 
@@ -122,7 +111,7 @@ class TestExtractDocxText:
 
     def test_handles_missing_document_xml(self, mock_zip):
         """Test that KeyError (missing file in zip) is caught."""
-        # Simulation: zip file opens fine, but 'word/document.xml' is missing
+
         mock_zip.read.side_effect = KeyError("word/document.xml not found")
 
         pages = extract_docx_text("empty_zip.docx")
@@ -131,7 +120,7 @@ class TestExtractDocxText:
 
     def test_handles_malformed_xml(self, mock_zip):
         """Test that XML parse errors are caught."""
-        # Return invalid XML bytes
+
         mock_zip.read.return_value = b"<w:document> <UnclosedTag> </w:document>"
 
         pages = extract_docx_text("bad_xml.docx")
@@ -140,13 +129,10 @@ class TestExtractDocxText:
 
     def test_empty_text_nodes(self, mock_zip):
         """Test that <w:t> tags with no content (None) don't crash."""
-        # <w:t/> with no text
+
         content = "<w:p><w:t/></w:p>"
         mock_zip.read.return_value = build_docx_xml(content)
 
         pages = extract_docx_text("dummy.docx")
 
-        # Should return empty string page (or nothing depending on stripping)
-        # ".strip()" on empty list join result "" is ""
-        # If the page has content "\n" (from <w:p>), it strips to ""
         assert len(pages) == 0 or (len(pages) == 1 and pages[0] == "")

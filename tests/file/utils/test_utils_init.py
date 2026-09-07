@@ -18,7 +18,6 @@ from dorsal.file.utils import get_quick_hash, multi_hash
 from dorsal.common.exceptions import QuickHashFileSizeError, QuickHashFileInstabilityError
 
 
-# --- Fixtures ---
 @pytest.fixture
 def mock_file_hasher(mocker):
     return mocker.patch("dorsal.file.utils.FILE_HASHER")
@@ -37,9 +36,6 @@ def mock_filesize(mocker):
 @pytest.fixture
 def mock_os_path_getsize(mocker):
     return mocker.patch("os.path.getsize", return_value=1000)
-
-
-# --- get_quick_hash Tests ---
 
 
 def test_get_quick_hash_success(mock_quick_hasher, mock_filesize):
@@ -62,12 +58,9 @@ def test_get_quick_hash_os_error(mock_filesize):
         get_quick_hash("file.txt")
 
 
-# --- multi_hash Tests ---
-
-
 def test_multi_hash_success(mock_file_hasher, mock_quick_hasher, mock_os_path_getsize):
     """Test full success path."""
-    # Setup returns
+
     mock_file_hasher.hash.return_value = {"SHA-256": "sha", "BLAKE3": "blake"}
     mock_quick_hasher.hash.return_value = "quick"
 
@@ -77,7 +70,6 @@ def test_multi_hash_success(mock_file_hasher, mock_quick_hasher, mock_os_path_ge
     assert result["BLAKE3"] == "blake"
     assert result["QUICK"] == "quick"
 
-    # Verify calculate_tlsh was passed through
     call_kwargs = mock_file_hasher.hash.call_args[1]
     assert call_kwargs["calculate_tlsh"] is True
 

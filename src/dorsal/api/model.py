@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import logging
 import pathlib
 import importlib.metadata
@@ -64,6 +65,58 @@ class ModelTargetResolution(BaseModel):
 
     metadata: ModelMetadata | None = None
     error_message: str | None = None
+
+
+def _inspect_annotation_model(model_cls: type) -> dict:
+    """Extracts metadata and options from an AnnotationModel."""
+    options: dict[str, dict[str, Any]] = {}
+
+    info: dict[str, Any] = {
+        "description": inspect.cleandoc(model_cls.__doc__ or "No description provided."),
+        "id": getattr(model_cls, "id", None),
+        "version": getattr(model_cls, "version", None),
+        "options": options,
+    }
+
+    main_method = getattr(model_cls, "main", None)
+    if not main_method:
+        return info
+
+    docstring = inspect.cleandoc(main_method.__doc__ or "")
+    param_docs = {}
+    in_args_section = False
+
+    for line in docstring.splitlines():
+        line_stripped = line.strip()
+        if line_stripped == "Args:":
+            in_args_section = True
+            continue
+        elif in_args_section and not line.startswith(" ") and line_stripped:
+            if ":" not in line:
+                break
+
+        if in_args_section and ":" in line:
+            param_name, param_desc = line.split(":", 1)
+            param_docs[param_name.strip()] = param_desc.strip()
+
+    sig = inspect.signature(main_method)
+    for name, param in sig.parameters.items():
+        if name in ("self", "args", "kwargs"):
+            continue
+
+        opt_type = "str"
+        if param.annotation != inspect.Parameter.empty:
+            opt_type = str(param.annotation).replace("<class '", "").replace("'>", "")
+            if opt_type.startswith("typing."):
+                opt_type = opt_type.split(".")[-1]
+
+        options[name] = {
+            "type": opt_type,
+            "default": param.default if param.default != inspect.Parameter.empty else None,
+            "help": param_docs.get(name, "No description provided."),
+        }
+
+    return info
 
 
 def prepare_model_target(target: str) -> ModelTargetResolution:
@@ -336,32 +389,26 @@ def get_model_help(target: str) -> dict[str, Any]:
     if not res.is_installed:
         return {"status": "not_installed", "target": target, "package_name": res.package_name}
 
-    package_name: str
-    if res.strategy == "pipeline":
-        pipeline = get_model_pipeline(scope="effective")
-        pipeline_step = next((step for step in pipeline if step.annotation_model.name == target), None)
+    package_name = res.package_name or "dorsal"
 
-        if pipeline_step:
-            package_name = pipeline_step.package_name or "dorsal"
-            module_name = pipeline_step.annotation_model.module
-            model_class = pipeline_step.annotation_model.name
-
-            try:
-                config_data = _load_package_config(module_name, package_name)
-            except DorsalConfigError:
-                logger.debug(f"No model_config.toml found for {model_class}, using pipeline options.")
-                config_data = {"model_class": model_class, "options": pipeline_step.options or {}}
+    try:
+        if res.strategy == "pipeline":
+            pipeline = get_model_pipeline(scope="effective")
+            pipeline_step = next(step for step in pipeline if step.annotation_model.name == target)
         else:
-            return {"status": "error", "target": target, "error": f"Failed to retrieve pipeline step for {target}"}
-    else:
-        if not res.package_name:
-            return {"status": "error", "target": target, "error": f"No package name found for target '{target}'."}
-        package_name = res.package_name
-        try:
-            module_name = _resolve_module_from_package(package_name)
-            config_data = _load_package_config(module_name, package_name)
-        except Exception as e:
-            return {"status": "config_error", "target": target, "package_name": package_name, "error": str(e)}
+            pipeline_step = _construct_step_from_package(package_name)
+
+        model_cls, _ = resolve_pipeline_step_models(pipeline_step)
+
+        module_name = model_cls.__module__
+
+    except Exception as e:
+        return {"status": "error", "target": target, "error": f"Failed to load model class: {e}"}
+
+    try:
+        config_data = _load_package_config(module_name, package_name)
+    except DorsalConfigError as e:
+        return {"status": "config_error", "target": target, "package_name": package_name, "error": str(e)}
 
     raw_options = config_data.get("options", {})
     normalized_options: dict[str, dict[str, Any]] = {}
@@ -369,10 +416,8 @@ def get_model_help(target: str) -> dict[str, Any]:
     for opt_key, opt_val in raw_options.items():
         if isinstance(opt_val, dict):
             opt_type = opt_val.get("type")
-
             if not opt_type and "default" in opt_val:
                 opt_type = type(opt_val["default"]).__name__
-
             elif not opt_type:
                 opt_type = "str"
 
@@ -388,10 +433,17 @@ def get_model_help(target: str) -> dict[str, Any]:
                 "help": "No description provided.",
             }
 
+    class_desc = inspect.cleandoc(model_cls.__doc__ or "")
+    model_id = getattr(model_cls, "id", target)
+    model_version = getattr(model_cls, "version", "unknown")
+
     return {
         "status": "success",
         "target": target,
         "package_name": package_name,
-        "model_class": config_data.get("model_class", "UnknownClass"),
+        "model_class": model_cls.__name__,
+        "model_id": model_id,
+        "model_version": model_version,
+        "class_description": class_desc,
         "options": normalized_options,
     }

@@ -58,6 +58,7 @@ def init_model(
                 f"  $ cd {result.clean_name}\n"
                 f"  $ dorsal model install .",
                 title="Model Initialized",
+                expand=False,
                 border_style=palette.get("panel_border_success", "green"),
                 title_align="left",
             )

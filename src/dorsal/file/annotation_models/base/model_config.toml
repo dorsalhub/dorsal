@@ -1,0 +1,8 @@
+model_class = "FileCoreAnnotationModel"
+
+schema_id = "file/base"
+schema_version = "1.0.0"
+
+[options]
+calculate_hashes = { type = "bool", default = true, help = "If true, the model will calculate cryptographic hashes for the file." }
+calculate_similarity_hash = { type = "bool", default = false, help = "If true, the TLSH similarity hash will be calculated and included in the results." }

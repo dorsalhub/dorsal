@@ -52,7 +52,7 @@ def test_make_media_type_fail_no_args():
 
 
 def test_make_extension_success():
-    # Test normalization (adding dot, lowering case)
+
     dep = make_file_extension_dependency(extensions=["PDF", ".txt"])
     assert isinstance(dep, FileExtensionDependencyConfig)
     assert ".pdf" in dep.extensions
@@ -71,9 +71,6 @@ def test_make_extension_fail_empty():
     assert "must have at least one extension" in str(exc.value)
 
 
-# --- File Size Dependency Tests ---
-
-
 def test_make_size_success():
     dep = make_file_size_dependency(min_size="1KB", max_size=2000)
     assert isinstance(dep, FileSizeDependencyConfig)
@@ -85,9 +82,6 @@ def test_make_size_fail_no_args():
     with pytest.raises(ValueError) as exc:
         make_file_size_dependency()
     assert "must have at least one" in str(exc.value)
-
-
-# --- File Name Dependency Tests ---
 
 
 def test_make_filename_success():

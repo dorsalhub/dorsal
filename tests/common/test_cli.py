@@ -511,7 +511,7 @@ def test_render_model_help_panel_success_with_options(mock_ui_context):
 
 
 def test_render_model_help_panel_not_installed_registry(mock_ui_context):
-    """Test the panel rendering when a registry model is resolved but not installed."""
+    """Test the panel rendering when a model is resolved but not installed."""
     help_info = {"status": "not_installed", "target": "org/my-target", "package_name": "my-pkg"}
     panel = cli.render_model_help_panel(help_info, mock_ui_context)
 

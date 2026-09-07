@@ -27,6 +27,7 @@ from dorsal.api.model import (
     _build_pipeline_step,
     _find_pipeline_step_by_target,
     get_model_help,
+    _inspect_annotation_model,
     ModelTargetResolution,
 )
 from dorsal.common.exceptions import DorsalError, DorsalConfigError, AuthError, NotFoundError
@@ -422,62 +423,77 @@ def test_get_model_help_not_installed(mock_prepare):
 
 
 @patch("dorsal.api.model.prepare_model_target")
-def test_get_model_help_no_package_name(mock_prepare):
+@patch("dorsal.api.model._construct_step_from_package")
+def test_get_model_help_no_package_name(mock_construct, mock_prepare):
+
     mock_prepare.return_value = ModelTargetResolution(
         target="tgt", strategy="package", is_installed=True, package_name=None
     )
+    mock_construct.side_effect = Exception("Construct failed for dorsal fallback")
+
     res = get_model_help("tgt")
+
     assert res["status"] == "error"
-    assert "No package name found" in res["error"]
+    assert "Failed to load model class" in res["error"]
+    assert "Construct failed for dorsal fallback" in res["error"]
+    mock_construct.assert_called_once_with("dorsal")
 
 
 @patch("dorsal.api.model.prepare_model_target")
 @patch("dorsal.api.model.get_model_pipeline")
-@patch("dorsal.api.model._load_package_config")
-def test_get_model_help_pipeline_branches(mock_load, mock_pipeline, mock_prepare):
+def test_get_model_help_pipeline_branches(mock_pipeline, mock_prepare):
+
     mock_prepare.return_value = ModelTargetResolution(target="Missing", strategy="pipeline", is_installed=True)
     mock_pipeline.return_value = []
+
     res = get_model_help("Missing")
     assert res["status"] == "error"
-    assert "Failed to retrieve pipeline step" in res["error"]
-
-    mock_prepare.return_value = ModelTargetResolution(target="Found", strategy="pipeline", is_installed=True)
-    step = MagicMock()
-    step.annotation_model.name = "Found"
-    step.package_name = "pkg"
-    step.options = {"my_opt": 1}
-    mock_pipeline.return_value = [step]
-
-    mock_load.side_effect = DorsalConfigError("No config")
-    res = get_model_help("Found")
-    assert res["status"] == "success"
-    assert res["options"]["my_opt"]["default"] == 1
+    assert "Failed to load model class:" in res["error"]
 
 
 @patch("dorsal.api.model.prepare_model_target")
-@patch("dorsal.api.model._resolve_module_from_package")
-def test_get_model_help_config_error(mock_mod, mock_prepare):
+@patch("dorsal.api.model._construct_step_from_package")
+@patch("dorsal.api.model.resolve_pipeline_step_models")
+@patch("dorsal.api.model._load_package_config")
+def test_get_model_help_config_error(mock_load, mock_resolve, mock_construct, mock_prepare):
+
     mock_prepare.return_value = ModelTargetResolution(
         target="my-pkg", strategy="registry_id", package_name="my-pkg", is_installed=True
     )
-    mock_mod.side_effect = DorsalConfigError("Missing module")
+
+    mock_construct.return_value = MagicMock()
+    mock_resolve.return_value = (MagicMock(__module__="my_module"), None)
+
+    mock_load.side_effect = DorsalConfigError("Missing TOML file for my-pkg")
 
     res = get_model_help("my-pkg")
     assert res["status"] == "config_error"
-    assert "Missing module" in res["error"]
+    assert "Missing TOML file for my-pkg" in res["error"]
 
 
 @patch("dorsal.api.model.prepare_model_target")
 @patch("dorsal.api.model._resolve_module_from_package")
 @patch("dorsal.api.model._load_package_config")
-def test_get_model_help_success(mock_load, mock_mod, mock_prepare):
+@patch("dorsal.api.model.resolve_pipeline_step_models")
+def test_get_model_help_success(mock_resolve_models, mock_load, mock_mod, mock_prepare):
     mock_prepare.return_value = ModelTargetResolution(
         target="my-pkg", strategy="registry_id", package_name="my-pkg", is_installed=True
     )
     mock_mod.return_value = "my_module"
 
+    class DummyModel:
+        """
+        Extracted Test Description.
+        """
+
+        id = "dorsalhub/dummy"
+        version = "1.0.0"
+
+    mock_resolve_models.return_value = (DummyModel, None)
+
     mock_load.return_value = {
         "model_class": "MyModel",
+        "schema_id": "open/generic",
         "options": {
             "flat_option": 10,
             "dict_option": {"default": 20, "help": "a number"},
@@ -487,6 +503,49 @@ def test_get_model_help_success(mock_load, mock_mod, mock_prepare):
 
     res = get_model_help("my-pkg")
     assert res["status"] == "success"
+
     options = res["options"]
     assert options["flat_option"]["default"] == 10
     assert options["dict_no_default"]["default"] is None
+
+    assert res["model_id"] == "dorsalhub/dummy"
+    assert res["model_version"] == "1.0.0"
+    assert res["class_description"] == "Extracted Test Description."
+
+
+def test_inspect_annotation_model():
+    """Validates that the class inspector correctly extracts docstrings and signatures."""
+
+    class MockModel:
+        """
+        Mock model description.
+        """
+
+        id = "test/mock"
+        version = "0.9.0"
+
+        def main(self, alpha: int = 5, beta: str = "test"):
+            """
+            Main method.
+
+            Args:
+                alpha: The alpha value.
+                beta: The beta value.
+            """
+            pass
+
+    info = _inspect_annotation_model(MockModel)
+
+    assert info["id"] == "test/mock"
+    assert info["version"] == "0.9.0"
+    assert info["description"] == "Mock model description."
+
+    opts = info["options"]
+    assert "alpha" in opts
+    assert opts["alpha"]["default"] == 5
+    assert opts["alpha"]["type"] == "int"
+    assert opts["alpha"]["help"] == "The alpha value."
+
+    assert "beta" in opts
+    assert opts["beta"]["default"] == "test"
+    assert opts["beta"]["type"] == "str"

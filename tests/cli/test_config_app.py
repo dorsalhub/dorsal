@@ -34,7 +34,7 @@ def mock_config_app(mocker):
     """
     Mocks all backend dependencies for the `dorsal config` commands.
     """
-    # Mock the direct config read used in `show_config`
+
     mocker.patch(
         "dorsal.common.config.load_config",
         return_value=(
@@ -129,8 +129,8 @@ def test_show_config_no_borders(mock_rich_console, mock_config_app):
     result = runner.invoke(app, ["--borders", "none", "config", "show"])
 
     assert result.exit_code == 0
-    # The output should be a Group (Text title + Table) instead of a Panel
-    rendered_element = mock_rich_console.print.call_args_list[-3].args[0]  # Get the main renderable
+
+    rendered_element = mock_rich_console.print.call_args_list[-3].args[0]
     assert isinstance(rendered_element, Group)
 
 
@@ -201,9 +201,6 @@ def test_list_themes_no_borders(mock_rich_console, mock_config_app):
     assert isinstance(rendered_element, Group)
 
 
-# --- Set UI Preferences Tests ---
-
-
 def test_set_ui_preferences_success(mock_rich_console, mock_config_app):
     """Tests successfully setting multiple valid UI preferences."""
     from dorsal.common.auth import write_ui_config
@@ -264,9 +261,6 @@ def test_set_ui_preferences_os_error(mocker, mock_rich_console, mock_config_app)
 
     error_in_mock = any("Permission denied" in str(call.args[0]) for call in mock_rich_console.print.call_args_list)
     assert error_in_mock or "Permission denied" in result.output
-
-
-# --- Pipeline Tests ---
 
 
 @pytest.fixture

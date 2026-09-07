@@ -24,7 +24,7 @@ from dorsal.common.exceptions import (
 )
 from dorsal.common.validators.datasets import Dataset
 
-# Constants
+
 _DUMMY_API_KEY = "abc123_test_key"
 _DUMMY_BASE_URL = "http://dorsalhub.test"
 _DUMMY_DATASET_ID = "my-org/test-dataset"
@@ -50,9 +50,6 @@ def mock_dataset_full_json():
         "date_created": "2025-01-01T12:00:00Z",
         "date_modified": "2025-01-01T12:00:00Z",
     }
-
-
-# --- get_dataset Tests ---
 
 
 def test_get_dataset_success(client, requests_mock, mock_dataset_full_json):
@@ -91,9 +88,6 @@ def test_get_dataset_validation_error(client, requests_mock):
         client.get_dataset(_DUMMY_DATASET_ID)
 
 
-# --- get_dataset_type Tests ---
-
-
 def test_get_dataset_type_success(client, requests_mock):
     """Test retrieving dataset type."""
     target_url = f"{_DUMMY_BASE_URL}/v1/namespaces/{_DUMMY_NAMESPACE}/datasets/{_DUMMY_NAME}/type"
@@ -112,9 +106,6 @@ def test_get_dataset_type_unknown(client, requests_mock):
         client.get_dataset_type(_DUMMY_DATASET_ID)
 
 
-# --- get_dataset_schema Tests ---
-
-
 def test_get_dataset_schema_success(client, requests_mock, mock_dataset_full_json):
     """Test retrieving just the schema."""
     target_url = f"{_DUMMY_BASE_URL}/v1/namespaces/{_DUMMY_NAMESPACE}/datasets/{_DUMMY_NAME}/schema"
@@ -131,9 +122,6 @@ def test_get_dataset_schema_open_id(client, requests_mock):
     )
     result = client.get_dataset_schema("open/classification")
     assert result == {"type": "object"}
-
-
-# --- make_schema_validator Tests ---
 
 
 def test_make_schema_validator_success(client, requests_mock):
@@ -161,7 +149,7 @@ def test_make_schema_validator_invalid_schema(client, requests_mock):
     """Test handling of a schema that isn't valid JSON Schema."""
     target_url = f"{_DUMMY_BASE_URL}/v1/namespaces/{_DUMMY_NAMESPACE}/datasets/{_DUMMY_NAME}/schema"
 
-    invalid_schema = []  # Schemas must be dicts
+    invalid_schema = []
 
     requests_mock.get(target_url, json=invalid_schema, status_code=200)
 

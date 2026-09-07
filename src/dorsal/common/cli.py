@@ -331,11 +331,11 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
     status = help_info.get("status")
 
     if status == "error":
-        # Cleaned up error title and payload
         return Panel(
             help_info.get("error", "Unknown error"),
             title="[bold yellow]Model Resolution Failed[/]",
             border_style="yellow",
+            expand=False,
             box=borders,
         )
 
@@ -345,11 +345,12 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
 
         if "/" in target:
             return Panel(
-                f"Registry model [bold cyan]{target}[/] (package: [bold]{pkg}[/]) is not installed.\n"
+                f"Model [bold cyan]{target}[/] (package: [bold]{pkg}[/]) is not installed.\n"
                 f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options.",
                 title=f"Model: {target}",
                 border_style="cyan",
                 box=borders,
+                expand=False,
             )
         else:
             return Panel(
@@ -358,6 +359,7 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
                 title=f"Model: {target}",
                 border_style="cyan",
                 box=borders,
+                expand=False,
             )
 
     if status == "config_error":
@@ -366,6 +368,7 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
             title="[bold red]Configuration Error[/]",
             border_style="red",
             box=borders,
+            expand=False,
         )
 
     options = help_info.get("options", {})
@@ -377,6 +380,7 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
             title=f"Model: {help_info['package_name']}",
             border_style="green",
             box=borders,
+            expand=False,
         )
 
     table = Table(show_header=True, header_style="bold", box=None, expand=True)
@@ -417,6 +421,7 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
         border_style=palette.get("panel_border_info", "green"),
         padding=(1, 2),
         box=borders,
+        expand=False,
     )
 
 

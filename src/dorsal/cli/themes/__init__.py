@@ -16,7 +16,7 @@ import os
 from typing import TypedDict
 from rich.box import Box
 
-# 1. Import the module, not the function!
+
 from dorsal.common import config as dorsal_config
 from dorsal.common.validators import get_truthy_envvar
 from dorsal.cli.themes.palettes import get_palette
