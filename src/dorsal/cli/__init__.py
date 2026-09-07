@@ -164,11 +164,6 @@ def main(
     ctx.obj = get_ui_theme(theme_override=theme, icon_override=icons, border_override=borders)
 
 
-# ==============================================================================
-# Command & Group Registrations
-# ==============================================================================
-
-# --- Local Operations ---
 app.command(
     name="scan", help="Scan a local file or directory. Generates file metadata.", rich_help_panel="Local Operations"
 )(scan_target)
@@ -193,7 +188,7 @@ app.command(
     name="report", help="Generate HTML report for a local file or directory.", rich_help_panel="Local Operations"
 )(report_target)
 
-# --- DorsalHub & Cloud ---
+
 app.add_typer(hub_app_, name="hub", rich_help_panel="DorsalHub")
 app.command(name="id", help="Identify a local file by its hash. Queries DorsalHub.", rich_help_panel="DorsalHub")(
     identify_target
@@ -209,7 +204,7 @@ app.command(name="push", help="Push metadata for a local file or directory to Do
 )
 app.add_typer(collection_app_, name="collection", rich_help_panel="DorsalHub")
 
-# --- Models & Pipelines ---
+
 app.command(name="run", help="Run a model on a local file or directory.", rich_help_panel="Models & Pipelines")(
     run_model
 )
@@ -220,13 +215,13 @@ app.add_typer(model_app_, name="model", rich_help_panel="Models & Pipelines")
 app.add_typer(pipeline_app_, name="pipeline", rich_help_panel="Models & Pipelines")
 app.add_typer(adapter_app_, name="adapter", rich_help_panel="Models & Pipelines")
 
-# --- Configuration & System ---
+
 app.add_typer(auth_app_, name="auth", rich_help_panel="Configuration & System")
 app.add_typer(index_app_, name="index", rich_help_panel="Configuration & System")
 app.add_typer(config_app_, name="config", rich_help_panel="Configuration & System")
 app.add_typer(theme_app_, name="theme", rich_help_panel="Configuration & System")
 
-# --- Hidden / Internal ---
+
 app.add_typer(local_app_, name="local", hidden=True)
 
 
@@ -238,7 +233,6 @@ def cli_app():
 
         console = get_rich_console()
 
-        # Safely extract all three UI overrides
         theme_override = _extract_global_flag("--theme")
         icons_override = _extract_global_flag("--icons")
         borders_override = _extract_global_flag("--borders")

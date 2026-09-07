@@ -1,0 +1,12 @@
+model_class = "MediaInfoAnnotationModel"
+
+schema_id = "file/mediainfo"
+schema_version = "1.0.0"
+
+[[dependencies]]
+type = "media_type"
+# Broadly matches audio and video files based on their top-level media type
+include = ["audio", "video"]
+
+[options]
+# The mediainfo model currently requires no runtime configuration options.

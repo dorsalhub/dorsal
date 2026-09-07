@@ -67,9 +67,6 @@ def mock_runner(mocker):
     return runner
 
 
-# --- Tests: _execute ---
-
-
 def test_execute_success(annotator, mock_runner):
     res = annotator._execute(
         model_runner=mock_runner,
@@ -120,9 +117,6 @@ def test_execute_runner_returns_nothing(annotator, mock_runner):
     assert "returned no record and no error" in str(exc.value)
 
 
-# --- Tests: annotate_file_using_model_and_validator ---
-
-
 def test_annotate_direct_success(annotator, mock_runner, mocker):
     mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
 
@@ -144,7 +138,7 @@ def test_annotate_direct_missing_schema(annotator, mock_runner):
             model_runner=mock_runner,
             annotation_model_cls=MockAnnotationModel,
             schema_id=None,
-            private=False,  # type: ignore
+            private=False,
         )
 
 
@@ -153,20 +147,16 @@ def test_annotate_direct_bad_model_class(annotator, mock_runner):
         annotator.annotate_file_using_model_and_validator(
             file_path="f",
             model_runner=mock_runner,
-            annotation_model_cls=BadModelNoId,  # type: ignore
+            annotation_model_cls=BadModelNoId,
             schema_id="test/schema",
             private=False,
         )
     assert "missing a required, non-empty 'id'" in str(exc.value)
 
 
-# --- Tests: annotate_file_using_pipeline_step ---
-
-
 def test_annotate_pipeline_step_dict_success(annotator, mock_runner, mocker):
     mocker.patch("dorsal.file.file_annotator.is_valid_dataset_id_or_schema_id", return_value=True)
 
-    # Updated mock to intercept the new resolution function
     mocker.patch("dorsal.file.file_annotator.resolve_pipeline_step_models", return_value=(MockAnnotationModel, None))
 
     step_config = {
@@ -184,7 +174,7 @@ def test_annotate_pipeline_step_dict_success(annotator, mock_runner, mocker):
 
 
 def test_annotate_pipeline_import_error(annotator, mock_runner, mocker):
-    # Updated mock to throw the expected AnnotationImportError
+
     mocker.patch(
         "dorsal.file.file_annotator.resolve_pipeline_step_models",
         side_effect=AnnotationImportError("Failed to import model/validator"),
@@ -201,7 +191,7 @@ def test_annotate_pipeline_import_error(annotator, mock_runner, mocker):
 
 
 def test_annotate_pipeline_type_error(annotator, mock_runner, mocker):
-    # Updated mock to throw the expected AnnotationImportError
+
     mocker.patch(
         "dorsal.file.file_annotator.resolve_pipeline_step_models",
         side_effect=AnnotationImportError("Failed to import model/validator"),
@@ -216,9 +206,6 @@ def test_annotate_pipeline_type_error(annotator, mock_runner, mocker):
         )
 
     assert "Failed to import model/validator" in str(exc.value)
-
-
-# --- Tests: validate_manual_annotation ---
 
 
 def test_validate_manual_pydantic_success(annotator):
@@ -241,10 +228,7 @@ def test_validate_manual_no_validator(annotator):
 
 def test_validate_manual_unsupported_validator(annotator):
     with pytest.raises(AnnotationConfigurationError):
-        annotator.validate_manual_annotation({}, validator=str)  # type: ignore
-
-
-# --- Tests: make_manual_annotation ---
+        annotator.validate_manual_annotation({}, validator=str)
 
 
 def test_make_manual_annotation_success(annotator, mocker):

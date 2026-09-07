@@ -47,7 +47,7 @@ def test_build_regression_point_full():
     result = build_regression_point(
         value=100.5,
         statistic="mean",
-        quantile_level=None,  # Should be ignored if None
+        quantile_level=None,
         interval_lower=95.0,
         interval_upper=105.0,
         score=0.98,
@@ -100,20 +100,15 @@ def test_build_single_point_regression_record():
         value=0.87, target="model_confidence", unit="probability", statistic="mean", score=1.0, timestamp=dt
     )
 
-    # Check Root fields
     assert result["target"] == "model_confidence"
     assert result["unit"] == "probability"
 
-    # Check Point fields (Should be wrapped in a list of 1)
     assert len(result["points"]) == 1
     point = result["points"][0]
     assert point["value"] == 0.87
     assert point["statistic"] == "mean"
     assert point["score"] == 1.0
     assert point["timestamp"] == dt.isoformat()
-
-
-# --- Classification Tests ---
 
 
 def test_build_classification_record_strings():
@@ -131,18 +126,12 @@ def test_build_classification_record_dicts():
     assert result["score_explanation"] == "Probability"
 
 
-# --- Embedding Tests ---
-
-
 def test_build_embedding_record():
     vector = [0.1, 0.2, 0.3]
     result = build_embedding_record(vector=vector, model="CLIP")
 
     assert result["vector"] == vector
     assert result["model"] == "CLIP"
-
-
-# --- LLM Output Tests ---
 
 
 def test_build_llm_output_record():
@@ -165,9 +154,6 @@ def test_build_llm_output_record():
     assert result["generation_metadata"] == {"finish_reason": "stop"}
 
 
-# --- Geolocation Tests ---
-
-
 def test_build_location_record():
     result = build_location_record(
         longitude=-0.1278,
@@ -187,17 +173,11 @@ def test_build_location_record():
     assert props["camera_model"] == "EOS 5D"
 
 
-# --- Transcription Tests ---
-
-
 def test_build_transcription_record():
     result = build_transcription_record(text="Hello world", language="eng", track_id=1)
     assert result["text"] == "Hello world"
     assert result["language"] == "eng"
     assert result["track_id"] == 1
-
-
-# --- Generic Tests ---
 
 
 def test_build_generic_record():

@@ -37,15 +37,12 @@ def mock_source():
 @pytest.fixture
 def valid_stub(mock_source):
     return AnnotationStub(
-        hash="a" * 64,  # Valid SHA256 length
+        hash="a" * 64,
         id=uuid.uuid4(),
         source=mock_source,
         user_id=1,
         date_modified=datetime.datetime.now(datetime.timezone.utc),
     )
-
-
-# --- Test Block 1: Hash Consistency (FileRecord) ---
 
 
 class TestFileRecordHashes:
@@ -56,16 +53,14 @@ class TestFileRecordHashes:
         """
         common_hash = "a" * 64
 
-        # Scenario: The main SHA256 hash is accidentally identical to the QuickHash
         with pytest.raises(ValidationError) as exc:
             FileRecord(
                 hash=common_hash,
-                quick_hash=common_hash,  # This triggers the collision check
+                quick_hash=common_hash,
                 validation_hash=None,
                 similarity_hash=None,
             )
 
-        # Verify strict error message
         assert "Inconsistent hash values" in str(exc.value)
         assert "hash" in str(exc.value) and "quick_hash" in str(exc.value)
 
@@ -73,9 +68,6 @@ class TestFileRecordHashes:
         """Ensures the validator passes when hashes are different."""
         rec = FileRecord(hash="a" * 64, quick_hash="b" * 64, validation_hash=None, similarity_hash=None)
         assert rec.hash != rec.quick_hash
-
-
-# --- Test Block 2: Polymorphic Annotations List ---
 
 
 class TestAnnotationsExtras:

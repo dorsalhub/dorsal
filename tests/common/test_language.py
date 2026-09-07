@@ -66,9 +66,6 @@ def mock_langcodes(mocker):
     return mock_mod
 
 
-# --- Tests ---
-
-
 def test_public_sets(mock_mapping_file):
     assert "CustomLang" in get_language_set()
     assert "cst" in get_alpha_3_set()
@@ -86,13 +83,11 @@ def test_normalize_name_standard(mock_langcodes):
 
 
 def test_normalize_name_lookup_error(mock_langcodes):
-    # Simulate lookup failure for both find() and get()
+
     mock_langcodes.find.side_effect = LookupError
 
-    # Make get() raise the specific error the code catches
     mock_langcodes.Language.get.side_effect = mock_langcodes.LanguageTagError
 
-    # Clear cache for _get_lang_obj to force re-run
     from dorsal.common.language import _get_lang_obj
 
     _get_lang_obj.cache_clear()
@@ -105,7 +100,7 @@ def test_normalize_alpha3(mock_langcodes):
 
 
 def test_normalize_alpha3_und(mock_langcodes):
-    # Undetermined language has no alpha3
+
     lang_obj = mock_langcodes.Language.get.return_value
     lang_obj.to_alpha3.side_effect = LookupError
 

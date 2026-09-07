@@ -1,0 +1,11 @@
+model_class = "PDFAnnotationModel"
+
+schema_id = "file/pdf"
+schema_version = "1.1.0"
+
+[[dependencies]]
+type = "media_type"
+include = ["application/pdf"]
+
+[options]
+password = { type = "str", help = "Optional password to decrypt the PDF." }

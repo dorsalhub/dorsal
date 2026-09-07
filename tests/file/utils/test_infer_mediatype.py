@@ -133,7 +133,6 @@ def test_iso_extension_mapping(mock_magic, tmp_path, mocker):
     f = tmp_path / "disk.iso"
     f.touch()
 
-    # 1. Magic must return None to trigger fallback logic
     mock_magic.from_file.return_value = None
 
     mocker.patch("dorsal.file.utils.infer_mediatype.mimetypes.guess_type", return_value=(None, None))
@@ -185,8 +184,6 @@ def test_refine_rule_inode_blockdevice(mock_magic, tmp_path):
 
     mock_magic.from_file.return_value = "inode/blockdevice"
 
-    # If mimetypes library returns None (which it does for files with no extension),
-    # your code preserves the original magic type "inode/blockdevice".
     result = get_media_type(str(f), None)
     assert result == "inode/blockdevice"
 
@@ -211,17 +208,13 @@ def test_office_xml_rule_success_windows_simulation(mock_magic, tmp_path, ext, i
     """
     f = tmp_path / f"test{ext}"
 
-    # Create a valid zip file with the specific signature file inside
     with zipfile.ZipFile(f, "w") as zf:
         zf.writestr(internal_file, "<xml></xml>")
 
-    # 1. Simulate the "Dumb" Windows Libmagic response
     mock_magic.from_file.return_value = "application/zip"
 
-    # 2. Run inference
     result = get_media_type(str(f), ext)
 
-    # 3. Assert the code upgraded the type based on internal structure
     assert result == expected_mime
 
 
@@ -232,17 +225,13 @@ def test_office_xml_rule_structure_mismatch(mock_magic, tmp_path):
     """
     f = tmp_path / "malware.docx"
 
-    # Create a valid zip, but put random junk in it, not 'word/document.xml'
     with zipfile.ZipFile(f, "w") as zf:
         zf.writestr("malicious.exe", "binary code")
 
-    # Magic sees a zip
     mock_magic.from_file.return_value = "application/zip"
 
     result = get_media_type(str(f), ".docx")
 
-    # Result should NOT be promoted to word document
-    # It should fall back to what magic said (or mimetypes guess)
     assert result != "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     assert result == "application/zip"
 
@@ -253,9 +242,8 @@ def test_office_xml_rule_not_a_zip(mock_magic, tmp_path):
     Should not crash, and should return the original magic type.
     """
     f = tmp_path / "noise.docx"
-    f.write_bytes(b"\x00\x01\x02\x03")  # Not a zip header
+    f.write_bytes(b"\x00\x01\x02\x03")
 
-    # Magic usually calls random bytes octet-stream
     mock_magic.from_file.return_value = "application/octet-stream"
 
     result = get_media_type(str(f), ".docx")
@@ -269,16 +257,15 @@ def test_office_xml_optimization_linux(mock_magic, tmp_path, mocker):
     we should NOT attempt to open the zip file (optimization).
     """
     f = tmp_path / "test.docx"
-    f.touch()  # Empty file is fine because we shouldn't read it
+    f.touch()
 
     expected = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     mock_magic.from_file.return_value = expected
 
-    # Spy on zipfile.is_zipfile to ensure it's NOT called
     spy_is_zip = mocker.spy(zipfile, "is_zipfile")
 
     result = get_media_type(str(f), ".docx")
 
     assert result == expected
-    # Crucial: Proof that we short-circuited the logic
+
     spy_is_zip.assert_not_called()
