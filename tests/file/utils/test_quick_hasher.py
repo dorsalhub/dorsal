@@ -39,9 +39,6 @@ def large_file(tmp_path):
     return p
 
 
-# --- Tests ---
-
-
 def test_get_total_chunks_error(hasher):
     hasher.chunk_size = 0
     with pytest.raises(QuickHashConfigurationError):
@@ -55,17 +52,15 @@ def test_make_seed_error(hasher):
 
 
 def test_make_seed_valid(hasher):
-    # 100 % 1024 = 100
+
     assert hasher._make_seed(100) == 100
 
 
 def test_get_chunk_count(hasher):
-    # Test boundary logic
+
     assert hasher._get_chunk_count(hasher.upper_filesize_chunks + 1) == hasher.max_chunks
     assert hasher._get_chunk_count(hasher.lower_filesize_chunks - 1) == hasher.min_chunks
 
-    # Test bisect logic (middle ground)
-    # We use a specific value we know falls in the middle
     mid_size = hasher.lower_filesize_chunks * 2
     count = hasher._get_chunk_count(mid_size)
     assert hasher.min_chunks <= count <= hasher.max_chunks
@@ -77,7 +72,7 @@ def test_random_sample_chunk_indices_empty(hasher):
 
 
 def test_random_sample_chunk_indices_logic(hasher):
-    # Request 5 chunks from a file with 10 chunks
+
     indices = hasher._random_sample_chunk_indices(1000, 5, 10)
     assert len(indices) == 5
     assert indices == sorted(indices)
@@ -85,12 +80,11 @@ def test_random_sample_chunk_indices_logic(hasher):
 
 
 def test_check_permitted_filesize(hasher):
-    # Too small
+
     assert hasher._check_permitted_filesize("f", 1, raise_on_error=False) is False
     with pytest.raises(QuickHashFileSizeError):
         hasher._check_permitted_filesize("f", 1, raise_on_error=True)
 
-    # Valid
     valid_size = hasher.min_permitted_filesize + 1
     assert hasher._check_permitted_filesize("f", valid_size, raise_on_error=True) is True
 
@@ -98,7 +92,7 @@ def test_check_permitted_filesize(hasher):
 def test_hash_too_small_returns_none(hasher, small_file):
     """Test logic when file is valid but filtered out by min_permitted_filesize."""
     size = small_file.stat().st_size
-    # Ensure our small file is actually below the threshold for the test
+
     hasher.min_permitted_filesize = size + 100
 
     assert hasher.hash(str(small_file), size) is None
@@ -107,12 +101,12 @@ def test_hash_too_small_returns_none(hasher, small_file):
 def test_hash_small_file_full_read(hasher, small_file):
     """Test that small files (within permitted range but < chunk size) are fully read."""
     size = small_file.stat().st_size
-    hasher.min_permitted_filesize = 0  # Allow it
-    hasher.chunk_size = size + 100  # Ensure it's treated as < 1 chunk
+    hasher.min_permitted_filesize = 0
+    hasher.chunk_size = size + 100
 
     digest = hasher.hash(str(small_file), size)
     assert digest is not None
-    # Should match standard sha256 of content
+
     import hashlib
 
     assert digest == hashlib.sha256(b"small_content").hexdigest()
@@ -122,11 +116,11 @@ def test_hash_sampling(hasher, large_file):
     """Test the sampling path."""
     size = large_file.stat().st_size
     hasher.min_permitted_filesize = 0
-    hasher.chunk_size = 10  # Small chunks to force sampling logic
+    hasher.chunk_size = 10
 
     digest = hasher.hash(str(large_file), size)
     assert digest is not None
-    assert len(digest) == 64  # Hex string length for sha256
+    assert len(digest) == 64
 
 
 def test_hash_instability_offset_error(hasher, large_file, mocker):
@@ -135,13 +129,10 @@ def test_hash_instability_offset_error(hasher, large_file, mocker):
     hasher.min_permitted_filesize = 0
     hasher.chunk_size = 10
 
-    # Mock open to allow context manager
     m = mocker.mock_open()
     mocker.patch("builtins.open", m)
 
-    # We need to simulate _random_sample_chunk_indices returning at least one index
-    # that will calculate an offset > file_size
-    mocker.patch.object(hasher, "_random_sample_chunk_indices", return_value=[200])  # 200 * 10 = 2000 > 1000
+    mocker.patch.object(hasher, "_random_sample_chunk_indices", return_value=[200])
 
     with pytest.raises(QuickHashFileInstabilityError) as exc:
         hasher.hash("fake_path", size)
@@ -157,7 +148,7 @@ def test_hash_instability_empty_chunk(hasher, large_file, mocker):
     m = mocker.mock_open()
     mocker.patch("builtins.open", m)
     handle = m()
-    handle.read.return_value = b""  # EOF too early
+    handle.read.return_value = b""
 
     mocker.patch.object(hasher, "_random_sample_chunk_indices", return_value=[0])
 
@@ -170,7 +161,7 @@ def test_hash_os_error_during_read(hasher, small_file, mocker):
     """Test handling of OS errors during read operations."""
     size = small_file.stat().st_size
     hasher.min_permitted_filesize = 0
-    hasher.chunk_size = size + 100  # Full read path
+    hasher.chunk_size = size + 100
 
     mocker.patch("builtins.open", side_effect=OSError("Disk failure"))
 

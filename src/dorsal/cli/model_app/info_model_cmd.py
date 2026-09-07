@@ -1,3 +1,17 @@
+# Copyright 2026 Dorsal Hub LTD
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import typer
 from typing import Annotated
 
@@ -23,25 +37,20 @@ def info_model(
     palette = ui_context.get("palette", {})
     borders = ui_context.get("borders", "rounded")
 
-    # 1. Fetch Resolution Intent and Metadata
     resolution = prepare_model_target(target)
 
     if resolution.strategy == "error":
         console.print(f"[{palette.get('error', 'bold red')}]Error:[/] {resolution.error_message}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    # 2. Fetch the Unified Help Payload
     help_info = get_model_help(target=target)
 
-    # 3. Build the Metadata Panel
     meta_lines = []
 
-    # Identity
     model_id = help_info.get("model_id", target)
     version = help_info.get("model_version", "unknown")
     meta_lines.append(f"[{palette.get('key', 'dim')}]ID:[/] {model_id} (v{version})")
 
-    # Description (Registry takes precedence, fallback to raw Class docstring)
     description = None
     if resolution.metadata and resolution.metadata.description:
         description = resolution.metadata.description
@@ -51,7 +60,6 @@ def info_model(
     if description:
         meta_lines.append(f"[{palette.get('key', 'dim')}]Description:[/] {description}")
 
-    # URLs
     if resolution.metadata:
         meta = resolution.metadata
         if meta.url:
@@ -63,8 +71,7 @@ def info_model(
                 f"[{palette.get('key', 'dim')}]Source Code:[/] [{palette.get('link', 'blue underline')}]{meta.source_url}[/]"
             )
 
-    # --- Add the Usage snippet directly to the panel ---
-    meta_lines.append("")  # Blank line for visual breathing room
+    meta_lines.append("")
     quick_start_cmd = f"dorsal model run {target} ./path/to/file"
     meta_lines.append(
         f"[{palette.get('key', 'dim')}]Usage:[/] [{palette.get('primary_value', 'cyan')}]{quick_start_cmd}[/]"
@@ -78,7 +85,6 @@ def info_model(
         expand=False,
     )
 
-    # 4. Render the output
     console.print(meta_panel)
 
     options_panel = render_model_help_panel(help_info, ui_context)

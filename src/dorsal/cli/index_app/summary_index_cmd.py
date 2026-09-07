@@ -89,15 +89,12 @@ def show_index_summary(
             summary_table.add_row("Last Modified:", modified_dt)
             summary_table.add_row("Tracked File Data:", human_filesize(summary.get("total_tracked_file_bytes", 0)))
 
-            # --- Storage Metrics ---
             summary_table.add_row("Avg Index Record Size:", human_filesize(summary.get("avg_record_size_bytes", 0)))
             summary_table.add_row("Max Index Record Size:", human_filesize(summary.get("max_record_size_bytes", 0)))
 
-            # --- Deduplication Metrics ---
             summary_table.add_row("Unique Files (Hash):", f"{summary.get('unique_files_by_hash', 0):,}")
             summary_table.add_row("Duplicate Files:", f"{summary.get('duplicate_files_detected', 0):,}")
 
-            # --- Data Freshness Metrics ---
             oldest_ts = summary.get("oldest_record_timestamp")
             if oldest_ts:
                 summary_table.add_row("Oldest Tracked File:", datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d"))
@@ -105,7 +102,6 @@ def show_index_summary(
             if newest_ts:
                 summary_table.add_row("Newest Tracked File:", datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d"))
 
-            # --- Compression Info ---
             comp_mode = summary.get("compression_mode", "None")
             comp_level = summary.get("compression_level")
             comp_str = f"{comp_mode} (Level {comp_level})" if comp_level else comp_mode

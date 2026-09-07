@@ -711,7 +711,7 @@ class ModelRunner:
                         "id": getattr(annotation_model_instance, "id", "unknown"),
                         "variant": getattr(annotation_model_instance, "variant", None),
                         "version": getattr(annotation_model_instance, "version", "0.0.0"),
-                        "name": output_name,  # Inject the parallel output name
+                        "name": output_name,
                     },
                     "records": None,
                     "schema_id": schema_id,
@@ -767,7 +767,6 @@ class ModelRunner:
                     else:
                         raise ModelRunnerConfigError(f"Unsupported validator type '{type(validation_model).__name__}'")
 
-                # Semantic Chunking Rescue
                 if validation_error_payload is not None and schema_id and validation_model:
                     rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
                         raw_model_output=raw_data,
@@ -780,7 +779,6 @@ class ModelRunner:
                         validated_data = rescued_data
                         validation_error_payload = None
 
-                        # --- SEMANTIC PAGINATION ---
                         if len(validated_data) > 1:
                             for idx, chunk_data in enumerate(validated_data):
                                 chunk_result_data = result_data.copy()
@@ -789,9 +787,8 @@ class ModelRunner:
                                 chunk_result_data["source"]["execution_total_parts"] = len(validated_data)
                                 chunk_result_data["records"] = [chunk_data]
                                 final_results.append(RunModelResult(**chunk_result_data))
-                            continue  # Skip the standard append because we expanded the chunks
+                            continue
 
-                # Error Processing
                 if validation_error_payload is not None:
                     val_error = ModelOutputValidationError(
                         model_name=model_name,
@@ -1387,7 +1384,7 @@ def run_model(
                         id=getattr(annotation_model, "id", "unknown"),
                         version=getattr(annotation_model, "version", "0.0.0"),
                     ),
-                    records=None,  # <--- FIXED
+                    records=None,
                     schema_id=schema_id,
                     schema_version=schema_version,
                     error=f"Configuration Error: Invalid dependencies format. {e}",
@@ -1442,7 +1439,7 @@ def run_model(
                             version=getattr(annotation_model, "version", "0.0.0"),
                             variant=getattr(annotation_model, "variant", None),
                         ),
-                        records=None,  # <--- FIXED
+                        records=None,
                         schema_id=schema_id,
                         error=error_msg,
                     )
@@ -1461,7 +1458,7 @@ def run_model(
                             version=getattr(annotation_model, "version", "0.0.0"),
                             variant=getattr(annotation_model, "variant", None),
                         ),
-                        records=None,  # <--- FIXED
+                        records=None,
                         schema_id=schema_id,
                         error=error_msg,
                     )

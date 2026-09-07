@@ -302,7 +302,6 @@ def create_file_info_panel(
                 record_to_render = item.get("record", item)
                 display_fields = MEDIAINFO_DISPLAY_FIELDS if key == "file/mediainfo" else None
 
-                # Filter out envelope metadata if it was flattened
                 envelope_keys = {
                     "source",
                     "private",
@@ -316,7 +315,6 @@ def create_file_info_panel(
                 }
                 filtered_record = {k: v for k, v in record_to_render.items() if k not in envelope_keys}
 
-                # Calculate max width for alignment
                 max_width = _get_max_key_width(filtered_record, display_fields=display_fields)
                 if max_width < 7:
                     max_width = 7
@@ -325,7 +323,6 @@ def create_file_info_panel(
                 annotation_table.add_column(style=palette["key"], justify="right", min_width=max_width + 2)
                 annotation_table.add_column(style=palette["primary_value"])
 
-                # --- High-Level Metadata ---
                 item_source = item.get("source", {})
                 if isinstance(item_source, dict):
                     src_type = item_source.get("type", "Unknown")
@@ -346,7 +343,6 @@ def create_file_info_panel(
                 if anno_id:
                     annotation_table.add_row("ID:", str(anno_id))
 
-                # --- Payload Data ---
                 if filtered_record:
                     _build_annotation_table(
                         key=key,

@@ -33,7 +33,7 @@ def clear_lru_cache():
 
 def test_find_project_config_path_in_current_dir(fs):
     """Test finding a config file in the current directory."""
-    # Use os.path.join to create platform-agnostic paths
+
     project_path_str = os.path.join("my", "project")
     config_file_str = os.path.join(project_path_str, "dorsal.toml")
 
@@ -85,8 +85,8 @@ def test_load_config_merges_project_over_global(mock_get_global, fs):
     with patch("pathlib.Path.cwd", return_value=pathlib.Path(project_path)):
         final_config, _ = config.load_config()
 
-    assert final_config["auth"]["api_key"] == "project_key"  # Overwritten by project
-    assert final_config["ui"]["theme"] == "dark"  # Added by project
+    assert final_config["auth"]["api_key"] == "project_key"
+    assert final_config["ui"]["theme"] == "dark"
 
 
 def test_set_config_value_creates_new_file(fs):
@@ -119,7 +119,7 @@ def test_remove_config_value_success(fs):
     with open(f"{project_path}/dorsal.toml", "rb") as f:
         data = tomllib.load(f)
     assert "api_key" not in data["auth"]
-    assert "email" in data["auth"]  # Ensure other keys remain
+    assert "email" in data["auth"]
 
 
 def test_remove_config_value_no_file_returns_false(fs):
@@ -128,9 +128,6 @@ def test_remove_config_value_no_file_returns_false(fs):
     with patch("pathlib.Path.cwd", return_value=pathlib.Path("/my/project")):
         was_removed = config.remove_config_value(section="auth", option="api_key")
     assert was_removed is False
-
-
-# --- Tests for resolve_setting ---
 
 
 def test_resolve_setting_precedence():

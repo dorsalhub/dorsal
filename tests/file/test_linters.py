@@ -50,9 +50,6 @@ def test_classification_invalid_label():
     assert "'rock'" in str(exc.value)
 
 
-# --- OpenEntityExtractionLinter Tests ---
-
-
 def test_entity_valid_vocab():
     """Valid case: all entity labels exist in vocabulary."""
     data = {
@@ -85,13 +82,9 @@ def test_entity_invalid_label():
     with pytest.raises(ValidationError) as exc:
         OpenEntityExtractionLinter.model_validate(data)
 
-    # Matches the specific error message format defined in entity_extraction.py
     assert "Integrity Error" in str(exc.value)
     assert "labels found in 'entities' are not declared" in str(exc.value)
     assert "'BAD_LABEL'" in str(exc.value)
-
-
-# --- apply_linter Logic Tests ---
 
 
 def test_apply_linter_success():
@@ -132,6 +125,5 @@ def test_apply_linter_warning_only(caplog):
 
     apply_linter("open/classification", record, raise_on_error=False)
 
-    # Check that no error was raised, but a warning was logged
     assert "Ignoring data quality warning" in caplog.text
     assert "open/classification" in caplog.text
