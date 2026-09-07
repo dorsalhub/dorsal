@@ -1,0 +1,10 @@
+model_class = "EbookAnnotationModel"
+
+schema_id = "file/ebook"
+schema_version = "1.0.0"
+
+[[dependencies]]
+type = "media_type"
+include = ["application/epub+zip"]
+
+[options]

@@ -248,7 +248,7 @@ def test_user_id_failure(client, requests_mock):
 
 
 def test_get_registry_model_success(client, requests_mock):
-    """Test retrieving a valid registry model."""
+    """Test retrieving a valid model."""
     identifier = "dorsal/whisper"
     namespace, name = identifier.split("/")
 

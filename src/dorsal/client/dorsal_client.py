@@ -3512,7 +3512,7 @@ class DorsalClient:
 
         target_url = self._make_model_registry_url(namespace=namespace, name=name)
 
-        logger.debug("Resolving registry model: %s", target_url)
+        logger.debug("Resolving model: %s", target_url)
 
         try:
             response = self.session.get(

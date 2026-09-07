@@ -158,7 +158,7 @@ def install_model_target(
     """
     Installs a model from a pip-compatible target and registers it.
 
-    Identifies the package name from the Source of Truth (Registry Model or Local Config)
+    Identifies the package name from the Source of Truth (Model or Local Config)
     BEFORE installation, ensuring robust handling of updates and reinstallations.
     """
     logger.info(f"Processing target: {target}")
@@ -168,7 +168,7 @@ def install_model_target(
     if is_registry_id(target):
         if pathlib.Path(target).exists():
             raise DorsalError(
-                f"Ambiguous Target: You requested Registry Model '{target}', but a directory with this name exists locally.\n"
+                f"Ambiguous Target: You requested Model '{target}', but a directory with this name exists locally.\n"
                 "To install the local model, use an explicit path: './{target}'\n"
                 "To install the remote model, please rename or move the local directory."
             )
