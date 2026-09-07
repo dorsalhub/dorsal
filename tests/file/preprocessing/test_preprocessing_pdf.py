@@ -59,7 +59,7 @@ def create_mock_page(width=100, height=200, rects=None):
 
     if rects:
         mock_textpage.count_rects.return_value = len(rects)
-        # side_effect allows iterating through the rects list on subsequent calls
+
         mock_textpage.get_rect.side_effect = [r["rect"] for r in rects]
         mock_textpage.get_text_bounded.side_effect = [r["text"] for r in rects]
     else:
@@ -67,9 +67,6 @@ def create_mock_page(width=100, height=200, rects=None):
 
     mock_textpage.get_text_range.return_value = " ".join([r["text"] for r in rects]) if rects else ""
     return mock_page
-
-
-# --- Tests for extract_pdf_layout_per_mille ---
 
 
 class TestExtractLayoutPerMille:
@@ -100,17 +97,14 @@ class TestExtractLayoutPerMille:
         assert len(results) == 1
         page = results[0]
 
-        # Check Types
         assert isinstance(page, PDFPage)
         assert len(page.tokens) == 1
         token = page.tokens[0]
         assert isinstance(token, PDFToken)
 
-        # Check Values
         assert token.text == "Header"
         assert token.box == (100, 50, 500, 100)
 
-        # Verify strict Int typing
         for coord in token.box:
             assert isinstance(coord, int)
 
@@ -119,7 +113,6 @@ class TestExtractLayoutPerMille:
         mock_pdfium, _ = mock_dependencies
         mock_doc = Mock()
 
-        # Page with 0 width/height
         mock_page = create_mock_page(0, 0, [])
         mock_pdfium.PdfDocument.return_value = mock_doc
         mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
@@ -155,7 +148,6 @@ class TestExtractLayoutPerMille:
         mock_pdfium, _ = mock_dependencies
         mock_doc = Mock()
 
-        # Rect returns floats
         rect_data = [{"rect": (10.5, 180.5, 50.5, 190.5), "text": "Floaty"}]
         mock_page = create_mock_page(100, 200, rect_data)
 
@@ -165,12 +157,8 @@ class TestExtractLayoutPerMille:
         results = extract_pdf_layout_per_mille(dummy_pdf_path)
         token = results[0].tokens[0]
 
-        # Box values should be integers, not floats
         for val in token.box:
             assert isinstance(val, int)
-
-
-# --- Tests for extract_pdf_layout_normalized ---
 
 
 class TestExtractLayoutNormalized:
@@ -212,9 +200,6 @@ class TestExtractLayoutNormalized:
             extract_pdf_layout_normalized(dummy_pdf_path, strict=True)
 
 
-# --- Tests for extract_pdf_layout_pts ---
-
-
 class TestExtractLayoutPts:
     def test_pts_math_no_scaling(self, mock_dependencies, dummy_pdf_path):
         """Test raw PTs (only Y-flip, no scaling)."""
@@ -237,11 +222,7 @@ class TestExtractLayoutPts:
         results = extract_pdf_layout_pts(dummy_pdf_path)
         token = results[0].tokens[0]
 
-        # Should be floats, matched exactly to coordinates
         assert token.box == (10.0, 10.0, 50.0, 20.0)
-
-
-# --- Common Exception Handling ---
 
 
 class TestCommonErrors:
@@ -257,16 +238,12 @@ class TestCommonErrors:
         mock_doc = Mock()
         mock_pdfium.PdfDocument.return_value = mock_doc
 
-        # Crash during iteration
         mock_doc.__iter__ = Mock(side_effect=ValueError("Deep internal crash"))
 
         with pytest.raises(PDFProcessingError):
             extract_pdf_layout_per_mille(dummy_pdf_path)
 
         mock_doc.close.assert_called_once()
-
-
-# --- Tests for extract_pdf_pages ---
 
 
 class TestRenderPages:
@@ -295,9 +272,8 @@ class TestRenderPages:
         mock_pdfium, _ = mock_dependencies
         mock_doc = MagicMock()
         mock_pdfium.PdfDocument.return_value = mock_doc
-        mock_doc.__len__.return_value = 5  # 0-4 valid
+        mock_doc.__len__.return_value = 5
 
-        # Request 10 (invalid)
         gen = extract_pdf_pages(dummy_pdf_path, pages=[10])
         images = list(gen)
         assert len(images) == 0
@@ -310,7 +286,7 @@ class TestOCRExtraction:
         Creates a mock pytesseract module with necessary Exception classes attached.
         """
         mock = MagicMock()
-        # Define the specific exceptions pytesseract uses so catches work
+
         mock.TesseractNotFoundError = type("TesseractNotFoundError", (Exception,), {})
         mock.TesseractError = type("TesseractError", (Exception,), {})
         return mock
@@ -324,39 +300,34 @@ class TestOCRExtraction:
 
     def test_ocr_missing_binary(self, dummy_pdf_path, mock_pytesseract):
         """Ensure DependencyError is raised if tesseract binary is not in PATH."""
-        # 1. Setup the check to fail
+
         mock_pytesseract.get_tesseract_version.side_effect = mock_pytesseract.TesseractNotFoundError("Binary not found")
 
         with patch.dict(sys.modules, {"pytesseract": mock_pytesseract}):
             with pytest.raises(DependencyError) as exc:
                 ocr_extract_pdf_text(dummy_pdf_path)
 
-            # Verify we point users to the official docs, not a specific command
             assert "tesseract-ocr.github.io" in str(exc.value)
 
     @patch("dorsal.file.preprocessing.pdf.extract_pdf_pages")
     def test_ocr_happy_path(self, mock_extract_pages, dummy_pdf_path, mock_pytesseract):
         """Test successful text extraction from pages."""
-        # 1. Setup Mock Images
+
         mock_image_1 = Mock(name="Image1")
         mock_image_2 = Mock(name="Image2")
         mock_extract_pages.return_value = iter([mock_image_1, mock_image_2])
 
-        # 2. Setup OCR responses
         mock_pytesseract.image_to_string.side_effect = ["Page One Text", "Page Two Text"]
 
         with patch.dict(sys.modules, {"pytesseract": mock_pytesseract}):
             results = ocr_extract_pdf_text(dummy_pdf_path, language="fra", config="--psm 6", render_scale=4.0)
 
-        # 3. Assertions
         assert len(results) == 2
         assert results[0] == "Page One Text"
         assert results[1] == "Page Two Text"
 
-        # Verify arguments passed to renderer
         mock_extract_pages.assert_called_once_with(dummy_pdf_path, scale=4.0, password=None)
 
-        # Verify arguments passed to tesseract
         mock_pytesseract.image_to_string.assert_has_calls(
             [call(mock_image_1, lang="fra", config="--psm 6"), call(mock_image_2, lang="fra", config="--psm 6")]
         )
@@ -366,7 +337,6 @@ class TestOCRExtraction:
         """Test that if one page fails OCR, we log it and continue (returning empty str), rather than crashing."""
         mock_extract_pages.return_value = iter([Mock(), Mock()])
 
-        # First page fails, Second succeeds
         mock_pytesseract.image_to_string.side_effect = [
             mock_pytesseract.TesseractError(1, "Error processing image"),
             "Success Text",
@@ -376,5 +346,5 @@ class TestOCRExtraction:
             results = ocr_extract_pdf_text(dummy_pdf_path)
 
         assert len(results) == 2
-        assert results[0] == ""  # Empty string on failure
+        assert results[0] == ""
         assert results[1] == "Success Text"

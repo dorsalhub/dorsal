@@ -391,7 +391,6 @@ def get_model_help(target: str) -> dict[str, Any]:
 
     package_name = res.package_name or "dorsal"
 
-    # 1. Resolve Pipeline Step and Module Info
     try:
         if res.strategy == "pipeline":
             pipeline = get_model_pipeline(scope="effective")

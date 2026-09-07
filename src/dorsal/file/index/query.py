@@ -186,7 +186,6 @@ class QueryCompiler:
         where_clauses = []
         params = []
 
-        # 1. Process Property Filters FIRST (so parameter binding aligns correctly)
         for key, op, val in parsed_query.get("filters", []):
             sql_op = "=" if op == ":" else op
             is_wildcard_val = isinstance(val, str) and "*" in val
@@ -220,7 +219,6 @@ class QueryCompiler:
                 params.append(val)
                 continue
 
-            # --- Type-Safe EAV Attribute Filtering ---
             is_numeric_attr = registry.is_numeric_key(key)
 
             if is_numeric_attr:

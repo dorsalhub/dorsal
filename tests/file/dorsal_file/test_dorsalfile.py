@@ -72,14 +72,12 @@ def mock_dorsal_client() -> MagicMock:
 
 def test_dorsal_file_init_success(mock_dorsal_client, mock_file_record_dt_json):
     """Test successful initialization of a DorsalFile by fetching a record."""
-    # Arrange: Configure the mock client to return a valid record
+
     mock_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = mock_record
 
-    # Act: Initialize the DorsalFile, which will trigger the mocked download
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Assert
     mock_dorsal_client.download_file_record.assert_called_once_with(hash_string="a" * 64, private=None)
     assert df.hash == "a" * 64
     assert df.name == "initial_name.txt"
@@ -88,13 +86,11 @@ def test_dorsal_file_init_success(mock_dorsal_client, mock_file_record_dt_json):
 
 def test_dorsal_file_init_from_record(mock_dorsal_client, mock_file_record_dt_json):
     """Test successful initialization using the from_record classmethod."""
-    # Arrange: Create the Pydantic model instance directly
+
     record = FileRecordDateTime(**mock_file_record_dt_json)
 
-    # Act: Initialize the DorsalFile from the existing record
     df = DorsalFile.from_record(record, client=mock_dorsal_client)
 
-    # Assert: No network call was made
     mock_dorsal_client.download_file_record.assert_not_called()
     assert df.hash == record.hash
     assert df.name == "initial_name.txt"
@@ -102,47 +98,40 @@ def test_dorsal_file_init_from_record(mock_dorsal_client, mock_file_record_dt_js
 
 def test_dorsal_file_refresh_success(mock_dorsal_client, mock_file_record_dt_json):
     """Test that the refresh method updates the object's data."""
-    # Arrange: Setup initial and updated records
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
 
     updated_record_json = mock_file_record_dt_json.copy()
     updated_record_json["annotations"]["file_base"]["record"]["name"] = "updated_name.txt"
     updated_record = FileRecordDateTime(**updated_record_json)
 
-    # The client's download method will first return the initial record, then the updated one
     mock_dorsal_client.download_file_record.side_effect = [
         initial_record,
         updated_record,
     ]
 
-    # Act 1: Initialize the object
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
     assert df.name == "initial_name.txt"
 
-    # Act 2: Refresh the object
     df.refresh()
 
-    # Assert
     assert mock_dorsal_client.download_file_record.call_count == 2
-    assert df.name == "updated_name.txt"  # The name should now be updated
+    assert df.name == "updated_name.txt"
 
 
 def test_dorsal_file_add_public_tag(mock_dorsal_client, mock_file_record_dt_json):
     """Test adding a public tag to a DorsalFile instance."""
-    # Arrange: Set up the initial record and a successful response from the client
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = initial_record
 
-    # Mock the add_tags_to_file client method
     mock_add_response = MagicMock(success=True)
     mock_dorsal_client.add_tags_to_file.return_value = mock_add_response
 
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Act: Add the tag
     df.add_public_tag(name="release_candidate", value=True)
 
-    # Assert: Check that the client method was called with a correctly formed NewFileTag
     mock_dorsal_client.add_tags_to_file.assert_called_once()
     call_args, call_kwargs = mock_dorsal_client.add_tags_to_file.call_args
     sent_tags = call_kwargs["tags"]
@@ -157,7 +146,6 @@ def test_dorsal_file_add_tag_failure(mock_dorsal_client, mock_file_record_dt_jso
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = initial_record
 
-    # Mock a failed response from the client
     mock_add_response = MagicMock(success=False, detail="Server-side validation failed.")
     mock_dorsal_client.add_tags_to_file.return_value = mock_add_response
 
@@ -170,7 +158,7 @@ def test_dorsal_file_add_tag_failure(mock_dorsal_client, mock_file_record_dt_jso
 def test_dorsal_file_delete_tag(mock_dorsal_client, mock_file_record_dt_json):
     """Test deleting a tag from a DorsalFile instance."""
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
-    # The refresh call will need a record to return, we can just use the same one
+
     mock_dorsal_client.download_file_record.side_effect = [
         initial_record,
         initial_record,
@@ -178,30 +166,26 @@ def test_dorsal_file_delete_tag(mock_dorsal_client, mock_file_record_dt_json):
 
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Act: Delete the tag
-    tag_id_to_delete = "615f7f3b3e3f1a3a3a3a3a3a"  # Example 24-char hex
+    tag_id_to_delete = "615f7f3b3e3f1a3a3a3a3a3a"
     df.delete_tag(tag_id=tag_id_to_delete)
 
-    # Assert: Check that the client's delete method was called correctly
     mock_dorsal_client.delete_tag.assert_called_once_with(file_hash=df.hash, tag_id=tag_id_to_delete, api_key=None)
-    # Assert that the object was refreshed (download_file_record was called a second time)
+
     assert mock_dorsal_client.download_file_record.call_count == 2
 
 
 def test_set_validation_hash_upgrades_model(mock_dorsal_client, mock_file_record_dt_json):
     """Test that setting a validation_hash upgrades the model to FileRecordStrict if annotations exist."""
-    # Arrange
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = initial_record
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
     assert isinstance(df.model, FileRecordDateTime)
 
-    # Act
     blake3_hash = "b" * 64
     df.set_validation_hash(blake3_hash)
 
-    # Assert
     assert isinstance(df.model, FileRecordStrict)
     assert df.validation_hash == blake3_hash
     assert df.model.validation_hash == blake3_hash
@@ -219,7 +203,7 @@ def test_set_validation_hash_invalid_format(mock_dorsal_client, mock_file_record
 
 def test_delete_success(mock_dorsal_client, mock_file_record_dt_json):
     """Test a successful call to delete a file record."""
-    # Arrange
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
 
@@ -228,10 +212,8 @@ def test_delete_success(mock_dorsal_client, mock_file_record_dt_json):
 
     assert df._is_deleted is False
 
-    # Act
     result = df.delete()
 
-    # Assert
     mock_dorsal_client.delete_file.assert_called_once_with(
         file_hash=df.hash, record="all", tags="all", annotations="all", api_key=None
     )
@@ -245,7 +227,6 @@ def test_delete_already_deleted_error(mock_dorsal_client, mock_file_record_dt_js
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
 
-    # Manually set the internal state to 'deleted'
     df._is_deleted = True
 
     with pytest.raises(DorsalError, match="This object has already been deleted"):
@@ -265,7 +246,6 @@ def test_dorsal_file_repr_long_filename(mock_dorsal_client, mock_file_record_dt_
     record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(record, client=mock_dorsal_client)
 
-    # Expects truncation: "..aaaaaaaa..." with 62 'a's
     expected_repr = f"DorsalFile[ ..{'a' * 62} ]"
     assert repr(df) == expected_repr
 
@@ -274,7 +254,7 @@ def test_dorsal_file_repr_deleted(mock_dorsal_client, mock_file_record_dt_json):
     """Test the __repr__ output for a file marked as deleted."""
     record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(record, client=mock_dorsal_client)
-    df._is_deleted = True  # Manually set the internal flag
+    df._is_deleted = True
     assert repr(df) == "DorsalFile[ initial_name.txt (deleted) ]"
 
 
@@ -283,7 +263,6 @@ def test_tags_setter_validation(mock_dorsal_client, mock_file_record_dt_json):
     record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(record, client=mock_dorsal_client)
 
-    # Valid tag
     valid_tag = FileTag(
         id="615f7f3b3e3f1a3a3a3a3a3a",
         name="test",
@@ -295,20 +274,14 @@ def test_tags_setter_validation(mock_dorsal_client, mock_file_record_dt_json):
         origin="DorsalHub",
     )
 
-    # Should succeed
     df.tags = [valid_tag]
     assert len(df.tags) == 1
 
-    # Should fail with TypeError for wrong list content
     with pytest.raises(TypeError, match="All items in tags list must be FileTag objects"):
         df.tags = [valid_tag, "not_a_tag_object"]
 
-    # Should fail with TypeError for wrong main type
     with pytest.raises(TypeError, match="Tags must be a list of FileTag objects."):
         df.tags = "this is not a list"
-
-
-# --- Tests for DorsalFile Initialization and Download ---
 
 
 @pytest.mark.parametrize(
@@ -327,10 +300,8 @@ def test_dorsal_file_init_public_flag(
 
     df = DorsalFile(hash_string="a" * 64, public=public_flag, client=mock_dorsal_client)
 
-    # Assert the correct method was called
     getattr(mock_dorsal_client, expected_method_called).assert_called_once_with(hash_string="a" * 64)
 
-    # Assert the general-purpose method was NOT called
     mock_dorsal_client.download_file_record.assert_not_called()
     assert df.hash == "a" * 64
 
@@ -370,12 +341,9 @@ def test_dorsal_file_init_handles_specific_client_errors(mock_dorsal_client, rai
         DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
 
-# --- Tests for DorsalFile Edge Cases ---
-
-
 def test_set_validation_hash_no_annotations(mock_dorsal_client, mock_file_record_dt_json):
     """Test setting validation_hash on a record with no annotations does not upgrade the model."""
-    # Arrange: Create a record with annotations set to None
+
     mock_file_record_dt_json["annotations"] = None
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = initial_record
@@ -385,11 +353,9 @@ def test_set_validation_hash_no_annotations(mock_dorsal_client, mock_file_record
     assert isinstance(df.model, FileRecordDateTime)
     assert df.model.annotations is None
 
-    # Act
     blake3_hash = "b" * 64
     df.set_validation_hash(blake3_hash)
 
-    # Assert: Model is still FileRecordDateTime, not upgraded to Strict
     assert isinstance(df.model, FileRecordDateTime)
     assert not isinstance(df.model, FileRecordStrict)
     assert df.validation_hash == blake3_hash
@@ -398,24 +364,21 @@ def test_set_validation_hash_no_annotations(mock_dorsal_client, mock_file_record
 
 def test_dorsal_file_add_tags_bulk_success(mock_dorsal_client, mock_file_record_dt_json):
     """Test adding multiple tags (public and private) in a single batch."""
-    # Arrange
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     mock_dorsal_client.download_file_record.return_value = initial_record
     mock_dorsal_client.add_tags_to_file.return_value = MagicMock(success=True)
 
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Act
     df.add_tags(public={"status": "done", "score": 10}, private={"reviewer": "alice", "internal_id": 99})
 
-    # Assert
     mock_dorsal_client.add_tags_to_file.assert_called_once()
     _, call_kwargs = mock_dorsal_client.add_tags_to_file.call_args
     sent_tags = call_kwargs["tags"]
 
     assert len(sent_tags) == 4
 
-    # helper to find tag by name in list
     def get_tag(name):
         return next((t for t in sent_tags if t.name == name), None)
 
@@ -428,7 +391,6 @@ def test_dorsal_file_add_tags_bulk_success(mock_dorsal_client, mock_file_record_
     t3 = get_tag("reviewer")
     assert t3.value == "alice" and t3.private is True
 
-    # Assert refresh was called (download called twice total: init + refresh)
     assert mock_dorsal_client.download_file_record.call_count == 2
 
 
@@ -437,10 +399,8 @@ def test_dorsal_file_add_tags_bulk_empty(mock_dorsal_client, mock_file_record_dt
     mock_dorsal_client.download_file_record.return_value = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Act
     df.add_tags(public={}, private=None)
 
-    # Assert
     mock_dorsal_client.add_tags_to_file.assert_not_called()
 
 
@@ -449,14 +409,13 @@ def test_dorsal_file_add_tags_bulk_invalid_data(mock_dorsal_client, mock_file_re
     mock_dorsal_client.download_file_record.return_value = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    # Act & Assert
     with pytest.raises(ValueError, match="Invalid tag data provided in bulk update"):
         df.add_tags(public={"bad_value": {"nested": "dict_not_allowed"}})
 
 
 def test_file_annotation_stub_download_success(mock_dorsal_client, mock_file_record_dt_json):
     """Test successful hydration of an annotation stub."""
-    # Arrange
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
 
@@ -469,17 +428,15 @@ def test_file_annotation_stub_download_success(mock_dorsal_client, mock_file_rec
     mock_response = MagicMock()
     mock_dorsal_client.get_file_annotation.return_value = mock_response
 
-    # Act
     result = stub.download()
 
-    # Assert
     mock_dorsal_client.get_file_annotation.assert_called_once_with(file_hash=df.hash, annotation_id=str(stub.id))
     assert result == mock_response
 
 
 def test_file_annotation_stub_not_found_prompts_refresh(mock_dorsal_client, mock_file_record_dt_json):
     """Test that a missing stub raises a descriptive error prompting a refresh."""
-    # Arrange
+
     initial_record = FileRecordDateTime(**mock_file_record_dt_json)
     df = DorsalFile.from_record(initial_record, client=mock_dorsal_client)
 
@@ -487,16 +444,11 @@ def test_file_annotation_stub_not_found_prompts_refresh(mock_dorsal_client, mock
     mock_stub_data.id = "deleted-annotation-id"
     stub = FileAnnotationStub(stub=mock_stub_data, parent_file=df)
 
-    # Force the client to raise a NotFoundError (simulating a deleted annotation)
     mock_error = NotFoundError(message="Not found", request_url="http://test")
     mock_dorsal_client.get_file_annotation.side_effect = mock_error
 
-    # Act & Assert
     with pytest.raises(DorsalClientError, match="could not be found on DorsalHub"):
         stub.download()
-
-
-# --- Tests for DorsalFile Annotation Getters ---
 
 
 @pytest.fixture
@@ -506,21 +458,18 @@ def populated_dorsal_file(mock_dorsal_client, mock_file_record_dt_json):
 
     now = datetime.datetime.now(datetime.UTC)
 
-    # Stub 1 (Alice, Source A, Newest)
     stub1 = MagicMock(spec=FileAnnotationStub)
     stub1.source = MagicMock()
     stub1.source.id = "Source_A"
     stub1.user_id = 100
     stub1.date_modified = now
 
-    # Stub 2 (Bob, Source B, Oldest)
     stub2 = MagicMock(spec=FileAnnotationStub)
     stub2.source = MagicMock()
     stub2.source.id = "Source_B"
     stub2.user_id = 200
     stub2.date_modified = now - datetime.timedelta(days=2)
 
-    # Stub 3 (Alice, Source A, Middle)
     stub3 = MagicMock(spec=FileAnnotationStub)
     stub3.source = MagicMock()
     stub3.source.id = "Source_A"
@@ -535,20 +484,16 @@ def test_dorsal_file_get_annotations_filters(populated_dorsal_file):
     """Test filtering stubs by schema, source_id, and user_id."""
     df = populated_dorsal_file
 
-    # 1. Filter by schema only
     all_stubs = df.get_annotations("open/test-schema")
     assert len(all_stubs) == 3
 
-    # 2. Filter by source_id
     source_a_stubs = df.get_annotations("open/test-schema", source_id="Source_A")
     assert len(source_a_stubs) == 2
 
-    # 3. Filter by user_id
     bob_stubs = df.get_annotations("open/test-schema", user_id=200)
     assert len(bob_stubs) == 1
     assert bob_stubs[0].user_id == 200
 
-    # 4. Filter by schema that doesn't exist
     missing_stubs = df.get_annotations("open/missing")
     assert len(missing_stubs) == 0
 
@@ -557,13 +502,11 @@ def test_dorsal_file_get_latest_annotation(populated_dorsal_file):
     """Test retrieving the most recently modified stub."""
     df = populated_dorsal_file
 
-    # Should get Stub 1 (the newest one)
     latest = df.get_latest_annotation("open/test-schema")
     assert latest is not None
     assert latest.user_id == 100
     assert latest.source.id == "Source_A"
 
-    # Should get Stub 2 (the only one from Source B)
     latest_source_b = df.get_latest_annotation("open/test-schema", source_id="Source_B")
     assert latest_source_b is not None
     assert latest_source_b.user_id == 200
@@ -573,11 +516,9 @@ def test_dorsal_file_get_user_annotations(populated_dorsal_file, mock_dorsal_cli
     """Test retrieving annotations by user, falling back to the client's user_id."""
     df = populated_dorsal_file
 
-    # 1. Explicit user ID passed
     alice_stubs = df.get_user_annotations("open/test-schema", user_id=100)
     assert len(alice_stubs) == 2
 
-    # 2. No user ID passed, fallback to client
     mock_dorsal_client.user_id = 200
     client_stubs = df.get_user_annotations("open/test-schema")
     assert len(client_stubs) == 1

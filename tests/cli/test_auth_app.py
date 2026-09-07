@@ -79,7 +79,6 @@ def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
     """
     mocker.patch("dorsal.client.DorsalClient").return_value.verify_credentials.return_value = MOCK_USER_INFO
 
-    # Mock finding a local dorsal.toml
     project_path = Path("/my/project/dorsal.toml")
     mocker.patch("dorsal.common.config.find_project_config_path", return_value=project_path)
     mock_write = mocker.patch("dorsal.common.auth.write_auth_config")
@@ -88,10 +87,8 @@ def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
 
     assert result.exit_code == 0
 
-    # Verify we wrote to project scope
     mock_write.assert_called_with(api_key="pk_123", email="test@example.com", scope="project")
 
-    # Verify the security warning panel was printed
     last_print_arg = mock_rich_console.print.call_args[0][0]
     assert isinstance(last_print_arg, (Panel, Group))
 
@@ -103,9 +100,6 @@ def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
     assert "Action Required" in output_text
     assert "must not" in output_text
     assert "dorsal auth gitignore" in output_text
-
-
-# --- Logout Tests ---
 
 
 def test_logout_success(mocker, mock_rich_console, mock_auth_app):
@@ -157,9 +151,6 @@ def test_logout_with_env_var_warning(mocker, mock_rich_console, mock_auth_app):
     assert "Environment Variable Active" in output_text
 
 
-# --- Whoami Tests ---
-
-
 def test_whoami_success(mocker, mock_rich_console, mock_auth_app):
     """Tests 'auth whoami' success path."""
     mocker.patch(
@@ -190,7 +181,7 @@ def test_whoami_json(mocker, mock_rich_console, mock_auth_app):
     result = runner.invoke(app, ["auth", "whoami", "--json"])
 
     assert result.exit_code == 0
-    # Verify the output was raw JSON (not a panel)
+
     output_str = mock_rich_console.print.call_args.args[0]
     assert '"user_id": "usr_12345"' in output_str
     assert '"email": "test@example.com"' in output_str
@@ -200,18 +191,13 @@ def test_whoami_auth_error(mocker, mock_auth_app):
     """
     Tests that the command bubbles up AuthError (does not swallow it).
     """
-    # 1. Setup failure
+
     mocker.patch("dorsal.session.get_shared_dorsal_client").side_effect = AuthError("Auth failed.")
 
-    # 2. Run command
     result = runner.invoke(app, ["auth", "whoami"])
 
-    # 3. Assert CRASH (Not 0) and correct Exception type
     assert result.exit_code != 0
     assert isinstance(result.exception, AuthError)
-
-
-# --- Gitignore Tests (High Coverage Gain) ---
 
 
 def test_gitignore_no_git(mocker, mock_rich_console):
@@ -252,7 +238,6 @@ def test_gitignore_config_safe(mocker, mock_rich_console):
     mocker.patch("shutil.which", return_value=True)
     mocker.patch("subprocess.run").return_value.stdout = "/repo/root"
 
-    # Config exists, is NOT empty, but has NO auth section
     config_path = Path("/repo/root/dorsal.toml")
     safe_config_data = {"general": {"theme": "dark"}}
     mocker.patch("dorsal.common.config.get_project_level_config", return_value=(safe_config_data, config_path))
@@ -273,7 +258,6 @@ def test_gitignore_already_exists(mocker, mock_rich_console):
     config_path = Path("/repo/root/dorsal.toml")
     mocker.patch("dorsal.common.config.get_project_level_config", return_value=({"auth": "secrets"}, config_path))
 
-    # Mock reading .gitignore
     mock_file = mock_open(read_data="random_file.txt\n/dorsal.toml\n")
     mocker.patch("builtins.open", mock_file)
     mocker.patch("pathlib.Path.exists", return_value=True)
@@ -301,24 +285,20 @@ def test_gitignore_add_success(mocker, mock_rich_console):
     config_path = Path("/repo/root/dorsal.toml")
     mocker.patch("dorsal.common.config.get_project_level_config", return_value=({"auth": "secrets"}, config_path))
 
-    # Mock reading .gitignore (empty) and checking existence
     mock_file = mock_open(read_data="")
     mocker.patch("builtins.open", mock_file)
     mocker.patch("pathlib.Path.exists", return_value=True)
 
-    # Force user confirmation "y"
     mocker.patch("typer.confirm", return_value=True)
 
     result = runner.invoke(app, ["auth", "gitignore"])
 
     assert result.exit_code == 0
 
-    # Check it wrote to the file
     mock_file().write.assert_called()
     written_data = mock_file().write.call_args[0][0]
     assert "/dorsal.toml" in written_data
 
-    # Verify success message
     assert "Successfully added" in str(mock_rich_console.print.call_args.args[0])
 
 
