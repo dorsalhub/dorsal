@@ -504,7 +504,7 @@ def test_generate_html_file_report_success(mock_resolve, mock_jinja_env, mock_me
     mock_resolve.return_value = (pathlib.Path("default.html"), "/templates/base")
 
     mock_local_file = MagicMock()
-    mock_local_file._file_path = str(file_path)
+    mock_local_file.file_path = str(file_path)
     mock_local_file.date_created = datetime.datetime.now()
     mock_local_file.date_modified = datetime.datetime.now()
 

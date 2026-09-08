@@ -80,6 +80,15 @@ def scan_target(
             rich_help_panel="Output Options",
         ),
     ] = None,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            "-d",
+            help="Perform a deep scan, calculating all cryptographic hashes for the file.",
+            rich_help_panel="Scan Options",
+        ),
+    ] = False,
     save: Annotated[
         bool,
         typer.Option(
@@ -251,6 +260,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            calculate_hashes=deep,
         )
     else:
         try:
@@ -280,6 +290,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            calculate_hashes=deep,
         )
 
 
@@ -298,6 +309,7 @@ def _process_file_scan(
     icons,
     borders,
     console,
+    calculate_hashes,
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
@@ -311,6 +323,7 @@ def _process_file_scan(
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
+            calculate_hashes=calculate_hashes,
         )
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
@@ -323,7 +336,8 @@ def _process_file_scan(
                     record_dict["local_filesystem"][key] = val.isoformat()
         else:
             record_dict["local_filesystem"] = {
-                "full_path": local_file._file_path,
+                "full_path": local_file.file_path,
+                "local_record_id": local_file.record_id,
                 "date_created": (local_file.date_created.isoformat() if hasattr(local_file, "date_created") else None),
                 "date_modified": (
                     local_file.date_modified.isoformat() if hasattr(local_file, "date_modified") else None
@@ -357,7 +371,7 @@ def _process_file_scan(
             try:
                 with console.status(f"📄 Generating HTML report for '[bold]{path.name}[/]'..."):
                     generate_html_file_report(
-                        file_path=local_file._file_path,
+                        file_path=local_file.file_path,
                         local_file=local_file,
                         output_path=str(final_path),
                         template=template,
@@ -393,6 +407,7 @@ def _process_dir_scan(
     icons,
     borders,
     console,
+    calculate_hashes,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
@@ -408,6 +423,7 @@ def _process_dir_scan(
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
             lazy=lazy,
+            calculate_hashes=calculate_hashes,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")
@@ -598,17 +614,23 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
     table.add_column("Filename", style=palette.get("primary_value", "cyan"), min_width=30, overflow="ellipsis")
     table.add_column("Size", justify="right", style=palette.get("value"))
     table.add_column("Media Type", style=palette.get("value"))
+    table.add_column("Record ID", style=palette.get("hash_value", "magenta"))
     table.add_column("Modified Date", style=palette.get("value"))
 
     for file in sorted_files[:limit]:
-        path_obj, display_name = pathlib.Path(file._file_path), file.name
+        path_obj, display_name = pathlib.Path(file.file_path), file.name
         if path_obj.is_symlink():
             try:
                 display_name = f"{escape(path_obj.name)} [dim italic]→ {escape(str(path_obj.readlink()))}[/]"
             except OSError:
                 display_name = f"{escape(path_obj.name)} [dim italic](symlink)[/]"
+
         table.add_row(
-            display_name, human_filesize(file.size), file.media_type, file.date_modified.strftime("%Y-%m-%d %H:%M:%S")
+            display_name,
+            human_filesize(file.size),
+            file.media_type,
+            file.record_id,
+            file.date_modified.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
     console.print(table)

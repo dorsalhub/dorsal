@@ -43,7 +43,7 @@ class FileHasher:
         "BLAKE3": blake3.blake3,
         "MD5": hashlib.md5,
         "SHA-1": hashlib.sha1,
-        "BLAKE3-DORSAL": lambda: blake3.blake3(derive_key_context="Dorsal Validation Hash Context"),
+        "DORSAL": lambda: blake3.blake3(derive_key_context="Dorsal Validation Hash Context"),
     }
     chunk_size: int = 4 * MiB
     tlsh_min_size: int = 50
@@ -134,7 +134,7 @@ class FileHasher:
         calculate_blake3: bool = True,
         calculate_md5: bool = True,
         calculate_sha1: bool = True,
-        calculate_blake3_dorsal: bool = True,
+        calculate_validation: bool = True,
         calculate_tlsh: bool = True,
         follow_symlinks: bool = True,
         threads: int | None = None,
@@ -149,7 +149,7 @@ class FileHasher:
             calculate_blake3: Whether to calculate BLAKE3 (default True).
             calculate_md5: Whether to calculate MD5 (default True).
             calculate_sha1: Whether to calculate SHA-1 (default True).
-            calculate_blake3_dorsal: Whether to calculate personalized BLAKE3 (default True).
+            calculate_validation: Whether to calculate validation hash (default True).
             calculate_tlsh: If True, attempts to calculate the TLSH similarity hash.
             follow_symlinks: If True (default), follows symlinks to hash target content.
                               If False, hashes the symlink pointer string itself.
@@ -183,8 +183,8 @@ class FileHasher:
             functions_to_run.append("MD5")
         if calculate_sha1:
             functions_to_run.append("SHA-1")
-        if calculate_blake3_dorsal:
-            functions_to_run.append("BLAKE3-DORSAL")
+        if calculate_validation:
+            functions_to_run.append("DORSAL")
         if calculate_tlsh:
             functions_to_run.append("TLSH")
 
@@ -344,11 +344,11 @@ class FileHasher:
             logger.error("Failed to read file '%s' for SHA-1 hashing: %s", file_path, err)
             raise
 
-    def hash_blake3_dorsal(self, file_path: str, follow_symlinks: bool = True) -> str:
+    def hash_dorsal_validation(self, file_path: str, follow_symlinks: bool = True) -> str:
         """
         Calculates the personalized BLAKE3 hash for a single file.
         """
-        logger.debug("BLAKE3-DORSAL hashing file: '%s'", file_path)
+        logger.debug("DORSAL (validation) hashing file: '%s'", file_path)
         hasher = blake3.blake3(derive_key_context="Dorsal Validation Hash Context")
         try:
             with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
@@ -356,7 +356,7 @@ class FileHasher:
                     hasher.update(chunk)
             return hasher.hexdigest()
         except (IOError, PermissionError, OSError) as err:
-            logger.error("Failed to read file '%s' for BLAKE3-DORSAL hashing: %s", file_path, err)
+            logger.error("Failed to read file '%s' for DORSAL (validation) hashing: %s", file_path, err)
             raise
 
     def hash_tlsh(self, file_path: str, file_size: int, follow_symlinks: bool = True) -> str | None:

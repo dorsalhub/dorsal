@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 import functools
+import hashlib
 import gzip
 import json
 import sqlite3
@@ -28,9 +29,10 @@ from pydantic import BaseModel, Field
 
 from dorsal.file.index.extractors import registry, create_eav_tuple
 from dorsal.file.index.config import get_index_compression, get_index_compression_level, get_index_compression_mode
+from dorsal.file.utils.hashes import make_local_record_id
 
 if TYPE_CHECKING:
-    from dorsal.file.validators.file_record import FileRecordStrict
+    from dorsal.file.validators.file_record import FileRecord, FileRecordStrict
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +47,14 @@ class CachedFileRecord(BaseModel):
     size: int | None = None
     extension: str | None = None
     media_type: str | None = None
-    hash_sha256: str
+    hash_sha256: str | None = None
     hash_blake3: str | None = None
+    hash_md5: str | None = None
+    hash_sha1: str | None = None
+    hash_dorsal: str | None = None
     hash_quick: str | None = None
     hash_tlsh: str | None = None
+    local_record_id: str | None = None
 
 
 class DorsalIndex:
@@ -127,8 +133,12 @@ class DorsalIndex:
                 media_type TEXT,
                 hash_sha256 TEXT,
                 hash_blake3 TEXT,
+                hash_md5 TEXT,
+                hash_sha1 TEXT,
+                hash_dorsal TEXT,
                 hash_quick TEXT,
-                hash_tlsh TEXT
+                hash_tlsh TEXT,
+                local_record_id TEXT
             );
             """
         )
@@ -174,8 +184,12 @@ class DorsalIndex:
 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_sha256 ON cached_files (hash_sha256);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_blake3 ON cached_files (hash_blake3);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_md5 ON cached_files (hash_md5);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_sha1 ON cached_files (hash_sha1);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_dorsal ON cached_files (hash_dorsal);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_quick ON cached_files (hash_quick);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_hash_tlsh ON cached_files (hash_tlsh);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_local_record_id ON cached_files (local_record_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_name ON cached_files (name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_extension ON cached_files (extension);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_media_type ON cached_files (media_type);")
@@ -187,7 +201,7 @@ class DorsalIndex:
         conn.commit()
         logger.debug("Schema initialization complete.")
 
-    def _extract_search_data(self, record: "FileRecordStrict") -> tuple[list[str], list[tuple]]:
+    def _extract_search_data(self, record: "FileRecord | FileRecordStrict") -> tuple[list[str], list[tuple]]:
         """Extracts searchable data by delegating to the ExtractorRegistry."""
         fts_texts: list[str] = []
         eav_attributes: list[tuple] = []
@@ -230,12 +244,16 @@ class DorsalIndex:
 
         return fts_texts, eav_attributes
 
-    def upsert_record(self, *, path: str, modified_time: float, record: "FileRecordStrict"):
+    def upsert_record(self, *, path: str, modified_time: float, record: "FileRecord | FileRecordStrict"):
         """Inserts or replaces a record, updating search indexes and respecting compression."""
         conn = self._ensure_connection()
         logger.debug(f"Upserting record and search indexes for path: {path}")
-        base_annotation = record.annotations.file_base.record
-        all_hashes = base_annotation.all_hash_ids or {}
+        base_annotation = None
+        all_hashes = {}
+
+        if record.annotations and record.annotations.file_base:
+            base_annotation = record.annotations.file_base.record
+            all_hashes = base_annotation.all_hash_ids or {}
 
         record_json_str = record.model_dump_json(by_alias=True, exclude_none=True)
 
@@ -247,19 +265,25 @@ class DorsalIndex:
             record_data = record_json_str.encode("utf-8")
             is_compressed_flag = 0
 
+        local_record_id = make_local_record_id(path)
+
         sql_data = {
             "abspath": path,
             "modified_time": modified_time,
             "record": record_data,
             "is_compressed": is_compressed_flag,
-            "name": base_annotation.name,
-            "size": base_annotation.size,
-            "extension": base_annotation.extension,
-            "media_type": base_annotation.media_type,
+            "name": base_annotation.name if base_annotation else None,
+            "size": base_annotation.size if base_annotation else None,
+            "extension": base_annotation.extension if base_annotation else None,
+            "media_type": base_annotation.media_type if base_annotation else None,
             "hash_sha256": all_hashes.get("SHA-256"),
             "hash_blake3": all_hashes.get("BLAKE3"),
+            "hash_md5": all_hashes.get("MD5"),
+            "hash_sha1": all_hashes.get("SHA-1"),
+            "hash_dorsal": all_hashes.get("DORSAL"),
             "hash_quick": all_hashes.get("QUICK"),
             "hash_tlsh": all_hashes.get("TLSH"),
+            "local_record_id": local_record_id,
         }
 
         fts_texts, eav_attributes = self._extract_search_data(record)
@@ -278,11 +302,11 @@ class DorsalIndex:
             INSERT OR REPLACE INTO cached_files (
                 abspath, modified_time, record, is_compressed, name, size,
                 extension, media_type, hash_sha256, hash_blake3,
-                hash_quick, hash_tlsh
+                hash_md5, hash_sha1, hash_dorsal, hash_quick, hash_tlsh, local_record_id
             ) VALUES (
                 :abspath, :modified_time, :record, :is_compressed, :name, :size,
                 :extension, :media_type, :hash_sha256, :hash_blake3,
-                :hash_quick, :hash_tlsh
+                :hash_md5, :hash_sha1, :hash_dorsal, :hash_quick, :hash_tlsh, :local_record_id
             )
             """,
             sql_data,
@@ -307,9 +331,9 @@ class DorsalIndex:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT abspath, modified_time, record, is_compressed, name, size,
+            SELECT abspath, local_record_id, modified_time, record, is_compressed, name, size,
                    extension, media_type, hash_sha256, hash_blake3,
-                   hash_quick, hash_tlsh
+                   hash_md5, hash_sha1, hash_dorsal, hash_quick, hash_tlsh
             FROM cached_files WHERE abspath = ?
             """,
             (path,),
@@ -349,6 +373,9 @@ class DorsalIndex:
         field_map = {
             "SHA-256": "hash_sha256",
             "BLAKE3": "hash_blake3",
+            "MD5": "hash_md5",
+            "SHA-1": "hash_sha1",
+            "DORSAL": "hash_dorsal",
             "QUICK": "hash_quick",
             "TLSH": "hash_tlsh",
         }
@@ -388,6 +415,9 @@ class DorsalIndex:
         field_map = {
             "SHA-256": "hash_sha256",
             "BLAKE3": "hash_blake3",
+            "MD5": "hash_md5",
+            "SHA-1": "hash_sha1",
+            "DORSAL": "hash_dorsal",
             "QUICK": "hash_quick",
             "TLSH": "hash_tlsh",
         }
@@ -491,8 +521,12 @@ class DorsalIndex:
                 COALESCE(LENGTH(CAST(media_type AS BLOB)), 0) + 
                 COALESCE(LENGTH(CAST(hash_sha256 AS BLOB)), 0) + 
                 COALESCE(LENGTH(CAST(hash_blake3 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_md5 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_sha1 AS BLOB)), 0) + 
+                COALESCE(LENGTH(CAST(hash_dorsal AS BLOB)), 0) + 
                 COALESCE(LENGTH(CAST(hash_quick AS BLOB)), 0) + 
-                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0)
+                COALESCE(LENGTH(CAST(hash_tlsh AS BLOB)), 0) +
+                COALESCE(LENGTH(CAST(local_record_id AS BLOB)), 0)
             ) FROM cached_files
         """)
         record_cache_bytes = int(cursor.fetchone()[0] or 0)
@@ -924,8 +958,12 @@ class DorsalIndex:
             "media_type",
             "hash_sha256",
             "hash_blake3",
+            "hash_md5",
+            "hash_sha1",
+            "hash_dorsal",
             "hash_quick",
             "hash_tlsh",
+            "local_record_id",
         ]
         if include_records:
             columns.extend(["record", "is_compressed"])

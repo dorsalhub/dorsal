@@ -51,7 +51,7 @@ from dorsal.file.linters import apply_linter
 T = TypeVar("T", bound=BaseModel)
 
 if TYPE_CHECKING:
-    from dorsal.file.validators.file_record import FileRecordStrict
+    from dorsal.file.validators.file_record import FileRecord, FileRecordStrict
     from dorsal.file.configs.model_runner import (
         DependencyConfig,
         ModelRunnerPipelineStep,
@@ -942,8 +942,11 @@ class ModelRunner:
             if not os.path.isfile(file_path) and not os.path.islink(file_path):
                 raise FileNotFoundError(f"Cannot process: {file_path}")
 
-    def run(self, file_path: str, follow_symlinks: bool = True) -> "FileRecordStrict":
+    def run(
+        self, file_path: str, follow_symlinks: bool = True, calculate_hashes: bool = True
+    ) -> "FileRecord | FileRecordStrict":
         from dorsal.file.configs.model_runner import RunModelResult
+        from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
 
         logger.debug("Starting model execution pipeline for file: %s", file_path)
         self._validate_file_path(file_path, follow_symlinks)
@@ -961,12 +964,20 @@ class ModelRunner:
             )
             raise
 
+        if not calculate_hashes:
+            base_validator = FileCoreValidationModel
+
+        base_options = self.pre_model_options.copy() if self.pre_model_options else {}
+        base_options["calculate_hashes"] = calculate_hashes
+        if not calculate_hashes:
+            base_options["calculate_similarity_hash"] = False
+
         base_model_results = self.run_single_model(
             annotation_model=base_annotator,
             validation_model=base_validator,
             file_path=file_path,
             schema_id=self.pre_model.schema_id,
-            options=self.pre_model_options,
+            options=base_options,
             follow_symlinks=follow_symlinks,
         )
 
@@ -1006,6 +1017,21 @@ class ModelRunner:
 
             try:
                 annotator_class, validator_class = self._load_model_and_validator_classes(step_config)
+
+                if not calculate_hashes and getattr(annotator_class, "requires_hashes", False):
+                    logger.debug(
+                        "Skipping model '%s' for shallow scan because it requires hashes.", annotator_class.__name__
+                    )
+                    error_result = RunModelResult(
+                        name=annotator_class.__name__,
+                        source={"type": "Model", "id": annotator_model_id, "version": annotator_model_version},
+                        schema_id=step_config.schema_id,
+                        records=None,
+                        error="Skipped: Model requires hashes (deep scan).",
+                    )
+                    all_model_results.append(error_result)
+                    continue
+
                 annotator_model_version = annotator_class.version
                 annotator_model_variant = annotator_class.variant
                 annotator_model_id = annotator_class.id
@@ -1140,7 +1166,9 @@ class ModelRunner:
             len(all_model_results),
             file_path,
         )
-        final_file_record = self._merge_model_results(all_model_results, file_path)
+        final_file_record = self._merge_model_results(
+            model_results=all_model_results, file_path_for_log=file_path, calculate_hashes=calculate_hashes
+        )
 
         logger.debug(
             "Model execution pipeline completed successfully for file: '%s'. Final hash: %s",
@@ -1151,9 +1179,11 @@ class ModelRunner:
             logger.debug("Model execution times for file '%s': %s", file_path, self.time_taken)
         return final_file_record
 
-    def _merge_model_results(self, model_results: "list[RunModelResult]", file_path_for_log: str) -> "FileRecordStrict":
-        from dorsal.file.validators.file_record import FileRecordStrict, CORE_MODEL_ANNOTATION_WRAPPERS
-        from dorsal.file.validators.base import FileCoreValidationModelStrict
+    def _merge_model_results(
+        self, model_results: "list[RunModelResult]", file_path_for_log: str, calculate_hashes: bool
+    ) -> "FileRecord | FileRecordStrict":
+        from dorsal.file.validators.file_record import FileRecord, FileRecordStrict, CORE_MODEL_ANNOTATION_WRAPPERS
+        from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
         from dorsal.file.sharding import build_annotation_or_annotationgroup
 
         if not model_results:
@@ -1176,8 +1206,9 @@ class ModelRunner:
                 f"Base model result invalid (error: {base_model_output.error}) for '{file_path_for_log}' at merge."
             )
 
+        ValidationClass = FileCoreValidationModelStrict if calculate_hashes else FileCoreValidationModel
         try:
-            base_file_data = FileCoreValidationModelStrict.model_validate(base_model_output.records[0])
+            base_file_data = ValidationClass.model_validate(base_model_output.records[0])
         except PydanticValidationError as err:
             logger.error(
                 "Failed to validate base model's record during merge for file '%s'. Errors: %s. Record: %s",
@@ -1193,19 +1224,23 @@ class ModelRunner:
 
         merged_data["hash"] = base_file_data.hash
 
-        if base_file_data.all_hash_ids and "BLAKE3" in base_file_data.all_hash_ids:
-            merged_data["validation_hash"] = base_file_data.all_hash_ids["BLAKE3"]
+        if calculate_hashes:
+            if base_file_data.all_hash_ids and "DORSAL" in base_file_data.all_hash_ids:
+                merged_data["validation_hash"] = base_file_data.all_hash_ids["DORSAL"]
+            else:
+                logger.error(
+                    "DORSAL validation hash not found in base model results for file '%s'. Available hashes: %s",
+                    file_path_for_log,
+                    base_file_data.all_hash_ids,
+                )
+                raise MissingHashError(
+                    f"DORSAL validation hash was not produced by the base model for file '{file_path_for_log}'."
+                )
+            merged_data["quick_hash"] = base_file_data.all_hash_ids.get("QUICK")
         else:
-            logger.error(
-                "CRITICAL: BLAKE3 hash (required for validation_hash) not found in base model results for file '%s'. Available hashes: %s",
-                file_path_for_log,
-                base_file_data.all_hash_ids,
-            )
-            raise MissingHashError(
-                f"BLAKE3 hash, required for 'validation_hash', was not produced by the base model for file '{file_path_for_log}'."
-            )
+            merged_data["validation_hash"] = None
+            merged_data["quick_hash"] = None
 
-        merged_data["quick_hash"] = base_file_data.all_hash_ids.get("QUICK")
         merged_data["similarity_hash"] = base_file_data.similarity_hash
 
         base_dataset_id = constants.FILE_BASE_ANNOTATION_SCHEMA
@@ -1295,11 +1330,12 @@ class ModelRunner:
             skipped_due_to_error,
         )
 
+        RecordClass = FileRecordStrict if calculate_hashes else FileRecord
         try:
-            file_record = FileRecordStrict(**merged_data)
+            file_record = RecordClass(**merged_data)
         except PydanticValidationError as err:
             logger.exception(
-                "Final merged data failed FileRecordStrict validation for file '%s'. Errors: %s. Data snippet: %s",
+                "Final merged record failed validation for file '%s'. Errors: %s. Data snippet: %s",
                 file_path_for_log,
                 err.errors(),
                 str(merged_data)[:1000],

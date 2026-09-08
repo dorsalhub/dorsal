@@ -68,6 +68,27 @@ def get_blake3_hash(file_path: str, follow_symlinks: bool = True) -> str:
         raise
 
 
+def get_sha1_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_sha1(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
+def get_md5_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_md5(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
+def get_validation_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_dorsal_validation(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
 def multi_hash(
     file_path: str, similarity_hash: bool = False, follow_symlinks: bool = True, threads: int | None = None
 ) -> dict[str, str]:

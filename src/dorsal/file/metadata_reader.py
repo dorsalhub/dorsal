@@ -17,7 +17,7 @@ from functools import cached_property
 import logging
 import os
 import pathlib
-from typing import Any, Iterable, Literal, Sequence, Type, TYPE_CHECKING, overload
+from typing import Any, Iterable, Literal, Sequence, Type, TYPE_CHECKING, overload, cast
 
 import requests
 from tqdm import tqdm
@@ -41,9 +41,7 @@ from dorsal.common import constants
 from dorsal.common.auth import is_offline_mode
 from dorsal.common.environment import is_jupyter_environment, should_show_progress
 from dorsal.common.exceptions import (
-    BatchSizeError,
     DorsalError,
-    DorsalClientError,
     DuplicateFileError,
 )
 from dorsal.file.dorsal_file import LocalFile
@@ -54,7 +52,7 @@ from dorsal.session import get_shared_dorsal_client, get_shared_index
 
 
 if TYPE_CHECKING:
-    from dorsal.file.validators.file_record import FileRecordStrict
+    from dorsal.file.validators.file_record import FileRecord, FileRecordStrict
 
 logger = logging.getLogger(__name__)
 
@@ -169,23 +167,29 @@ class MetadataReader:
 
         return self._client_instance
 
-    def _run_models(self, file_path: str, follow_symlinks: bool = True) -> FileRecordStrict:
+    def _run_models(
+        self, file_path: str, follow_symlinks: bool = True, calculate_hashes: bool = True
+    ) -> FileRecord | FileRecordStrict:
         """
         Internal helper to run local file models on a given file path.
 
         Args:
             file_path: Path to the file to process.
+            follow_symlinks: Whether to resolve symbolic links.
+            calculate_hashes: Whether to calculate cryptographic hashes.
 
         Returns:
-            A FileRecordStrict object with generated metadata.
+            A FileRecord or FileRecordStrict object with generated metadata.
 
         Raises:
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read.
-            DorsalClientError: For other errors during model execution, wrapped for consistency.
+            DorsalError: For other errors during model execution, wrapped for consistency.
         """
         try:
-            return self._model_runner.run(file_path=file_path, follow_symlinks=follow_symlinks)
+            return self._model_runner.run(
+                file_path=file_path, follow_symlinks=follow_symlinks, calculate_hashes=calculate_hashes
+            )
         except FileNotFoundError:
             logger.error("File not found by ModelRunner: %s", file_path)
             raise
@@ -194,30 +198,39 @@ class MetadataReader:
             raise
         except Exception as e:
             logger.error("Error running models on file %s: %s", file_path, e)
-            raise DorsalClientError(
+            raise DorsalError(
                 message=f"Failed to process metadata for file: {file_path}.",
                 original_exception=e,
             ) from e
 
     def _get_or_create_record(
-        self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False, follow_symlinks: bool = True
-    ) -> FileRecordStrict:
+        self,
+        file_path: str,
+        *,
+        skip_cache: bool,
+        overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
+        calculate_hashes: bool = True,
+    ) -> FileRecord | FileRecordStrict:
         """
         Gets a file record from cache or creates it by running the ModelRunner.
 
         Args:
             file_path: Path to the file to process.
             skip_cache: If True, the cache check is bypassed and the ModelRunner is forced to run.
+            overwrite_cache: If True, updates the cache with the new run results.
+            follow_symlinks: Whether to resolve symbolic links.
+            calculate_hashes: Whether to calculate cryptographic hashes during extraction.
 
         Returns:
-            FileRecordStrict object with generated metadata.
+            FileRecord or FileRecordStrict object with generated metadata.
 
         Raises:
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read.
-            DorsalClientError: For other errors during model execution.
+            DorsalError: For other errors during model execution.
         """
-        from dorsal.file.validators.file_record import FileRecordStrict
+        from dorsal.file.validators.file_record import FileRecord, FileRecordStrict
 
         if not skip_cache and not overwrite_cache:
             abspath = os.path.abspath(file_path)
@@ -226,10 +239,15 @@ class MetadataReader:
                 cached_record = self._cache.get_record(path=abspath)
 
                 if cached_record and cached_record.modified_time == modified_time:
-                    logger.debug("Cache hit for file: %s", abspath)
-                    record = FileRecordStrict.model_validate_json(cached_record.record_json)
-                    record.source = "cache"
-                    return record
+                    # Cache Miss if we need hashes but the cached record doesn't have them
+                    if calculate_hashes and not cached_record.hash_sha256:
+                        logger.debug("Cache miss: Found shallow record, but deep scan requested for: %s", abspath)
+                    else:
+                        logger.debug("Cache hit for file: %s", abspath)
+                        RecordClass = FileRecordStrict if cached_record.hash_sha256 else FileRecord
+                        record = RecordClass.model_validate_json(cached_record.record_json)
+                        record.source = "cache"
+                        return record
 
             except FileNotFoundError:
                 logger.error("File not found during cache check: %s", file_path)
@@ -242,7 +260,9 @@ class MetadataReader:
 
         logger.debug("Cache miss or skipped for file: %s. Running models.", file_path)
         try:
-            file_record = self._model_runner.run(file_path=file_path, follow_symlinks=follow_symlinks)
+            file_record = self._model_runner.run(
+                file_path=file_path, follow_symlinks=follow_symlinks, calculate_hashes=calculate_hashes
+            )
 
             if not skip_cache or overwrite_cache:
                 abspath = os.path.abspath(file_path)
@@ -259,7 +279,7 @@ class MetadataReader:
             raise
         except Exception as err:
             logger.error("Error running models on file %s: %s", file_path, err, exc_info=True)
-            raise DorsalClientError(
+            raise DorsalError(
                 message=f"Failed to process metadata for file: {file_path}.",
                 original_exception=err,
             ) from err
@@ -277,7 +297,8 @@ class MetadataReader:
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
         lazy: bool = False,
-    ) -> tuple[list[FileRecordStrict], dict[str, str]]:
+        calculate_hashes: bool = True,
+    ) -> tuple[list[FileRecord | FileRecordStrict], dict[str, str]]:
         """
         Scan directory, and sends each file through the ModelRunner pipeline.
 
@@ -289,16 +310,17 @@ class MetadataReader:
             recursive: If True, scans subdirectories recursively. Defaults to False.
             limit: Optional. top processing files once this many unique records have been generated.
             lazy: If True, consumes file paths via an iterator (so doesn't count files ahead of processing).
+            calculate_hashes: If True, enforces deep scans of files.
 
         Returns:
-            tuple[list[FileRecordStrict], dict[str, str]]:
-                - list of unique `FileRecordStrict` objects.
-                - mapping file content hashes to original file paths.
+            tuple[list[FileRecord | FileRecordStrict], dict[str, str]]:
+                - list of unique `FileRecord` or `FileRecordStrict` objects.
+                - mapping file content hashes to original file paths (only populated for deep scans).
 
         Raises:
             FileNotFoundError: If `dir_path` does not exist.
             DuplicateFileError: If `self._ignore_duplicates` is False and duplicates found.
-            DorsalClientError: For errors scanning directory or during local processing.
+            DorsalError: For errors scanning directory or during local processing.
         """
         logger.debug(
             "Generating processed records from directory: '%s' (Recursive: %s, Ignore Duplicates: %s, Max: %s, Lazy: %s)",
@@ -315,7 +337,7 @@ class MetadataReader:
             raise
         except Exception as e:
             logger.error("Error scanning directory '%s' for record generation: %s", dir_path, e)
-            raise DorsalClientError(
+            raise DorsalError(
                 message=f"An error occurred while scanning directory: {dir_path}.",
                 original_exception=e,
             ) from e
@@ -344,7 +366,7 @@ class MetadataReader:
             )
 
         file_hash_to_path_map: dict[str, str] = {}
-        records_to_index_list: list[FileRecordStrict] = []
+        records_to_index_list: list[FileRecord | FileRecordStrict] = []
         processed_files_summary_local: dict[str, str] = {}
 
         should_display = should_show_progress(show_progress, console)
@@ -407,38 +429,45 @@ class MetadataReader:
                             logger.debug("Failed to resolve symlink: %s - %s", file_path, err)
                             pass
                     file_record = self._get_or_create_record(
-                        file_path=processing_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
+                        file_path=processing_path,
+                        skip_cache=skip_cache,
+                        overwrite_cache=overwrite_cache,
+                        follow_symlinks=follow_symlinks,
+                        calculate_hashes=calculate_hashes,
                     )
-                    if not hasattr(file_record, "hash") or not file_record.hash:
+                    if calculate_hashes and (not hasattr(file_record, "hash") or not file_record.hash):
                         logger.error(
                             "Skipping file %s: processed record is missing a hash.",
                             file_path,
                         )
                         processed_files_summary_local[file_path] = "error_missing_hash"
                         continue
-                    if file_record.hash in file_hash_to_path_map:
-                        original_file = file_hash_to_path_map[file_record.hash]
-                        if self._ignore_duplicates:
-                            logger.debug(
-                                "Skipping duplicate: '%s' (original: '%s', hash: %s)",
-                                file_path,
-                                original_file,
-                                file_record.hash,
-                            )
-                            processed_files_summary_local[file_path] = "skipped_duplicate_content"
-                            continue
-                        else:
-                            logger.error(
-                                "Duplicate file content: '%s' and '%s' (hash: %s). Not ignoring.",
-                                file_path,
-                                original_file,
-                                file_record.hash,
-                            )
-                            raise DuplicateFileError(
-                                message="Duplicate file content detected during local processing.",
-                                file_paths=[file_path, original_file],
-                            )
-                    file_hash_to_path_map[file_record.hash] = file_path
+
+                    if file_record.hash:
+                        if file_record.hash in file_hash_to_path_map:
+                            original_file = file_hash_to_path_map[file_record.hash]
+                            if self._ignore_duplicates:
+                                logger.debug(
+                                    "Skipping duplicate: '%s' (original: '%s', hash: %s)",
+                                    file_path,
+                                    original_file,
+                                    file_record.hash,
+                                )
+                                processed_files_summary_local[file_path] = "skipped_duplicate_content"
+                                continue
+                            else:
+                                logger.error(
+                                    "Duplicate file content: '%s' and '%s' (hash: %s). Not ignoring.",
+                                    file_path,
+                                    original_file,
+                                    file_record.hash,
+                                )
+                                raise DuplicateFileError(
+                                    message="Duplicate file content detected during local processing.",
+                                    file_paths=[file_path, original_file],
+                                )
+                        file_hash_to_path_map[file_record.hash] = file_path
+
                     records_to_index_list.append(file_record)
                     processed_files_summary_local[file_path] = "processed_for_indexing"
                 except DuplicateFileError:
@@ -446,7 +475,7 @@ class MetadataReader:
                 except (FileNotFoundError, IOError) as err:
                     logger.error("Skipping '%s': local access error: %s", file_path, err)
                     processed_files_summary_local[file_path] = f"error_local_access: {type(err).__name__}"
-                except DorsalClientError as err:
+                except DorsalError as err:
                     logger.error("Skipping '%s': model execution error: %s", file_path, err)
                     processed_files_summary_local[file_path] = (
                         f"error_model_execution: {type(err.original_exception or err).__name__}"
@@ -856,9 +885,9 @@ class MetadataReader:
         Raises:
             FileNotFoundError: If `dir_path` does not exist.
             BatchIndexingError: If a batch fails and `fail_fast` is True.
-            DorsalClientError: For critical errors before batching begins.
+            DorsalError: For critical errors before batching begins.
         """
-        from dorsal.common.exceptions import DorsalClientError, DuplicateFileError
+        from dorsal.common.exceptions import DorsalError
 
         logger.debug(
             "MetadataReader.index_directory called: dir='%s', rec=%s, public=%s, fail_fast=%s",
@@ -880,6 +909,7 @@ class MetadataReader:
             palette=palette,
             follow_symlinks=follow_symlinks,
             lazy=lazy,
+            calculate_hashes=True,
         )
 
         if not records_to_index_list:
@@ -893,7 +923,7 @@ class MetadataReader:
             }
 
         return self.upload_records(
-            records=records_to_index_list,
+            records=cast(list["FileRecordStrict"], records_to_index_list),
             public=public,
             fail_fast=fail_fast,
             hash_to_path_map=file_hash_to_path_map,
@@ -936,7 +966,7 @@ class MetadataReader:
                 result of the indexing operation.
 
         Raises:
-            DorsalClientError: If there's an error processing the file locally or an API error
+            DorsalError: If there's an error processing the file locally or an API error
                                during indexing.
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read by ModelRunner.
@@ -945,16 +975,16 @@ class MetadataReader:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
         logger.debug("Starting file indexing for: %s (Public: %s)", file_path, public)
         file_record = self._get_or_create_record(
-            file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache
+            file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache, calculate_hashes=True
         )
 
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)
 
         api_response: FileIndexResponse
         if public:
-            api_response = self._client.index_public_file_records(file_records=[file_record])
+            api_response = self._client.index_public_file_records(file_records=[cast("FileRecordStrict", file_record)])
         else:
-            api_response = self._client.index_private_file_records(file_records=[file_record])
+            api_response = self._client.index_private_file_records(file_records=[cast("FileRecordStrict", file_record)])
 
         log_status_msg = "processed by API"
         if api_response.results:
@@ -1010,6 +1040,7 @@ class MetadataReader:
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
         lazy: bool = False,
+        calculate_hashes: bool = True,
     ) -> list[LocalFile]: ...
 
     @overload
@@ -1026,6 +1057,7 @@ class MetadataReader:
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
         lazy: bool = False,
+        calculate_hashes: bool = True,
     ) -> tuple[list[LocalFile], list[str]]: ...
 
     def scan_directory(
@@ -1041,6 +1073,7 @@ class MetadataReader:
         overwrite_cache: bool = False,
         follow_symlinks: bool = True,
         lazy: bool = False,
+        calculate_hashes: bool = True,
     ) -> list[LocalFile] | tuple[list[LocalFile], list[str]]:
         """Scans a directory and runs the pipeline on all found files.
 
@@ -1083,6 +1116,7 @@ class MetadataReader:
                 targets. Defaults to True.
             lazy (bool, optional): If True, processes files via an iterator to avoid
                 scanning the entire tree before processing begins. Defaults to False.
+            calculate_hashes (bool, optional): If True, executes a deep scan.
 
         Returns:
             list[LocalFile]: initialized `LocalFile` instances.
@@ -1175,6 +1209,7 @@ class MetadataReader:
                         skip_cache=skip_cache,
                         overwrite_cache=overwrite_cache,
                         follow_symlinks=follow_symlinks,
+                        calculate_hashes=calculate_hashes,
                     )
 
                     local_file_obj = self._file_class(
@@ -1205,7 +1240,13 @@ class MetadataReader:
         return local_files
 
     def scan_file(
-        self, file_path: str, *, skip_cache: bool, overwrite_cache: bool = False, follow_symlinks: bool = True
+        self,
+        file_path: str,
+        *,
+        skip_cache: bool,
+        overwrite_cache: bool = False,
+        follow_symlinks: bool = True,
+        calculate_hashes: bool = True,
     ) -> LocalFile:
         """Runs the metadata extraction pipeline on a single file.
 
@@ -1229,6 +1270,7 @@ class MetadataReader:
 
         Args:
             file_path (str): The path to the local file to process.
+            calculate_hashes (bool): Whether to perform a deep scan.
 
         Returns:
             LocalFile: An initialized `LocalFile` instance containing the rich
@@ -1249,6 +1291,7 @@ class MetadataReader:
                 overwrite_cache=overwrite_cache,
                 offline=self.offline,
                 follow_symlinks=follow_symlinks,
+                calculate_hashes=calculate_hashes,
             )
         except FileNotFoundError:
             logger.error("File not found for reading: %s", file_path)

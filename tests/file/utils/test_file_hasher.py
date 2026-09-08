@@ -44,7 +44,7 @@ def test_hasher_defaults():
     assert "BLAKE3" in hasher.hashers_constructors
     assert "MD5" in hasher.hashers_constructors
     assert "SHA-1" in hasher.hashers_constructors
-    assert "BLAKE3-DORSAL" in hasher.hashers_constructors
+    assert "DORSAL" in hasher.hashers_constructors
     assert hasher._tlsh_available is None
 
 
@@ -120,7 +120,7 @@ def test_hash_sequential_single_algorithm_fallback(dummy_file, mocker):
         calculate_blake3=False,
         calculate_md5=False,
         calculate_sha1=False,
-        calculate_blake3_dorsal=False,
+        calculate_validation=False,
         calculate_tlsh=False,
     )
 
@@ -169,14 +169,14 @@ def test_hash_standard_algorithms(dummy_file):
     assert "BLAKE3" in result
     assert "MD5" in result
     assert "SHA-1" in result
-    assert "BLAKE3-DORSAL" in result
+    assert "DORSAL" in result
     assert "TLSH" not in result
 
     expected_sha = hashlib.sha256(b"Hello World").hexdigest()
     expected_b3d = blake3.blake3(b"Hello World", derive_key_context="Dorsal Validation Hash Context").hexdigest()
 
     assert result["SHA-256"] == expected_sha
-    assert result["BLAKE3-DORSAL"] == expected_b3d
+    assert result["DORSAL"] == expected_b3d
 
 
 def test_hash_tlsh_integration_success(large_dummy_file, mocker):
@@ -261,7 +261,7 @@ def test_standalone_wrappers(dummy_file):
     sha1 = hasher.hash_sha1(str(dummy_file))
     assert len(sha1) == 40
 
-    b3_dorsal = hasher.hash_blake3_dorsal(str(dummy_file))
+    b3_dorsal = hasher.hash_dorsal_validation(str(dummy_file))
     assert len(b3_dorsal) == 64
 
 

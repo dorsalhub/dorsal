@@ -126,6 +126,15 @@ def search_index_cmd(
             rich_help_panel="Search Options",
         ),
     ] = "desc",
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            "-d",
+            help="Filter results: only show files with computed hashes.",
+            rich_help_panel="Search Options",
+        ),
+    ] = False,
     or_logic: Annotated[
         bool,
         typer.Option(
@@ -206,6 +215,7 @@ def search_index_cmd(
             per_page=per_page,
             sort_by=sort_by,
             sort_desc=sort_desc,
+            deep=deep,
         )
 
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)

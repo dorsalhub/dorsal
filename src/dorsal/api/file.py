@@ -870,6 +870,7 @@ def scan_directory(
     use_cache: bool = True,
     offline: bool = False,
     follow_symlinks: bool = True,
+    calculate_hashes: bool = True,
 ) -> list[LocalFile]:
     """Scans a directory and returns a list of LocalFile objects.
 
@@ -930,7 +931,11 @@ def scan_directory(
 
     try:
         local_files = effective_reader.scan_directory(
-            dir_path=dir_path, recursive=recursive, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+            dir_path=dir_path,
+            recursive=recursive,
+            skip_cache=not use_cache,
+            follow_symlinks=follow_symlinks,
+            calculate_hashes=calculate_hashes,
         )
         logger.debug(
             "Effective MetadataReader.scan_directory completed for dir_path='%s'. Found %d LocalFile objects.",
@@ -963,6 +968,7 @@ def scan_file(
     use_cache: bool = True,
     offline: bool = False,
     follow_symlinks: bool = True,
+    calculate_hashes: bool = True,
 ) -> LocalFile:
     """Processes a single file and returns a LocalFile object.
 
@@ -1012,7 +1018,10 @@ def scan_file(
 
     try:
         local_file = effective_reader.scan_file(
-            file_path=file_path, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+            file_path=file_path,
+            skip_cache=not use_cache,
+            follow_symlinks=follow_symlinks,
+            calculate_hashes=calculate_hashes,
         )
         logger.debug(
             "Effective MetadataReader.scan_file completed for file_path='%s'. Hash: %s",
@@ -2176,7 +2185,7 @@ def generate_html_file_report(
         }
 
         local_fs_info = {
-            "full_path": local_file._file_path,
+            "full_path": local_file.file_path,
             "date_created": {
                 "human": local_file.date_created.strftime("%Y-%m-%d %H:%M:%S"),
                 "raw": local_file.date_created.isoformat(),

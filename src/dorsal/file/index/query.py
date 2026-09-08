@@ -114,6 +114,10 @@ class QueryCompiler:
         "date_modified": "modified_time",
         "sha256": "hash_sha256",
         "blake3": "hash_blake3",
+        "md5": "hash_md5",
+        "sha1": "hash_sha1",
+        "sha-1": "hash_sha1",
+        "dorsal": "hash_dorsal",
         "quick": "hash_quick",
         "tlsh": "hash_tlsh",
     }
@@ -136,6 +140,7 @@ class QueryCompiler:
         offset: int | None = None,
         sort_by: str = "date_modified",
         sort_desc: bool = True,
+        deep: bool = False,
     ) -> tuple[str, list[Any]]:
         """
         Compiles tokens into a complete, paginated, and sorted SQL statement.
@@ -145,6 +150,9 @@ class QueryCompiler:
         sql = "SELECT c.abspath FROM cached_files c"
 
         where_clauses.append("c.record IS NOT NULL")
+
+        if deep:
+            where_clauses.append("c.hash_sha256 IS NOT NULL")
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
@@ -163,7 +171,9 @@ class QueryCompiler:
         return sql, params
 
     @classmethod
-    def compile_count(cls, parsed_query: dict[str, list], *, or_logic: bool = False) -> tuple[str, list[Any]]:
+    def compile_count(
+        cls, parsed_query: dict[str, list], *, or_logic: bool = False, deep: bool = False
+    ) -> tuple[str, list[Any]]:
         """
         Generates a query to count total matches for pagination footers.
         """
@@ -172,6 +182,9 @@ class QueryCompiler:
         sql = "SELECT COUNT(c.abspath) as total FROM cached_files c"
 
         where_clauses.append("c.record IS NOT NULL")
+
+        if deep:
+            where_clauses.append("c.hash_sha256 IS NOT NULL")
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
@@ -258,14 +271,17 @@ class QueryCompiler:
             escaped_text = clean_text.replace('"', '""')
             fts_term = f'"{escaped_text}"*' if is_wildcard else f'"{escaped_text}"'
 
-            is_hash = len(clean_text) == 64 and all(c.lower() in "0123456789abcdef" for c in clean_text)
+            is_hash = len(clean_text) in (16, 32, 40, 64) and all(c.lower() in "0123456789abcdef" for c in clean_text)
 
             if is_hash:
                 h = clean_text.lower()
-                text_clauses.append(
-                    "(c.hash_sha256 = ? OR c.hash_blake3 = ? OR c.abspath IN (SELECT abspath FROM dorsal_fts WHERE content MATCH ?))"
+                hash_sql = (
+                    "(c.local_record_id = ? OR c.hash_md5 = ? OR c.hash_sha1 = ? OR "
+                    "c.hash_sha256 = ? OR c.hash_blake3 = ? OR c.hash_dorsal = ? OR "
+                    "c.abspath IN (SELECT abspath FROM dorsal_fts WHERE content MATCH ?))"
                 )
-                params.extend([h, h, fts_term])
+                text_clauses.append(hash_sql)
+                params.extend([h, h, h, h, h, h, fts_term])
             else:
                 fts_terms.append(fts_term)
 

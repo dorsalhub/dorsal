@@ -31,7 +31,9 @@ def get_index_record(
     ctx: typer.Context,
     identifier: Annotated[
         str,
-        typer.Argument(help="The absolute file path or SHA256 hash of the local record to retrieve."),
+        typer.Argument(
+            help="The absolute file path, local Record ID, or cryptographic hash of the local record to retrieve."
+        ),
     ],
     json_output: Annotated[
         bool,
@@ -100,8 +102,8 @@ def get_index_record(
         path_str = str(pathlib.Path(identifier).resolve())
         record = index.get_record(path=path_str)
 
-    if not record and len(identifier) == 64 and all(c in string.hexdigits for c in identifier):
-        results = search_local(f"sha256:{identifier}", index=index, limit=1)
+    if not record and len(identifier) in (16, 32, 40, 64) and all(c in string.hexdigits for c in identifier):
+        results = search_local([identifier], index=index, limit=1)
         if results:
             record = results[0]
 
@@ -121,12 +123,16 @@ def get_index_record(
         exit_cli(code=EXIT_CODE_ERROR, message="Corrupted record found in local index.")
 
     record_dict["hash"] = record.hash_sha256
-    record_dict["validation_hash"] = record.hash_blake3
+    record_dict["validation_hash"] = record.hash_dorsal
     record_dict["quick_hash"] = record.hash_quick
     record_dict["similarity_hash"] = record.hash_tlsh
 
     dt_mod = datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc)
-    record_dict["local_filesystem"] = {"full_path": record.abspath, "date_modified": dt_mod.isoformat()}
+    record_dict["local_filesystem"] = {
+        "full_path": record.abspath,
+        "date_modified": dt_mod.isoformat(),
+        "local_record_id": record.local_record_id,
+    }
 
     record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
 
@@ -154,7 +160,7 @@ def get_index_record(
         _save_json_report(
             record_json_str=record_json_str,
             output_path=output_path,
-            hash_string=record.hash_sha256 or "unknown_hash",
+            hash_string=record.hash_sha256 or record.local_record_id or "unknown_hash",
             palette=palette,
             json_to_stdout=json_output,
         )

@@ -27,7 +27,7 @@ class FileCoreAnnotationModel(AnnotationModel):
     """
     Annotation model for extracting core file metadata.
 
-    - Calculate file hashes (SHA256, TLSH, BLAKE3 and QUICK).
+    - Calculate file hashes: SHA256, SHA-1, MD5, BLAKE3, DORSAL (validation) TLSH (similarity) and QUICK (sample-based).
     - Determine basic file attributes: name, extension, size and media type.
     - This model is designed for use in the `ModelRunner`
     - Its `main` method outputs a dictionary conforming to `FileCoreValidationModel`.

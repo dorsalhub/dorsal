@@ -251,9 +251,22 @@ class _BaseFileCollection:
             return {}
 
         rich_progress = None
-        files_to_check = [
-            f for f in self.files if f.size > min_size_bytes and (max_size_bytes is None or f.size <= max_size_bytes)
-        ]
+
+        files_to_check = []
+        shallow_count = 0
+        for f in self.files:
+            if f.hash is None:
+                shallow_count += 1
+                continue
+            if f.size > min_size_bytes and (max_size_bytes is None or f.size <= max_size_bytes):
+                files_to_check.append(f)
+
+        if shallow_count > 0:
+            logger.warning(
+                "Ignored %d shallow file(s) during duplicate detection. "
+                "Run `upgrade_file_record()` on them to calculate their hashes.",
+                shallow_count,
+            )
 
         iterator: Iterable[_DorsalFile]
         if is_jupyter_environment():
@@ -317,7 +330,7 @@ class _BaseFileCollection:
             wasted_for_set = size_each * (count - 1)
             total_wasted_space += wasted_for_set
 
-            paths = [getattr(f, "_file_path", f.name) for f in files]
+            paths = [getattr(f, "file_path", f.name) for f in files]
 
             duplicate_sets_formatted.append(
                 {
@@ -363,7 +376,7 @@ class _BaseFileCollection:
             row = {
                 "source_path": self.source_info.get("path"),
                 "hash": file.hash,
-                "file_path": getattr(file, "_file_path", None),
+                "file_path": getattr(file, "file_path", None),
             }
             dumped_model = file.to_dict()
             annotations: dict[str, Any] = dumped_model.get("annotations", {})

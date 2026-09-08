@@ -93,6 +93,7 @@ class LocalFileCollection(_BaseFileCollection):
         offline: bool = False,
         follow_symlinks: bool = True,
         lazy: bool = False,
+        calculate_hashes: bool = True,
     ):
         """
         Initializes the LocalFileCollection.
@@ -118,6 +119,7 @@ class LocalFileCollection(_BaseFileCollection):
             use_cache (bool): Whether to use the local cache for hashing and
                 metadata. Defaults to True.
             lazy (bool): If True, processes files via an iterator.
+            calculate_hashes (bool): If True, computes deep hashes during the scan.
         """
         self.offline = offline or is_offline_mode()
         self._client = client
@@ -148,6 +150,7 @@ class LocalFileCollection(_BaseFileCollection):
                 overwrite_cache=overwrite_cache,
                 follow_symlinks=follow_symlinks,
                 lazy=lazy,
+                calculate_hashes=calculate_hashes,
             )
             final_files = scan_files
             if self.warnings:
@@ -183,8 +186,14 @@ class LocalFileCollection(_BaseFileCollection):
         if not isinstance(other, LocalFileCollection):
             raise TypeError("Addition is only supported between two LocalFileCollection objects.")
 
-        combined_files_map = {f.hash: f for f in self.files}
-        combined_files_map.update({f.hash: f for f in other.files})
+        combined_files_map = {}
+        for f in self.files:
+            key = f.hash if f.hash else f.record_id
+            combined_files_map[key] = f
+
+        for f in other.files:
+            key = f.hash if f.hash else getattr(f, "record_id", getattr(f, "file_path", str(id(f))))
+            combined_files_map[key] = f
 
         new_source_info = {
             "type": "merged",
@@ -204,8 +213,14 @@ class LocalFileCollection(_BaseFileCollection):
         if not isinstance(cast(object, other), _BaseFileCollection):
             return NotImplemented
 
-        other_hashes = {f.hash for f in other.files}
-        resulting_files = [f for f in self.files if f.hash not in other_hashes]
+        other_keys = {
+            f.hash if f.hash else getattr(f, "record_id", getattr(f, "file_path", str(id(f)))) for f in other.files
+        }
+        resulting_files = []
+        for f in self.files:
+            key = f.hash if f.hash else f.record_id
+            if key not in other_keys:
+                resulting_files.append(f)
 
         new_source_info = {
             "type": "merged",
@@ -397,10 +412,23 @@ class LocalFileCollection(_BaseFileCollection):
 
         reader = MetadataReader(client=self._client, offline=self.offline)
 
-        records_to_upload = [f.model for f in self.files if isinstance(f.model, FileRecordStrict)]
+        records_to_upload = []
+        shallow_count = 0
+        for f in self.files:
+            if isinstance(f.model, FileRecordStrict):
+                records_to_upload.append(f.model)
+            else:
+                shallow_count += 1
+
+        if shallow_count > 0:
+            logger.warning(
+                "Skipping %d shallow file(s) during push. "
+                "Call `upgrade_file_record()` on the affected files to calculate their hashes before pushing.",
+                shallow_count,
+            )
 
         hash_to_path_map: dict[str, str] = {
-            str(f.hash): str(getattr(f, "_file_path", f.name) or f.hash) for f in self.files if f.hash
+            str(f.hash): str(getattr(f, "file_path", f.name) or f.hash) for f in self.files if f.hash
         }
 
         if not records_to_upload:
@@ -589,6 +617,6 @@ class LocalFileCollection(_BaseFileCollection):
                     data["results"][i]["local_attributes"] = {
                         "date_modified": file_obj.date_modified,
                         "date_created": file_obj.date_created,
-                        "file_path": file_obj._file_path,
+                        "file_path": file_obj.file_path,
                     }
         return data

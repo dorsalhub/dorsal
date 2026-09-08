@@ -60,7 +60,7 @@ def mock_file_record_strict() -> FileRecordStrict:
     """Provides a valid, complete FileRecordStrict object."""
     return FileRecordStrict(
         hash="a" * 64,
-        validation_hash="b" * 64,
+        validation_hash="e" * 64,
         source="disk",
         annotations={
             "file_base": {
@@ -73,6 +73,9 @@ def mock_file_record_strict() -> FileRecordStrict:
                     "all_hashes": [
                         {"id": "SHA-256", "value": "a" * 64},
                         {"id": "BLAKE3", "value": "b" * 64},
+                        {"id": "MD5", "value": "c" * 32},
+                        {"id": "SHA-1", "value": "d" * 40},
+                        {"id": "DORSAL", "value": "e" * 64},                                               
                     ],
                 },
                 "source": {"type": "Model", "id": "file/base", "version": "0.1.0"},
@@ -93,11 +96,15 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
     expected_path = os.path.abspath(file_path)
 
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
-        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True
+        file_path=expected_path, 
+        skip_cache=False, 
+        overwrite_cache=False, 
+        follow_symlinks=True, 
+        calculate_hashes=True
     )
     assert lf.name == "local_test.txt"
     assert lf.hash == "a" * 64
-    assert lf.validation_hash == "b" * 64
+    assert lf.validation_hash == "e" * 64
     assert lf._source == "disk"
     assert isinstance(lf.date_created, datetime.datetime)
 
@@ -216,7 +223,7 @@ def test_add_tag_raises_error_if_no_validation_hash(mock_metadata_reader, mock_f
 
     lf = LocalFile(file_path)
 
-    with pytest.raises(ValueError, match="Cannot add tag: File is missing a 'validation_hash'"):
+    with pytest.raises(ValueError, match="Cannot add tag: File record is missing a 'validation_hash'. Call the `upgrade_file_record\\(\\)` method to calculate the required hashes."):
         lf.add_tag(name="wont_work", value=True)
 
 
@@ -433,7 +440,7 @@ def test_from_json_success(mock_file_record_strict, fs):
     assert isinstance(lf, LocalFile)
     assert lf.hash == mock_file_record_strict.hash
     assert lf.model.source == mock_file_record_strict.source
-    assert lf._file_path == original_file_path
+    assert lf.file_path == original_file_path
 
 
 def test_from_json_round_trip(mock_metadata_reader, mock_file_record_strict, fs):
@@ -457,7 +464,7 @@ def test_from_json_round_trip(mock_metadata_reader, mock_file_record_strict, fs)
     loaded_lf = LocalFile.from_json(json_path)
 
     assert loaded_lf.hash == original_lf.hash
-    assert loaded_lf._file_path == original_lf._file_path
+    assert loaded_lf.file_path == original_lf.file_path
     assert len(loaded_lf.tags) == len(original_lf.tags)
     assert loaded_lf.tags[0].name == "trip"
 

@@ -16,25 +16,34 @@ from enum import Enum
 from typing import Any, Literal
 import re
 import logging
+import os
+
+from blake3 import blake3
 
 from dorsal.common.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
-HashFunctionId = Literal["BLAKE3", "SHA-256", "TLSH", "QUICK"]
+HashFunctionId = Literal["BLAKE3", "SHA-256", "MD5", "SHA-1", "QUICK", "DORSAL", "TLSH"]
 
+RX_HEX_32 = re.compile(r"^[0-9a-fA-F]{32}$")
+RX_HEX_40 = re.compile(r"^[0-9a-fA-F]{40}$")
 RX_HEX_64 = re.compile(r"^[0-9a-fA-F]{64}$")
 RX_TLSH = re.compile(r"^[tT]{1}1[0-9a-fA-F]{70}$")
 
-RX_LOWERCASE_HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 RX_LOWERCASE_HEX_32 = re.compile(r"^[0-9a-f]{32}$")
+RX_LOWERCASE_HEX_40 = re.compile(r"^[0-9a-f]{40}$")
+RX_LOWERCASE_HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 RX_LOWERCASE_HEX_24 = re.compile(r"^[0-9a-f]{24}$")
 
 RX_MAPPING_HASH_FUNCTION_STRING = {
     "BLAKE3": RX_LOWERCASE_HEX_64,
     "SHA-256": RX_LOWERCASE_HEX_64,
-    "TLSH": RX_TLSH,
+    "SHA-1": RX_LOWERCASE_HEX_40,
+    "MD5": RX_LOWERCASE_HEX_32,
     "QUICK": RX_LOWERCASE_HEX_64,
+    "DORSAL": RX_LOWERCASE_HEX_64,
+    "TLSH": RX_TLSH,
 }
 SUPPORTED_HASH_FUNCTIONS = set(RX_MAPPING_HASH_FUNCTION_STRING.keys())
 
@@ -44,9 +53,14 @@ class HashFunction(Enum):
     BLAKE3 = "BLAKE3"
     QUICK = "QUICK"
     TLSH = "TLSH"
+    MD5 = "MD5"
+    SHA1 = "SHA-1"
+    DORSAL = "DORSAL"
 
 
-RX_PREFIXED_HASH = re.compile(r"^(?P<prefix>sha-?256|blake3|quick|tlsh):(?P<value>.+)$", re.IGNORECASE)
+RX_PREFIXED_HASH = re.compile(
+    r"^(?P<prefix>sha-?256|blake3|quick|tlsh|md5|sha-?1|dorsal):(?P<value>.+)$", re.IGNORECASE
+)
 
 PREFIX_MAP = {
     "sha-256": HashFunction.SHA256,
@@ -54,14 +68,17 @@ PREFIX_MAP = {
     "blake3": HashFunction.BLAKE3,
     "quick": HashFunction.QUICK,
     "tlsh": HashFunction.TLSH,
+    "md5": HashFunction.MD5,
+    "sha-1": HashFunction.SHA1,
+    "sha1": HashFunction.SHA1,
+    "dorsal": HashFunction.DORSAL,
 }
 
 
 def parse_validate_hash(hash_string: str) -> tuple[str, str] | tuple[None, None]:
     """Returns the normalized (lower-cased) hash string, with hash function identifier.
 
-    Supports: SHA-256, BLAKE3, TLSH and QUICK.
-
+    Supports: SHA-256, BLAKE3, TLSH, QUICK, MD5, SHA-1, and DORSAL.
     """
     logger.debug("hash string: %s", hash_string)
     if not isinstance(hash_string, str) or not hash_string:
@@ -69,6 +86,12 @@ def parse_validate_hash(hash_string: str) -> tuple[str, str] | tuple[None, None]
         return None, None
 
     length = len(hash_string)
+
+    if length == 32:
+        return (hash_string.lower(), HashFunction.MD5.value) if RX_HEX_32.match(hash_string) else (None, None)
+
+    if length == 40:
+        return (hash_string.lower(), HashFunction.SHA1.value) if RX_HEX_40.match(hash_string) else (None, None)
 
     if length == 64:
         return (hash_string.lower(), HashFunction.SHA256.value) if RX_HEX_64.match(hash_string) else (None, None)
@@ -99,6 +122,12 @@ def parse_validate_hash(hash_string: str) -> tuple[str, str] | tuple[None, None]
 
     if hash_type == HashFunction.TLSH:
         if not RX_TLSH.match(value):
+            return None, None
+    elif hash_type == HashFunction.MD5:
+        if not RX_HEX_32.match(value):
+            return None, None
+    elif hash_type == HashFunction.SHA1:
+        if not RX_HEX_40.match(value):
             return None, None
     else:
         if not RX_HEX_64.match(value):
@@ -135,3 +164,12 @@ class HashStringValidator:
 
 
 hash_string_validator = HashStringValidator()
+
+
+def make_local_record_id(file_path: str) -> str:
+    """Generates a local Record ID (instance ID) for a file's current state on disk."""
+    stat_result = os.lstat(file_path)
+    stat_string = f"{stat_result.st_dev}:{stat_result.st_ino}:{stat_result.st_size}:{stat_result.st_mtime}".encode(
+        "utf-8"
+    )
+    return blake3(stat_string).hexdigest()[:16]

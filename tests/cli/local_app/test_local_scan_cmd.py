@@ -64,7 +64,7 @@ def mock_file_deps(mocker):
     }
     mock_instance.name = "test.txt"
     mock_instance._source = "disk"
-    mock_instance._file_path = "/fake/test.txt"
+    mock_instance.file_path = "/fake/test.txt"
     mock_instance.date_created = datetime.datetime(2025, 1, 1)
     mock_instance.date_modified = datetime.datetime(2025, 1, 2)
 
@@ -86,11 +86,11 @@ def mock_dir_deps(mocker):
 
     file_1 = MagicMock(size=512, media_type="text/plain", date_modified=datetime.datetime(2025, 1, 1))
     file_1.name = "file1.txt"
-    file_1._file_path = "/fake/file1.txt"
+    file_1.file_path = "/fake/file1.txt"
 
     file_2 = MagicMock(size=1024, media_type="application/json", date_modified=datetime.datetime(2025, 1, 2))
     file_2.name = "file2.txt"
-    file_2._file_path = "/fake/file2.txt"
+    file_2.file_path = "/fake/file2.txt"
 
     mock_instance.info.return_value = {
         "overall": {"total_files": 2, "total_size": 1536, "newest_file": {}, "oldest_file": {}},

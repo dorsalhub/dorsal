@@ -57,7 +57,7 @@ from dorsal.common.model import AnnotationModel, scrub_pii_from_model
 
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.permissions import is_permitted_public_media_type
-from dorsal.file.utils.hashes import hash_string_validator
+from dorsal.file.utils.hashes import hash_string_validator, make_local_record_id
 from dorsal.file.utils.size import human_filesize
 from dorsal.file.validators.open_schema import get_open_schema_validator
 from dorsal.file.validators.file_record import CORE_MODEL_ANNOTATION_WRAPPERS
@@ -180,13 +180,14 @@ class _DorsalFile:
         """
 
         from dorsal.file.validators.file_record import (
+            FileRecord,
             FileRecordDateTime,
             FileRecordStrict,
         )
 
-        if not isinstance(file_record, (FileRecordDateTime, FileRecordStrict)):
+        if not isinstance(file_record, (FileRecord, FileRecordDateTime, FileRecordStrict)):
             raise TypeError(
-                f"file_record must be an instance of FileRecord or FileRecordStrict, got {type(file_record).__name__}"
+                f"file_record must be an instance of FileRecord, FileRecordDateTime or FileRecordStrict, got {type(file_record).__name__}"
             )
         self.model: FileRecord = file_record
 
@@ -219,8 +220,8 @@ class _DorsalFile:
     def __repr__(self):
         name_repr = self.name
 
-        if name_repr is None and hasattr(self, "_file_path"):
-            name_repr = pathlib.Path(self._file_path).name
+        if name_repr is None and hasattr(self, "file_path"):
+            name_repr = pathlib.Path(self.file_path).name
 
         if name_repr is None:
             name_repr = self.hash
@@ -702,7 +703,7 @@ class DorsalFile(_DorsalFile):
             return results[0]
 
     def set_validation_hash(self, validation_hash: str) -> None:
-        """Sets the BLAKE3 validation hash, potentially upgrading the model.
+        """Sets the Dorsal validation hash, potentially upgrading the model.
 
         This method validates the format of the provided BLAKE3 hash string.
         If valid, it updates the instance's `validation_hash` and the
@@ -722,8 +723,8 @@ class DorsalFile(_DorsalFile):
             validation_hash: The candidate string for the BLAKE3 validation hash.
 
         Raises:
-            TypeError: If `blake3_hash_input` is not a string.
-            ValueError: If `blake3_hash_input` is not a valid BLAKE3 hash format,
+            TypeError: If `validation_hash` is not a string.
+            ValueError: If `validation_hash` is not a valid BLAKE3 hash format,
                         or if updating the model causes a Pydantic validation
                         error (e.g., hash collision with primary SHA256).
             RuntimeError: For unexpected errors during the process.
@@ -731,28 +732,28 @@ class DorsalFile(_DorsalFile):
         from dorsal.file.validators.file_record import FileRecordDateTime, FileRecordStrict
 
         if not isinstance(validation_hash, str):
-            raise TypeError("Input 'blake3_hash_input' must be a string.")
+            raise TypeError("Input 'validation_hash' must be a string.")
 
         logger.debug(
-            "DorsalFile: Attempting to set BLAKE3 hash: '%s' for file (current primary hash: %s)",
+            "DorsalFile: Attempting to set DORSAL hash: '%s' for file (current primary hash: %s)",
             validation_hash,
             self.hash,
         )
 
-        normalized_blake3 = hash_string_validator.get_valid_hash(
-            candidate_string=validation_hash, hash_function="BLAKE3"
+        normalized_validation_hash = hash_string_validator.get_valid_hash(
+            candidate_string=validation_hash, hash_function="DORSAL"
         )
 
-        if normalized_blake3 is None:
+        if normalized_validation_hash is None:
             logger.warning(
-                "DorsalFile: Invalid BLAKE3 hash format provided: '%s' for file (primary hash: %s)",
+                "DorsalFile: Invalid DORSAL hash format provided: '%s' for file (primary hash: %s)",
                 validation_hash,
                 self.hash,
             )
-            raise ValueError(f"The provided string '{validation_hash}' is not a valid BLAKE3 hash format.")
+            raise ValueError(f"The provided string '{validation_hash}' is not a valid DORSAL hash format.")
 
         current_model_data = self.model.model_dump()
-        current_model_data["validation_hash"] = normalized_blake3
+        current_model_data["validation_hash"] = normalized_validation_hash
 
         target_model_class: type[FileRecordDateTime] | type[FileRecordStrict]
         if self.model.annotations is not None:
@@ -790,12 +791,12 @@ class DorsalFile(_DorsalFile):
             logger.exception(
                 "DorsalFile: Failed to set validation_hash '%s' for file (primary hash: %s) "
                 "due to Pydantic model validation error when using target class '%s'.",
-                normalized_blake3,
+                normalized_validation_hash,
                 self.hash,
                 target_model_class.__name__,
             )
             raise ValueError(
-                f"Failed to apply BLAKE3 hash '{normalized_blake3}'. "
+                f"Failed to apply DORSAL hash '{normalized_validation_hash}'. "
                 f"Model validation failed for {target_model_class.__name__}. "
                 "Check logs for details."
             ) from err
@@ -803,7 +804,7 @@ class DorsalFile(_DorsalFile):
             logger.exception(
                 "DorsalFile: Unexpected error setting validation_hash '%s' for file (primary hash: %s) "
                 "with target class '%s'.",
-                normalized_blake3,
+                normalized_validation_hash,
                 self.hash,
                 target_model_class.__name__,
             )
@@ -1219,9 +1220,12 @@ class LocalFile(_DorsalFile):
     _client: DorsalClient | None
     _identity: Literal["dorsal.LocalFile"] = "dorsal.LocalFile"
     _model_runner: ModelRunner
-    _file_path: str
+    _follow_symlinks: bool
+    _default_record_source: Literal["disk"] = "disk"
 
-    model: FileRecordStrict
+    file_path: str
+    model: FileRecord | FileRecordStrict
+
     """Represents a file on the local filesystem.
 
     Triggers an offline metadata extraction pipeline that generates/infers metadata for this file.
@@ -1264,7 +1268,8 @@ class LocalFile(_DorsalFile):
         overwrite_cache: bool = False,
         offline: bool = False,
         follow_symlinks: bool = True,
-        _file_record: FileRecordStrict | None = None,
+        _file_record: FileRecord | FileRecordStrict | None = None,
+        calculate_hashes: bool = True,
     ):
         """
         Args:
@@ -1285,8 +1290,6 @@ class LocalFile(_DorsalFile):
             DorsalClientError: If model runner encounters an issue that it wraps.
             TypeError: If file_path is not a string.
         """
-        from dorsal.file.metadata_reader import MetadataReader
-
         if not isinstance(file_path, str):
             raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
 
@@ -1299,20 +1302,25 @@ class LocalFile(_DorsalFile):
         else:
             self._client = client
 
-        self._file_path: str = file_path
+        self.file_path: str = file_path
         self._use_cache = use_cache
         self._overwrite_cache = overwrite_cache
+        self._follow_symlinks = follow_symlinks
 
         if _file_record is None:
+            from dorsal.file.metadata_reader import MetadataReader
+
             self._metadata_reader = MetadataReader(client=self._client, model_config=model_runner_pipeline)
             logger.debug("LocalFile init: Generating record for local file at '%s'.", file_path)
-            file_record_model = self._generate_record(follow_symlinks=follow_symlinks)
+            file_record_model = self._generate_record(
+                follow_symlinks=follow_symlinks, calculate_hashes=calculate_hashes
+            )
         else:
             self._metadata_reader = None
             file_record_model = _file_record
             logger.debug("LocalFile init: Loaded from injected record for '%s'.", file_path)
 
-        self._source = file_record_model.source
+        self._source = getattr(file_record_model, "source", self._default_record_source)
 
         path_obj = pathlib.Path(file_path)
         try:
@@ -1336,24 +1344,26 @@ class LocalFile(_DorsalFile):
             self.hash,
         )
 
-    def _generate_record(self, follow_symlinks: bool = True) -> FileRecordStrict:
-        """Use `_metadata_reader` instance to generate File metadata record (`FileRecordStrict`)"""
+    def _generate_record(
+        self, follow_symlinks: bool = True, calculate_hashes: bool = True
+    ) -> FileRecord | FileRecordStrict:
+        """Use `_metadata_reader` instance to generate File metadata record (`FileRecord` or `FileRecordStrict`)"""
         if self._metadata_reader is None:
             raise RuntimeError("MetadataReader is not initialized.")
 
-        target_path = self._file_path
+        target_path = self.file_path
 
         if follow_symlinks:
             try:
-                path_obj = pathlib.Path(self._file_path)
+                path_obj = pathlib.Path(self.file_path)
                 resolved_path = path_obj.resolve()
 
                 if resolved_path.exists():
                     target_path = str(resolved_path)
                 else:
-                    logger.debug("Symlink target does not exist '%s' for file '%s'", resolved_path, self._file_path)
+                    logger.debug("Symlink target does not exist '%s' for file '%s'", resolved_path, self.file_path)
             except (OSError, RuntimeError) as err:
-                logger.debug("Failed to resolve symlink for file %s, %s", self._file_path, err)
+                logger.debug("Failed to resolve symlink for file %s, %s", self.file_path, err)
                 pass
 
         return self._metadata_reader._get_or_create_record(
@@ -1361,7 +1371,33 @@ class LocalFile(_DorsalFile):
             skip_cache=not self._use_cache,
             overwrite_cache=self._overwrite_cache,
             follow_symlinks=follow_symlinks,
+            calculate_hashes=calculate_hashes,
         )
+
+    def upgrade_file_record(self) -> None:
+        """Upgrades a shallow FileRecord to a deep FileRecordStrict by calculating hashes."""
+        from dorsal.file.validators.file_record import FileRecordStrict
+
+        if isinstance(self.model, FileRecordStrict):
+            return None
+
+        logger.debug("Hydrating shallow record for '%s' to calculate missing hashes.", self.file_path)
+
+        if self._metadata_reader is None:
+            from dorsal.file.metadata_reader import MetadataReader
+
+            self._metadata_reader = MetadataReader(client=self._client, offline=self.offline)
+
+        self.model = self._generate_record(follow_symlinks=self._follow_symlinks, calculate_hashes=True)
+        self._populate()
+
+    @property
+    def record_id(self) -> str:
+        """A local identity for the file on disk."""
+        try:
+            return make_local_record_id(self.file_path)
+        except OSError:
+            return f"deleted-{id(self)}"
 
     @classmethod
     def from_json(cls, path: str | pathlib.Path, check_file_exists: bool = False) -> "LocalFile":
@@ -1476,7 +1512,10 @@ class LocalFile(_DorsalFile):
             )
 
         if not self.validation_hash:
-            error_msg = "Cannot add tag: File is missing a 'validation_hash'. "
+            error_msg = (
+                "Cannot add tag: File record is missing a 'validation_hash'. "
+                "Call the `upgrade_file_record()` method to calculate the required hashes."
+            )
             logger.error(
                 "Attempted to add tag '%s' to file (hash: %s) without a validation_hash.",
                 name,
@@ -1498,7 +1537,7 @@ class LocalFile(_DorsalFile):
         else:
             private = None
 
-        file_identifier = getattr(self, "_file_path", None) or self.hash
+        file_identifier = self.file_path or self.hash
         logger.debug(
             "Locally adding tag to file '%s' (hash: %s, validation_hash: %s): name='%s', value_type=%s, private=%s",
             file_identifier,
@@ -1581,7 +1620,7 @@ class LocalFile(_DorsalFile):
             raise DorsalError("Cannot validate tags: LocalFile is in OFFLINE mode.")
 
         if not self.tags:
-            logger.debug("No tags to validate on file '%s'.", self._file_path)
+            logger.debug("No tags to validate on file '%s'.", self.file_path)
             return None
 
         client = self._client or get_shared_dorsal_client(api_key=api_key)
@@ -1589,7 +1628,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Validating %d tags for file '%s' (hash: %s)",
             len(self.tags),
-            self._file_path,
+            self.file_path,
             self.hash,
         )
 
@@ -1597,13 +1636,13 @@ class LocalFile(_DorsalFile):
 
         if not validation_result.valid:
             error_msg = validation_result.message or "Tag validation failed."
-            logger.warning("Tag validation failed for file '%s': %s", self._file_path, error_msg)
+            logger.warning("Tag validation failed for file '%s': %s", self.file_path, error_msg)
             raise InvalidTagError(error_msg)
 
         logger.info(
             "Successfully validated %d tags for file '%s'.",
             len(self.tags),
-            self._file_path,
+            self.file_path,
         )
         return validation_result
 
@@ -1619,6 +1658,7 @@ class LocalFile(_DorsalFile):
 
         """
         from dorsal.common.exceptions import PartialIndexingError
+        from dorsal.file.validators.file_record import FileRecordStrict
 
         assert self._client is not None, "DorsalClient must be initialized before pushing."
         assert self.hash is not None, "File hash must be computed before pushing."
@@ -1626,9 +1666,18 @@ class LocalFile(_DorsalFile):
         client = self._client
         file_hash = self.hash
 
-        logger.info("Payload exceeds 14 MiB threshold. Farming out to _push_heavy...")
+        logger.info("Payload exceeds 14 MiB threshold.")
+
+        if not isinstance(self.model, FileRecordStrict):
+            error_msg = (
+                "Cannot push LocalFile: The record is currently in a shallow state. "
+                "Call the `upgrade_file_record()` method to calculate the required hashes before pushing to DorsalHub."
+            )
+            logger.error(error_msg)
+            raise DorsalClientError(message=error_msg)
 
         lite_record = self.model.model_copy(deep=True)
+
         extracted_annotations = {}
 
         if lite_record.annotations is not None:
@@ -1657,7 +1706,7 @@ class LocalFile(_DorsalFile):
             else:
                 response = client.index_private_file_records(file_records=[lite_record], api_key=api_key)
         except DorsalClientError as err:
-            logger.error("Failed to push lite file record for '%s'. Error: %s", self._file_path, err)
+            logger.error("Failed to push lite file record for '%s'. Error: %s", self.file_path, err)
             raise
 
         failed_details = []
@@ -1678,7 +1727,7 @@ class LocalFile(_DorsalFile):
                     failed_details.append(detail_str)
 
         if response.error > 0:
-            error_msg = f"PARTIAL FAILURE pushing file '{self._file_path}'. The base record was created, but {response.error} annotation(s) were rejected."
+            error_msg = f"PARTIAL FAILURE pushing file '{self.file_path}'. The base record was created, but {response.error} annotation(s) were rejected."
             logger.warning(error_msg)
 
             for result in response.results:
@@ -1700,7 +1749,7 @@ class LocalFile(_DorsalFile):
                 }
                 raise PartialIndexingError(message=error_msg + " (Strict Mode enabled)", summary=summary_data)
         else:
-            logger.info("Successfully pushed HEAVY file record for '%s' to DorsalHub.", self._file_path)
+            logger.info("Successfully pushed HEAVY file record for '%s' to DorsalHub.", self.file_path)
 
         return response
 
@@ -1735,10 +1784,12 @@ class LocalFile(_DorsalFile):
             raise DorsalError("Cannot push file record: LocalFile is in OFFLINE mode.")
 
         if not isinstance(self.model, FileRecordStrict):
-            logger.error("Cannot push LocalFile: internal model is not FileRecordStrict.")  # type: ignore[unreachable]
-            raise DorsalClientError(
-                message="Internal error: LocalFile model is not suitable for upload. Expected FileRecordStrict.",
+            error_msg = (
+                "Cannot push LocalFile: The record is currently in a shallow state. "
+                "Call the `upgrade_file_record()` method to calculate the required hashes before pushing to DorsalHub."
             )
+            logger.error(error_msg)
+            raise DorsalClientError(message=error_msg)
 
         if public:
             if not is_permitted_public_media_type(self.media_type):
@@ -1765,7 +1816,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Pushing %s file record for local file '%s' (hash: %s) to DorsalHub.",
             "public" if public else "private",
-            self._file_path,
+            self.file_path,
             self.hash,
         )
 
@@ -1777,7 +1828,7 @@ class LocalFile(_DorsalFile):
 
             if response.error > 0:
                 error_msg = (
-                    f"PARTIAL FAILURE pushing file '{self._file_path}'. "
+                    f"PARTIAL FAILURE pushing file '{self.file_path}'. "
                     f"The file record was created, but {response.error} annotation(s) were rejected."
                 )
 
@@ -1810,7 +1861,7 @@ class LocalFile(_DorsalFile):
             else:
                 logger.info(
                     "Successfully pushed file record for '%s' to DorsalHub. Total: %s, Success: %s, Error: %s",
-                    self._file_path,
+                    self.file_path,
                     response.total,
                     response.success,
                     response.error,
@@ -1821,7 +1872,7 @@ class LocalFile(_DorsalFile):
         except DorsalClientError as err:
             logger.error(
                 "Failed to push file record for '%s' to DorsalHub. Error: %s",
-                self._file_path,
+                self.file_path,
                 err,
             )
             raise
@@ -1837,7 +1888,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Attempting to set annotation for schema '%s' on file '%s'.",
             schema_id,
-            self._file_path,
+            self.file_path,
         )
 
         is_core_schema = schema_id in CORE_MODEL_ANNOTATION_WRAPPERS
@@ -1905,13 +1956,16 @@ class LocalFile(_DorsalFile):
 
         logger.debug(
             "Attempting to annotate file '%s' using pipeline step %s, Overwrite: %s",
-            self._file_path,
+            self.file_path,
             pipeline_step_config,
             overwrite,
         )
 
         if not self.validation_hash:
-            raise ValueError("Cannot annotate: File is missing 'validation_hash'.")
+            raise ValueError(
+                "Cannot annotate: File is missing a 'validation_hash'. "
+                "Call the `upgrade_file_record()` method to calculate the required hashes."
+            )
 
         pipeline_step_obj = (
             pipeline_step_config
@@ -1926,7 +1980,7 @@ class LocalFile(_DorsalFile):
             raise ValueError(f"target dataset is not a valid dataset ID: {schema_id}")
 
         annotation = FILE_ANNOTATOR.annotate_file_using_pipeline_step(
-            file_path=self._file_path,
+            file_path=self.file_path,
             model_runner=self._model_runner,
             pipeline_step=pipeline_step_obj,
             schema_id=schema_id,
@@ -1942,7 +1996,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Annotation Finished for dataset '%s', file '%s'.",
             schema_id,
-            self._file_path,
+            self.file_path,
         )
         return self
 
@@ -1956,22 +2010,26 @@ class LocalFile(_DorsalFile):
         options: dict | None = None,
     ) -> "LocalFile":
         from dorsal.file.file_annotator import FILE_ANNOTATOR
+        from dorsal.file.validators.file_record import FileRecordStrict
 
         logger.debug(
             "Attempting to annotate file '%s' using AnnotationModel: %s, Validation model: %s Overwrite: %s",
-            self._file_path,
+            self.file_path,
             annotation_model.__name__,
             validation_model.__name__ if validation_model is not None else None,
             overwrite,
         )
-        if not self.validation_hash:
-            raise ValueError("Cannot annotate: File is missing 'validation_hash'.")
+        if not isinstance(self.model, FileRecordStrict):
+            raise ValueError(
+                "Cannot annotate: File is missing a 'validation_hash'. "
+                "Call the `upgrade_file_record()` method to calculate the required hashes."
+            )
 
         if not is_valid_dataset_id_or_schema_id(schema_id):
             raise ValueError(f"target dataset is not a valid dataset ID: {schema_id}")
         try:
             annotation = FILE_ANNOTATOR.annotate_file_using_model_and_validator(
-                file_path=self._file_path,
+                file_path=self.file_path,
                 model_runner=self._model_runner,
                 annotation_model_cls=annotation_model,
                 schema_id=schema_id,
@@ -1989,7 +2047,7 @@ class LocalFile(_DorsalFile):
             logger.debug(
                 "Annotation Finished for dataset '%s', file '%s'.",
                 schema_id,
-                self._file_path,
+                self.file_path,
             )
             return self
         except FileAnnotatorError as err:
@@ -2009,16 +2067,20 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> None:
         from dorsal.file.file_annotator import FILE_ANNOTATOR
+        from dorsal.file.validators.file_record import FileRecordStrict
 
         logger.debug(
             "Attempting to add manual annotation to file '%s', snippet: %s, Overwrite: %s",
-            self._file_path,
+            self.file_path,
             str(annotation)[:200],
             overwrite,
         )
         if not force:
-            if not self.validation_hash:
-                raise ValueError("Cannot annotate: File is missing 'validation_hash'.")
+            if not isinstance(self.model, FileRecordStrict):
+                raise ValueError(
+                    "Cannot annotate: File is missing a 'validation_hash'. "
+                    "Call the `upgrade_file_record()` method to calculate the required hashes."
+                )
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise ValueError(f"Invalid Schema ID: {schema_id}")
 
@@ -2083,7 +2145,7 @@ class LocalFile(_DorsalFile):
 
         logger.debug(
             "Attempting to annotate file '%s', schema '%s'.",
-            self._file_path,
+            self.file_path,
             schema_id,
         )
 
@@ -2258,16 +2320,14 @@ class LocalFile(_DorsalFile):
             annotation_id = schema_id.replace("/", "_").replace("-", "_")
 
         if source_id is None or is_core:
-            if hasattr(self.model.annotations, annotation_id):
+            annotations = self.model.annotations
+            if annotations is not None and hasattr(annotations, annotation_id):
                 try:
-                    delattr(self.model.annotations, annotation_id)
-                    if (
-                        self.model.annotations.__pydantic_extra__
-                        and annotation_id in self.model.annotations.__pydantic_extra__
-                    ):
-                        del self.model.annotations.__pydantic_extra__[annotation_id]
-                    if annotation_id in self.model.annotations.model_fields_set:
-                        self.model.annotations.model_fields_set.remove(annotation_id)
+                    delattr(annotations, annotation_id)
+                    if annotations.__pydantic_extra__ and annotation_id in annotations.__pydantic_extra__:
+                        del annotations.__pydantic_extra__[annotation_id]
+                    if annotation_id in annotations.model_fields_set:
+                        annotations.model_fields_set.remove(annotation_id)
 
                     logger.info("Removed all local annotations for '%s' (key: '%s').", schema_id, annotation_id)
                     self._populate()
@@ -2405,7 +2465,7 @@ class LocalFile(_DorsalFile):
             "Adding embedding (Model: %s, Dimensions: %d) to file '%s'.",
             model,
             len(vector),
-            self._file_path,
+            self.file_path,
         )
 
         record_data = build_embedding_record(vector=vector, model=model, target=target)
@@ -2475,7 +2535,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Adding 'open/llm-output' (Model: %s) to file '%s'.",
             model,
-            self._file_path,
+            self.file_path,
         )
 
         record_data = build_llm_output_record(
@@ -2548,7 +2608,7 @@ class LocalFile(_DorsalFile):
             "Adding 'open/geolocation' Point(%s, %s) to file '%s'.",
             longitude,
             latitude,
-            self._file_path,
+            self.file_path,
         )
 
         record_data = build_location_record(
@@ -2616,7 +2676,7 @@ class LocalFile(_DorsalFile):
             "Adding 'open/audio-transcription' (Language: %s, Length: %d) to file '%s'.",
             language,
             len(text),
-            self._file_path,
+            self.file_path,
         )
 
         record_data = build_transcription_record(
@@ -2714,7 +2774,7 @@ class LocalFile(_DorsalFile):
             "Adding 'open/regression' (Target: %s, Value: %s) to file '%s'.",
             target,
             value,
-            self._file_path,
+            self.file_path,
         )
 
         record_data = build_single_point_regression_record(
@@ -2772,7 +2832,7 @@ class LocalFile(_DorsalFile):
     def _get_local_info_dict(self) -> dict:
         """Returns local file attributes (file-system metadata) as a dictionary. Supports symlinks."""
         local_info: dict[str, Any] = {}
-        path_obj = pathlib.Path(self._file_path)
+        path_obj = pathlib.Path(self.file_path)
 
         try:
             stat_result = path_obj.lstat()
@@ -2796,14 +2856,14 @@ class LocalFile(_DorsalFile):
             else:
                 local_info["date_created"] = datetime.datetime.fromtimestamp(stat_result.st_ctime).astimezone()
 
-            local_info["file_path"] = self._file_path
+            local_info["file_path"] = self.file_path
             local_info["file_size_bytes"] = stat_result.st_size
             local_info["file_permissions_mode"] = stat_result.st_mode
             local_info["inode"] = stat_result.st_ino
             local_info["number_of_links"] = stat_result.st_nlink
 
         except (FileNotFoundError, OSError) as e:
-            logger.warning(f"Could not retrieve local file stats for {self._file_path}: {e}")
+            logger.warning(f"Could not retrieve local file stats for {self.file_path}: {e}")
             local_info["error"] = f"Failed to retrieve local file info: {e}"
 
         return local_info
