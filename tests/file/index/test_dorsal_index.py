@@ -25,11 +25,13 @@ from dorsal.file.index.dorsal_index import DorsalIndex, CachedFileRecord
 
 
 @pytest.fixture
-def temp_index(tmp_path: Path) -> DorsalIndex:
+def temp_index(tmp_path: Path, mocker) -> DorsalIndex:
     """
     Provides a clean DorsalIndex instance pointed to a unique temporary
     database file for each test. The tmp_path fixture is managed by pytest.
     """
+    mocker.patch("dorsal.file.index.dorsal_index.make_local_record_id", return_value="mock_local_id")
+    
     db_path = tmp_path / "test_index.db"
     index = DorsalIndex(db_path=db_path, use_compression=True)
     index.connect()
@@ -222,7 +224,7 @@ def test_get_record_null_blob(temp_index: DorsalIndex):
 def test_hash_functions_unsupported(temp_index: DorsalIndex):
     """Covers the ValueError branches for unsupported hash functions."""
     with pytest.raises(ValueError, match="Unsupported hash function"):
-        temp_index.upsert_hash(path="/fake/a.txt", modified_time=100.0, hash_function="MD5", hash_value="123")
+        temp_index.upsert_hash(path="/fake/a.txt", modified_time=100.0, hash_function="SHA-512", hash_value="123")
 
     with pytest.raises(ValueError, match="Unsupported hash function"):
         temp_index.get_hash(path="/fake/a.txt", hash_function="INVALID_HASH")

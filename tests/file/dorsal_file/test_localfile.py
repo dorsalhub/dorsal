@@ -25,6 +25,7 @@ import dorsal.file.file_annotator
 from dorsal.common.model import AnnotationManualSource
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.validators.file_record import (
+    FileRecord,
     FileRecordStrict,
     NewFileTag,
     ValidateTagsResult,
@@ -75,7 +76,7 @@ def mock_file_record_strict() -> FileRecordStrict:
                         {"id": "BLAKE3", "value": "b" * 64},
                         {"id": "MD5", "value": "c" * 32},
                         {"id": "SHA-1", "value": "d" * 40},
-                        {"id": "DORSAL", "value": "e" * 64},                                               
+                        {"id": "DORSAL", "value": "e" * 64},
                     ],
                 },
                 "source": {"type": "Model", "id": "file/base", "version": "0.1.0"},
@@ -96,11 +97,7 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
     expected_path = os.path.abspath(file_path)
 
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
-        file_path=expected_path, 
-        skip_cache=False, 
-        overwrite_cache=False, 
-        follow_symlinks=True, 
-        calculate_hashes=True
+        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True, calculate_hashes=True
     )
     assert lf.name == "local_test.txt"
     assert lf.hash == "a" * 64
@@ -223,7 +220,10 @@ def test_add_tag_raises_error_if_no_validation_hash(mock_metadata_reader, mock_f
 
     lf = LocalFile(file_path)
 
-    with pytest.raises(ValueError, match="Cannot add tag: File record is missing a 'validation_hash'. Call the `upgrade_file_record\\(\\)` method to calculate the required hashes."):
+    with pytest.raises(
+        ValueError,
+        match="Cannot add tag: File record is missing a 'validation_hash'. Call the `upgrade_file_record\\(\\)` method to calculate the required hashes.",
+    ):
         lf.add_tag(name="wont_work", value=True)
 
 
@@ -1009,17 +1009,14 @@ def test_local_file_push_triggers_heavy(mock_metadata_reader, mock_file_record_s
     mock_client = MagicMock()
     lf = LocalFile(file_path, client=mock_client)
 
-    # FIX: Patch the class-level method instead of the instance to avoid Pydantic __setattr__ blocks
     from dorsal.file.validators.file_record import FileRecordStrict
 
     mocker.patch.object(FileRecordStrict, "model_dump_json", return_value="a" * (15 * 1024 * 1024))
 
-    # Spy on or patch _push_heavy to intercept the call
     mock_push_heavy = mocker.patch.object(lf, "_push_heavy", return_value=MagicMock())
 
     lf.push()
 
-    # Verify delegation
     mock_push_heavy.assert_called_once()
     mock_client.index_private_file_records.assert_not_called()
 
@@ -1191,3 +1188,96 @@ def test_local_file_push_initializes_client(mock_metadata_reader, mock_file_reco
     mock_get_client.assert_called_once_with(api_key="dynamic_test_key")
     assert lf._client == mock_client_instance
     mock_client_instance.index_private_file_records.assert_called_once()
+
+
+def test_upgrade_file_record_already_strict(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that upgrade_file_record exits early if the model is already a FileRecordStrict."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    lf = LocalFile(file_path)
+
+    mock_metadata_reader._get_or_create_record.reset_mock()
+
+    lf.upgrade_file_record()
+
+    mock_metadata_reader._get_or_create_record.assert_not_called()
+
+
+def test_upgrade_file_record_calculates_hashes(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that upgrade_file_record generates a deep record when the model is currently shallow."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+
+    shallow_record = FileRecord(hash="a" * 64, source="disk")
+    mock_metadata_reader._get_or_create_record.side_effect = [shallow_record, mock_file_record_strict]
+
+    lf = LocalFile(file_path, calculate_hashes=False)
+
+    assert isinstance(lf.model, FileRecord)
+    assert not isinstance(lf.model, FileRecordStrict)
+    assert lf.validation_hash is None
+
+    lf.upgrade_file_record()
+
+    assert isinstance(lf.model, FileRecordStrict)
+    assert lf.validation_hash == "e" * 64
+
+    expected_path = os.path.abspath(file_path)
+    mock_metadata_reader._get_or_create_record.assert_called_with(
+        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True, calculate_hashes=True
+    )
+
+
+@patch("dorsal.file.dorsal_file.make_local_record_id")
+def test_record_id_success(mock_make_id, mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that record_id returns the correctly generated local record ID."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    mock_make_id.return_value = "local-id-123"
+
+    lf = LocalFile(file_path)
+
+    assert lf.record_id == "local-id-123"
+    mock_make_id.assert_called_once_with(file_path)
+
+
+@patch("dorsal.file.dorsal_file.make_local_record_id")
+def test_record_id_oserror_fallback(mock_make_id, mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that record_id handles an OSError gracefully by falling back to a unique memory ID."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_make_id.side_effect = OSError("File no longer exists")
+
+    lf = LocalFile(file_path)
+    expected_fallback = f"deleted-{id(lf)}"
+
+    assert lf.record_id == expected_fallback
+
+
+def test_local_file_properties_are_correct(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that properties like 'tags', 'to_json', and 'to_dict' work correctly."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+
+    assert lf.tags == []
+
+    as_dict = lf.to_dict()
+    assert isinstance(as_dict, dict)
+    assert as_dict["hash"] == "a" * 64
+
+    as_json = lf.to_json()
+    assert isinstance(as_json, str)
+    assert '"hash": "aaaaaaaa' in as_json
+
+    assert lf.sha256 == "a" * 64
+    assert lf.blake3 == "b" * 64
+    assert lf.md5 == "c" * 32
+    assert lf.sha1 == "d" * 40

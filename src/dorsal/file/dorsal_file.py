@@ -1399,6 +1399,40 @@ class LocalFile(_DorsalFile):
         except OSError:
             return f"deleted-{id(self)}"
 
+    @property
+    def sha256(self) -> str | None:
+        """Alias for the primary SHA-256 hash."""
+        return self.hash
+
+    @property
+    def blake3(self) -> str | None:
+        """The BLAKE3 file hash."""
+        return self._get_hash_from_base("BLAKE3")
+
+    @property
+    def md5(self) -> str | None:
+        """The MD5 file hash."""
+        return self._get_hash_from_base("MD5")
+
+    @property
+    def sha1(self) -> str | None:
+        """The SHA-1 file hash."""
+        return self._get_hash_from_base("SHA-1")
+
+    def _get_hash_from_base(self, hash_id: str) -> str | None:
+        if not self.annotations:
+            return None
+
+        file_base = getattr(self.annotations, "file_base", None)
+        if not file_base or not file_base.record:
+            return None
+
+        all_hash_ids = getattr(file_base.record, "all_hash_ids", None)
+        if isinstance(all_hash_ids, dict):
+            return all_hash_ids.get(hash_id)
+
+        return None
+
     @classmethod
     def from_json(cls, path: str | pathlib.Path, check_file_exists: bool = False) -> "LocalFile":
         """Factory method: Instantiates a LocalFile from a JSON File Record."""
