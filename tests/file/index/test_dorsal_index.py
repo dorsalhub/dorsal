@@ -31,7 +31,7 @@ def temp_index(tmp_path: Path, mocker) -> DorsalIndex:
     database file for each test. The tmp_path fixture is managed by pytest.
     """
     mocker.patch("dorsal.file.index.dorsal_index.make_local_record_id", return_value="mock_local_id")
-    
+
     db_path = tmp_path / "test_index.db"
     index = DorsalIndex(db_path=db_path, use_compression=True)
     index.connect()
