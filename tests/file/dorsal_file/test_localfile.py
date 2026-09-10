@@ -1281,3 +1281,94 @@ def test_local_file_properties_are_correct(mock_metadata_reader, mock_file_recor
     assert lf.blake3 == "b" * 64
     assert lf.md5 == "c" * 32
     assert lf.sha1 == "d" * 40
+
+
+def test_symlink_resolution_oserror(tmp_path):
+    """Covers line: logger.debug("Failed to resolve symlink for file %s, %s", self.file_path, err)"""
+    dummy_file = tmp_path / "test.txt"
+    dummy_file.write_text("hello world")
+
+    with patch("pathlib.Path.resolve", side_effect=OSError("Symlink loop detected")):
+        local_file = LocalFile(str(dummy_file), offline=True)
+        assert local_file.file_path == str(dummy_file)
+
+
+def test_localfile_shallow_state_errors(tmp_path):
+    """Covers lines checking `isinstance(self.model, FileRecordStrict)` in push() and _push_heavy()."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("shallow model test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    shallow_record = FileRecord(
+        hash="a" * 64,
+        quick_hash=None,
+        validation_hash=None,
+        annotations=None,
+        tags=[],
+        date_created=now,
+        date_modified=now,
+    )
+
+    local_file = LocalFile(str(dummy_file), offline=False, _file_record=shallow_record)
+
+    with pytest.raises(DorsalClientError) as excinfo:
+        local_file.push()
+    assert "Cannot push LocalFile" in str(excinfo.value)
+
+    local_file._client = MagicMock()
+
+    with pytest.raises(DorsalClientError) as excinfo:
+        local_file._push_heavy()
+    assert "Cannot push LocalFile" in str(excinfo.value)
+
+
+def test_local_file_push_exception_path_log(tmp_path):
+    """Covers line: self.file_path in exception logging during push()."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("push exception test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_strict_record = MagicMock()
+    mock_strict_record.hash = "1234567890abcdef"
+    mock_strict_record.quick_hash = None
+    mock_strict_record.validation_hash = "valhash"
+    mock_strict_record.annotations = None
+    mock_strict_record.tags = []
+    mock_strict_record.media_type = "text/plain"
+    mock_strict_record.date_created = now
+    mock_strict_record.date_modified = now
+    mock_strict_record.model_dump_json.return_value = "{}"
+
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.side_effect = DorsalClientError("API Failure")
+
+    with patch("dorsal.file.dorsal_file.isinstance", return_value=True):
+        local_file = LocalFile(str(dummy_file), client=mock_client, _file_record=mock_strict_record)
+
+        with pytest.raises(DorsalClientError):
+            local_file.push()
+
+
+def test_annotate_using_pipeline_step_missing_validation_hash(tmp_path):
+    """Covers line: Exception when missing validation_hash during pipeline step annotation."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    record_without_val_hash = FileRecord(
+        hash="a" * 64,
+        quick_hash=None,
+        validation_hash=None,
+        annotations=None,
+        tags=[],
+        date_created=now,
+        date_modified=now,
+    )
+
+    local_file = LocalFile(str(dummy_file), offline=True, _file_record=record_without_val_hash)
+
+    with pytest.raises(ValueError) as excinfo:
+        local_file._annotate_using_pipeline_step(pipeline_step_config={"schema_id": "open/generic"})
+    assert "Cannot annotate: File is missing a 'validation_hash'." in str(excinfo.value)

@@ -17,11 +17,13 @@ from unittest.mock import patch, MagicMock
 import datetime
 
 from dorsal.client.validators import FileDeleteResponse
-from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub
+from dorsal.common.exceptions import PydanticValidationError
+from dorsal.file.dorsal_file import _DorsalFile, DorsalFile, FileAnnotationStub, LocalFile
 from dorsal.file.validators.file_record import (
     AnnotationSource,
     FileRecordDateTime,
     FileRecordStrict,
+    FileRecord,
     NewFileTag,
     FileTag,
 )
@@ -523,3 +525,78 @@ def test_dorsal_file_get_user_annotations(populated_dorsal_file, mock_dorsal_cli
     client_stubs = df.get_user_annotations("open/test-schema")
     assert len(client_stubs) == 1
     assert client_stubs[0].user_id == 200
+
+
+def test_dorsal_file_type_error_init():
+    with pytest.raises(TypeError) as excinfo:
+        _DorsalFile(file_record="not_a_file_record")  # type: ignore[arg-type]
+    assert "file_record must be an instance of FileRecord, FileRecordDateTime or FileRecordStrict" in str(excinfo.value)
+
+
+def test_dorsal_file_repr_fallback_path():
+    mock_record = MagicMock(spec=FileRecord)
+    mock_record.hash = "abc123hash"
+    mock_record.quick_hash = None
+    mock_record.validation_hash = None
+    mock_record.annotations = None
+    mock_record.tags = []
+
+    file_obj = _DorsalFile(file_record=mock_record)
+    file_obj.file_path = "/path/to/my_custom_filename.txt"
+
+    assert file_obj.name is None
+    repr_str = repr(file_obj)
+    assert "my_custom_filename.txt" in repr_str
+
+
+def test_get_hash_from_base_coverage(tmp_path, make_mock_record):
+
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("mock content")
+
+    mock_record = make_mock_record(abspath=str(dummy_file), ext=".txt")
+
+    local_file = LocalFile(str(dummy_file), offline=True, _file_record=mock_record)
+
+    assert local_file.model.hash == mock_record.hash
+    assert local_file._source == "disk"
+
+
+def test_set_validation_hash_type_error_and_pydantic_validation_error(make_mock_record_datetime):
+    """Covers lines: TypeError on non-string validation_hash and PydanticValidationError/ValueError logging handling."""
+    mock_record = make_mock_record_datetime("/tmp/test_file.txt")
+    dorsal_file = DorsalFile.from_record(mock_record)
+
+    with pytest.raises(TypeError) as excinfo:
+        dorsal_file.set_validation_hash(12345)  # type: ignore[arg-type]
+    assert "Input 'validation_hash' must be a string." in str(excinfo.value)
+
+    valid_blake3 = "a" * 64
+    with patch("dorsal.file.validators.file_record.FileRecordStrict") as mock_strict_cls:
+        mock_strict_cls.__name__ = "FileRecordStrict"
+        pydantic_err = PydanticValidationError.from_exception_data(title="Validation Error", line_errors=[])
+        mock_strict_cls.side_effect = pydantic_err
+
+        with pytest.raises(ValueError) as excinfo:
+            dorsal_file.set_validation_hash(valid_blake3)
+        assert f"Failed to apply DORSAL hash '{valid_blake3}'." in str(excinfo.value)
+        assert "Model validation failed for FileRecordStrict." in str(excinfo.value)
+
+
+def test_set_validation_hash_unexpected_exception(make_mock_record_datetime):
+    """Covers lines: Exception handling when an unexpected error occurs during validation hash assignment."""
+    mock_record = make_mock_record_datetime("/tmp/test_file.txt")
+    dorsal_file = DorsalFile.from_record(mock_record)
+
+    valid_blake3 = "a" * 64
+
+    with patch(
+        "dorsal.file.validators.file_record.FileRecordStrict",
+        side_effect=TypeError("Unexpected mock failure"),
+        **{"__name__": "FileRecordStrict"},
+    ):
+        with pytest.raises(RuntimeError) as excinfo:
+            dorsal_file.set_validation_hash(valid_blake3)
+
+        assert "Unexpected error setting validation_hash: Unexpected mock failure" in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, TypeError)

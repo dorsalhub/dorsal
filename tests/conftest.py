@@ -32,6 +32,7 @@ This forces the CLI to re-initialize logging correctly for each new test's uniqu
 
 """
 
+import datetime
 import hashlib
 import pytest
 import os
@@ -46,7 +47,7 @@ from rich.console import Console
 from dorsal.common import constants
 from dorsal.common import cli as common_cli
 from dorsal.file.index.dorsal_index import DorsalIndex
-from dorsal.file.validators.file_record import FileRecordStrict
+from dorsal.file.validators.file_record import FileRecordStrict, FileRecordDateTime
 from dorsal.file.utils.file_hasher import DORSAL_KEY_CONTEXT
 from dorsal.session import clear_shared_index
 
@@ -200,6 +201,93 @@ def make_mock_record():
         }
 
         return FileRecordStrict.model_validate(record_dict)
+
+    return _make
+
+
+@pytest.fixture
+def make_mock_record_datetime():
+    """Factory to create FileRecordDateTime objects for testing."""
+
+    def _make(
+        abspath: str,
+        ext: str = ".pdf",
+        size: int = 1024,
+        tags: dict = None,
+        arxiv_title: str = None,
+        date_created: datetime.datetime = None,
+        date_modified: datetime.datetime = None,
+    ) -> FileRecordDateTime:
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        date_created = date_created or now
+        date_modified = date_modified or now
+
+        dummy_sha256 = hashlib.sha256(abspath.encode("utf-8")).hexdigest()
+        dummy_blake3 = blake3.blake3(abspath.encode("utf-8")).hexdigest()
+        dummy_sha1 = hashlib.sha1(abspath.encode("utf-8")).hexdigest()
+        dummy_md5 = hashlib.md5(abspath.encode("utf-8")).hexdigest()
+        dummy_dorsal = blake3.blake3(abspath.encode("utf-8"), derive_key_context=DORSAL_KEY_CONTEXT).hexdigest()
+
+        annotations = {
+            "file/base": {
+                "record": {
+                    "hash": dummy_sha256,
+                    "name": Path(abspath).name,
+                    "extension": ext,
+                    "size": size,
+                    "media_type": f"application/{ext.strip('.')}",
+                    "all_hash_ids": {
+                        "SHA-256": dummy_sha256,
+                        "BLAKE3": dummy_blake3,
+                        "SHA-1": dummy_sha1,
+                        "MD5": dummy_md5,
+                        "DORSAL": dummy_dorsal,
+                    },
+                },
+                "schema_id": "file/base",
+                "source": {"type": "Model", "id": "test_mock", "version": "1.0"},
+            }
+        }
+
+        if arxiv_title:
+            annotations["dorsal/arxiv"] = {
+                "record": {
+                    "title": arxiv_title,
+                    "authors": ["John Doe", "Jane Smith"],
+                    "categories": ["astro-ph"],
+                    "arxiv_id": "1234.5678",
+                },
+                "schema_id": "dorsal/arxiv",
+                "source": {"type": "Model", "id": "test_mock", "version": "1.0"},
+            }
+
+        tag_list = []
+        if tags:
+            tag_list = [
+                {
+                    "name": k,
+                    "value": v,
+                    "hidden": False,
+                    "upvotes": 0,
+                    "downvotes": 0,
+                    "origin": "dorsal.LocalFile",
+                }
+                for k, v in tags.items()
+            ]
+
+        record_dict = {
+            "hash": dummy_sha256,
+            "validation_hash": dummy_dorsal,
+            "annotations": annotations,
+            "tags": tag_list,
+            "urls": [],
+            "source": "disk",
+            "date_created": date_created,
+            "date_modified": date_modified,
+        }
+
+        return FileRecordDateTime.model_validate(record_dict)
 
     return _make
 

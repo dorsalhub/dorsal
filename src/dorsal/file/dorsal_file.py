@@ -1325,7 +1325,7 @@ class LocalFile(_DorsalFile):
         path_obj = pathlib.Path(file_path)
         try:
             stat_result = path_obj.stat()
-        except OSError:  # e.g. broken symlink
+        except OSError:
             stat_result = path_obj.lstat()
 
         self.date_modified = datetime.datetime.fromtimestamp(stat_result.st_mtime).astimezone()
@@ -1704,8 +1704,8 @@ class LocalFile(_DorsalFile):
 
         if not isinstance(self.model, FileRecordStrict):
             error_msg = (
-                "Cannot push LocalFile: The record is currently in a shallow state. "
-                "Call the `upgrade_file_record()` method to calculate the required hashes before pushing to DorsalHub."
+                "Cannot push LocalFile. Call the `upgrade_file_record()`"
+                "method to calculate the required hashes before pushing to DorsalHub."
             )
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
@@ -1729,7 +1729,7 @@ class LocalFile(_DorsalFile):
                 return None
 
             extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
-            if extra is not None:  # Explicitly check for None
+            if extra is not None:
                 for field, val in list(extra.items()):
                     extract(field, val)
                     del extra[field]
@@ -1819,8 +1819,8 @@ class LocalFile(_DorsalFile):
 
         if not isinstance(self.model, FileRecordStrict):
             error_msg = (
-                "Cannot push LocalFile: The record is currently in a shallow state. "
-                "Call the `upgrade_file_record()` method to calculate the required hashes before pushing to DorsalHub."
+                "Cannot push LocalFile. Call the `upgrade_file_record()` method"
+                "to calculate the required hashes before pushing to DorsalHub."
             )
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
