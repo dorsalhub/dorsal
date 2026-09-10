@@ -293,13 +293,12 @@ def test_standalone_tlsh_missing_library(large_dummy_file, mocker):
 
 def test_hash_async_read_exception(large_dummy_file, mocker):
     """
-    Test that exceptions during the background thread's async reading 
+    Test that exceptions during the background thread's async reading
     are properly caught in the queue and re-raised in the main thread.
     """
     hasher = FileHasher()
     hasher.threaded_min_size = 5
 
-    
     mock_file_handler = mocker.MagicMock()
     mock_file_handler.read.side_effect = IOError("Simulated async read error")
     mock_ctx = mocker.MagicMock()
@@ -307,14 +306,13 @@ def test_hash_async_read_exception(large_dummy_file, mocker):
 
     mocker.patch.object(hasher, "_stream_file_content", return_value=mock_ctx)
 
-    
     with pytest.raises(IOError, match="Simulated async read error"):
         hasher.hash(str(large_dummy_file), file_size=100, threads=2, calculate_tlsh=False)
 
 
 def test_hash_explicit_threads_count(large_dummy_file, mocker):
     """
-    Test that the worker_count correctly throttles based on min(threads, num_hashers) 
+    Test that the worker_count correctly throttles based on min(threads, num_hashers)
     when threads is explicitly specified and larger than 1.
     """
     hasher = FileHasher()
@@ -323,7 +321,6 @@ def test_hash_explicit_threads_count(large_dummy_file, mocker):
     mock_tpe = mocker.patch("concurrent.futures.ThreadPoolExecutor")
     mock_tpe.return_value.__enter__.return_value = mocker.MagicMock()
 
-    
     hasher.hash(
         str(large_dummy_file),
         file_size=100,
@@ -333,21 +330,19 @@ def test_hash_explicit_threads_count(large_dummy_file, mocker):
         calculate_blake3=False,
         calculate_sha1=False,
         calculate_validation=False,
-        calculate_tlsh=False
+        calculate_tlsh=False,
     )
-    
-    
+
     mock_tpe.assert_called_once_with(max_workers=2)
 
 
 def test_standalone_wrappers_exceptions(dummy_file, mocker):
     """
-    Test that standalone wrappers correctly catch OS errors, log them, 
+    Test that standalone wrappers correctly catch OS errors, log them,
     and re-raise them during the stream reading process.
     """
     hasher = FileHasher()
 
-    
     mocker.patch("builtins.open", side_effect=PermissionError("Mocked permission error"))
 
     with pytest.raises(PermissionError):
