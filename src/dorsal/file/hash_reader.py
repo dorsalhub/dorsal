@@ -109,7 +109,7 @@ class HashReader:
                             )
                         hashes_to_process.discard(hash_function)
 
-                except OSError as e:
+                except OSError as e:  # pragma: no cover
                     logger.error(f"Error during hashing file {file_path}: {e}")
                     for hash_function in file_hasher_algos:
                         results[hash_function] = None
