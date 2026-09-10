@@ -153,3 +153,31 @@ class TestQueryCompiler:
         assert "WHERE content MATCH ?" in sql
 
         assert params == ['"ren"* AND "exact" AND "weird""quote"*']
+
+    def test_compile_deep_flag(self):
+        """Tests that the deep=True flag filters for records with a sha256 hash in both queries and counts."""
+        processed = {"text": [], "filters": []}
+
+        sql, _ = QueryCompiler.compile(processed, deep=True)
+        assert "c.hash_sha256 IS NOT NULL" in sql
+
+        count_sql, _ = QueryCompiler.compile_count(processed, deep=True)
+        assert "c.hash_sha256 IS NOT NULL" in count_sql
+
+    def test_compile_is_hash_text(self):
+        """Tests the expanded hash search logic for 16, 32, 40, or 64 character hex strings."""
+
+        test_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+        processed = {"text": [test_hash], "filters": []}
+
+        sql, params = QueryCompiler.compile(processed)
+
+        assert "c.local_record_id = ?" in sql
+        assert "c.hash_md5 = ?" in sql
+        assert "c.hash_sha1 = ?" in sql
+        assert "c.hash_sha256 = ?" in sql
+        assert "c.hash_blake3 = ?" in sql
+        assert "c.hash_dorsal = ?" in sql
+
+        expected_fts_term = f'"{test_hash}"'
+        assert params == [test_hash, test_hash, test_hash, test_hash, test_hash, test_hash, expected_fts_term]
