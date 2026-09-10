@@ -412,6 +412,20 @@ class DorsalIndex:
                     if json_field := json_field_map.get(hash_function.upper()):
                         record_dict[json_field] = hash_value
 
+                    file_base = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
+                    if file_base:
+                        func_upper = hash_function.upper()
+                        if func_upper == "SHA-256":
+                            file_base["hash"] = hash_value
+                        elif func_upper == "QUICK":
+                            file_base["quick_hash"] = hash_value
+                        elif func_upper == "TLSH":
+                            file_base["similarity_hash"] = hash_value
+
+                        if "all_hash_ids" not in file_base or file_base["all_hash_ids"] is None:
+                            file_base["all_hash_ids"] = {}
+                        file_base["all_hash_ids"][func_upper] = hash_value
+
                     updated_json_str = json.dumps(record_dict)
                     if self.use_compression:
                         compress_fn, _ = self._get_compressor(self.compression_mode, self.compression_level)

@@ -87,7 +87,6 @@ def hash_target(
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
-    icons = ui_context["icons"]
 
     if use_cache and skip_cache:
         exit_cli(
@@ -172,7 +171,7 @@ def hash_target(
             hash_grid.add_row(f"{hash_function}:", Text(str(display_value), style=value_style))
 
         is_none_style = borders == get_borders("none")
-        title_text = f"[{palette.get('panel_title', 'bold')}]{icons.get('key', '🔑 ')}Hashes for {escape(path.name)}[/]"
+        title_text = f"[{palette.get('panel_title', 'bold')}]Hashes for {escape(path.name)}[/]"
 
         if is_none_style:
             console.print(Group(Text.from_markup(f"{title_text}\n"), hash_grid))
