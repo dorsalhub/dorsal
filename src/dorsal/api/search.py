@@ -166,6 +166,7 @@ def search_local_paginated(
                 offset=start_index,
                 sort_by=sort_by,
                 sort_desc=sort_desc,
+                deep=deep,
             )
             cursor.execute(data_sql, data_params)
             rows = cursor.fetchall()

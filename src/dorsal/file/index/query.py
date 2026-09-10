@@ -26,20 +26,22 @@ class QueryParser:
     NEVER throws exceptions on bad syntax (e.g. unclosed quotes).
     """
 
-    OPERATORS = {">=", "<=", ">", "<", "=", ":"}
+    OPERATORS = (">=", "<=", ">", "<", "=", ":")
 
     @classmethod
-    def parse(cls, query_input: str | list[str]) -> dict[str, list]:
+    def parse(cls, query_input: str | list[str] | tuple[str, ...]) -> dict[str, list]:
         result: dict[str, list[str | tuple]] = {
             "text": [],
             "filters": [],
         }
 
-        if not query_input or query_input == "*" or query_input == ["*"]:
+        if not query_input or query_input == "*" or query_input == ["*"] or query_input == ("*",):
             return result
 
-        if isinstance(query_input, list):
-            tokens = query_input
+        if isinstance(query_input, (list, tuple)):
+            tokens = []
+            for item in query_input:
+                tokens.extend(cls._tokenize(item))
         else:
             tokens = cls._tokenize(query_input)
 
@@ -152,7 +154,7 @@ class QueryCompiler:
         where_clauses.append("c.record IS NOT NULL")
 
         if deep:
-            where_clauses.append("c.hash_sha256 IS NOT NULL")
+            where_clauses.append("(c.hash_sha256 IS NOT NULL AND c.hash_sha256 != '')")
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
@@ -184,7 +186,7 @@ class QueryCompiler:
         where_clauses.append("c.record IS NOT NULL")
 
         if deep:
-            where_clauses.append("c.hash_sha256 IS NOT NULL")
+            where_clauses.append("(c.hash_sha256 IS NOT NULL AND c.hash_sha256 != '')")
 
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
@@ -194,9 +196,9 @@ class QueryCompiler:
     @classmethod
     def _build_where_clauses(cls, parsed_query: dict[str, list], or_logic: bool) -> tuple[list[str], list[Any]]:
         """Shared logic for building WHERE conditions and parameter binding."""
-        from dorsal.file.index.extractors import registry  # <--- NEW IMPORT
+        from dorsal.file.index.extractors import registry
 
-        where_clauses = []
+        user_clauses = []
         params = []
 
         for key, op, val in parsed_query.get("filters", []):
@@ -208,7 +210,7 @@ class QueryCompiler:
 
                 if sql_op == "=" and is_wildcard_val:
                     if val == "*":
-                        where_clauses.append(f"c.{col_name} IS NOT NULL")
+                        user_clauses.append(f"c.{col_name} IS NOT NULL")
                         continue
                     else:
                         sql_op = "LIKE"
@@ -223,12 +225,12 @@ class QueryCompiler:
                     if not val.startswith("."):
                         val = f".{val}"
 
-                where_clauses.append(f"c.{col_name} {sql_op} ?")
+                user_clauses.append(f"c.{col_name} {sql_op} ?")
                 params.append(val)
                 continue
 
             if key == "annotation":
-                where_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE schema_id = ?)")
+                user_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE schema_id = ?)")
                 params.append(val)
                 continue
 
@@ -244,20 +246,20 @@ class QueryCompiler:
 
             if sql_op == "=" and is_wildcard_val:
                 if val == "*":
-                    where_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ?)")
+                    user_clauses.append("c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ?)")
                     params.append(key)
                     continue
                 else:
                     sql_op = "LIKE"
                     val = val.replace("*", "%")
-                    where_clauses.append(
+                    user_clauses.append(
                         f"c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ? AND {val_col} {sql_op} ?)"
                     )
                     params.extend([key, val])
                     continue
 
             nocase = " COLLATE NOCASE" if val_col == "value_text" else ""
-            where_clauses.append(
+            user_clauses.append(
                 f"c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ? AND {val_col} {sql_op} ?{nocase})"
             )
             params.extend([key, val])
@@ -269,21 +271,9 @@ class QueryCompiler:
             is_wildcard = text.endswith("*")
             clean_text = text[:-1] if is_wildcard else text
             escaped_text = clean_text.replace('"', '""')
+
             fts_term = f'"{escaped_text}"*' if is_wildcard else f'"{escaped_text}"'
-
-            is_hash = len(clean_text) in (16, 32, 40, 64) and all(c.lower() in "0123456789abcdef" for c in clean_text)
-
-            if is_hash:
-                h = clean_text.lower()
-                hash_sql = (
-                    "(c.local_record_id = ? OR c.hash_md5 = ? OR c.hash_sha1 = ? OR "
-                    "c.hash_sha256 = ? OR c.hash_blake3 = ? OR c.hash_dorsal = ? OR "
-                    "c.abspath IN (SELECT abspath FROM dorsal_fts WHERE content MATCH ?))"
-                )
-                text_clauses.append(hash_sql)
-                params.extend([h, h, h, h, h, h, fts_term])
-            else:
-                fts_terms.append(fts_term)
+            fts_terms.append(fts_term)
 
         if fts_terms:
             logical_join = " OR " if or_logic else " AND "
@@ -293,6 +283,11 @@ class QueryCompiler:
 
         if text_clauses:
             text_logical_join = " OR " if or_logic else " AND "
-            where_clauses.append(f"({text_logical_join.join(text_clauses)})")
+            user_clauses.append(f"({text_logical_join.join(text_clauses)})")
+
+        where_clauses = []
+        if user_clauses:
+            master_logical_join = " OR " if or_logic else " AND "
+            where_clauses.append(f"({master_logical_join.join(user_clauses)})")
 
         return where_clauses, params

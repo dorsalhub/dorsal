@@ -202,9 +202,24 @@ class DorsalIndex:
         logger.debug("Schema initialization complete.")
 
     def _extract_search_data(self, record: "FileRecord | FileRecordStrict") -> tuple[list[str], list[tuple]]:
-        """Extracts searchable data by delegating to the ExtractorRegistry."""
+        """
+        Extracts searchable data by delegating to the ExtractorRegistry.
+        Injects core file hashes into the FTS engine to support rapid wildcard hash lookups.
+        """
         fts_texts: list[str] = []
         eav_attributes: list[tuple] = []
+
+        record_hash = getattr(record, "hash", None)
+        if isinstance(record_hash, str):
+            fts_texts.append(record_hash)
+
+        if getattr(record, "annotations", None):
+            base_annot = getattr(record.annotations, "file_base", None)
+            if base_annot and getattr(base_annot, "record", None):
+                if getattr(base_annot.record, "all_hash_ids", None):
+                    for hash_val in base_annot.record.all_hash_ids.values():
+                        if hash_val:
+                            fts_texts.append(hash_val)
 
         if record.annotations and record.annotations.file_base:
             base = record.annotations.file_base.record

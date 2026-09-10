@@ -31,10 +31,26 @@ class TestQueryParser:
         assert result["text"] == []
         assert result["filters"] == [("ext", ":", "pdf"), ("size", ">", "5mb")]
 
+    def test_parse_operator_precedence(self):
+        """Ensures >= and <= are matched before > and <."""
+        result = QueryParser.parse("size>=20 page_count<=400")
+        assert result["filters"] == [("size", ">=", "20"), ("page_count", "<=", "400")]
+
+    def test_parse_phrase_and_eav_quotes(self):
+        """Ensures spaces are kept inside quotes for both text and EAV values."""
+        result = QueryParser.parse('"Design Patterns" creator:"Acrobat 5.0"')
+        assert result["text"] == ["Design Patterns"]
+        assert result["filters"] == [("creator", ":", "Acrobat 5.0")]
+
+    def test_parse_tuple_input(self):
+        """Ensures Typer's nargs=-1 tuple arguments are tokenized properly."""
+        result = QueryParser.parse(("ext:mov", "size>20MiB"))
+        assert result["filters"] == [("ext", ":", "mov"), ("size", ">", "20MiB")]
+        assert result["text"] == []
+
     def test_parse_unclosed_quotes_safe_handling(self):
         result = QueryParser.parse('ext:pdf "broken quote')
         assert result["filters"] == [("ext", ":", "pdf")]
-
         assert result["text"] == ["broken quote"]
 
     def test_parse_empty_query(self):
@@ -42,16 +58,17 @@ class TestQueryParser:
         result = QueryParser.parse("")
         assert result == {"text": [], "filters": []}
 
+        result = QueryParser.parse(("*",))
+        assert result == {"text": [], "filters": []}
+
     def test_tokenize_nested_quotes(self):
         """Hits the 'else: current.append(char)' inside the quote logic."""
-
         result = QueryParser.parse('"it\'s a test"')
         assert result["text"] == ["it's a test"]
 
 
 class TestQueryCompiler:
     def test_compile_base_columns(self):
-
         processed_si = {"text": [], "filters": [("ext", ":", "pdf"), ("size", ">", "5mb")]}
         sql_si, params_si = QueryCompiler.compile(processed_si)
 
@@ -75,17 +92,60 @@ class TestQueryCompiler:
         assert "score" in params
         assert "0.9" in params
 
+    def test_compile_numeric_eav_routing(self):
+        """Ensures registered numeric fields route to value_num."""
+        processed = {"text": [], "filters": [("page_count", ">=", "10")]}
+        sql, params = QueryCompiler.compile(processed)
+        assert "value_num >=" in sql
+        assert "page_count" in params
+        assert 10.0 in params
+
+    def test_compile_wildcard_presence(self):
+        """Tests the translation of exact '*' to IS NOT NULL and trailing '*' to LIKE."""
+
+        processed_eav = {"text": [], "filters": [("title", ":", "*")]}
+        sql_eav, params_eav = QueryCompiler.compile(processed_eav)
+        assert "c.abspath IN (SELECT abspath FROM file_attributes WHERE key = ?)" in sql_eav
+        assert params_eav == ["title"]
+
+        processed_base = {"text": [], "filters": [("ext", ":", "*")]}
+        sql_base, params_base = QueryCompiler.compile(processed_base)
+        assert "c.extension IS NOT NULL" in sql_base
+        assert len(params_base) == 0
+
+        processed_like = {"text": [], "filters": [("media_type", ":", "video/*")]}
+        sql_like, params_like = QueryCompiler.compile(processed_like)
+        assert "c.media_type LIKE ?" in sql_like
+        assert params_like == ["video/%"]
+
+    def test_compile_annotation_schema_filter(self):
+        """Ensures 'annotation:' targets the schema_id column."""
+        processed = {"text": [], "filters": [("annotation", ":", "file/office")]}
+        sql, params = QueryCompiler.compile(processed)
+        assert "c.abspath IN (SELECT abspath FROM file_attributes WHERE schema_id = ?)" in sql
+        assert params == ["file/office"]
+
     def test_compile_fts_text(self):
         processed = {"text": ["machine", "dark matter"], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
         assert "WHERE content MATCH ?" in sql
-
         assert params == ['"machine" AND "dark matter"']
+
+    def test_compile_or_logic_parenthesization(self):
+        """Tests that the --or flag correctly wraps user clauses without breaking base DB requirements."""
+        processed = {"text": ["fall"], "filters": [("ext", ":", "epub"), ("size", ">", "100kb")]}
+        sql, params = QueryCompiler.compile(processed, or_logic=True)
+
+        assert "AND c.record IS NOT NULL" in sql
+
+        assert (
+            "(c.extension = ? OR c.size > ? OR (c.abspath IN (SELECT abspath FROM dorsal_fts WHERE content MATCH ?)))"
+            in sql
+        )
 
     def test_compile_invalid_filesize(self):
         """Hits the ValueError pass for parse_filesize."""
-
         processed = {"text": [], "filters": [("size", ">", "huge")]}
         sql, params = QueryCompiler.compile(processed)
 
@@ -94,7 +154,6 @@ class TestQueryCompiler:
 
     def test_compile_invalid_numeric_filter(self):
         """Hits the ValueError pass for float(val) in EAV filters."""
-
         processed = {"text": [], "filters": [("custom_field", ">", "not_a_number")]}
         sql, params = QueryCompiler.compile(processed)
 
@@ -146,38 +205,18 @@ class TestQueryCompiler:
 
     def test_compile_fts_wildcard(self):
         """Tests that explicit wildcards are placed outside the quotes for FTS5 prefix matching."""
-
         processed = {"text": ["ren*", "exact", 'weird"quote*'], "filters": []}
         sql, params = QueryCompiler.compile(processed)
 
         assert "WHERE content MATCH ?" in sql
-
         assert params == ['"ren"* AND "exact" AND "weird""quote"*']
 
     def test_compile_deep_flag(self):
-        """Tests that the deep=True flag filters for records with a sha256 hash in both queries and counts."""
+        """Tests that the deep=True flag correctly checks for populated hashes."""
         processed = {"text": [], "filters": []}
 
         sql, _ = QueryCompiler.compile(processed, deep=True)
-        assert "c.hash_sha256 IS NOT NULL" in sql
+        assert "(c.hash_sha256 IS NOT NULL AND c.hash_sha256 != '')" in sql
 
         count_sql, _ = QueryCompiler.compile_count(processed, deep=True)
-        assert "c.hash_sha256 IS NOT NULL" in count_sql
-
-    def test_compile_is_hash_text(self):
-        """Tests the expanded hash search logic for 16, 32, 40, or 64 character hex strings."""
-
-        test_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
-        processed = {"text": [test_hash], "filters": []}
-
-        sql, params = QueryCompiler.compile(processed)
-
-        assert "c.local_record_id = ?" in sql
-        assert "c.hash_md5 = ?" in sql
-        assert "c.hash_sha1 = ?" in sql
-        assert "c.hash_sha256 = ?" in sql
-        assert "c.hash_blake3 = ?" in sql
-        assert "c.hash_dorsal = ?" in sql
-
-        expected_fts_term = f'"{test_hash}"'
-        assert params == [test_hash, test_hash, test_hash, test_hash, test_hash, test_hash, expected_fts_term]
+        assert "(c.hash_sha256 IS NOT NULL AND c.hash_sha256 != '')" in count_sql

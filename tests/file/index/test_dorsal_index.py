@@ -435,7 +435,8 @@ def test_extract_search_data_no_annotations(temp_index, make_mock_record):
     record.annotations = None
 
     fts, eav = temp_index._extract_search_data(record)
-    assert fts == []
+    assert len(fts) == 1
+    assert fts[0] == record.hash
     assert eav == []
 
 
@@ -446,7 +447,8 @@ def test_extract_search_data_null_and_malformed_annotations(temp_index, make_moc
     record.annotations.file_base = None
 
     fts, eav = temp_index._extract_search_data(record)
-    assert fts == []
+    assert len(fts) == 1
+    assert fts[0] == record.hash
     assert len(eav) == 0
 
 
