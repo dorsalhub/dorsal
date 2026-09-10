@@ -49,7 +49,7 @@ def test_upsert_and_get_record_compressed(temp_index: DorsalIndex, make_mock_rec
     assert fetched.modified_time == 123.45
     assert fetched.name == "test.pdf"
     assert fetched.hash_sha256 == record.hash
-    
+
     data = json.loads(fetched.record_json)
     assert data["hash"] == record.hash
 
@@ -62,7 +62,7 @@ def test_upsert_and_get_record_uncompressed(temp_index: DorsalIndex, make_mock_r
 
     fetched = temp_index.get_record(path="/fake/test.pdf")
     assert fetched is not None
-    
+
     data = json.loads(fetched.record_json)
     assert data["hash"] == record.hash
 
@@ -93,6 +93,7 @@ def test_upsert_record_populates_search_indexes(temp_index: DorsalIndex, make_mo
 def test_upsert_hash_and_get_hash(mock_lstat, temp_index: DorsalIndex):
     """Test inserting and retrieving a single hash."""
     import unittest.mock
+
     mock_stat = unittest.mock.MagicMock()
     mock_stat.st_mtime = 123.45
     mock_lstat.return_value = mock_stat
@@ -114,18 +115,17 @@ def test_upsert_hash_patches_shallow_record(temp_index: DorsalIndex, make_mock_r
     mtime = 100.0
 
     deep_record = make_mock_record(path)
-    
-    
+
     record_dict = deep_record.model_dump(by_alias=True)
-    
-    
+
     record_dict["hash"] = None
     record_dict["validation_hash"] = None
     if "file/base" in record_dict.get("annotations", {}):
         record_dict["annotations"]["file/base"]["record"]["hash"] = None
         record_dict["annotations"]["file/base"]["record"]["all_hash_ids"] = None
-    
+
     from dorsal.file.validators.file_record import FileRecord
+
     shallow_record = FileRecord.model_validate(record_dict)
 
     temp_index.upsert_record(path=path, modified_time=mtime, record=shallow_record)
@@ -135,19 +135,15 @@ def test_upsert_hash_patches_shallow_record(temp_index: DorsalIndex, make_mock_r
     assert fetched is not None
 
     data = json.loads(fetched.record_json)
-    
-    
+
     assert data.get("hash") == "patched_hash_value"
-    
-    
+
     assert data.get("annotations", {}).get("file/base", {}).get("record", {}).get("hash") == "patched_hash_value"
 
 
 @patch("os.path.exists")
 @patch("os.lstat")
-def test_prune_removes_stale_records_and_indexes(
-    mock_lstat, mock_exists, temp_index: DorsalIndex, make_mock_record
-):
+def test_prune_removes_stale_records_and_indexes(mock_lstat, mock_exists, temp_index: DorsalIndex, make_mock_record):
     """Test that prune removes records AND their search indexes if files are missing or modified."""
     record = make_mock_record("/fake/missing.pdf")
     temp_index.upsert_record(path="/fake/missing.pdf", modified_time=100.0, record=record)
@@ -252,7 +248,7 @@ def test_upsert_hash_overwrites_stale_full_record(temp_index: DorsalIndex, make_
     """
     path = "/fake/stale_upsert.pdf"
     record = make_mock_record(path)
-    
+
     temp_index.upsert_record(path=path, modified_time=100.0, record=record)
 
     cursor = temp_index.conn.cursor()
@@ -446,8 +442,7 @@ def test_extract_search_data_no_annotations(temp_index, make_mock_record):
 def test_extract_search_data_null_and_malformed_annotations(temp_index, make_mock_record):
     """Hits branches representing missing core data."""
     record = make_mock_record("/fake/missing.pdf")
-    
-    
+
     record.annotations.file_base = None
 
     fts, eav = temp_index._extract_search_data(record)
@@ -766,10 +761,8 @@ def test_rebuild_full_coverage(temp_index, make_mock_record, mocker):
 
     progress = mocker.MagicMock()
 
-    
     count = temp_index.rebuild(batch_size=2, progress_callback=progress)
 
-    
     assert count == 3
 
     progress.assert_any_call(0, 3)
