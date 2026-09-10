@@ -1016,3 +1016,162 @@ class TestMetadataReaderSmartBatching:
         assert len(summary["oversized_records"]) == 1
         assert summary["oversized_records"][0]["status"] == "failure"
         assert summary["oversized_records"][0]["error_message"] == "Heavy upload failed"
+
+
+class TestMetadataReaderGetOrCreateRecord:
+    def test_cache_hit_with_hash(self, metadata_reader_base, fs, mocker):
+        reader = metadata_reader_base
+        file_path = "/fake/cached.txt"
+        fs.create_file(file_path)
+        
+        mock_cached_record = MagicMock()
+        mock_cached_record.modified_time = os.path.getmtime(file_path)
+        mock_cached_record.hash_sha256 = "hash123"
+        mock_cached_record.record_json = "{}"
+        
+        reader._cache.get_record.return_value = mock_cached_record
+        mock_record_instance = MagicMock()
+        mocker.patch("dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", return_value=mock_record_instance)
+        
+        record = reader._get_or_create_record(file_path, skip_cache=False, calculate_hashes=True)
+        
+        assert record is mock_record_instance
+        assert record.source == "cache"
+
+    def test_cache_miss_shallow_record_when_hashes_needed(self, metadata_reader_base, fs, mocker):
+        reader = metadata_reader_base
+        file_path = "/fake/shallow.txt"
+        fs.create_file(file_path)
+        
+        mock_cached_record = MagicMock()
+        mock_cached_record.modified_time = os.path.getmtime(file_path)
+        mock_cached_record.hash_sha256 = None
+        mock_cached_record.record_json = "{}"
+        
+        reader._cache.get_record.return_value = mock_cached_record
+        
+        mock_fresh_record = MagicMock(spec=FileRecordStrict)
+        reader._test_mock_runner.run.return_value = mock_fresh_record
+        
+        record = reader._get_or_create_record(file_path, skip_cache=False, calculate_hashes=True)
+        assert record is mock_fresh_record
+        
+    def test_cache_hit_shallow_record_when_hashes_not_needed(self, metadata_reader_base, fs, mocker):
+        reader = metadata_reader_base
+        file_path = "/fake/shallow_hit.txt"
+        fs.create_file(file_path)
+        
+        mock_cached_record = MagicMock()
+        mock_cached_record.modified_time = os.path.getmtime(file_path)
+        mock_cached_record.hash_sha256 = None
+        mock_cached_record.record_json = "{}"
+        
+        reader._cache.get_record.return_value = mock_cached_record
+        
+        mock_record_instance = MagicMock()
+        mocker.patch("dorsal.file.validators.file_record.FileRecord.model_validate_json", return_value=mock_record_instance)
+        
+        record = reader._get_or_create_record(file_path, skip_cache=False, calculate_hashes=False)
+        assert record is mock_record_instance
+        assert record.source == "cache"
+
+    def test_exception_wrapping(self, metadata_reader_base, fs):
+        reader = metadata_reader_base
+        file_path = "/fake/error.txt"
+        fs.create_file(file_path)
+        
+        reader._cache.get_record.return_value = None
+        reader._test_mock_runner.run.side_effect = Exception("Original exception")
+        
+        with pytest.raises(DorsalError) as exc_info:
+            reader._get_or_create_record(file_path, skip_cache=False, calculate_hashes=True)
+            
+        assert isinstance(exc_info.value.original_exception, Exception)
+        assert "Original exception" in str(exc_info.value.original_exception)
+
+
+class TestMetadataReaderDirectoryCoverage:
+    @pytest.fixture
+    def reader_for_coverage(
+        self,
+        mocker,
+        mock_get_file_paths,
+        mock_dorsal_client_for_reader,
+        mock_model_runner_for_reader,
+        mock_dorsal_index,
+    ):
+        mocker.patch("dorsal.file.metadata_reader.get_shared_index", return_value=mock_dorsal_index)
+        with patch(
+            "dorsal.file.metadata_reader.ModelRunner",
+            return_value=mock_model_runner_for_reader,
+        ):
+            reader = MetadataReader(client=mock_dorsal_client_for_reader)
+            reader._test_mock_client = mock_dorsal_client_for_reader
+            reader._test_mock_runner = mock_model_runner_for_reader
+            reader._test_mock_get_file_paths = mock_get_file_paths
+            yield reader
+
+    def test_generate_processed_records_symlink_error_and_missing_hash(
+        self, reader_for_coverage, temp_dir_with_files, mocker
+    ):
+        reader = reader_for_coverage
+        f1 = str(temp_dir_with_files / "f1.txt")
+        (temp_dir_with_files / "f1.txt").touch()
+        
+        reader._test_mock_get_file_paths.return_value = [f1]
+        
+        mocker.patch("pathlib.Path.resolve", side_effect=OSError("Symlink loop"))
+        
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = ""  
+        reader._test_mock_runner.run.return_value = mock_record
+        
+        records, path_map = reader.generate_processed_records_from_directory(
+            dir_path=str(temp_dir_with_files), follow_symlinks=True, calculate_hashes=True
+        )
+        
+        assert len(records) == 0
+        assert len(path_map) == 0
+
+    def test_generate_processed_records_skipped_duplicate(
+        self, reader_for_coverage, temp_dir_with_files
+    ):
+        reader = reader_for_coverage
+        reader._ignore_duplicates = True
+        
+        f1 = str(temp_dir_with_files / "f1.txt")
+        (temp_dir_with_files / "f1.txt").touch()
+        f2 = str(temp_dir_with_files / "f2.txt")
+        (temp_dir_with_files / "f2.txt").touch()
+        
+        reader._test_mock_get_file_paths.return_value = [f1, f2]
+        
+        mock_record = MagicMock(spec=FileRecordStrict)
+        mock_record.hash = "same_hash"
+        reader._test_mock_runner.run.side_effect = [mock_record, mock_record]
+        
+        records, path_map = reader.generate_processed_records_from_directory(
+            dir_path=str(temp_dir_with_files), calculate_hashes=True
+        )
+        
+        assert len(records) == 1
+        assert path_map["same_hash"] == f1
+
+    def test_generate_processed_records_dorsal_error(
+        self, reader_for_coverage, temp_dir_with_files
+    ):
+        reader = reader_for_coverage
+        f1 = str(temp_dir_with_files / "f1.txt")
+        (temp_dir_with_files / "f1.txt").touch()
+        
+        reader._test_mock_get_file_paths.return_value = [f1]
+        
+        dorsal_err = DorsalError("Model failed")
+        dorsal_err.original_exception = ValueError("Internal model err")
+        reader._test_mock_runner.run.side_effect = dorsal_err
+        
+        records, path_map = reader.generate_processed_records_from_directory(
+            dir_path=str(temp_dir_with_files)
+        )
+        
+        assert len(records) == 0
