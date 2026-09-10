@@ -129,6 +129,22 @@ def test_upsert_hash_and_get_hash(mock_lstat, temp_index: DorsalIndex):
     assert fetched_hash == "abc123blake"
 
 
+def test_upsert_hash_patches_shallow_record(temp_index: DorsalIndex, mock_file_record_strict):
+    """Test that upsert_hash correctly modifies the JSON blob of an existing shallow record."""
+    path = "/fake/shallow_record.pdf"
+    mtime = 100.0
+
+    temp_index.upsert_record(path=path, modified_time=mtime, record=mock_file_record_strict)
+
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="SHA-256", hash_value="patched_hash_value")
+
+    fetched = temp_index.get_record(path=path)
+    assert fetched is not None
+
+    data = json.loads(fetched.record_json)
+    assert data.get("hash") == "patched_hash_value"
+
+
 @patch("os.path.exists")
 @patch("os.lstat")
 def test_prune_removes_stale_records_and_indexes(
@@ -542,6 +558,8 @@ def test_summary_base_metrics_only(temp_index: DorsalIndex, mock_file_record_str
     summary = temp_index.summary()
 
     assert "total_records" in summary
+    assert "deep_records" in summary
+    assert "shallow_records" in summary
     assert summary["total_records"] == 1
     assert "database_size_bytes" not in summary
 
@@ -756,7 +774,7 @@ def test_rebuild_full_coverage(temp_index, mock_file_record_strict, mocker):
             raise ValueError("Simulated parse error")
         return mock_file_record_strict
 
-    mocker.patch("dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", side_effect=mock_validate)
+    mocker.patch("dorsal.file.validators.file_record.FileRecord.model_validate_json", side_effect=mock_validate)
 
     temp_index.upsert_record(path="/test1", modified_time=10.0, record=mock_file_record_strict)
     temp_index.upsert_record(path="/test2", modified_time=10.0, record=mock_file_record_strict)
@@ -843,7 +861,7 @@ def test_zstd_compressor_import_total_failure(temp_index, mocker):
 def test_rebuild_post_loop_flush(temp_index, mock_file_record_strict, mocker):
     """Hits the post-loop flush blocks (if batch_fts: ...) in rebuild."""
     mocker.patch(
-        "dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", return_value=mock_file_record_strict
+        "dorsal.file.validators.file_record.FileRecord.model_validate_json", return_value=mock_file_record_strict
     )
 
     temp_index.upsert_record(path="/flush_me", modified_time=1.0, record=mock_file_record_strict)
