@@ -2113,6 +2113,7 @@ def generate_html_file_report(
     template: str = "default",
     use_cache: bool = True,
     api_key: str | None = None,
+    calculate_hashes: bool = True,
 ) -> str | None:
     """
     Generates a self-contained HTML report for a single local file.
@@ -2167,7 +2168,7 @@ def generate_html_file_report(
     logger.debug(f"Generating HTML report for: '{file_path}' using template: '{template}'")
     try:
         if local_file is None:
-            local_file = scan_file(file_path, use_cache=use_cache, api_key=api_key)
+            local_file = scan_file(file_path, use_cache=use_cache, api_key=api_key, calculate_hashes=calculate_hashes)
 
         template_file, template_base_dir = resolve_template_path(report_type="file", name_or_path=template)
 
@@ -2185,6 +2186,7 @@ def generate_html_file_report(
         }
 
         local_fs_info = {
+            "record_id": local_file.record_id,
             "full_path": local_file.file_path,
             "date_created": {
                 "human": local_file.date_created.strftime("%Y-%m-%d %H:%M:%S"),
@@ -2232,6 +2234,7 @@ def generate_html_directory_report(
     template: str = "default",
     use_cache: bool = True,
     recursive: bool = False,
+    calculate_hashes: bool = True,
 ) -> str | None:
     """
     Generates a self-contained HTML dashboard for a directory of files.
@@ -2274,9 +2277,7 @@ def generate_html_directory_report(
     try:
         if local_collection is None:
             collection = LocalFileCollection(
-                source=dir_path,
-                recursive=recursive,
-                use_cache=use_cache,
+                source=dir_path, recursive=recursive, use_cache=use_cache, calculate_hashes=calculate_hashes
             )
         else:
             collection = local_collection

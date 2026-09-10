@@ -13,6 +13,22 @@ document.addEventListener('DOMContentLoaded', () => {
         closeBtn: null,
     };
 
+    // --- Universal Data Extractors ---
+    function getLocalData(file) {
+        if (!file) return {};
+        return file.local_attributes || file.local_filesystem || {};
+    }
+
+    function getFileRecordId(file) {
+        if (!file) return '';
+        const local = getLocalData(file);
+        return file.local_record_id      // Top-level cache (The missing key!)
+            || file.record_id            // Top-level fallback
+            || local.local_record_id     // Nested cache
+            || local.record_id           // Nested fallback
+            || '';
+    }
+
     const htmlLegendPlugin = {
         id: 'htmlLegend',
         afterUpdate(chart, args, options) {
@@ -88,10 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function mainInit() {
         const dataElement = document.getElementById('full-collection-data');
-        if (!dataElement) {
-            console.error("CRITICAL: Could not find 'full-collection-data' script tag.");
-            return;
-        }
+        if (!dataElement) return;
+
         const collectionData = JSON.parse(dataElement.textContent);
         ALL_FILES_DATA = collectionData.results || [];
 
@@ -112,34 +126,26 @@ document.addEventListener('DOMContentLoaded', () => {
         MODAL_ELEMENTS.closeBtn = document.getElementById('file-modal-close');
 
         const expandBtn = document.getElementById('expand-file-view-btn');
-
-        if (!MODAL_ELEMENTS.overlay || !expandBtn) {
-            return;
-        }
+        if (!MODAL_ELEMENTS.overlay || !expandBtn) return;
 
         MODAL_ELEMENTS.closeBtn.addEventListener('click', closeFileModal);
         MODAL_ELEMENTS.overlay.addEventListener('click', (e) => {
-            if (e.target === MODAL_ELEMENTS.overlay) {
-                closeFileModal();
-            }
+            if (e.target === MODAL_ELEMENTS.overlay) closeFileModal();
         });
 
         expandBtn.addEventListener('click', () => {
             const panel = document.querySelector('.mini-file-view-panel');
-            const fileHash = panel?.dataset.currentHash;
+            const fileId = panel?.dataset.currentId;
 
-            if (fileHash) {
-                const fileData = ALL_FILES_DATA.find(f => f.hash === fileHash);
-                if (fileData) {
-                    openFileModal(fileData);
-                }
+            if (fileId) {
+                const fileData = ALL_FILES_DATA.find(f => getFileRecordId(f) === fileId);
+                if (fileData) openFileModal(fileData);
             }
         });
     }
 
     function openFileModal(fileObject) {
         if (!MODAL_ELEMENTS.body) return;
-
         MODAL_ELEMENTS.title.textContent = fileObject.annotations['file/base'].record.name;
         MODAL_ELEMENTS.body.innerHTML = renderFullFileView(fileObject);
         document.body.classList.add('modal-open');
@@ -374,8 +380,10 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.addEventListener('click', (e) => {
             const fileLink = e.target.closest('.file-link');
             if (fileLink) {
-                const fileHash = fileLink.closest('tr').dataset.hash;
-                const fileData = files.find(f => f.hash === fileHash);
+                const tr = fileLink.closest('tr');
+                const fileId = tr.dataset.id;
+                const fileData = files.find(f => getFileRecordId(f) === fileId);
+
                 if (fileData) {
                     updateMiniFileView(fileData);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -396,19 +404,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const pageFiles = filteredFiles.slice(startIndex, startIndex + rowsPerPage);
 
             tableBody.innerHTML = pageFiles.map(file => {
-            const baseRecord = file.annotations['file/base'].record;
-            const localAttrs = file.local_attributes;
-            return `<tr data-hash="${file.hash}">
-                <td class="truncate-cell" data-tooltip="${escapeHtml(baseRecord.name)}" data-tooltip-placement="top">
-                    <span class="file-link">${escapeHtml(baseRecord.name)}</span>
-                </td>
-                <td>${humanFileSize(baseRecord.size)}</td>
-                <td class="truncate-cell" data-tooltip="${escapeHtml(baseRecord.media_type)}" data-tooltip-placement="top">
-                    <span>${escapeHtml(baseRecord.media_type)}</span>
-                </td>
-                <td data-tooltip="${new Date(localAttrs.date_modified).toLocaleString()}">${formatRelativeTime(new Date(localAttrs.date_modified))}</td>
-            </tr>`;
-        }).join('');
+                const baseRecord = file.annotations['file/base'].record;
+                const localAttrs = getLocalData(file);
+                const extractedId = getFileRecordId(file);
+                
+                return `<tr data-id="${extractedId}">
+                    <td class="truncate-cell" data-tooltip="${escapeHtml(baseRecord.name)}" data-tooltip-placement="top">
+                        <span class="file-link">${escapeHtml(baseRecord.name)}</span>
+                    </td>
+                    <td>${humanFileSize(baseRecord.size)}</td>
+                    <td class="truncate-cell" data-tooltip="${escapeHtml(baseRecord.media_type)}" data-tooltip-placement="top">
+                        <span>${escapeHtml(baseRecord.media_type)}</span>
+                    </td>
+                    <td class="mono" style="color: var(--accent-color);">${escapeHtml(extractedId)}</td>
+                    <td data-tooltip="${new Date(localAttrs.date_modified).toLocaleString()}">${formatRelativeTime(new Date(localAttrs.date_modified))}</td>
+                </tr>`;
+            }).join('');
 
             renderPagination();
             updateSortIndicators();
@@ -460,36 +471,65 @@ document.addEventListener('DOMContentLoaded', () => {
         const panel = document.querySelector('.mini-file-view-panel');
         if (!panel) return;
 
-        panel.dataset.currentHash = file.hash;
+        const extractedId = getFileRecordId(file);
+        panel.dataset.currentId = extractedId;
         const baseRecord = file.annotations['file/base'].record;
-        const localAttrs = file.local_attributes;
-        const modifiedDate = new Date(localAttrs.date_modified);
-        const createdDate = new Date(localAttrs.date_created);
+        const localAttrs = getLocalData(file);
+
+        let modifiedStr = 'N/A';
+        let createdStr = 'N/A';
+
+        if (localAttrs.date_modified) {
+            const mDate = new Date(localAttrs.date_modified);
+            if (!isNaN(mDate)) {
+                modifiedStr = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}-${String(mDate.getDate()).padStart(2, '0')} ${String(mDate.getHours()).padStart(2, '0')}:${String(mDate.getMinutes()).padStart(2, '0')}`;
+            }
+        }
+
+        if (localAttrs.date_created) {
+            const cDate = new Date(localAttrs.date_created);
+            if (!isNaN(cDate)) {
+                createdStr = `${cDate.getFullYear()}-${String(cDate.getMonth() + 1).padStart(2, '0')}-${String(cDate.getDate()).padStart(2, '0')} ${String(cDate.getHours()).padStart(2, '0')}:${String(cDate.getMinutes()).padStart(2, '0')}`;
+            }
+        }
 
         panel.querySelector('.panel-content').innerHTML = `
             <div class="mini-section">
                 <div class="grid-single-col" style="gap: 0.75rem;">
                     <div class="grid-item"><span class="label">Name</span><div class="value" data-tooltip="${escapeHtml(baseRecord.name)}" data-tooltip-placement="top">${escapeHtml(baseRecord.name)}</div></div>
                     <div class="grid-item"><span class="label">Extension</span><span class="value ${!baseRecord.extension ? 'subdued' : ''}">${baseRecord.extension ? escapeHtml(baseRecord.extension) : 'None'}</span></div>
+                    <div class="grid-item"><span class="label">Record ID</span><span class="value mono" style="color: var(--accent-color);">${escapeHtml(extractedId)}</span></div>
                     <div class="grid-item"><span class="label">Size</span><span class="value">${humanFileSize(baseRecord.size)}</span></div>
                     <div class="grid-item"><span class="label">Media Type</span><span class="value mono">${escapeHtml(baseRecord.media_type)}</span></div>
-                    <div class="grid-item"><span class="label">Modified</span><span class="value">${modifiedDate.getFullYear()}-${String(modifiedDate.getMonth() + 1).padStart(2, '0')}-${String(modifiedDate.getDate()).padStart(2, '0')} ${String(modifiedDate.getHours()).padStart(2, '0')}:${String(modifiedDate.getMinutes()).padStart(2, '0')}</span></div>
-                    <div class="grid-item"><span class="label">Created</span><span class="value">${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')} ${String(createdDate.getHours()).padStart(2, '0')}:${String(createdDate.getMinutes()).padStart(2, '0')}</span></div>
+                    <div class="grid-item"><span class="label">Modified</span><span class="value">${modifiedStr}</span></div>
+                    <div class="grid-item"><span class="label">Created</span><span class="value">${createdStr}</span></div>
                 </div>
             </div>`;
     }
 
     function renderFullFileView(file) {
         const baseRecord = file.annotations['file/base'].record;
-        const localAttrs = file.local_attributes;
+        const localAttrs = getLocalData(file);
         const fileSize = { human: humanFileSize(baseRecord.size), raw: `${baseRecord.size} bytes` };
-        const modifiedDate = { human: new Date(localAttrs.date_modified).toLocaleString(), raw: localAttrs.date_modified };
-        const createdDate = { human: new Date(localAttrs.date_created).toLocaleString(), raw: localAttrs.date_created };
+        
+        const mDate = localAttrs.date_modified ? new Date(localAttrs.date_modified) : null;
+        const cDate = localAttrs.date_created ? new Date(localAttrs.date_created) : null;
+        
+        const modifiedDate = { 
+            human: (mDate && !isNaN(mDate)) ? mDate.toLocaleString() : 'N/A', 
+            raw: localAttrs.date_modified || 'N/A' 
+        };
+        const createdDate = { 
+            human: (cDate && !isNaN(cDate)) ? cDate.toLocaleString() : 'N/A', 
+            raw: localAttrs.date_created || 'N/A' 
+        };
+        
+        const extractedId = getFileRecordId(file);
 
         const renderHash = (label, tooltip, url, value) => value ? `
             <div class="grid-item">
                 <span class="label" data-tooltip="${tooltip}" data-tooltip-placement="top">
-                    <a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>
+                    ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>` : label}
                 </span>
                 <div class="hash-container"><span class="hash-value">${escapeHtml(value)}</span>
                     <svg class="copy-icon" data-copy-text="${escapeHtml(value)}" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
@@ -529,6 +569,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tagsHtml = (file.tags || []).map(tag => `<span class="tag">${escapeHtml(tag.name)}: ${escapeHtml(tag.value)}</span>`).join('');
 
+        const hashes = baseRecord.all_hash_ids || {};
+        const sha256_val = file.hash || hashes['SHA-256'];
+        const blake3_val = hashes['BLAKE3'];
+        const md5_val = hashes['MD5'];
+        const sha1_val = hashes['SHA-1'];
+        const dorsal_val = file.validation_hash || hashes['DORSAL'];
+        const tlsh_val = file.similarity_hash || hashes['TLSH'];
+        const quick_val = file.quick_hash || hashes['QUICK'];
+
+        let hashHtml = '';
+        if (!sha256_val && !dorsal_val && !quick_val) {
+            hashHtml = '<div class="grid-item"><span class="value subdued">No hashes calculated (Shallow Record)</span></div>';
+        } else {
+            hashHtml += renderHash('SHA-256', 'Cryptographic hash for verifying file integrity.', 'https://en.wikipedia.org/wiki/SHA-2', sha256_val);
+            hashHtml += renderHash('BLAKE3', 'A modern, high-speed cryptographic hash.', 'https://en.wikipedia.org/wiki/BLAKE_(hash_function)', blake3_val);
+            hashHtml += renderHash('MD5', 'A legacy cryptographic hash, widely used for basic checksums.', 'https://en.wikipedia.org/wiki/MD5', md5_val);
+            hashHtml += renderHash('SHA-1', 'A legacy cryptographic hash.', 'https://en.wikipedia.org/wiki/SHA-1', sha1_val);
+            hashHtml += renderHash('DORSAL', 'Dorsalhub validation hash.', null, dorsal_val);
+            hashHtml += renderHash('TLSH', 'A locality-sensitive hash used to detect similar (but not identical) files.', 'https://en.wikipedia.org/wiki/Locality-sensitive_hashing', tlsh_val);
+            hashHtml += renderHash('Quick Hash', 'A fast, sample-based hash for quick identification.', 'http://docs.dorsalhub.com/quick', quick_val);
+        }
+
         return `
             <main>
                 <div class="tabs">
@@ -539,16 +601,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="section"><div class="grid">
                         <div class="grid-item"><div class="label">Name</div><div class="value">${escapeHtml(baseRecord.name)}</div></div>
                         <div class="grid-item"><div class="label">Extension</div><div class="value ${!baseRecord.extension ? 'subdued' : ''}">${baseRecord.extension ? escapeHtml(baseRecord.extension) : 'None'}</div></div>
+                        <div class="grid-item"><div class="label" data-tooltip="The unique local identifier for this specific file state." data-tooltip-placement="top">Record ID</div><div class="value mono" style="font-family: var(--font-mono); color: var(--accent-color);">${escapeHtml(extractedId)}</div></div>
                         <div class="grid-item"><div class="label">Size</div><div class="value" data-toggle="value" data-human="${fileSize.human}" data-raw="${fileSize.raw}">${fileSize.human}</div></div>
                         <div class="grid-item"><div class="label">Media Type</div><div class="value mono">${escapeHtml(baseRecord.media_type)}</div></div>
                         <div class="grid-item"><div class="label">Date Modified (Local)</div><div class="value" data-toggle="value" data-human="${modifiedDate.human}" data-raw="${modifiedDate.raw}">${modifiedDate.human}</div></div>
                         <div class="grid-item"><div class="label">Date Created (Local)</div><div class="value" data-toggle="value" data-human="${createdDate.human}" data-raw="${createdDate.raw}">${createdDate.human}</div></div>
                     </div></div>
                     <div class="section"><h2 class="section-title">Content Hashes</h2><div class="grid-single-col">
-                        ${renderHash('SHA-256', 'Cryptographic hash for verifying file integrity.', 'https://en.wikipedia.org/wiki/SHA-2', file.hash)}
-                        ${renderHash('BLAKE3', 'A modern, high-speed cryptographic hash.', 'https://en.wikipedia.org/wiki/BLAKE_(hash_function)', file.validation_hash)}
-                        ${renderHash('TLSH', 'A locality-sensitive hash used to detect similar (but not identical) files.', 'https://en.wikipedia.org/wiki/Locality-sensitive_hashing', file.similarity_hash)}
-                        ${renderHash('Quick Hash', 'A fast, sample-based hash for quick identification of large files.', 'http://docs.dorsalhub.com/quick', file.quick_hash)}
+                        ${hashHtml}
                     </div></div>
                     ${annotationsHtml ? `<div class="section"><h2 class="section-title">Annotations</h2><div class="accordion">${annotationsHtml}</div></div>` : ''}
                     ${tagsHtml ? `<div class="section"><h2 class="section-title">Tags</h2><div>${tagsHtml}</div></div>` : ''}
@@ -645,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'name': return file.annotations['file/base'].record.name;
             case 'size': return file.annotations['file/base'].record.size;
             case 'media_type': return file.annotations['file/base'].record.media_type;
-            case 'date_modified': return new Date(file.local_attributes.date_modified);
+            case 'date_modified': return new Date(getLocalData(file).date_modified);
             default: return '';
         }
     }
@@ -661,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatRelativeTime(date) {
+        if (!date || isNaN(date)) return 'Unknown';
         const seconds = Math.round((new Date() - date) / 1000);
         if (seconds < 5) return "just now";
         if (seconds < 60) return `${seconds} sec ago`;

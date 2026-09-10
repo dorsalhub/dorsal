@@ -375,6 +375,7 @@ def _process_file_scan(
                         local_file=local_file,
                         output_path=str(final_path),
                         template=template,
+                        calculate_hashes=calculate_hashes,
                     )
                 console.print(f"✅ HTML report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
             except Exception as e:

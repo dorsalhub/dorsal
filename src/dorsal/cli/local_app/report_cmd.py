@@ -46,6 +46,15 @@ def report_target(
             resolve_path=True,
         ),
     ] = None,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            "-d",
+            help="Perform a deep scan, calculating all cryptographic hashes for the file.",
+            rich_help_panel="Scan Options",
+        ),
+    ] = False,
     template: Annotated[
         str,
         typer.Option("--template", "-t", help="Name or path of the report template to use."),
@@ -128,6 +137,7 @@ def report_target(
                     template=template,
                     use_cache=use_cache_value,
                     recursive=recursive,
+                    calculate_hashes=deep,
                 )
             else:
                 generate_html_file_report(
@@ -135,6 +145,7 @@ def report_target(
                     output_path=str(final_output_path),
                     template=template,
                     use_cache=use_cache_value,
+                    calculate_hashes=deep,
                 )
         except DorsalError as err:
             exit_cli(code=EXIT_CODE_ERROR, message=f"Failed to generate report: {err}")

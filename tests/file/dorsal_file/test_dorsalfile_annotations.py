@@ -16,6 +16,7 @@ import datetime
 import pytest
 from unittest.mock import MagicMock, patch
 from dorsal.file.dorsal_file import LocalFile
+from dorsal.file.validators.file_record import FileRecordStrict
 from dorsal.common.exceptions import AttributeConflictError, FileAnnotatorError
 from pydantic import ValidationError
 from types import SimpleNamespace
@@ -32,7 +33,7 @@ def mock_local_file():
         lf.validation_hash = "b" * 64
         lf._model_runner = MagicMock()
 
-        lf.model = MagicMock()
+        lf.model = MagicMock(spec=FileRecordStrict)
         lf.model.annotations = SimpleNamespace()
 
         lf.model.annotations.__pydantic_extra__ = {}

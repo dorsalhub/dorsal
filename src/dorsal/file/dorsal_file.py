@@ -2900,6 +2900,8 @@ class LocalFile(_DorsalFile):
             logger.warning(f"Could not retrieve local file stats for {self.file_path}: {e}")
             local_info["error"] = f"Failed to retrieve local file info: {e}"
 
+        local_info["record_id"] = self.record_id
+
         return local_info
 
     def to_dict(

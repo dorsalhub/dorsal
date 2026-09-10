@@ -98,6 +98,7 @@ def test_report_dir_success(mock_rich_console, mock_generators, tmp_path):
         template="default",
         use_cache=True,  # default returned by determine_use_cache_value if no flags passed
         recursive=True,
+        calculate_hashes=False,
     )
     mock_generators["file"].assert_not_called()
 
@@ -116,14 +117,23 @@ def test_report_output_inference(mock_generators, tmp_path):
     runner.invoke(app, ["local", "report", str(target_file), "--output", str(out_dir)])
     expected_file_path = out_dir / "test_report.html"
     mock_generators["file"].assert_called_with(
-        file_path=str(target_file), output_path=str(expected_file_path), template=ANY, use_cache=ANY
+        file_path=str(target_file),
+        output_path=str(expected_file_path),
+        template=ANY,
+        use_cache=ANY,
+        calculate_hashes=ANY,
     )
 
     # Output to directory (Directory Target)
     runner.invoke(app, ["local", "report", str(target_dir), "--output", str(out_dir)])
     expected_dir_path = out_dir / "dir-test_dir_report.html"
     mock_generators["dir"].assert_called_with(
-        dir_path=str(target_dir), output_path=str(expected_dir_path), template=ANY, use_cache=ANY, recursive=ANY
+        dir_path=str(target_dir),
+        output_path=str(expected_dir_path),
+        template=ANY,
+        use_cache=ANY,
+        recursive=ANY,
+        calculate_hashes=ANY,
     )
 
 

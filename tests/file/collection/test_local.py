@@ -54,6 +54,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         skip_cache=False,
         overwrite_cache=False,
         follow_symlinks=True,
+        calculate_hashes=True,
         lazy=False,
     )
     assert len(collection) == 1

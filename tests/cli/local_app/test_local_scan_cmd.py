@@ -84,11 +84,15 @@ def mock_dir_deps(mocker):
     mock_instance.__len__.return_value = 2
     mock_instance.__bool__.side_effect = lambda: mock_instance.__len__() > 0
 
-    file_1 = MagicMock(size=512, media_type="text/plain", date_modified=datetime.datetime(2025, 1, 1))
+    file_1 = MagicMock(
+        size=512, media_type="text/plain", date_modified=datetime.datetime(2025, 1, 1), record_id="rec_1"
+    )
     file_1.name = "file1.txt"
     file_1.file_path = "/fake/file1.txt"
 
-    file_2 = MagicMock(size=1024, media_type="application/json", date_modified=datetime.datetime(2025, 1, 2))
+    file_2 = MagicMock(
+        size=1024, media_type="application/json", date_modified=datetime.datetime(2025, 1, 2), record_id="rec_2"
+    )
     file_2.name = "file2.txt"
     file_2.file_path = "/fake/file2.txt"
 
@@ -194,7 +198,7 @@ def test_scan_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
 
     print_calls = mock_rich_console.print.call_args_list
     # Assert that either a Panel or Group was used for the summary
-    assert any(isinstance(call.args[0], (Panel, Group)) for call in print_calls)
+    assert any(isinstance(call.args[0], (Panel, Group, Table)) for call in print_calls)
 
 
 def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):

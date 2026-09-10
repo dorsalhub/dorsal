@@ -197,7 +197,7 @@ def test_set_validation_hash_invalid_format(mock_dorsal_client, mock_file_record
     mock_dorsal_client.download_file_record.return_value = initial_record
     df = DorsalFile(hash_string="a" * 64, client=mock_dorsal_client)
 
-    with pytest.raises(ValueError, match="is not a valid BLAKE3 hash format"):
+    with pytest.raises(ValueError, match="is not a valid DORSAL hash format"):
         df.set_validation_hash("not-a-valid-hash")
 
 

@@ -13,7 +13,6 @@
                  <h3 class="sub-header">{{ current_key }}</h3>
                  <div class="nested-item">
                     {%- for item in value -%}
-                         {# Fix: Check if item is mapping before recursing #}
                          {%- if item is mapping -%}
                              {{ render_annotation_fields(item, parent_key=current_key ~ ' (' ~ loop.index ~ ') -> ') }}
                          {%- else -%}
@@ -34,6 +33,20 @@
     {%- endfor -%}
 {%- endmacro -%}
 
+{%- macro render_hash(label, value, tooltip, link=None) -%}
+    {%- if value -%}
+    <div class="grid-item">
+        <span class="label" data-tooltip="{{ tooltip }}" data-tooltip-placement="top">
+            {% if link %}<a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ label }}</a>{% else %}{{ label }}{% endif %}
+        </span>
+        <div class="hash-container">
+            <span class="hash-value">{{ value }}</span>
+            <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
+        </div>
+    </div>
+    {%- endif -%}
+{%- endmacro -%}
+
 <main>
     <div class="tabs">
         <span class="tab-link active" data-target="#tab-info">File Information</span>
@@ -50,6 +63,10 @@
                  <div class="grid-item">
                     <div class="label">Extension</div>
                     <div class="value {% if not file['annotations']['file/base']['record']['extension'] %}subdued{% endif %}">{{ file['annotations']['file/base']['record']['extension'] or 'None' }}</div>
+                </div>
+                <div class="grid-item">
+                    <div class="label" data-tooltip="The unique local identifier for this specific file state." data-tooltip-placement="top">Record ID</div>
+                    <div class="value mono" style="font-family: var(--font-mono); color: var(--accent-color);">{{ local_filesystem_info['record_id'] }}</div>
                 </div>
                 <div class="grid-item">
                     <div class="label">Size</div>
@@ -73,45 +90,25 @@
         <div class="section">
             <h2 class="section-title">Content Hashes</h2>
             <div class="grid-single-col">
-                <div class="grid-item">
-                    <span class="label" data-tooltip="Cryptographic hash for verifying file integrity." data-tooltip-placement="top">
-                        <a href="https://en.wikipedia.org/wiki/SHA-2" target="_blank" rel="noopener noreferrer">SHA-256</a>
-                    </span>
-                    <div class="hash-container">
-                        <span class="hash-value">{{ file['hash'] }}</span>
-                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
-                    </div>
-                </div>
-                <div class="grid-item">
-                    <span class="label" data-tooltip="A modern, high-speed cryptographic hash." data-tooltip-placement="top">
-                        <a href="https://en.wikipedia.org/wiki/BLAKE_(hash_function)" target="_blank" rel="noopener noreferrer">BLAKE3</a>
-                    </span>
-                     <div class="hash-container">
-                        <span class="hash-value">{{ file['validation_hash'] }}</span>
-                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
-                    </div>
-                </div>
-                {% if file['similarity_hash'] %}
-                <div class="grid-item">
-                    <span class="label" data-tooltip="A locality-sensitive hash used to detect similar (but not identical) files." data-tooltip-placement="top">
-                       <a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing" target="_blank" rel="noopener noreferrer">TLSH</a>
-                    </span>
-                     <div class="hash-container">
-                        <span class="hash-value">{{ file['similarity_hash'] }}</span>
-                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
-                    </div>
-                </div>
-                {% endif %}
-                {% if file.get('quick_hash') %}
-                <div class="grid-item">
-                    <span class="label" data-tooltip="A fast, sample-based hash for quick identification of large files." data-tooltip-placement="top">
-                        <a href="http://docs.dorsalhub.com/quick" target="_blank" rel="noopener noreferrer">Quick Hash</a>
-                    </span>
-                     <div class="hash-container">
-                        <span class="hash-value">{{ file['quick_hash'] }}</span>
-                        <svg class="copy-icon" title="Copy to clipboard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
-                    </div>
-                </div>
+                {% set hashes = file.get('annotations', {}).get('file/base', {}).get('record', {}).get('all_hash_ids', {}) %}
+                {% set sha256_val = file.get('hash') or hashes.get('SHA-256') %}
+                {% set blake3_val = hashes.get('BLAKE3') %}
+                {% set md5_val = hashes.get('MD5') %}
+                {% set sha1_val = hashes.get('SHA-1') %}
+                {% set dorsal_val = file.get('validation_hash') or hashes.get('DORSAL') %}
+                {% set tlsh_val = file.get('similarity_hash') or hashes.get('TLSH') %}
+                {% set quick_val = file.get('quick_hash') or hashes.get('QUICK') %}
+
+                {% if not sha256_val and not dorsal_val and not quick_val %}
+                    <div class="grid-item"><span class="value subdued">No hashes calculated</span></div>
+                {% else %}
+                    {{ render_hash('SHA-256', sha256_val, 'Cryptographic hash for verifying file integrity.', 'https://en.wikipedia.org/wiki/SHA-2') }}
+                    {{ render_hash('BLAKE3', blake3_val, 'A modern, high-speed cryptographic hash.', 'https://en.wikipedia.org/wiki/BLAKE_(hash_function)') }}
+                    {{ render_hash('MD5', md5_val, 'A legacy cryptographic hash, widely used for basic checksums.', 'https://en.wikipedia.org/wiki/MD5') }}
+                    {{ render_hash('SHA-1', sha1_val, 'A legacy cryptographic hash.', 'https://en.wikipedia.org/wiki/SHA-1') }}
+                    {{ render_hash('DORSAL', dorsal_val, 'Dorsal\'s proprietary BLAKE3-based validation hash.') }}
+                    {{ render_hash('TLSH', tlsh_val, 'A locality-sensitive hash used to detect similar files.', 'https://en.wikipedia.org/wiki/Locality-sensitive_hashing') }}
+                    {{ render_hash('Quick Hash', quick_val, 'A fast, sample-based hash for quick identification.', 'http://docs.dorsalhub.com/quick') }}
                 {% endif %}
             </div>
         </div>

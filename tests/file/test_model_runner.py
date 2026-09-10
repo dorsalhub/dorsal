@@ -206,6 +206,9 @@ class MockBaseAnnotationModel(AnnotationModel):
             "all_hashes": [
                 {"id": "SHA-256", "value": "a" * 64},
                 {"id": "BLAKE3", "value": "b" * 64},
+                {"id": "MD5", "value": "c" * 32},
+                {"id": "SHA-1", "value": "d" * 40},
+                {"id": "DORSAL", "value": "e" * 64},
             ],
         }
 
@@ -614,7 +617,7 @@ class TestModelRunnerResultMerging:
         assert isinstance(annotations_list, list)
         assert len(annotations_list) == 2
 
-    def test_merge_missing_blake3_hash_raises_error(self, mock_fs, mocker):
+    def test_merge_missing_dorsal_hash_raises_error(self, mock_fs, mocker):
         mocker.patch.object(
             MockBaseAnnotationModel,
             "main",
@@ -624,7 +627,13 @@ class TestModelRunnerResultMerging:
                 "extension": ".txt",
                 "size": 123,
                 "media_type": "text/plain",
-                "all_hashes": [{"id": "SHA-256", "value": "a" * 64}],
+                "all_hashes": [
+                    {"id": "SHA-256", "value": "a" * 64},
+                    {"id": "BLAKE3", "value": "b" * 64},
+                    {"id": "MD5", "value": "c" * 32},
+                    {"id": "SHA-1", "value": "d" * 40},
+                    {"id": "QUICK", "value": "e" * 64},
+                ],
             },
         )
         runner = ModelRunner(pipeline_config=[])
@@ -809,7 +818,13 @@ class TestModelRunnerAdvanced:
                 "extension": ".txt",
                 "size": 10,
                 "media_type": "text/plain",
-                "all_hashes": [{"id": "SHA-256", "value": "a" * 64}, {"id": "BLAKE3", "value": "b" * 64}],
+                "all_hashes": [
+                    {"id": "SHA-256", "value": "a" * 64},
+                    {"id": "BLAKE3", "value": "b" * 64},
+                    {"id": "MD5", "value": "c" * 32},
+                    {"id": "SHA-1", "value": "d" * 40},
+                    {"id": "QUICK", "value": "e" * 64},
+                ],
             },
         )
 

@@ -260,7 +260,9 @@ class TestMetadataReaderInternalRunModels:
         result = reader._run_models(file_path=file_path)
 
         assert result is mock_record
-        reader._test_mock_runner.run.assert_called_once_with(file_path=file_path, follow_symlinks=True)
+        reader._test_mock_runner.run.assert_called_once_with(
+            file_path=file_path, follow_symlinks=True, calculate_hashes=True
+        )
 
     def test_run_models_file_not_found(self, metadata_reader_base, caplog):
         reader = metadata_reader_base
@@ -304,7 +306,7 @@ class TestMetadataReaderInternalRunModels:
             side_effect_exception = internal_exception("mock error")
         reader._test_mock_runner.run.side_effect = side_effect_exception
 
-        with pytest.raises(DorsalClientError) as exc_info:
+        with pytest.raises(DorsalError) as exc_info:
             reader._run_models(file_path=file_path)
 
         assert isinstance(exc_info.value.original_exception, internal_exception)
@@ -335,7 +337,9 @@ class TestMetadataReaderIndexFile:
         response = reader.index_file(file_path=file_path, public=False)
 
         assert response is client_response_mock
-        mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
+        mock_get_record.assert_called_once_with(
+            file_path=file_path, skip_cache=False, overwrite_cache=False, calculate_hashes=True
+        )
         reader._test_mock_client.index_private_file_records.assert_called_once_with(file_records=[mock_file_record])
         assert response.results[0].file_path == file_path
         assert "newly indexed" in caplog.text
@@ -363,7 +367,9 @@ class TestMetadataReaderIndexFile:
         response = reader.index_file(file_path=file_path, public=True)
 
         assert response is client_response_mock
-        mock_get_record.assert_called_once_with(file_path=file_path, skip_cache=False, overwrite_cache=False)
+        mock_get_record.assert_called_once_with(
+            file_path=file_path, skip_cache=False, overwrite_cache=False, calculate_hashes=True
+        )
         reader._test_mock_client.index_public_file_records.assert_called_once_with(file_records=[mock_file_record])
         assert response.results[0].file_path == file_path
         assert "updated/existing" in caplog.text
@@ -518,7 +524,7 @@ class TestMetadataReaderIndexDirectory:
         reader = reader_for_index_dir
         dir_path = "/protected_dir"
         reader._test_mock_get_file_paths.side_effect = OSError("Scan permission denied")
-        with pytest.raises(DorsalClientError) as exc_info:
+        with pytest.raises(DorsalError) as exc_info:
             reader.index_directory(dir_path=dir_path)
         assert isinstance(exc_info.value.original_exception, OSError)
 

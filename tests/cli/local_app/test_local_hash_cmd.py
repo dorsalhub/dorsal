@@ -34,6 +34,9 @@ MOCK_HASHES = {
     "BLAKE3": "blake3_hash_value",
     "TLSH": "tlsh_hash_value",
     "QUICK": "quick_hash_value",
+    "SHA-1": "sha1_hash_value",
+    "MD5": "md5_hash_balue",
+    "DORSAL": "dorsal_hash_value",
 }
 
 
@@ -63,6 +66,9 @@ def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd):
         "BLAKE3",
         "TLSH",
         "QUICK",
+        "SHA-1",
+        "MD5",
+        "DORSAL",
     }
     panel_output = mock_rich_console.print.call_args.args[0]
     assert isinstance(panel_output, Panel)

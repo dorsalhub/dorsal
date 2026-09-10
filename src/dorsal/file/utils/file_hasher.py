@@ -28,6 +28,8 @@ from dorsal.file.utils.hashes import HashFunctionId
 
 logger = logging.getLogger(__name__)
 
+DORSAL_KEY_CONTEXT = "Dorsal Validation Hash Context"
+
 
 class FileHasher:
     """
@@ -43,7 +45,7 @@ class FileHasher:
         "BLAKE3": blake3.blake3,
         "MD5": hashlib.md5,
         "SHA-1": hashlib.sha1,
-        "DORSAL": lambda: blake3.blake3(derive_key_context="Dorsal Validation Hash Context"),
+        "DORSAL": lambda: blake3.blake3(derive_key_context=DORSAL_KEY_CONTEXT),
     }
     chunk_size: int = 4 * MiB
     tlsh_min_size: int = 50
@@ -349,7 +351,7 @@ class FileHasher:
         Calculates the personalized BLAKE3 hash for a single file.
         """
         logger.debug("DORSAL (validation) hashing file: '%s'", file_path)
-        hasher = blake3.blake3(derive_key_context="Dorsal Validation Hash Context")
+        hasher = blake3.blake3(derive_key_context=DORSAL_KEY_CONTEXT)
         try:
             with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
                 for chunk in self._yield_chunks(fp):

@@ -37,6 +37,7 @@ import pytest
 import os
 import logging
 from pathlib import Path
+from unittest.mock import patch
 import time
 
 import blake3
@@ -46,6 +47,7 @@ from dorsal.common import constants
 from dorsal.common import cli as common_cli
 from dorsal.file.index.dorsal_index import DorsalIndex
 from dorsal.file.validators.file_record import FileRecordStrict
+from dorsal.file.utils.file_hasher import DORSAL_KEY_CONTEXT
 from dorsal.session import clear_shared_index
 
 
@@ -136,7 +138,7 @@ def mock_auth_app(mocker):
 
 @pytest.fixture
 def make_mock_record():
-    """Factory to create bulletproof FileRecordStrict objects for testing."""
+    """Factory to create FileRecordStrict objects for testing."""
 
     def _make(
         abspath: str, ext: str = ".pdf", size: int = 1024, tags: dict = None, arxiv_title: str = None
@@ -144,6 +146,9 @@ def make_mock_record():
 
         dummy_sha256 = hashlib.sha256(abspath.encode("utf-8")).hexdigest()
         dummy_blake3 = blake3.blake3(abspath.encode("utf-8")).hexdigest()
+        dummy_sha1 = hashlib.sha1(abspath.encode("utf-8")).hexdigest()
+        dummy_md5 = hashlib.md5(abspath.encode("utf-8")).hexdigest()
+        dummy_dorsal = blake3.blake3(abspath.encode("utf-8"), derive_key_context=DORSAL_KEY_CONTEXT).hexdigest()
 
         annotations = {
             "file/base": {
@@ -153,7 +158,13 @@ def make_mock_record():
                     "extension": ext,
                     "size": size,
                     "media_type": f"application/{ext.strip('.')}",
-                    "all_hash_ids": {"SHA-256": dummy_sha256, "BLAKE3": dummy_blake3},
+                    "all_hash_ids": {
+                        "SHA-256": dummy_sha256,
+                        "BLAKE3": dummy_blake3,
+                        "SHA-1": dummy_sha1,
+                        "MD5": dummy_md5,
+                        "DORSAL": dummy_dorsal,
+                    },
                 },
                 "schema_id": "file/base",
                 "source": {"type": "Model", "id": "test_mock", "version": "1.0"},
@@ -181,7 +192,7 @@ def make_mock_record():
 
         record_dict = {
             "hash": dummy_sha256,
-            "validation_hash": dummy_blake3,
+            "validation_hash": dummy_dorsal,
             "annotations": annotations,
             "tags": tag_list,
             "urls": [],
@@ -203,15 +214,15 @@ def test_index(tmp_path, make_mock_record) -> DorsalIndex:
     index = DorsalIndex(db_path=db_path, use_compression=False)
 
     rec1 = make_mock_record("/tmp/report.pdf", ext=".pdf", size=5000000, tags={"status": "draft"})
-    index.upsert_record(path="/tmp/report.pdf", modified_time=time.time(), record=rec1)
-
     rec2 = make_mock_record("/tmp/video.mp4", ext=".mp4", size=2000000000, tags={"project": "alpha"})
-    index.upsert_record(path="/tmp/video.mp4", modified_time=time.time(), record=rec2)
-
     rec3 = make_mock_record(
         "/tmp/paper.pdf", ext=".pdf", size=1500000, arxiv_title="Machine Learning for Dark Matter Detection"
     )
-    index.upsert_record(path="/tmp/paper.pdf", modified_time=time.time(), record=rec3)
+
+    with patch("dorsal.file.index.dorsal_index.make_local_record_id", return_value="mock_local_id"):
+        index.upsert_record(path="/tmp/report.pdf", modified_time=time.time(), record=rec1)
+        index.upsert_record(path="/tmp/video.mp4", modified_time=time.time(), record=rec2)
+        index.upsert_record(path="/tmp/paper.pdf", modified_time=time.time(), record=rec3)
 
     yield index
 

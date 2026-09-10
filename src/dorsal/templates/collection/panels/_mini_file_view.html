@@ -13,6 +13,11 @@
             <span class="value {% if not base_record.extension %}subdued{% endif %}">{{ base_record.extension or 'None' }}</span>
         </div>
         <div class="grid-item">
+            <span class="label">Record ID</span>
+            {% set extracted_id = context.file.record_id | default((local_attrs | default({})).get('record_id', '')) %}
+            <span class="value mono" style="color: var(--accent-color);">{{ extracted_id }}</span>
+        </div>
+        <div class="grid-item">
             <span class="label">Size</span>
             <span class="value">{{ human_filesize(base_record.size) }}</span>
         </div>

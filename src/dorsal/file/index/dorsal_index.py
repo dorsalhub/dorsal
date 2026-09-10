@@ -408,9 +408,7 @@ class DorsalIndex:
         conn.commit()
 
     def get_hash(self, *, path: str, hash_function: str = "SHA-256") -> str | None:
-        """
-        Efficiently retrieves a specific hash for a cached file if the cache is valid.
-        """
+        """Retrieves a specific hash for a cached file if the cache is valid."""
         conn = self._ensure_connection()
         field_map = {
             "SHA-256": "hash_sha256",
