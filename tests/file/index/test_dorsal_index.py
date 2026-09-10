@@ -615,7 +615,7 @@ def test_rebuild_indexes(temp_index, mock_file_record_strict, mocker):
     conn.commit()
 
     mocker.patch(
-        "dorsal.file.validators.file_record.FileRecordStrict.model_validate_json", return_value=mock_file_record_strict
+        "dorsal.file.validators.file_record.FileRecord.model_validate_json", return_value=mock_file_record_strict
     )
 
     progress_mock = MagicMock()

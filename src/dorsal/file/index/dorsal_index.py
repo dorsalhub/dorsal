@@ -367,7 +367,8 @@ class DorsalIndex:
     def upsert_hash(self, *, path: str, modified_time: float, hash_function: str, hash_value: str):
         """
         Inserts or updates a single hash, correctly handling and invalidating
-        existing full records if they are stale.
+        existing full records if they are stale. Also patches underlying JSON blobs
+        for shallow records being augmented with hashes.
         """
         conn = self._ensure_connection()
         field_map = {
@@ -379,32 +380,66 @@ class DorsalIndex:
             "QUICK": "hash_quick",
             "TLSH": "hash_tlsh",
         }
+        json_field_map = {
+            "SHA-256": "hash",
+            "BLAKE3": "validation_hash",
+            "QUICK": "quick_hash",
+            "TLSH": "similarity_hash",
+        }
+
         column_name = field_map.get(hash_function.upper())
         if not column_name:
             raise ValueError(f"Unsupported hash function '{hash_function}'.")
 
         cursor = conn.cursor()
-        cursor.execute("SELECT record IS NOT NULL FROM cached_files WHERE abspath = ?", (path,))
-        result = cursor.fetchone()
-        if result and result[0]:
-            stale_check_sql = "SELECT modified_time FROM cached_files WHERE abspath = ?"
-            cursor.execute(stale_check_sql, (path,))
-            cached_mod_time = cursor.fetchone()[0]
+        cursor.execute("SELECT modified_time, record, is_compressed FROM cached_files WHERE abspath = ?", (path,))
+        row = cursor.fetchone()
+
+        record_to_update = None
+
+        if row:
+            cached_mod_time = row["modified_time"]
             if cached_mod_time != modified_time:
                 logger.debug(f"Stale full record found for '{path}'. Deleting before upserting new hash.")
                 cursor.execute("DELETE FROM cached_files WHERE abspath = ?", (path,))
-
                 cursor.execute("DELETE FROM dorsal_fts WHERE abspath = ?", (path,))
                 cursor.execute("DELETE FROM file_attributes WHERE abspath = ?", (path,))
+            elif row["record"] is not None:
+                try:
+                    decompress_fn = self._get_decompressor(row["is_compressed"])
+                    record_dict = json.loads(decompress_fn(row["record"]).decode("utf-8"))
 
-        sql = f"""
-            INSERT INTO cached_files (abspath, modified_time, {column_name})
-            VALUES (?, ?, ?)
-            ON CONFLICT(abspath) DO UPDATE SET
-                modified_time = excluded.modified_time,
-                {column_name} = excluded.{column_name};
-        """
-        cursor.execute(sql, (path, modified_time, hash_value))
+                    if json_field := json_field_map.get(hash_function.upper()):
+                        record_dict[json_field] = hash_value
+
+                    updated_json_str = json.dumps(record_dict)
+                    if self.use_compression:
+                        compress_fn, _ = self._get_compressor(self.compression_mode, self.compression_level)
+                        record_to_update = compress_fn(updated_json_str.encode("utf-8"))
+                    else:
+                        record_to_update = updated_json_str.encode("utf-8")
+                except Exception as e:
+                    logger.error(f"Failed to patch JSON record for {path}: {e}")
+
+        if record_to_update is not None:
+            sql = f"""
+                INSERT INTO cached_files (abspath, modified_time, {column_name}, record)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(abspath) DO UPDATE SET
+                    modified_time = excluded.modified_time,
+                    {column_name} = excluded.{column_name},
+                    record = excluded.record;
+            """
+            cursor.execute(sql, (path, modified_time, hash_value, record_to_update))
+        else:
+            sql = f"""
+                INSERT INTO cached_files (abspath, modified_time, {column_name})
+                VALUES (?, ?, ?)
+                ON CONFLICT(abspath) DO UPDATE SET
+                    modified_time = excluded.modified_time,
+                    {column_name} = excluded.{column_name};
+            """
+            cursor.execute(sql, (path, modified_time, hash_value))
         conn.commit()
 
     def get_hash(self, *, path: str, hash_function: str = "SHA-256") -> str | None:
@@ -484,6 +519,11 @@ class DorsalIndex:
 
         cursor.execute("SELECT COUNT(*) FROM cached_files WHERE record IS NOT NULL")
         full_records = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(*) FROM cached_files WHERE record IS NOT NULL AND hash_sha256 IS NOT NULL")
+        deep_records = cursor.fetchone()[0] or 0
+        shallow_records = full_records - deep_records
+
         hash_only_records = record_count - full_records
 
         try:
@@ -536,6 +576,8 @@ class DorsalIndex:
             "search_index_size_bytes": search_index_bytes,
             "total_records": record_count,
             "full_records": full_records,
+            "deep_records": deep_records,
+            "shallow_records": shallow_records,
             "hash_only_records": hash_only_records,
             "created_time": db_created_time,
             "modified_time": db_modified_time,
@@ -733,7 +775,7 @@ class DorsalIndex:
 
     def rebuild(self, batch_size: int = 100, progress_callback: Callable[[int, int], None] | None = None) -> int:
         """Rebuilds the FTS and EAV search indexes from the compressed cache."""
-        from dorsal.file.validators.file_record import FileRecordStrict
+        from dorsal.file.validators.file_record import FileRecord
 
         conn = self._ensure_connection()
         logger.info("Starting full search index rebuild...")
@@ -763,7 +805,7 @@ class DorsalIndex:
             try:
                 decompress_fn = self._get_decompressor(is_compressed_flag)
                 record_json_str = decompress_fn(record_data).decode("utf-8")
-                record_obj = FileRecordStrict.model_validate_json(record_json_str)
+                record_obj = FileRecord.model_validate_json(record_json_str)
 
                 fts_texts, eav_attributes = self._extract_search_data(record_obj)
 
