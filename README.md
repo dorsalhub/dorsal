@@ -240,18 +240,6 @@ lf.push()
 ```
 
 
-
-### 3. Batch Reporting
-
-Generate self-contained HTML dashboards for local directories.
-
-```python
-from dorsal.api import generate_html_directory_report
-
-generate_html_directory_report(dir_path="./projects", output_path="storage_audit.html", recursive=True)
-```
-
-
 -----
 
 ## Custom Annotation Models
