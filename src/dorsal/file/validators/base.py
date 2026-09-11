@@ -123,7 +123,7 @@ class FileCoreValidationModel(BaseModel):
     extension: FileExtension | None = None
     size: int = Field(ge=0, lt=FILESIZE_UPPER_LIMIT)
     media_type: MediaTypeString
-    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=5, max_length=7)
+    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=4, max_length=7)
     all_hash_ids: dict[HashFunctionId, str] | None = Field(default=None)
 
     @computed_field  # type: ignore
@@ -165,8 +165,6 @@ class FileCoreValidationModel(BaseModel):
                 raise ValueError("SHA-256 file hash missing from record.all_hashes.")
             if "BLAKE3" not in self.all_hash_ids:
                 raise ValueError("BLAKE3 file hash missing from record.all_hashes.")
-            if "DORSAL" not in self.all_hash_ids:
-                raise ValueError("DORSAL file hash missing from record.all_hashes.")
             if "MD5" not in self.all_hash_ids:
                 raise ValueError("MD5 file hash missing from record.all_hashes.")
             if "SHA-1" not in self.all_hash_ids:
@@ -183,3 +181,9 @@ class FileCoreValidationModelStrict(FileCoreValidationModel):
 
     hash: SHA256Hash
     all_hashes: list[FileCoreValidationModelHash] = Field(min_length=5, max_length=7)
+
+    @model_validator(mode="after")
+    def enforce_secure_hashes(self) -> Self:
+        if self.all_hash_ids and "DORSAL" not in self.all_hash_ids:
+            raise ValueError("DORSAL file hash missing from record.all_hashes.")
+        return self
