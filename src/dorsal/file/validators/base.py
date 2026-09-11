@@ -123,7 +123,7 @@ class FileCoreValidationModel(BaseModel):
     extension: FileExtension | None = None
     size: int = Field(ge=0, lt=FILESIZE_UPPER_LIMIT)
     media_type: MediaTypeString
-    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=2, max_length=4)
+    all_hashes: list[FileCoreValidationModelHash] | None = Field(default=None, min_length=5, max_length=7)
     all_hash_ids: dict[HashFunctionId, str] | None = Field(default=None)
 
     @computed_field  # type: ignore
@@ -165,6 +165,12 @@ class FileCoreValidationModel(BaseModel):
                 raise ValueError("SHA-256 file hash missing from record.all_hashes.")
             if "BLAKE3" not in self.all_hash_ids:
                 raise ValueError("BLAKE3 file hash missing from record.all_hashes.")
+            if "DORSAL" not in self.all_hash_ids:
+                raise ValueError("DORSAL file hash missing from record.all_hashes.")
+            if "MD5" not in self.all_hash_ids:
+                raise ValueError("MD5 file hash missing from record.all_hashes.")
+            if "SHA-1" not in self.all_hash_ids:
+                raise ValueError("SHA-1 file hash missing from record.all_hashes.")
             if self.hash != self.all_hash_ids["SHA-256"]:
                 raise ValueError("Record 'hash' (primary SHA256) does not match SHA-256 value in record.all_hashes.")
         return self
@@ -172,8 +178,8 @@ class FileCoreValidationModel(BaseModel):
 
 class FileCoreValidationModelStrict(FileCoreValidationModel):
     """
-    A validated `FileCoreValidationModel` - i.e. contains 'BLAKE3' validation hash within `all_hashes`.
+    A validated `FileCoreValidationModel` - i.e. contains expected hashes within `all_hashes`.
     """
 
     hash: SHA256Hash
-    all_hashes: list[FileCoreValidationModelHash] = Field(min_length=2, max_length=4)
+    all_hashes: list[FileCoreValidationModelHash] = Field(min_length=5, max_length=7)

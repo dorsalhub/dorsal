@@ -24,7 +24,6 @@ __all__ = [
     "scan_directory",
     "index_file",
     "index_directory",
-    "generate_html_file_report",
     "get_blake3_hash",
     "get_quick_hash",
     "get_sha256_hash",
@@ -35,7 +34,7 @@ if TYPE_CHECKING:
     from dorsal.file.metadata_reader import MetadataReader
     from dorsal.file.dorsal_file import DorsalFile, FileAnnotationStub, LocalFile
     from dorsal.file.utils import get_blake3_hash, get_quick_hash, get_sha256_hash
-    from dorsal.api.file import scan_file, scan_directory, index_file, index_directory, generate_html_file_report
+    from dorsal.api.file import scan_file, scan_directory, index_file, index_directory
 
 
 def __getattr__(name: str):
@@ -73,8 +72,8 @@ def __getattr__(name: str):
 
         return locals()[name]
 
-    elif name in {"scan_file", "scan_directory", "index_file", "index_directory", "generate_html_file_report"}:
-        from dorsal.api.file import scan_file, scan_directory, index_file, index_directory, generate_html_file_report
+    elif name in {"scan_file", "scan_directory", "index_file", "index_directory"}:
+        from dorsal.api.file import scan_file, scan_directory, index_file, index_directory
 
         return locals()[name]
 

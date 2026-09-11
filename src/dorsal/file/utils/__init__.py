@@ -19,7 +19,6 @@ from typing import cast
 
 from dorsal.common.exceptions import (
     QuickHashConfigurationError,
-    QuickHasherError,
     QuickHashFileInstabilityError,
     QuickHashFileSizeError,
 )
@@ -69,7 +68,30 @@ def get_blake3_hash(file_path: str, follow_symlinks: bool = True) -> str:
         raise
 
 
-def multi_hash(file_path: str, similarity_hash: bool = False, follow_symlinks: bool = True) -> dict[str, str]:
+def get_sha1_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_sha1(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
+def get_md5_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_md5(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
+def get_validation_hash(file_path: str, follow_symlinks: bool = True) -> str:
+    try:
+        return FILE_HASHER.hash_dorsal_validation(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
+def multi_hash(
+    file_path: str, similarity_hash: bool = False, follow_symlinks: bool = True, threads: int | None = None
+) -> dict[str, str]:
     """Calculate several hashes for a given file.
 
     - SHA-256 (always)
@@ -80,6 +102,9 @@ def multi_hash(file_path: str, similarity_hash: bool = False, follow_symlinks: b
     Args:
       * file_path: Absolute path to the file.
       * similarity_hash: If True, attempt to calculate TLSH via `FileHasher`.
+      * follow_symlinks: If True (default), follows symlinks to hash target content.
+      * threads: Max worker threads for parallel hashing. None (default) auto-detects based
+                 on system cores and active algorithms. Set to 1 to force single-threaded execution.
 
     Returns:
       * A dictionary mapping hash function names (e.g., "SHA-256", "BLAKE3",
@@ -104,6 +129,7 @@ def multi_hash(file_path: str, similarity_hash: bool = False, follow_symlinks: b
             calculate_blake3=True,
             calculate_tlsh=similarity_hash,
             follow_symlinks=follow_symlinks,
+            threads=threads,
         )
     except OSError:
         logger.exception("multi_hash: FileHasher failed for '%s'.", file_path)

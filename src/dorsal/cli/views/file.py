@@ -194,27 +194,54 @@ def create_file_info_panel(
 
     renderables: list[RenderableType] = []
 
+    local_info: dict[str, Any] = record_dict.get("local_filesystem", {})
+    record_id = local_info.get("local_record_id")
+
+    if record_id:
+        renderables.append(
+            Text.from_markup(
+                f"[{palette.get('key', 'dim')}]Record ID:[/] [{palette.get('hash_value', 'magenta')}]{record_id}[/]"
+            )
+        )
+        renderables.append(Text(""))
+
+    has_any_hash = False
     hashes_table = Table(box=None, show_header=False, padding=(0, 1))
-    hashes_table.add_column(style=palette["key"], justify="right", width=12)
+    hashes_table.add_column(style=palette["key"], justify="right", width=8)
     hashes_table.add_column(style=palette["hash_value"])
-    if record_dict.get("hash"):
-        hashes_table.add_row("SHA-256:", record_dict["hash"])
-    if record_dict.get("validation_hash"):
-        hashes_table.add_row("BLAKE3:", record_dict["validation_hash"])
-    if record_dict.get("quick_hash"):
-        hashes_table.add_row("QUICK:", record_dict["quick_hash"])
-    if record_dict.get("similarity_hash"):
-        hashes_table.add_row("TLSH:", record_dict["similarity_hash"])
-    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['key']}Hashes[/]"), hashes_table))
-    renderables.append(Text(""))
+
+    base_record = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
+    all_hash_ids = base_record.get("all_hash_ids") or {}
+
+    hash_display_order = [
+        ("SHA-256", record_dict.get("hash") or all_hash_ids.get("SHA-256")),
+        ("BLAKE3", all_hash_ids.get("BLAKE3")),
+        ("MD5", all_hash_ids.get("MD5")),
+        ("SHA-1", all_hash_ids.get("SHA-1")),
+        ("QUICK", record_dict.get("quick_hash") or all_hash_ids.get("QUICK")),
+        ("DORSAL", record_dict.get("validation_hash") or all_hash_ids.get("DORSAL")),
+        ("TLSH", record_dict.get("similarity_hash") or all_hash_ids.get("TLSH")),
+    ]
+
+    for label, val in hash_display_order:
+        if val:
+            hashes_table.add_row(f"{label}:", str(val))
+            has_any_hash = True
+
+    if has_any_hash:
+        renderables.append(
+            Group(Text.from_markup(f"[{palette['section_title']}]{icons['key']}Hashes[/]"), hashes_table)
+        )
+        renderables.append(Text(""))
 
     file_info_table = Table(box=None, show_header=False, padding=(0, 1))
     file_info_table.add_column(style=palette["key"], justify="right", width=12)
     file_info_table.add_column(style=primary_color)
-    local_info: dict[str, Any] = record_dict.get("local_filesystem", {})
     base_info = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
+
     if access_text:
         file_info_table.add_row("Access:", access_text)
+
     if local_info.get("is_symlink"):
         link_style = f"{palette['primary_value']} italic"
         target_style = palette["primary_value"]
@@ -262,8 +289,8 @@ def create_file_info_panel(
                 tag_value.append(f" [id: {tag_id}]", style=palette["tag_subtext"])
             tags_table.add_row(f"{tag.get('name')}:", tag_value)
 
-    renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['tags']}Tags[/]"), tags_table))
-    renderables.append(Text(""))
+        renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['tags']}Tags[/]"), tags_table))
+        renderables.append(Text(""))
 
     annotations = record_dict.get("annotations", {})
     if annotations:
@@ -365,11 +392,10 @@ def create_file_info_panel(
 
     if is_none_style:
         tight_header = Text.from_markup(f"[{panel_title_style}]{display_title}[/]\n")
-
         return Group(tight_header, *renderables)
 
     return Panel(
-        Group(*renderables),
+        Group(*renderables, fit=True),
         title=f"[{panel_title_style}]{display_title}[/]",
         border_style=border,
         box=box_style if box_style is not None else box.ROUNDED,

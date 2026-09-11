@@ -288,3 +288,102 @@ def test_create_file_info_panel_annotations_edge_cases():
     assert "second_item" in output
 
     assert "just a string, not a dict" not in output
+
+
+def test_display_local_search_results_wide_console():
+    """Covers search.py rendering wide tables with Record ID, Modified Date, and SHA256 Hash."""
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from rich.console import Console
+    from types import SimpleNamespace
+
+    console = Console(width=200)
+
+    ts = 1700000000.0
+    records = [
+        SimpleNamespace(
+            name="file_with_hash.bin",
+            size=2048,
+            media_type="application/octet-stream",
+            local_record_id="rec_1234567890",
+            modified_time=ts,
+            hash_sha256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        SimpleNamespace(
+            name=None,
+            size=None,
+            media_type=None,
+            local_record_id=None,
+            modified_time=ts,
+            hash_sha256=None,
+        ),
+    ]
+
+    response = SimpleNamespace(
+        records=records,
+        pagination=SimpleNamespace(
+            start_index=0, record_count=2, current_page=1, page_count=1, end_index=2, has_next=False
+        ),
+    )
+
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+
+    output = capture.get()
+
+    assert "Media Type" in output
+    assert "Record ID" in output
+    assert "Modified Date" in output
+    assert "SHA256 Hash" in output
+
+    assert "file_with_hash.bin" in output
+    assert "rec_1234567890" in output
+    assert "2023-11-14 22:13:20" in output
+    assert "e3b0c442" in output
+
+    assert "Unknown" in output
+    assert "N/A" in output
+    assert "-" in output
+
+
+def test_display_local_search_results_wide_console_no_hashes():
+    """Covers search.py rendering wide tables when no hashes are present."""
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from rich.console import Console
+    from types import SimpleNamespace
+
+    console = Console(width=200)
+
+    ts = 1700000000.0
+    records = [
+        SimpleNamespace(
+            name="no_hash.txt",
+            size=1024,
+            media_type="text/plain",
+            local_record_id="rec_0001",
+            modified_time=ts,
+            hash_sha256=None,
+        ),
+    ]
+
+    response = SimpleNamespace(
+        records=records,
+        pagination=SimpleNamespace(
+            start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
+        ),
+    )
+
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+
+    output = capture.get()
+
+    assert "Record ID" in output
+    assert "Modified Date" in output
+    assert "SHA256 Hash" not in output
+    assert "rec_0001" in output

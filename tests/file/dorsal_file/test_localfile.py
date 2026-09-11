@@ -25,6 +25,7 @@ import dorsal.file.file_annotator
 from dorsal.common.model import AnnotationManualSource
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.validators.file_record import (
+    FileRecord,
     FileRecordStrict,
     NewFileTag,
     ValidateTagsResult,
@@ -60,7 +61,7 @@ def mock_file_record_strict() -> FileRecordStrict:
     """Provides a valid, complete FileRecordStrict object."""
     return FileRecordStrict(
         hash="a" * 64,
-        validation_hash="b" * 64,
+        validation_hash="e" * 64,
         source="disk",
         annotations={
             "file_base": {
@@ -73,6 +74,9 @@ def mock_file_record_strict() -> FileRecordStrict:
                     "all_hashes": [
                         {"id": "SHA-256", "value": "a" * 64},
                         {"id": "BLAKE3", "value": "b" * 64},
+                        {"id": "MD5", "value": "c" * 32},
+                        {"id": "SHA-1", "value": "d" * 40},
+                        {"id": "DORSAL", "value": "e" * 64},
                     ],
                 },
                 "source": {"type": "Model", "id": "file/base", "version": "0.1.0"},
@@ -93,11 +97,11 @@ def test_local_file_init_success(mock_metadata_reader, mock_file_record_strict, 
     expected_path = os.path.abspath(file_path)
 
     mock_metadata_reader._get_or_create_record.assert_called_once_with(
-        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True
+        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True, calculate_hashes=True
     )
     assert lf.name == "local_test.txt"
     assert lf.hash == "a" * 64
-    assert lf.validation_hash == "b" * 64
+    assert lf.validation_hash == "e" * 64
     assert lf._source == "disk"
     assert isinstance(lf.date_created, datetime.datetime)
 
@@ -216,7 +220,10 @@ def test_add_tag_raises_error_if_no_validation_hash(mock_metadata_reader, mock_f
 
     lf = LocalFile(file_path)
 
-    with pytest.raises(ValueError, match="Cannot add tag: File is missing a 'validation_hash'"):
+    with pytest.raises(
+        ValueError,
+        match="Cannot add tag: File record is missing a 'validation_hash'. Call the `upgrade_file_record\\(\\)` method to calculate the required hashes.",
+    ):
         lf.add_tag(name="wont_work", value=True)
 
 
@@ -433,7 +440,7 @@ def test_from_json_success(mock_file_record_strict, fs):
     assert isinstance(lf, LocalFile)
     assert lf.hash == mock_file_record_strict.hash
     assert lf.model.source == mock_file_record_strict.source
-    assert lf._file_path == original_file_path
+    assert lf.file_path == original_file_path
 
 
 def test_from_json_round_trip(mock_metadata_reader, mock_file_record_strict, fs):
@@ -457,7 +464,7 @@ def test_from_json_round_trip(mock_metadata_reader, mock_file_record_strict, fs)
     loaded_lf = LocalFile.from_json(json_path)
 
     assert loaded_lf.hash == original_lf.hash
-    assert loaded_lf._file_path == original_lf._file_path
+    assert loaded_lf.file_path == original_lf.file_path
     assert len(loaded_lf.tags) == len(original_lf.tags)
     assert loaded_lf.tags[0].name == "trip"
 
@@ -1002,17 +1009,14 @@ def test_local_file_push_triggers_heavy(mock_metadata_reader, mock_file_record_s
     mock_client = MagicMock()
     lf = LocalFile(file_path, client=mock_client)
 
-    # FIX: Patch the class-level method instead of the instance to avoid Pydantic __setattr__ blocks
     from dorsal.file.validators.file_record import FileRecordStrict
 
     mocker.patch.object(FileRecordStrict, "model_dump_json", return_value="a" * (15 * 1024 * 1024))
 
-    # Spy on or patch _push_heavy to intercept the call
     mock_push_heavy = mocker.patch.object(lf, "_push_heavy", return_value=MagicMock())
 
     lf.push()
 
-    # Verify delegation
     mock_push_heavy.assert_called_once()
     mock_client.index_private_file_records.assert_not_called()
 
@@ -1184,3 +1188,187 @@ def test_local_file_push_initializes_client(mock_metadata_reader, mock_file_reco
     mock_get_client.assert_called_once_with(api_key="dynamic_test_key")
     assert lf._client == mock_client_instance
     mock_client_instance.index_private_file_records.assert_called_once()
+
+
+def test_upgrade_file_record_already_strict(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that upgrade_file_record exits early if the model is already a FileRecordStrict."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    lf = LocalFile(file_path)
+
+    mock_metadata_reader._get_or_create_record.reset_mock()
+
+    lf.upgrade_file_record()
+
+    mock_metadata_reader._get_or_create_record.assert_not_called()
+
+
+def test_upgrade_file_record_calculates_hashes(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that upgrade_file_record generates a deep record when the model is currently shallow."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+
+    shallow_record = FileRecord(hash="a" * 64, source="disk")
+    mock_metadata_reader._get_or_create_record.side_effect = [shallow_record, mock_file_record_strict]
+
+    lf = LocalFile(file_path, calculate_hashes=False)
+
+    assert isinstance(lf.model, FileRecord)
+    assert not isinstance(lf.model, FileRecordStrict)
+    assert lf.validation_hash is None
+
+    lf.upgrade_file_record()
+
+    assert isinstance(lf.model, FileRecordStrict)
+    assert lf.validation_hash == "e" * 64
+
+    expected_path = os.path.abspath(file_path)
+    mock_metadata_reader._get_or_create_record.assert_called_with(
+        file_path=expected_path, skip_cache=False, overwrite_cache=False, follow_symlinks=True, calculate_hashes=True
+    )
+
+
+@patch("dorsal.file.dorsal_file.make_local_record_id")
+def test_record_id_success(mock_make_id, mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that record_id returns the correctly generated local record ID."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    mock_make_id.return_value = "local-id-123"
+
+    lf = LocalFile(file_path)
+
+    assert lf.record_id == "local-id-123"
+    mock_make_id.assert_called_once_with(file_path)
+
+
+@patch("dorsal.file.dorsal_file.make_local_record_id")
+def test_record_id_oserror_fallback(mock_make_id, mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that record_id handles an OSError gracefully by falling back to a unique memory ID."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    mock_make_id.side_effect = OSError("File no longer exists")
+
+    lf = LocalFile(file_path)
+    expected_fallback = f"deleted-{id(lf)}"
+
+    assert lf.record_id == expected_fallback
+
+
+def test_local_file_properties_are_correct(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that properties like 'tags', 'to_json', and 'to_dict' work correctly."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+
+    assert lf.tags == []
+
+    as_dict = lf.to_dict()
+    assert isinstance(as_dict, dict)
+    assert as_dict["hash"] == "a" * 64
+
+    as_json = lf.to_json()
+    assert isinstance(as_json, str)
+    assert '"hash": "aaaaaaaa' in as_json
+
+    assert lf.sha256 == "a" * 64
+    assert lf.blake3 == "b" * 64
+    assert lf.md5 == "c" * 32
+    assert lf.sha1 == "d" * 40
+
+
+def test_symlink_resolution_oserror(tmp_path):
+    """Covers line: logger.debug("Failed to resolve symlink for file %s, %s", self.file_path, err)"""
+    dummy_file = tmp_path / "test.txt"
+    dummy_file.write_text("hello world")
+
+    with patch("pathlib.Path.resolve", side_effect=OSError("Symlink loop detected")):
+        local_file = LocalFile(str(dummy_file), offline=True)
+        assert local_file.file_path == str(dummy_file)
+
+
+def test_localfile_shallow_state_errors(tmp_path):
+    """Covers lines checking `isinstance(self.model, FileRecordStrict)` in push() and _push_heavy()."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("shallow model test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    shallow_record = FileRecord(
+        hash="a" * 64,
+        quick_hash=None,
+        validation_hash=None,
+        annotations=None,
+        tags=[],
+        date_created=now,
+        date_modified=now,
+    )
+
+    local_file = LocalFile(str(dummy_file), offline=False, _file_record=shallow_record)
+
+    with pytest.raises(DorsalClientError) as excinfo:
+        local_file.push()
+    assert "Cannot push LocalFile" in str(excinfo.value)
+
+    local_file._client = MagicMock()
+
+    with pytest.raises(DorsalClientError) as excinfo:
+        local_file._push_heavy()
+    assert "Cannot push LocalFile" in str(excinfo.value)
+
+
+def test_local_file_push_exception_path_log(tmp_path):
+    """Covers line: self.file_path in exception logging during push()."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("push exception test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_strict_record = MagicMock()
+    mock_strict_record.hash = "1234567890abcdef"
+    mock_strict_record.quick_hash = None
+    mock_strict_record.validation_hash = "valhash"
+    mock_strict_record.annotations = None
+    mock_strict_record.tags = []
+    mock_strict_record.media_type = "text/plain"
+    mock_strict_record.date_created = now
+    mock_strict_record.date_modified = now
+    mock_strict_record.model_dump_json.return_value = "{}"
+
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.side_effect = DorsalClientError("API Failure")
+
+    with patch("dorsal.file.dorsal_file.isinstance", return_value=True):
+        local_file = LocalFile(str(dummy_file), client=mock_client, _file_record=mock_strict_record)
+
+        with pytest.raises(DorsalClientError):
+            local_file.push()
+
+
+def test_annotate_using_pipeline_step_missing_validation_hash(tmp_path):
+    """Covers line: Exception when missing validation_hash during pipeline step annotation."""
+    dummy_file = tmp_path / "test_file.txt"
+    dummy_file.write_text("test")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    record_without_val_hash = FileRecord(
+        hash="a" * 64,
+        quick_hash=None,
+        validation_hash=None,
+        annotations=None,
+        tags=[],
+        date_created=now,
+        date_modified=now,
+    )
+
+    local_file = LocalFile(str(dummy_file), offline=True, _file_record=record_without_val_hash)
+
+    with pytest.raises(ValueError) as excinfo:
+        local_file._annotate_using_pipeline_step(pipeline_step_config={"schema_id": "open/generic"})
+    assert "Cannot annotate: File is missing a 'validation_hash'." in str(excinfo.value)

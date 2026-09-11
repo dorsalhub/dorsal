@@ -63,6 +63,7 @@ def test_search_index_default(mock_rich_console, mock_search_index_cmd):
     result = runner.invoke(app, ["index", "search", QUERY])
 
     assert result.exit_code == 0
+    # ADDED: deep=False to match the actual CLI call signature
     mock_search_index_cmd["search_api"].assert_called_once_with(
         query=[QUERY],
         or_logic=False,
@@ -70,6 +71,7 @@ def test_search_index_default(mock_rich_console, mock_search_index_cmd):
         per_page=25,
         sort_by="date_modified",
         sort_desc=True,
+        deep=False,
     )
     mock_search_index_cmd["save_results"].assert_not_called()
 

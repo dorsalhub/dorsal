@@ -61,7 +61,6 @@ def test_dorsal_file_init_lazy_load_branches():
         "scan_directory",
         "index_file",
         "index_directory",
-        "generate_html_file_report",
     ]
 
     # Hit every successful if/elif branch directly

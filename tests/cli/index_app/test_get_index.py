@@ -42,6 +42,10 @@ def mock_get_index_cmd(mocker, tmp_path):
     mock_record.hash_quick = None
     mock_record.hash_tlsh = None
 
+    # ADDED: explicitly declare these to prevent MagicMock JSON serialization errors
+    mock_record.hash_dorsal = None
+    mock_record.local_record_id = "mock_id"
+
     mock_record.record_json = json.dumps(
         {"annotations": {"file/base": {"record": {"name": "test.pdf", "size": 12345}, "private": False}}}
     )
@@ -87,7 +91,8 @@ def test_get_index_by_hash(mock_rich_console, mock_get_index_cmd):
 
     assert result.exit_code == 0
     mock_get_index_cmd["search_local"].assert_called_once()
-    assert f"sha256:{HASH_ID}" in mock_get_index_cmd["search_local"].call_args.args[0]
+
+    assert HASH_ID in mock_get_index_cmd["search_local"].call_args.args[0]
     mock_get_index_cmd["create_panel"].assert_called_once()
 
 

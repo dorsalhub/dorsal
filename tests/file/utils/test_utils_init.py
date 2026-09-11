@@ -1,20 +1,12 @@
-# Copyright 2025-2026 Dorsal Hub LTD
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import pytest
 import logging
-from dorsal.file.utils import get_quick_hash, multi_hash
+from dorsal.file.utils import (
+    get_md5_hash,
+    get_quick_hash,
+    get_sha1_hash,
+    get_validation_hash,
+    multi_hash,
+)
 from dorsal.common.exceptions import QuickHashFileSizeError, QuickHashFileInstabilityError
 
 
@@ -56,6 +48,43 @@ def test_get_quick_hash_os_error(mock_filesize):
     mock_filesize.side_effect = OSError("Disk error")
     with pytest.raises(OSError):
         get_quick_hash("file.txt")
+
+
+@pytest.mark.parametrize(
+    "func,hasher_method",
+    [
+        (get_sha1_hash, "hash_sha1"),
+        (get_md5_hash, "hash_md5"),
+        (get_validation_hash, "hash_dorsal_validation"),
+    ],
+)
+def test_get_hash_functions_success(mock_file_hasher, func, hasher_method):
+    """Test success path for get_sha1_hash, get_md5_hash, and get_validation_hash."""
+    method_mock = getattr(mock_file_hasher, hasher_method)
+    method_mock.return_value = "hashed_value"
+
+    result = func("file.txt", follow_symlinks=True)
+
+    assert result == "hashed_value"
+    method_mock.assert_called_once_with(file_path="file.txt", follow_symlinks=True)
+
+
+@pytest.mark.parametrize(
+    "func,hasher_method",
+    [
+        (get_sha1_hash, "hash_sha1"),
+        (get_md5_hash, "hash_md5"),
+        (get_validation_hash, "hash_dorsal_validation"),
+    ],
+)
+@pytest.mark.parametrize("exc", [IOError("Read failure"), PermissionError("Access denied")])
+def test_get_hash_functions_exceptions(mock_file_hasher, func, hasher_method, exc):
+    """Test IOError and PermissionError propagation for hash wrapper functions."""
+    method_mock = getattr(mock_file_hasher, hasher_method)
+    method_mock.side_effect = exc
+
+    with pytest.raises(type(exc)):
+        func("file.txt")
 
 
 def test_multi_hash_success(mock_file_hasher, mock_quick_hasher, mock_os_path_getsize):

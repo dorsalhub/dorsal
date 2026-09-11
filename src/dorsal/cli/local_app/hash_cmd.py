@@ -31,7 +31,7 @@ from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
-HashType = Literal["BLAKE3", "SHA-256", "TLSH", "QUICK"]
+HashType = Literal["BLAKE3", "SHA-256", "MD5", "SHA-1", "DORSAL", "TLSH", "QUICK"]
 
 
 def hash_target(
@@ -47,7 +47,10 @@ def hash_target(
         ),
     ],
     sha256: Annotated[bool, typer.Option("--sha256", help="Display the SHA-256 hash.")] = False,
-    blake3: Annotated[bool, typer.Option("--blake3", help="Display the BLAKE3 hash.")] = False,
+    blake3: Annotated[bool, typer.Option("--blake3", help="Display the standard BLAKE3 hash.")] = False,
+    md5: Annotated[bool, typer.Option("--md5", help="Display the MD5 hash.")] = False,
+    sha1: Annotated[bool, typer.Option("--sha1", help="Display the SHA-1 hash.")] = False,
+    dorsal: Annotated[bool, typer.Option("--dorsal", help="Display the DorsalHub validation hash.")] = False,
     tlsh: Annotated[bool, typer.Option("--tlsh", help="Display the TLSH similarity hash.")] = False,
     quick: Annotated[bool, typer.Option("--quick", help="Display the sample-based QuickHash.")] = False,
     use_cache: Annotated[
@@ -84,7 +87,6 @@ def hash_target(
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
-    icons = ui_context["icons"]
 
     if use_cache and skip_cache:
         exit_cli(
@@ -95,12 +97,18 @@ def hash_target(
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
 
     hashes_to_get: List[HashType] = []
-    show_all = not any([sha256, blake3, tlsh, quick])
+    show_all = not any([sha256, blake3, md5, sha1, dorsal, tlsh, quick])
 
     if show_all or sha256:
         hashes_to_get.append("SHA-256")
     if show_all or blake3:
         hashes_to_get.append("BLAKE3")
+    if show_all or md5:
+        hashes_to_get.append("MD5")
+    if show_all or sha1:
+        hashes_to_get.append("SHA-1")
+    if show_all or dorsal:
+        hashes_to_get.append("DORSAL")
     if show_all or tlsh:
         hashes_to_get.append("TLSH")
     if show_all or quick:
@@ -109,7 +117,7 @@ def hash_target(
     try:
         file_hashes = HASH_READER.get(
             file_path=str(path),
-            hashes=list(set(hashes_to_get)),
+            hashes=list(dict.fromkeys(hashes_to_get)),
             skip_cache=not use_cache_value,
         )
     except Exception as err:
@@ -163,7 +171,7 @@ def hash_target(
             hash_grid.add_row(f"{hash_function}:", Text(str(display_value), style=value_style))
 
         is_none_style = borders == get_borders("none")
-        title_text = f"[{palette.get('panel_title', 'bold')}]{icons.get('key', '🔑 ')}Hashes for {escape(path.name)}[/]"
+        title_text = f"[{palette.get('panel_title', 'bold')}]Hashes for {escape(path.name)}[/]"
 
         if is_none_style:
             console.print(Group(Text.from_markup(f"{title_text}\n"), hash_grid))

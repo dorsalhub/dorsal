@@ -17,7 +17,7 @@ import os
 from typing import Any
 
 from dorsal.common.model import AnnotationModel
-from dorsal.file.utils import get_quick_hash, multi_hash
+from dorsal.file.utils import multi_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class FileCoreAnnotationModel(AnnotationModel):
     """
     Annotation model for extracting core file metadata.
 
-    - Calculate file hashes (SHA256, TLSH, BLAKE3 and QUICK).
+    - Calculate file hashes: SHA256, SHA-1, MD5, BLAKE3, DORSAL (validation) TLSH (similarity) and QUICK (sample-based).
     - Determine basic file attributes: name, extension, size and media type.
     - This model is designed for use in the `ModelRunner`
     - Its `main` method outputs a dictionary conforming to `FileCoreValidationModel`.

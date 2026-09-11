@@ -54,6 +54,7 @@ def test_local_collection_init_from_path(mock_metadata_reader):
         skip_cache=False,
         overwrite_cache=False,
         follow_symlinks=True,
+        calculate_hashes=True,
         lazy=False,
     )
     assert len(collection) == 1
@@ -164,7 +165,7 @@ def test_to_json_export():
     file1.name = "a.txt"
     file1.media_type = "text/plain"
     file1._source = "test"
-    file1._file_path = "a.txt"
+    file1.file_path = "a.txt"
 
     collection = LocalFileCollection(source=[file1], source_info={"path": "/fake/dir"})
 
@@ -181,7 +182,7 @@ def test_to_json_export():
 @patch("builtins.open", new_callable=mock_open)
 def test_to_csv_export(mock_file_open):
     """Test exporting the collection to a CSV file."""
-    file1 = MagicMock(spec=LocalFile, hash="h1", _file_path="/fake/a.txt")
+    file1 = MagicMock(spec=LocalFile, hash="h1", file_path="/fake/a.txt")
     collection = LocalFileCollection(source=[file1], source_info={"path": "/fake/"})
 
     collection.to_csv("output.csv")
@@ -198,7 +199,7 @@ def test_to_sqlite_export(tmp_path):
     """Test exporting the collection to an SQLite database by inspecting the output file."""
     sqlite3 = pytest.importorskip("sqlite3")
 
-    file1 = MagicMock(spec=LocalFile, hash="h1", _file_path="/fake/a.txt")
+    file1 = MagicMock(spec=LocalFile, hash="h1", file_path="/fake/a.txt")
     collection = LocalFileCollection(source=[file1], source_info={"path": "/fake/"})
 
     db_path = tmp_path / "test.db"
@@ -221,7 +222,7 @@ def test_to_dataframe_export():
     """Test exporting the collection to a pandas DataFrame by inspecting the output."""
     pd = pytest.importorskip("pandas")
 
-    file1 = MagicMock(spec=LocalFile, hash="h1", name="a.txt", _file_path="/fake/a.txt")
+    file1 = MagicMock(spec=LocalFile, hash="h1", name="a.txt", file_path="/fake/a.txt")
     collection = LocalFileCollection(source=[file1], source_info={"path": "/fake/"})
 
     df = collection.to_dataframe()
@@ -258,18 +259,18 @@ def test_push_public_raises_error_for_restricted_types(mock_is_permitted):
 def test_collection_iteration_and_access_types():
     file1 = MagicMock(spec=LocalFile)
     file1.name = "file1"
-    file1._file_path = "/local/path/file1"
+    file1.file_path = "/local/path/file1"
 
     collection = LocalFileCollection(files=[file1])
 
     items = list(collection)
     assert len(items) == 1
     assert items[0] is file1
-    assert items[0]._file_path == "/local/path/file1"
+    assert items[0].file_path == "/local/path/file1"
 
     item = collection[0]
     assert item is file1
-    assert item._file_path == "/local/path/file1"
+    assert item.file_path == "/local/path/file1"
 
 
 def test_get_source_paths_merged():
@@ -495,7 +496,7 @@ def test_local_collection_to_dict():
     mock_file = MagicMock(spec=LocalFile)
     mock_file.date_modified = 123.0
     mock_file.date_created = 100.0
-    mock_file._file_path = "/path/to/file"
+    mock_file.file_path = "/path/to/file"
     col = LocalFileCollection(source=[mock_file])
 
     with patch("dorsal.file.collection.base._BaseFileCollection.to_dict") as mock_super:

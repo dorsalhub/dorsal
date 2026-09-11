@@ -106,16 +106,6 @@ def mock_pagination_json() -> dict:
     }
 
 
-@pytest.fixture
-def mock_jinja_env():
-    """Mocks the Jinja2 environment to avoid needing real templates."""
-    with patch("jinja2.Environment") as mock_env:
-        mock_template = MagicMock()
-        mock_template.render.return_value = "<html>Rendered Report</html>"
-        mock_env.return_value.get_template.return_value = mock_template
-        yield mock_env
-
-
 class MockLocalFile:
     """A simple mock to stand in for the real LocalFile object."""
 
@@ -379,7 +369,9 @@ def test_scan_file_success(mock_metadata_reader):
 
     result = file_api.scan_file(file_path, use_cache=False)
 
-    mock_metadata_reader.scan_file.assert_called_once_with(file_path=file_path, skip_cache=True, follow_symlinks=True)
+    mock_metadata_reader.scan_file.assert_called_once_with(
+        file_path=file_path, skip_cache=True, follow_symlinks=True, calculate_hashes=True
+    )
     assert result == mock_local_file
 
 
@@ -392,7 +384,7 @@ def test_scan_directory_success(mock_metadata_reader):
     result = file_api.scan_directory(dir_path, recursive=True, use_cache=True)
 
     mock_metadata_reader.scan_directory.assert_called_once_with(
-        dir_path=dir_path, recursive=True, skip_cache=False, follow_symlinks=True
+        dir_path=dir_path, recursive=True, skip_cache=False, follow_symlinks=True, calculate_hashes=True
     )
     assert result == mock_files
 
@@ -493,63 +485,6 @@ def test_get_directory_info_success(fs):
     assert len(result["by_type"]) > 0
 
 
-@patch("dorsal.api.file.resolve_template_path")
-def test_generate_html_file_report_success(mock_resolve, mock_jinja_env, mock_metadata_reader, tmp_path):
-    """Test generating a file report with mocked Jinja2."""
-
-    file_path = tmp_path / "report_target.txt"
-    output_path = tmp_path / "report.html"
-    file_path.write_text("data")
-
-    mock_resolve.return_value = (pathlib.Path("default.html"), "/templates/base")
-
-    mock_local_file = MagicMock()
-    mock_local_file._file_path = str(file_path)
-    mock_local_file.date_created = datetime.datetime.now()
-    mock_local_file.date_modified = datetime.datetime.now()
-
-    mock_local_file.to_dict.return_value = {
-        "annotations": {"file/base": {"record": {"name": "report_target.txt", "size": 4}}}
-    }
-
-    html_out = file_api.generate_html_file_report(
-        str(file_path), local_file=mock_local_file, output_path=str(output_path)
-    )
-
-    assert html_out is None
-    assert output_path.exists()
-    assert output_path.read_text(encoding="utf-8") == "<html>Rendered Report</html>"
-
-
-@patch("dorsal.api.file.resolve_template_path")
-@patch("dorsal.common.config.get_collection_report_panel_config")
-def test_generate_html_directory_report_success(mock_panel_config, mock_resolve, mock_jinja_env, tmp_path):
-    """Test generating a directory dashboard."""
-    dir_path = tmp_path / "assets"
-    dir_path.mkdir()
-    output_path = tmp_path / "dashboard.html"
-
-    mock_panel_config.return_value = {"overview": True, "duplicates": False}
-
-    mock_resolve.return_value = (pathlib.Path("dashboard.html"), "/templates/base")
-
-    mock_collection = MagicMock()
-    mock_collection.to_dict.return_value = {"files": []}
-
-    with patch.dict("dorsal.file.utils.reports.REPORT_DATA_GENERATORS", {"overview": lambda c: "overview_data"}):
-        html_out = file_api.generate_html_directory_report(
-            str(dir_path), local_collection=mock_collection, output_path=str(output_path)
-        )
-
-    assert html_out is None
-    assert output_path.exists()
-
-    call_args = mock_jinja_env.return_value.get_template.return_value.render.call_args
-    context = call_args[0][0]
-    assert context["report_title"] == "Directory Report: assets"
-    assert context["panels"][0]["id"] == "overview"
-
-
 def test_get_directory_info_detailed_metrics(fs):
     """
     Tests the detailed metric collection: permissions, dates, and media types.
@@ -642,47 +577,6 @@ def test_find_duplicates_quick_internal_logic(fs):
     assert mock_sha.call_count == 1
 
     assert result["hashes_from_cache"] == 1
-
-
-@patch("dorsal.api.file.resolve_template_path")
-@patch("dorsal.common.config.get_collection_report_panel_config")
-def test_generate_html_directory_report_panels(mock_panel_config, mock_resolve, mock_metadata_reader, tmp_path):
-    """
-    Target lines 2337-2414 (generate_html_directory_report).
-    We define a config with TWO panels:
-    1. 'overview' -> Exists in generators (Hits 'if generator_func')
-    2. 'missing_panel' -> Does NOT exist (Hits 'else: logger.warning')
-    """
-    dir_path = tmp_path / "report_test"
-    dir_path.mkdir()
-    output_path = tmp_path / "report.html"
-
-    mock_panel_config.return_value = {"overview": True, "missing_panel": True}
-
-    mock_resolve.return_value = (pathlib.Path("default.html"), "/templates/base")
-
-    mock_collection = MagicMock()
-    mock_collection.to_dict.return_value = {"files": []}
-
-    fake_generators = {"overview": lambda c: "data"}
-
-    with (
-        patch.dict("dorsal.file.utils.reports.REPORT_DATA_GENERATORS", fake_generators),
-        patch("jinja2.Environment") as mock_env,
-    ):
-        mock_template = MagicMock()
-        mock_template.render.return_value = "<html></html>"
-        mock_env.return_value.get_template.return_value = mock_template
-
-        file_api.generate_html_directory_report(
-            str(dir_path), local_collection=mock_collection, output_path=str(output_path)
-        )
-
-        call_args = mock_template.render.call_args
-        context = call_args[0][0]
-
-        assert len(context["panels"]) == 1
-        assert context["panels"][0]["id"] == "overview"
 
 
 @pytest.fixture

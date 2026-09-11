@@ -64,14 +64,13 @@ def mock_file_deps(mocker):
     }
     mock_instance.name = "test.txt"
     mock_instance._source = "disk"
-    mock_instance._file_path = "/fake/test.txt"
+    mock_instance.file_path = "/fake/test.txt"
     mock_instance.date_created = datetime.datetime(2025, 1, 1)
     mock_instance.date_modified = datetime.datetime(2025, 1, 2)
 
     return {
         "local_file_class": mock_local_file_class,
         "create_panel": mocker.patch("dorsal.cli.views.file.create_file_info_panel"),
-        "generate_html": mocker.patch("dorsal.api.file.generate_html_file_report"),
     }
 
 
@@ -84,13 +83,17 @@ def mock_dir_deps(mocker):
     mock_instance.__len__.return_value = 2
     mock_instance.__bool__.side_effect = lambda: mock_instance.__len__() > 0
 
-    file_1 = MagicMock(size=512, media_type="text/plain", date_modified=datetime.datetime(2025, 1, 1))
+    file_1 = MagicMock(
+        size=512, media_type="text/plain", date_modified=datetime.datetime(2025, 1, 1), record_id="rec_1"
+    )
     file_1.name = "file1.txt"
-    file_1._file_path = "/fake/file1.txt"
+    file_1.file_path = "/fake/file1.txt"
 
-    file_2 = MagicMock(size=1024, media_type="application/json", date_modified=datetime.datetime(2025, 1, 2))
+    file_2 = MagicMock(
+        size=1024, media_type="application/json", date_modified=datetime.datetime(2025, 1, 2), record_id="rec_2"
+    )
     file_2.name = "file2.txt"
-    file_2._file_path = "/fake/file2.txt"
+    file_2.file_path = "/fake/file2.txt"
 
     mock_instance.info.return_value = {
         "overall": {"total_files": 2, "total_size": 1536, "newest_file": {}, "oldest_file": {}},
@@ -100,11 +103,7 @@ def mock_dir_deps(mocker):
     mock_instance.__iter__.return_value = iter([file_1, file_2])
     mock_instance.to_dict.return_value = [{"name": "file1.txt"}]
 
-    return {
-        "collection_class": mock_collection_class,
-        "collection_instance": mock_instance,
-        "generate_html": mocker.patch("dorsal.api.file.generate_html_directory_report"),
-    }
+    return {"collection_class": mock_collection_class, "collection_instance": mock_instance}
 
 
 def test_scan_cache_conflict(mock_exit_cli, tmp_path):
@@ -113,16 +112,6 @@ def test_scan_cache_conflict(mock_exit_cli, tmp_path):
     result = runner.invoke(app, ["local", "scan", str(target), "--use-cache", "--skip-cache"])
     assert result.exit_code != 0
     mock_exit_cli.assert_called_with(code=ANY, message="Error: --use-cache and --skip-cache cannot be used together.")
-
-
-def test_scan_json_report_conflict(mock_exit_cli, tmp_path):
-    target = tmp_path / "test.txt"
-    target.touch()
-    result = runner.invoke(app, ["local", "scan", str(target), "--json", "--report"])
-    assert result.exit_code != 0
-    mock_exit_cli.assert_called_with(
-        code=ANY, message="Error: --json (stdout) and --report (HTML) flags are not compatible."
-    )
 
 
 def test_scan_output_inference_warning(mock_rich_console, tmp_path):
@@ -144,7 +133,6 @@ def test_scan_file_default(mock_rich_console, mock_file_deps, tmp_path):
     assert result.exit_code == 0
     mock_file_deps["local_file_class"].assert_called_once()
     mock_file_deps["create_panel"].assert_called_once()
-    mock_file_deps["generate_html"].assert_not_called()
 
 
 def test_scan_file_json_stdout(mock_rich_console, mock_file_deps, tmp_path):
@@ -158,18 +146,6 @@ def test_scan_file_json_stdout(mock_rich_console, mock_file_deps, tmp_path):
     data = json.loads(json_output_str)
     assert data["name"] == "test.txt"
     mock_file_deps["create_panel"].assert_not_called()
-
-
-def test_scan_file_report(mock_rich_console, mock_file_deps, tmp_path):
-    target = tmp_path / "test.txt"
-    target.touch()
-
-    result = runner.invoke(app, ["local", "scan", str(target), "--report"])
-
-    assert result.exit_code == 0
-    mock_file_deps["generate_html"].assert_called_once()
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "HTML report saved" in printed_text
 
 
 def test_scan_file_exception_handling(mock_file_deps, mock_exit_cli, tmp_path):
@@ -194,7 +170,7 @@ def test_scan_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
 
     print_calls = mock_rich_console.print.call_args_list
     # Assert that either a Panel or Group was used for the summary
-    assert any(isinstance(call.args[0], (Panel, Group)) for call in print_calls)
+    assert any(isinstance(call.args[0], (Panel, Group, Table)) for call in print_calls)
 
 
 def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):
@@ -205,18 +181,6 @@ def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):
 
     assert result.exit_code == 0
     mock_dir_deps["collection_instance"].to_csv.assert_called_once()
-
-
-def test_scan_dir_html_report(mock_rich_console, mock_dir_deps, tmp_path):
-    target = tmp_path / "test_dir"
-    target.mkdir()
-
-    result = runner.invoke(app, ["local", "scan", str(target), "--report"])
-
-    assert result.exit_code == 0
-    mock_dir_deps["generate_html"].assert_called_once()
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "HTML Directory report saved" in printed_text
 
 
 def test_scan_dir_invalid_sort(mock_exit_cli, tmp_path):
@@ -250,17 +214,6 @@ def test_scan_skip_overwrite_conflict(mock_exit_cli, tmp_path):
     mock_exit_cli.assert_called_with(
         code=ANY, message="Error: --skip-cache and --overwrite-cache cannot be used together."
     )
-
-
-def test_scan_output_inference_extensions(mock_file_deps, tmp_path):
-    """Hits the output_path inference block for .json, .csv, and .html."""
-    target = tmp_path / "test.txt"
-    target.touch()
-
-    runner.invoke(app, ["local", "scan", str(target), "--output", tmp_path / "report.json"])
-
-    runner.invoke(app, ["local", "scan", str(target), "--output", tmp_path / "report.html"])
-    mock_file_deps["generate_html"].assert_called()
 
 
 def test_scan_file_ignored_dir_flags(mock_rich_console, mock_file_deps, tmp_path):
@@ -303,18 +256,6 @@ def test_scan_file_save_success_and_error(mock_open, mock_rich_console, mock_fil
     runner.invoke(app, ["local", "scan", str(target), "-s"])
     printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "Could not save JSON report. Error: Mock Write Failure" in printed_text
-
-
-def test_scan_file_html_error(mock_rich_console, mock_file_deps, tmp_path):
-    """Hits the exception block during file HTML report generation."""
-    target = tmp_path / "test.txt"
-    target.touch()
-
-    mock_file_deps["generate_html"].side_effect = Exception("Mock HTML Failure")
-    runner.invoke(app, ["local", "scan", str(target), "--report"])
-
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Could not generate HTML report. Error: Mock HTML Failure" in printed_text
 
 
 def test_scan_dir_init_error(mock_exit_cli, mock_dir_deps, tmp_path):
@@ -379,18 +320,6 @@ def test_scan_dir_save_csv_error(mock_rich_console, mock_dir_deps, tmp_path):
 
     printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "Could not save CSV report. Error: Mock CSV Error" in printed_text
-
-
-def test_scan_dir_save_html_error(mock_rich_console, mock_dir_deps, tmp_path):
-    """Hits the exception handler when saving a dir HTML fails."""
-    target = tmp_path / "test_dir"
-    target.mkdir()
-
-    mock_dir_deps["generate_html"].side_effect = Exception("Mock Dir HTML Error")
-    runner.invoke(app, ["local", "scan", str(target), "--report"])
-
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Could not generate HTML directory report. Error: Mock Dir HTML Error" in printed_text
 
 
 def test_scan_output_path_is_dir(mock_file_deps, tmp_path):

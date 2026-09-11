@@ -80,20 +80,21 @@ def scan_target(
             rich_help_panel="Output Options",
         ),
     ] = None,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            "-d",
+            help="Perform a deep scan, calculating all cryptographic hashes for the file.",
+            rich_help_panel="Scan Options",
+        ),
+    ] = False,
     save: Annotated[
         bool,
         typer.Option(
             "-s",
             "--save",
             help="Save a JSON report to the default directory or --output path.",
-            rich_help_panel="Output Options",
-        ),
-    ] = False,
-    report: Annotated[
-        bool,
-        typer.Option(
-            "--report",
-            help="Generate a self-contained HTML report.",
             rich_help_panel="Output Options",
         ),
     ] = False,
@@ -209,16 +210,12 @@ def scan_target(
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --use-cache and --skip-cache cannot be used together.")
     if skip_cache and overwrite_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache cannot be used together.")
-    if json_output and report:
-        exit_cli(code=EXIT_CODE_ERROR, message="Error: --json (stdout) and --report (HTML) flags are not compatible.")
 
     if output_path:
         out_str = str(output_path).lower()
-        if not (save or report or csv):
+        if not (save or csv):
             if out_str.endswith(".json"):
                 save = True
-            elif out_str.endswith(".html"):
-                report = True
             elif out_str.endswith(".csv"):
                 csv = True
             else:
@@ -243,7 +240,6 @@ def scan_target(
             overwrite_cache=overwrite_cache,
             json_output=json_output,
             save=save,
-            report=report,
             output_path=output_path,
             template=template,
             resolve_links=resolve_links,
@@ -251,6 +247,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            calculate_hashes=deep,
         )
     else:
         try:
@@ -266,7 +263,6 @@ def scan_target(
             overwrite_cache=overwrite_cache,
             json_output=json_output,
             save=save,
-            report=report,
             csv=csv,
             output_path=output_path,
             template=template,
@@ -280,6 +276,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            calculate_hashes=deep,
         )
 
 
@@ -290,7 +287,6 @@ def _process_file_scan(
     overwrite_cache,
     json_output,
     save,
-    report,
     output_path,
     template,
     resolve_links,
@@ -298,6 +294,7 @@ def _process_file_scan(
     icons,
     borders,
     console,
+    calculate_hashes,
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
@@ -311,6 +308,7 @@ def _process_file_scan(
             use_cache=use_cache_value,
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
+            calculate_hashes=calculate_hashes,
         )
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
@@ -323,7 +321,8 @@ def _process_file_scan(
                     record_dict["local_filesystem"][key] = val.isoformat()
         else:
             record_dict["local_filesystem"] = {
-                "full_path": local_file._file_path,
+                "full_path": local_file.file_path,
+                "local_record_id": local_file.record_id,
                 "date_created": (local_file.date_created.isoformat() if hasattr(local_file, "date_created") else None),
                 "date_modified": (
                     local_file.date_modified.isoformat() if hasattr(local_file, "date_modified") else None
@@ -350,23 +349,6 @@ def _process_file_scan(
                 final_path, json.dumps(record_dict, indent=2, default=str, ensure_ascii=False), "JSON", console, palette
             )
 
-        if report:
-            from dorsal.api.file import generate_html_file_report
-
-            final_path = _get_final_path(path, output_path, ".html", is_dir=False)
-            try:
-                with console.status(f"📄 Generating HTML report for '[bold]{path.name}[/]'..."):
-                    generate_html_file_report(
-                        file_path=local_file._file_path,
-                        local_file=local_file,
-                        output_path=str(final_path),
-                        template=template,
-                    )
-                console.print(f"✅ HTML report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
-            except Exception as e:
-                logger.error(f"Failed to generate HTML report: {e}")
-                console.print(f"⚠️ Could not generate HTML report. Error: {e}", style=palette.get("warning", "yellow"))
-
     except Exception as err:
         logger.exception(f"CLI 'scan' command failed while processing {path}.")
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
@@ -379,7 +361,6 @@ def _process_dir_scan(
     overwrite_cache,
     json_output,
     save,
-    report,
     csv,
     output_path,
     template,
@@ -393,6 +374,7 @@ def _process_dir_scan(
     icons,
     borders,
     console,
+    calculate_hashes,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
@@ -408,6 +390,7 @@ def _process_dir_scan(
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
             lazy=lazy,
+            calculate_hashes=calculate_hashes,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")
@@ -476,27 +459,6 @@ def _process_dir_scan(
         except Exception as e:
             logger.error(f"Failed to save CSV report: {e}")
             console.print(f"⚠️ Could not save CSV report. Error: {e}", style=palette.get("warning", "yellow"))
-
-    if report:
-        from dorsal.api.file import generate_html_directory_report
-
-        final_path = _get_final_path(path, output_path, ".html", is_dir=True)
-        try:
-            with console.status(f"📄 Generating HTML Directory report for '[bold]{path.name}[/]'..."):
-                generate_html_directory_report(
-                    dir_path=str(path),
-                    output_path=str(final_path),
-                    local_collection=collection,
-                    template=template,
-                    use_cache=use_cache_value,
-                    recursive=recursive,
-                )
-            console.print(f"✅ HTML Directory report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
-        except Exception as e:
-            logger.error(f"Failed to generate HTML report: {e}")
-            console.print(
-                f"⚠️ Could not generate HTML directory report. Error: {e}", style=palette.get("warning", "yellow")
-            )
 
 
 def _get_final_path(
@@ -598,17 +560,23 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
     table.add_column("Filename", style=palette.get("primary_value", "cyan"), min_width=30, overflow="ellipsis")
     table.add_column("Size", justify="right", style=palette.get("value"))
     table.add_column("Media Type", style=palette.get("value"))
+    table.add_column("Record ID", style=palette.get("hash_value", "magenta"))
     table.add_column("Modified Date", style=palette.get("value"))
 
     for file in sorted_files[:limit]:
-        path_obj, display_name = pathlib.Path(file._file_path), file.name
+        path_obj, display_name = pathlib.Path(file.file_path), file.name
         if path_obj.is_symlink():
             try:
                 display_name = f"{escape(path_obj.name)} [dim italic]→ {escape(str(path_obj.readlink()))}[/]"
             except OSError:
                 display_name = f"{escape(path_obj.name)} [dim italic](symlink)[/]"
+
         table.add_row(
-            display_name, human_filesize(file.size), file.media_type, file.date_modified.strftime("%Y-%m-%d %H:%M:%S")
+            display_name,
+            human_filesize(file.size),
+            file.media_type,
+            file.record_id,
+            file.date_modified.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
     console.print(table)

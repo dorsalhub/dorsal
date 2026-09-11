@@ -48,9 +48,18 @@ def client():
 
 @pytest.fixture
 def mock_file_record_strict():
+    import hashlib
+    from blake3 import blake3
+
+    _DUMMY_SHA256 = "a" * 64
+    _DUMMY_BLAKE3 = "b" * 64
+    _DUMMY_SHA1 = "c" * 40
+    _DUMMY_MD5 = "d" * 32
+    _DUMMY_DORSAL = "e" * 64
+
     return FileRecordStrict(
         hash=_DUMMY_SHA256,
-        validation_hash="b" * 64,
+        validation_hash=_DUMMY_DORSAL,
         source="disk",
         annotations={
             "file/base": {
@@ -59,7 +68,13 @@ def mock_file_record_strict():
                     "name": "test.txt",
                     "size": 100,
                     "media_type": "text/plain",
-                    "all_hashes": [{"id": "SHA-256", "value": _DUMMY_SHA256}, {"id": "BLAKE3", "value": "b" * 64}],
+                    "all_hashes": [
+                        {"id": "SHA-256", "value": _DUMMY_SHA256},
+                        {"id": "BLAKE3", "value": _DUMMY_BLAKE3},
+                        {"id": "SHA-1", "value": _DUMMY_SHA1},
+                        {"id": "MD5", "value": _DUMMY_MD5},
+                        {"id": "DORSAL", "value": _DUMMY_DORSAL},
+                    ],
                 },
                 "source": {"type": "Model", "id": "dorsal/file-core", "version": "1.0"},
             }

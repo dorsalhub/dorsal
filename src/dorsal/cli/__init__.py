@@ -40,7 +40,6 @@ from dorsal.cli.local_app import app as local_app_
 from dorsal.cli.index_app.get_index_cmd import get_index_record
 from dorsal.cli.local_app.scan_cmd import scan_target
 from dorsal.cli.local_app.push_cmd import push_target
-from dorsal.cli.local_app.report_cmd import report_target
 from dorsal.cli.local_app.info_cmd import info_target
 from dorsal.cli.local_app.identify_cmd import identify_target
 from dorsal.cli.local_app.hash_cmd import hash_target
@@ -184,9 +183,6 @@ app.command(
 app.command(name="info", help="High-level summary of a directory or a file.", rich_help_panel="Local Operations")(
     info_target
 )
-app.command(
-    name="report", help="Generate HTML report for a local file or directory.", rich_help_panel="Local Operations"
-)(report_target)
 
 
 app.add_typer(hub_app_, name="hub", rich_help_panel="DorsalHub")

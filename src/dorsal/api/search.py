@@ -41,6 +41,7 @@ def search_local(
     limit: int = 1000,
     sort_by: str = "date_modified",
     sort_desc: bool = True,
+    deep: bool = False,
 ) -> Sequence[CachedFileRecord]:
     """
     Standard search returning a flat list of records.
@@ -62,7 +63,7 @@ def search_local(
         try:
             processed_query = QueryParser.parse(query)
             sql, params = QueryCompiler.compile(
-                processed_query, or_logic=or_logic, limit=limit, sort_by=sort_by, sort_desc=sort_desc
+                processed_query, or_logic=or_logic, limit=limit, sort_by=sort_by, sort_desc=sort_desc, deep=deep
             )
         except Exception as e:
             raise DorsalError(f"Invalid search syntax or compilation error: {e}") from e
@@ -97,6 +98,7 @@ def search_local_paginated(
     per_page: int = 25,
     sort_by: str = "date_modified",
     sort_desc: bool = True,
+    deep: bool = False,
 ) -> PaginatedSearchResults:
     """
     UI-focused search. Executes a data query AND a count query
@@ -125,7 +127,7 @@ def search_local_paginated(
     try:
         try:
             processed_query = QueryParser.parse(query)
-            count_sql, count_params = QueryCompiler.compile_count(processed_query, or_logic=or_logic)
+            count_sql, count_params = QueryCompiler.compile_count(processed_query, or_logic=or_logic, deep=deep)
         except Exception as e:
             raise DorsalError(f"Invalid search syntax or compilation error: {e}") from e
 
@@ -164,6 +166,7 @@ def search_local_paginated(
                 offset=start_index,
                 sort_by=sort_by,
                 sort_desc=sort_desc,
+                deep=deep,
             )
             cursor.execute(data_sql, data_params)
             rows = cursor.fetchall()

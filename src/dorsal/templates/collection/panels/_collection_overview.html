@@ -21,7 +21,9 @@
             </div>
         </div>
 
-        <div class="mini-file-view-panel" data-current-hash="{{ panel.data.most_recent_file_record.hash if panel.data.most_recent_file_record else '' }}">
+        {% set most_recent = panel.data.most_recent_file_record %}
+        {% set extracted_id = most_recent.record_id | default((most_recent.local_attributes | default({})).get('record_id', '')) if most_recent else '' %}
+        <div class="mini-file-view-panel" data-current-id="{{ extracted_id }}">
             <div class="panel-header">
                 <div class="header-with-info">
                     <div class="panel-title-group">

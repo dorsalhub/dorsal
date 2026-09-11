@@ -59,7 +59,6 @@ from dorsal.file.utils.index import get_cached_hash
 from dorsal.file.utils.hashes import hash_string_validator
 from dorsal.file.utils import QuickHasher, get_quick_hash, get_sha256_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
-from dorsal.file.utils.reports import resolve_template_path
 from dorsal.file.utils.size import get_filesize, human_filesize, parse_filesize
 from dorsal.session import get_shared_index, get_metadata_reader
 
@@ -97,8 +96,6 @@ __all__ = [
     "search_global_files",
     "find_duplicates",
     "get_directory_info",
-    "generate_html_file_report",
-    "generate_html_directory_report",
     "make_file_extension_dependency",
     "make_media_type_dependency",
     "make_file_size_dependency",
@@ -870,6 +867,7 @@ def scan_directory(
     use_cache: bool = True,
     offline: bool = False,
     follow_symlinks: bool = True,
+    calculate_hashes: bool = True,
 ) -> list[LocalFile]:
     """Scans a directory and returns a list of LocalFile objects.
 
@@ -930,7 +928,11 @@ def scan_directory(
 
     try:
         local_files = effective_reader.scan_directory(
-            dir_path=dir_path, recursive=recursive, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+            dir_path=dir_path,
+            recursive=recursive,
+            skip_cache=not use_cache,
+            follow_symlinks=follow_symlinks,
+            calculate_hashes=calculate_hashes,
         )
         logger.debug(
             "Effective MetadataReader.scan_directory completed for dir_path='%s'. Found %d LocalFile objects.",
@@ -963,6 +965,7 @@ def scan_file(
     use_cache: bool = True,
     offline: bool = False,
     follow_symlinks: bool = True,
+    calculate_hashes: bool = True,
 ) -> LocalFile:
     """Processes a single file and returns a LocalFile object.
 
@@ -1012,7 +1015,10 @@ def scan_file(
 
     try:
         local_file = effective_reader.scan_file(
-            file_path=file_path, skip_cache=not use_cache, follow_symlinks=follow_symlinks
+            file_path=file_path,
+            skip_cache=not use_cache,
+            follow_symlinks=follow_symlinks,
+            calculate_hashes=calculate_hashes,
         )
         logger.debug(
             "Effective MetadataReader.scan_file completed for file_path='%s'. Hash: %s",
@@ -2096,241 +2102,6 @@ def get_directory_info(
     return _format_results(metrics, duration)
 
 
-def generate_html_file_report(
-    file_path: str,
-    *,
-    local_file: LocalFile | None = None,
-    output_path: str | None = None,
-    template: str = "default",
-    use_cache: bool = True,
-    api_key: str | None = None,
-) -> str | None:
-    """
-    Generates a self-contained HTML report for a single local file.
-
-    This function serves as a high-level entry point to the reporting engine. It
-    leverages `scan_file` to perform a full metadata extraction and then renders
-    the result into a rich, interactive HTML document using a flexible,
-    user-configurable Jinja2 template system. The final output is a single,
-    portable HTML file with all CSS and JavaScript embedded.
-
-    Example:
-        ```python
-        from dorsal.api import generate_html_file_report
-
-        # Generate the report and save it to a file
-        generate_html_file_report(
-            "path/to/my_document.pdf",
-            output_path="report.html"
-        )
-
-        # Generate a report using a custom template and get the HTML as a string
-        html_content = generate_html_file_report(
-            "path/to/archive.zip",
-            template="compact"
-        )
-        ```
-
-    Args:
-        file_path (str): The path to the local file to report on.
-        output_path (str, optional): If provided, the HTML report will be saved
-            to this file path. Defaults to None.
-        template (str, optional): The name of a built-in/user-defined template
-            or an absolute path to a custom template .html file.
-            Defaults to "default".
-        use_cache (bool, optional): Whether to use the local cache during file
-            processing. Defaults to True.
-        api_key (str, optional): An API key for operations that may require it.
-            Defaults to None.
-
-    Returns:
-        str: The generated HTML report as a string.
-
-    Raises:
-        DorsalError: If file processing or report generation fails.
-        TemplateNotFoundError: If the specified template cannot be located.
-        FileNotFoundError: If the specified `file_path` does not exist.
-    """
-    from jinja2 import Environment, FileSystemLoader
-    from dorsal.templates.file.icons import get_media_type_icon
-    from dorsal.version import __version__
-
-    logger.debug(f"Generating HTML report for: '{file_path}' using template: '{template}'")
-    try:
-        if local_file is None:
-            local_file = scan_file(file_path, use_cache=use_cache, api_key=api_key)
-
-        template_file, template_base_dir = resolve_template_path(report_type="file", name_or_path=template)
-
-        env = Environment(loader=FileSystemLoader(template_base_dir), autoescape=True)
-        env.globals["human_filesize"] = human_filesize
-        env.globals["get_media_type_icon"] = get_media_type_icon
-
-        jinja_template = env.get_template(template_file.name)
-        file_dict = local_file.to_dict(mode="json")
-
-        base_info = file_dict.get("annotations", {}).get("file/base", {}).get("record", {})
-        file_size_info = {
-            "human": human_filesize(base_info.get("size", 0)),
-            "raw": f"{base_info.get('size', 0)} bytes",
-        }
-
-        local_fs_info = {
-            "full_path": local_file._file_path,
-            "date_created": {
-                "human": local_file.date_created.strftime("%Y-%m-%d %H:%M:%S"),
-                "raw": local_file.date_created.isoformat(),
-            },
-            "date_modified": {
-                "human": local_file.date_modified.strftime("%Y-%m-%d %H:%M:%S"),
-                "raw": local_file.date_modified.isoformat(),
-            },
-        }
-
-        context = {
-            "report_title": f"Dorsal Report: {html.escape(base_info.get('name', 'Untitled File'))}",
-            "generation_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "file": file_dict,
-            "file_size": file_size_info,
-            "raw_data_json": json.dumps(file_dict, indent=2, default=str),
-            "local_filesystem_info": local_fs_info,
-            "dorsal_version": __version__,
-        }
-
-        html_content = jinja_template.render(context)
-
-        if output_path:
-            output_file = pathlib.Path(output_path)
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            logger.info(f"HTML file report saved to: {output_path}")
-            return None
-
-        return html_content
-    except Exception as e:
-        logger.exception(f"Failed to generate HTML file report for '{file_path}'.")
-        if isinstance(e, (DorsalError, FileNotFoundError)):
-            raise
-        raise DorsalError(f"Could not generate HTML report for {file_path}: {e}") from e
-
-
-def generate_html_directory_report(
-    dir_path: str,
-    output_path: str | None = None,
-    *,
-    local_collection: LocalFileCollection | None = None,
-    template: str = "default",
-    use_cache: bool = True,
-    recursive: bool = False,
-) -> str | None:
-    """
-    Generates a self-contained HTML dashboard for a directory of files.
-
-    This function orchestrates the creation of a rich, interactive HTML document.
-    It processes a directory into a LocalFileCollection, generates data for various
-    UI panel based on user configuration, and renders the result using a
-    flexible Jinja2 template system.
-
-    Args:
-        dir_path (str): The path to the local directory to report on.
-        local_collection (LocalFileCollection, optional): An existing, pre-processed
-            collection can be passed to avoid re-scanning the directory.
-        output_path (str, optional): If provided, the HTML dashboard will be saved
-            to this file path.
-        template (str, optional): The name of the template to use. Defaults to "default".
-        use_cache (bool, optional): Whether to use the local cache during file processing.
-        recursive (bool, optional): Whether to scan the directory recursively.
-
-    Returns:
-        str: The generated HTML dashboard as a string.
-
-    Raises:
-        DorsalError: If file processing or report generation fails.
-        TemplateNotFoundError: If the specified template cannot be located.
-        FileNotFoundError: If the specified `dir_path` does not exist.
-    """
-    from jinja2 import Environment, FileSystemLoader
-    from dorsal.common.config import get_collection_report_panel_config
-    from dorsal.file.collection.local import LocalFileCollection
-    from dorsal.file.utils.reports import REPORT_DATA_GENERATORS, resolve_template_path
-    from dorsal.templates.file.icons import get_media_type_icon
-    from dorsal.version import __version__
-    import datetime
-    import html
-    import json
-    import pathlib
-
-    logger.debug(f"Generating HTML dashboard for: '{dir_path}' using template: '{template}'")
-    try:
-        if local_collection is None:
-            collection = LocalFileCollection(
-                source=dir_path,
-                recursive=recursive,
-                use_cache=use_cache,
-            )
-        else:
-            collection = local_collection
-
-        panel_config = get_collection_report_panel_config()
-        enabled_panels = [name for name, is_enabled in panel_config.items() if is_enabled]
-
-        panels_to_render = []
-        for panel_id in enabled_panels:
-            generator_func = REPORT_DATA_GENERATORS.get(panel_id)
-            if generator_func:
-                logger.debug(f"Generating data for panel: {panel_id}")
-                panel_data = generator_func(collection)
-                panels_to_render.append(
-                    {
-                        "id": panel_id,
-                        "title": panel_id.replace("_", " ").title(),
-                        "data": panel_data,
-                    }
-                )
-            else:
-                logger.warning(f"No data generator found for configured panel: {panel_id}")
-
-        template_file, template_base_dir = resolve_template_path(report_type="collection", name_or_path=template)
-
-        env = Environment(loader=FileSystemLoader(template_base_dir), autoescape=True)
-        env.globals["human_filesize"] = human_filesize
-        env.globals["get_media_type_icon"] = get_media_type_icon
-
-        jinja_template = env.get_template(template_file.name)
-
-        collection_dict = collection.to_dict()
-        collection_dict["panels"] = panels_to_render
-
-        full_collection_data_json = json.dumps(collection_dict, default=str)
-
-        context = {
-            "report_title": f"Directory Report: {html.escape(pathlib.Path(dir_path).name)}",
-            "collection_source_path": dir_path,
-            "generation_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "dorsal_version": __version__,
-            "panels": panels_to_render,
-            "full_collection_data_json": full_collection_data_json,
-        }
-
-        html_content = jinja_template.render(context)
-
-        if output_path:
-            output_file = pathlib.Path(output_path)
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            logger.info(f"HTML dashboard saved to: {output_path}")
-            return None
-
-        return html_content
-    except Exception as e:
-        logger.exception(f"Failed to generate HTML dashboard for '{dir_path}'.")
-        if isinstance(e, (DorsalError, FileNotFoundError)):
-            raise
-        raise DorsalError(f"Could not generate HTML dashboard for {dir_path}: {e}") from e
-
-
 @overload
 def get_file_annotation(
     annotation_id: str,
@@ -2597,8 +2368,6 @@ def list_file_annotations(
         DorsalClientError: For API errors (e.g., file not found).
         DorsalError: For other unexpected library errors.
     """
-    import json
-
     if mode not in ("pydantic", "dict", "json"):
         raise ValueError(f"Invalid mode: '{mode}'.")
 

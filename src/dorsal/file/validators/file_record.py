@@ -415,6 +415,7 @@ class FileRecord(BaseModel):
     quick_hash: QuickHash | None = None
     similarity_hash: TLSHash | None = None
     annotations: Annotations | None = None
+    source: Literal["disk", "cache", "dorsalhub"] | None = None
     tags: list[FileTag] = Field(default_factory=list)
     urls: list[FileUrl] = Field(default_factory=list)
 
@@ -464,9 +465,9 @@ class FileRecord(BaseModel):
         self._validate_or_populate_hash_field(
             field_name="validation_hash",
             source_value=(
-                core_validation_model.all_hash_ids.get("BLAKE3") if core_validation_model.all_hash_ids else None
+                core_validation_model.all_hash_ids.get("DORSAL") if core_validation_model.all_hash_ids else None
             ),
-            source_name_for_error="BLAKE3",
+            source_name_for_error="DORSAL",
         )
         return self
 

@@ -51,17 +51,27 @@ def mock_build_index_cmd(mocker):
 
 
 def test_build_index_default(mock_rich_console, mock_build_index_cmd):
-    """Tests the default behavior of building the index."""
+    """Tests the default behavior of building the index (shallow scan)."""
     result = runner.invoke(app, ["index", "build", TEST_DATA_DIR])
 
     assert result.exit_code == 0
     mock_build_index_cmd["collection_class"].assert_called_once()
+
+    assert mock_build_index_cmd["collection_class"].call_args.kwargs.get("calculate_hashes") is False
 
     all_printed_text = " ".join([call.args[0] for call in mock_rich_console.print.call_args_list if call.args])
 
     assert "Search Index updated successfully" in all_printed_text
     assert "Loaded from index: 10" in all_printed_text
     assert "Newly added to index: 5" in all_printed_text
+
+
+def test_build_index_deep(mock_rich_console, mock_build_index_cmd):
+    """Tests an index build with the --deep flag, enforcing hash calculations."""
+    result = runner.invoke(app, ["index", "build", TEST_DATA_DIR, "--deep"])
+
+    assert result.exit_code == 0
+    assert mock_build_index_cmd["collection_class"].call_args.kwargs.get("calculate_hashes") is True
 
 
 def test_build_index_force(mock_rich_console, mock_build_index_cmd):

@@ -206,6 +206,9 @@ class MockBaseAnnotationModel(AnnotationModel):
             "all_hashes": [
                 {"id": "SHA-256", "value": "a" * 64},
                 {"id": "BLAKE3", "value": "b" * 64},
+                {"id": "MD5", "value": "c" * 32},
+                {"id": "SHA-1", "value": "d" * 40},
+                {"id": "DORSAL", "value": "e" * 64},
             ],
         }
 
@@ -255,6 +258,20 @@ class MockPydanticValidator(BaseModel):
 
     status: str
     data: int
+
+
+class MockRequiresHashesModel(AnnotationModel):
+    """A mock pipeline model that requires hashes."""
+
+    id = "dorsal/requires-hashes"
+    version = "1.0.0"
+    requires_hashes = True
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def main(self, **kwargs) -> dict[str, Any]:
+        return {"status": "success"}
 
 
 def mock_checker_true(results: list[RunModelResult], config: DependencyConfig) -> bool:
@@ -398,6 +415,7 @@ class TestModelRunnerExecution:
             "tests.unit.test_model_runner.MockFailureAnnotationModel": MockFailureAnnotationModel,
             "tests.unit.test_model_runner.MockNoneReturnModel": MockNoneReturnModel,
             "tests.unit.test_model_runner.MockPydanticValidator": MockPydanticValidator,
+            "tests.unit.test_model_runner.MockRequiresHashesModel": MockRequiresHashesModel,
             "tests.unit.test_model_runner.mock_checker_true": mock_checker_true,
             "tests.unit.test_model_runner.mock_checker_false": mock_checker_false,
             "tests.unit.test_model_runner.mock_checker_error": mock_checker_error,
@@ -572,6 +590,24 @@ class TestModelRunnerExecution:
 
         assert "dep/checker-fail" not in result.annotations.model_extra
 
+    def test_run_shallow_scan_skips_requires_hashes(self, mock_fs, caplog):
+        """Test that a model with requires_hashes=True is skipped when calculate_hashes=False."""
+        pipeline_config = [
+            {
+                "annotation_model": {
+                    "module": "tests.unit.test_model_runner",
+                    "name": "MockRequiresHashesModel",
+                },
+                "schema_id": "skip/hashes",
+            }
+        ]
+        runner = ModelRunner(pipeline_config=pipeline_config)
+
+        result = runner.run("/test_file.txt", calculate_hashes=False)
+
+        assert "skip/hashes" not in result.annotations.model_extra
+        assert "Skipping model 'MockRequiresHashesModel' for shallow scan because it requires hashes." in caplog.text
+
 
 class TestModelRunnerResultMerging:
     """Tests focusing on the logic within `_merge_model_results`."""
@@ -614,7 +650,7 @@ class TestModelRunnerResultMerging:
         assert isinstance(annotations_list, list)
         assert len(annotations_list) == 2
 
-    def test_merge_missing_blake3_hash_raises_error(self, mock_fs, mocker):
+    def test_merge_missing_dorsal_hash_raises_error(self, mock_fs, mocker):
         mocker.patch.object(
             MockBaseAnnotationModel,
             "main",
@@ -624,7 +660,13 @@ class TestModelRunnerResultMerging:
                 "extension": ".txt",
                 "size": 123,
                 "media_type": "text/plain",
-                "all_hashes": [{"id": "SHA-256", "value": "a" * 64}],
+                "all_hashes": [
+                    {"id": "SHA-256", "value": "a" * 64},
+                    {"id": "BLAKE3", "value": "b" * 64},
+                    {"id": "MD5", "value": "c" * 32},
+                    {"id": "SHA-1", "value": "d" * 40},
+                    {"id": "QUICK", "value": "e" * 64},
+                ],
             },
         )
         runner = ModelRunner(pipeline_config=[])
@@ -809,7 +851,13 @@ class TestModelRunnerAdvanced:
                 "extension": ".txt",
                 "size": 10,
                 "media_type": "text/plain",
-                "all_hashes": [{"id": "SHA-256", "value": "a" * 64}, {"id": "BLAKE3", "value": "b" * 64}],
+                "all_hashes": [
+                    {"id": "SHA-256", "value": "a" * 64},
+                    {"id": "BLAKE3", "value": "b" * 64},
+                    {"id": "MD5", "value": "c" * 32},
+                    {"id": "SHA-1", "value": "d" * 40},
+                    {"id": "QUICK", "value": "e" * 64},
+                ],
             },
         )
 
@@ -1084,13 +1132,12 @@ class TestResolvePipelineStepModels:
             annotation_model={"module": "test.module", "name": "NotAModel"},
             schema_id="test/schema",
         )
-        # Mocking import to return a standard function instead of an AnnotationModel class
+
         mocker.patch("dorsal.file.configs.model_runner.import_callable", return_value=lambda x: x)
 
         with pytest.raises(AnnotationImportError) as exc_info:
             resolve_pipeline_step_models(step)
 
-        # The underlying TypeError should be captured as the cause
         assert "not a subclass of AnnotationModel" in str(exc_info.value.__cause__)
 
     def test_failure_validation_model_wrong_type(self, mocker):
@@ -1105,7 +1152,7 @@ class TestResolvePipelineStepModels:
             if import_path.name == "MockSuccessAnnotationModel":
                 return MockSuccessAnnotationModel
             if import_path.name == "BadValidator":
-                return lambda x: x  # Invalid validator type
+                return lambda x: x
             raise ImportError
 
         mocker.patch("dorsal.file.configs.model_runner.import_callable", side_effect=mock_import)
@@ -1231,7 +1278,7 @@ class TestModelRunnerChunkRescueAndMultiOutput:
         """Tests that chunk rescue correctly merges valid outputs with rescued chunks."""
 
         def mock_smart_chunker(record, schema_id):
-            # Only chunk the invalid record
+
             if record.get("text") == "way_too_long_string":
                 return [{"text": "chk1"}, {"text": "chk2"}]
             return [record]
@@ -1250,7 +1297,7 @@ class TestModelRunnerChunkRescueAndMultiOutput:
         assert result[0].error is None
         assert result[1].error is None
         assert result[2].error is None
-        # The valid one from the initial run, plus the two rescued chunks
+
         assert result[0].records[0]["text"] == "ok1"
         assert result[1].records[0]["text"] == "chk1"
         assert result[2].records[0]["text"] == "chk2"
@@ -1267,7 +1314,6 @@ class TestModelRunnerChunkRescueAndMultiOutput:
             schema_id="test/fail",
         )
 
-        # It should fail validation a second time and exit gracefully
         assert len(result) == 1
         assert result[0].error is not None
         assert result[0].records is None
@@ -1329,12 +1375,12 @@ class TestModelRunnerTypeCoercion:
             "is_bool_1": "true",
             "is_bool_2": "1",
             "is_int_1": "42",
-            "is_int_2": "invalid_int_fallback",  # Should fall back to string safely
+            "is_int_2": "invalid_int_fallback",
             "is_float_1": "3.14",
             "is_float_2": "invalid_float_fallback",
-            "is_str": "100",  # Should remain string
-            "undeclared": "passthrough",  # Not in schema, should pass through
-            "already_parsed_dict": {"complex": "data"},  # Non-strings should be left alone
+            "is_str": "100",
+            "undeclared": "passthrough",
+            "already_parsed_dict": {"complex": "data"},
         }
 
         coerced = ModelRunner._coerce_options(raw_options, schema)

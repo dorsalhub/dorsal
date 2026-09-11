@@ -121,6 +121,9 @@ def test_get_multiple_hashes_with_mixed_cache(mock_cache, test_file):
             file_size=11,
             calculate_sha256=False,
             calculate_blake3=True,
+            calculate_md5=False,
+            calculate_sha1=False,
+            calculate_validation=False,
             calculate_tlsh=False,
         )
         mock_cache.upsert_hash.assert_called_once_with(

@@ -41,6 +41,14 @@ def build_search_index(
             help="Scan subdirectories recursively.",
         ),
     ] = False,
+    deep: Annotated[
+        bool,
+        typer.Option(
+            "--deep",
+            "-d",
+            help="Perform a deep scan, calculating all cryptographic hashes for the files.",
+        ),
+    ] = False,
     force: Annotated[
         bool,
         typer.Option(
@@ -100,6 +108,7 @@ def build_search_index(
                     use_cache=use_cache_value,
                     follow_symlinks=resolve_links,
                     lazy=lazy,
+                    calculate_hashes=deep,
                 )
         else:
             collection = LocalFileCollection(
@@ -109,6 +118,8 @@ def build_search_index(
                 palette=palette,
                 use_cache=use_cache_value,
                 follow_symlinks=resolve_links,
+                lazy=lazy,
+                calculate_hashes=deep,
             )
 
         collection_info = collection.info()
