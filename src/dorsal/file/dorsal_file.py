@@ -1704,7 +1704,7 @@ class LocalFile(_DorsalFile):
 
         if not isinstance(self.model, FileRecordStrict):
             error_msg = (
-                "Cannot push LocalFile. Call the `upgrade_file_record()`"
+                "Cannot push LocalFile. Call the `upgrade_file_record()` "
                 "method to calculate the required hashes before pushing to DorsalHub."
             )
             logger.error(error_msg)
@@ -1819,7 +1819,7 @@ class LocalFile(_DorsalFile):
 
         if not isinstance(self.model, FileRecordStrict):
             error_msg = (
-                "Cannot push LocalFile. Call the `upgrade_file_record()` method"
+                "Cannot push LocalFile. Call the `upgrade_file_record()` method "
                 "to calculate the required hashes before pushing to DorsalHub."
             )
             logger.error(error_msg)
