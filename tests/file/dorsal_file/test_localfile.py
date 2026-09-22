@@ -1372,3 +1372,21 @@ def test_annotate_using_pipeline_step_missing_validation_hash(tmp_path):
     with pytest.raises(ValueError) as excinfo:
         local_file._annotate_using_pipeline_step(pipeline_step_config={"schema_id": "open/generic"})
     assert "Cannot annotate: File is missing a 'validation_hash'." in str(excinfo.value)
+
+
+def test_to_dict_json_mode_serialization(mock_metadata_reader, mock_file_record_strict, fs):
+    """Test that to_dict(mode='json') produces a fully JSON-serializable dictionary."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+
+    lf = LocalFile(file_path)
+    data = lf.to_dict(mode="json")
+
+    assert isinstance(data["local_attributes"]["date_modified"], str)
+
+    try:
+        json_str = json.dumps(data, default=str)
+        assert '"date_modified":' in json_str
+    except TypeError as e:
+        pytest.fail(f"to_dict(mode='json') output was not JSON serializable: {e}")
