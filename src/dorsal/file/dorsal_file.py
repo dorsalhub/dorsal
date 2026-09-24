@@ -2913,6 +2913,7 @@ class LocalFile(_DorsalFile):
     ) -> dict:
         """
         Overrides the parent method to include local file information.
+        When mode="json", ensures that all local attributes are JSON-serializable.
         """
         base_dict = super().to_dict(
             by_alias=by_alias,
@@ -2921,6 +2922,12 @@ class LocalFile(_DorsalFile):
             exclude=exclude,
         )
         local_info = self._get_local_info_dict()
+
+        if mode == "json":
+            for key, value in local_info.items():
+                if isinstance(value, datetime.datetime):
+                    local_info[key] = value.isoformat()
+
         base_dict["local_attributes"] = local_info
         return base_dict
 
