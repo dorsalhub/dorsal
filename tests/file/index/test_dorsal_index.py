@@ -855,3 +855,51 @@ def test_export_progress_callback(temp_index, make_mock_record, tmp_path):
     temp_index.export(output_path=out_path, format="json", progress_callback=progress, batch_size=10)
 
     assert progress.call_count >= 2
+
+
+def test_upsert_hash_patches_all_json_keys_correctly(temp_index: DorsalIndex, make_mock_record):
+    """
+    Ensures that upsert_hash maps hash functions to their correct JSON keys in the cached blob.
+    This prevents Pydantic validation errors caused by mapping mismatches.
+    """
+    path = "/fake/hash_mapping.pdf"
+    mtime = 100.0
+
+    deep_record = make_mock_record(path)
+    record_dict = deep_record.model_dump(by_alias=True)
+
+    record_dict["hash"] = None
+    record_dict["validation_hash"] = None
+    record_dict["quick_hash"] = None
+    record_dict["similarity_hash"] = None
+    if "file/base" in record_dict.get("annotations", {}):
+        record_dict["annotations"]["file/base"]["record"]["hash"] = None
+        record_dict["annotations"]["file/base"]["record"]["all_hash_ids"] = {}
+
+    from dorsal.file.validators.file_record import FileRecord
+
+    shallow_record = FileRecord.model_validate(record_dict)
+
+    temp_index.upsert_record(path=path, modified_time=mtime, record=shallow_record)
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="SHA-256", hash_value="sha256_val")
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="DORSAL", hash_value="dorsal_val")
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="QUICK", hash_value="quick_val")
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="TLSH", hash_value="tlsh_val")
+    temp_index.upsert_hash(path=path, modified_time=mtime, hash_function="BLAKE3", hash_value="blake3_val")
+
+    fetched = temp_index.get_record(path=path)
+    assert fetched is not None
+
+    data = json.loads(fetched.record_json)
+
+    assert data.get("hash") == "sha256_val"
+    assert data.get("validation_hash") == "dorsal_val"
+    assert data.get("quick_hash") == "quick_val"
+    assert data.get("similarity_hash") == "tlsh_val"
+
+    file_base_rec = data.get("annotations", {}).get("file/base", {}).get("record", {})
+    assert file_base_rec.get("hash") == "sha256_val"
+    assert file_base_rec.get("quick_hash") == "quick_val"
+    assert file_base_rec.get("similarity_hash") == "tlsh_val"
+    assert file_base_rec.get("all_hash_ids", {}).get("DORSAL") == "dorsal_val"
+    assert file_base_rec.get("all_hash_ids", {}).get("BLAKE3") == "blake3_val"
