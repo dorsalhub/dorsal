@@ -397,7 +397,7 @@ class DorsalIndex:
         }
         json_field_map = {
             "SHA-256": "hash",
-            "BLAKE3": "validation_hash",
+            "DORSAL": "validation_hash",
             "QUICK": "quick_hash",
             "TLSH": "similarity_hash",
         }
