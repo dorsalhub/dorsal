@@ -239,3 +239,63 @@ class TestAnnotationsPermissive:
         model = Annotations.model_validate(payload)
         extras = model.__pydantic_extra__
         assert len(extras["open/classification"]) == 100
+
+
+class TestAnnotationGroupLimits:
+    def test_sharded_group_accepts_up_to_1000_chunks(self, mock_source, valid_stub):
+        """
+        Target: AnnotationGroup (max_length=1000)
+        Scenario: The sharder chunks a ~170MiB poison document into 850 chunks.
+        Outcome: Success (previously failed at max_length=100).
+        """
+        # Create a valid chunk skeleton mimicking a ShardedAnnotation
+        chunk_dict = {
+            "record": {
+                "id": str(uuid.uuid4()),
+                "block_type": "box",
+                "text": "Extracted artifact...",
+            },
+            "source": mock_source.model_dump(),
+            "schema_version": "1.0.0",
+            "private": False,
+            "group": {"id": str(uuid.uuid4()), "index": 0, "total": 850},
+        }
+
+        massive_chunk_list = []
+        for i in range(850):
+            current_chunk = chunk_dict.copy()
+            current_chunk["group"] = chunk_dict["group"].copy()
+            current_chunk["group"]["index"] = i
+            massive_chunk_list.append(current_chunk)
+
+        payload = {"annotations": massive_chunk_list}
+
+        try:
+            from dorsal.file.validators.file_record import AnnotationGroup
+
+            group = AnnotationGroup.model_validate(payload)
+            assert len(group.annotations) == 850
+        except ValidationError as e:
+            pytest.fail(f"AnnotationGroup rejected 850 chunks. Limit increase failed: {e}")
+
+    def test_sharded_group_rejects_over_1000_chunks(self, mock_source):
+        """
+        Target: AnnotationGroup (max_length=1000)
+        Scenario: The sharder goes insane and generates 1001 chunks.
+        Outcome: ValidationError.
+        """
+        chunk_dict = {
+            "record": {"text": "Artifact"},
+            "source": mock_source.model_dump(),
+            "schema_version": "1.0.0",
+            "private": False,
+            "group": {"id": str(uuid.uuid4()), "index": 0, "total": 1001},
+        }
+
+        insane_chunk_list = [chunk_dict.copy() for _ in range(1001)]
+        payload = {"annotations": insane_chunk_list}
+
+        from dorsal.file.validators.file_record import AnnotationGroup
+
+        with pytest.raises(ValidationError, match=r"List should have at most 1000 items"):
+            AnnotationGroup.model_validate(payload)
