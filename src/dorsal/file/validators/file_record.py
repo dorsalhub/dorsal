@@ -128,7 +128,7 @@ class ShardedAnnotation(Annotation):
 class AnnotationGroup(BaseModel):
     """Container for multiple linked annotations. The order in the array is meaningful."""
 
-    annotations: list[Annotation] = Field(min_length=1, max_length=100)
+    annotations: list[Annotation] = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
     def _similarity_check(self) -> Self:
