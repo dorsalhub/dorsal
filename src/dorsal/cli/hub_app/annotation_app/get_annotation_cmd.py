@@ -133,7 +133,9 @@ def get_annotation(
                 save_path = output_path
 
             if not (json_output or export_format):
-                dump_dict = hydrated.model_dump(exclude_none=True) if hasattr(hydrated, "model_dump") else {}
+                dump_dict = (
+                    hydrated.model_dump(exclude_none=True, mode="json") if hasattr(hydrated, "model_dump") else {}
+                )
                 data_str = json.dumps(dump_dict, indent=2, ensure_ascii=False)
 
             save_path.write_text(data_str, encoding="utf-8")
