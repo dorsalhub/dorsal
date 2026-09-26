@@ -43,10 +43,9 @@ dependencies = [
 
 [project.optional-dependencies]
 tlsh = ["py-tlsh>=4.7.2"]
-
 pandas = ["pandas>=2.0.0"]
-
-all = ["dorsalhub[tlsh]", "dorsalhub[pandas]"]
+ipfs = ["protobuf>=4.25.3", "py-cid>=0.3.0"]
+all = ["dorsalhub[tlsh]", "dorsalhub[pandas]", "dorsalhub[ipfs]"]
 
 [project.urls]
 "Homepage" = "https://dorsalhub.com"
@@ -101,6 +100,7 @@ dev = [
     "black>=26.3.1",
     "mypy>=1.15.0",
     "pandas>=2.3.1",
+    "types-protobuf",
     "pyfakefs>=5.9.2",
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",

@@ -26,7 +26,7 @@ jobs:
       - name: Add uv to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --all-extras --group dev
       - name: Run Static Analysis
         run: |
           uv run ruff format --check .
@@ -84,7 +84,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-uv-
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --all-extras --group dev
 
       - name: Install System Dependencies (macOS)
         if: matrix.os == 'macos-latest'

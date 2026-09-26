@@ -220,6 +220,7 @@ def create_file_info_panel(
         ("SHA-1", all_hash_ids.get("SHA-1")),
         ("QUICK", record_dict.get("quick_hash") or all_hash_ids.get("QUICK")),
         ("DORSAL", record_dict.get("validation_hash") or all_hash_ids.get("DORSAL")),
+        ("IPFS", all_hash_ids.get("IPFS")),
         ("TLSH", record_dict.get("similarity_hash") or all_hash_ids.get("TLSH")),
     ]
 

@@ -31,7 +31,7 @@ from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
-HashType = Literal["BLAKE3", "SHA-256", "MD5", "SHA-1", "DORSAL", "TLSH", "QUICK"]
+HashType = Literal["BLAKE3", "SHA-256", "MD5", "SHA-1", "DORSAL", "IPFS", "TLSH", "QUICK"]
 
 
 def hash_target(
@@ -53,6 +53,7 @@ def hash_target(
     dorsal: Annotated[bool, typer.Option("--dorsal", help="Display the DorsalHub validation hash.")] = False,
     tlsh: Annotated[bool, typer.Option("--tlsh", help="Display the TLSH similarity hash.")] = False,
     quick: Annotated[bool, typer.Option("--quick", help="Display the sample-based QuickHash.")] = False,
+    ipfs: Annotated[bool, typer.Option("--ipfs", help="Display the IPFS CID v1.")] = False,
     use_cache: Annotated[
         bool,
         typer.Option(
@@ -97,7 +98,7 @@ def hash_target(
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
 
     hashes_to_get: List[HashType] = []
-    show_all = not any([sha256, blake3, md5, sha1, dorsal, tlsh, quick])
+    show_all = not any([sha256, blake3, md5, sha1, dorsal, ipfs, tlsh, quick])
 
     if show_all or sha256:
         hashes_to_get.append("SHA-256")
@@ -109,6 +110,8 @@ def hash_target(
         hashes_to_get.append("SHA-1")
     if show_all or dorsal:
         hashes_to_get.append("DORSAL")
+    if show_all or ipfs:
+        hashes_to_get.append("IPFS")
     if show_all or tlsh:
         hashes_to_get.append("TLSH")
     if show_all or quick:

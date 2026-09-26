@@ -89,6 +89,17 @@ def get_validation_hash(file_path: str, follow_symlinks: bool = True) -> str:
         raise
 
 
+def get_ipfs_cid(file_path: str, follow_symlinks: bool = True) -> str | None:
+    """
+    Get the IPFS CIDv1 for a file.
+    Returns None if the required IPFS dependencies are not installed.
+    """
+    try:
+        return FILE_HASHER.hash_ipfs(file_path=file_path, follow_symlinks=follow_symlinks)
+    except (IOError, PermissionError):
+        raise
+
+
 def multi_hash(
     file_path: str, similarity_hash: bool = False, follow_symlinks: bool = True, threads: int | None = None
 ) -> dict[str, str]:

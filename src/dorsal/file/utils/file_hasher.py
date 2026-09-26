@@ -55,6 +55,7 @@ class FileHasher:
         """Initializes the FileHasher."""
         self.hashers_constructors: dict[str, Any] = self._default_hashers.copy()
         self._tlsh_available: bool | None = None
+        self._ipfs_available: bool | None = None
 
     def _check_tlsh_availability(self) -> bool:
         """Checks if the TLSH library is available."""
@@ -69,6 +70,22 @@ class FileHasher:
                     "To enable, please install the 'py-tlsh' Python package."
                 )
         return self._tlsh_available
+
+    def _check_ipfs_availability(self) -> bool:
+        """Checks if the IPFS dependencies are available."""
+        if self._ipfs_available is None:
+            try:
+                from dorsal.file.utils.ipfs_hasher import IPFSHasher
+
+                self._ipfs_available = True
+                logger.debug("IPFS hashing libraries are available")
+            except ImportError:
+                self._ipfs_available = False
+                logger.debug(
+                    "IPFS dependencies not found. IPFS hashes will not be calculated. "
+                    "To enable, please run `pip install dorsalhub[ipfs]`."
+                )
+        return self._ipfs_available
 
     def _stream_file_content(self, file_path: str, follow_symlinks: bool) -> ContextManager[Any]:
         """
@@ -138,6 +155,7 @@ class FileHasher:
         calculate_sha1: bool = True,
         calculate_validation: bool = True,
         calculate_tlsh: bool = True,
+        calculate_ipfs: bool = False,
         follow_symlinks: bool = True,
         threads: int | None = None,
     ) -> dict[HashFunctionId, str]:
@@ -189,6 +207,8 @@ class FileHasher:
             functions_to_run.append("DORSAL")
         if calculate_tlsh:
             functions_to_run.append("TLSH")
+        if calculate_ipfs:
+            functions_to_run.append("IPFS")
 
         logger.debug(
             "Hashing file: '%s', size: %d bytes, functions: %s, requested threads: %s",
@@ -218,6 +238,13 @@ class FileHasher:
                         "File '%s' is too small for TLSH. It will not be calculated.",
                         file_path,
                     )
+
+        if calculate_ipfs:
+            if self._check_ipfs_availability():
+                from dorsal.file.utils.ipfs_hasher import IPFSHasher
+
+                active_hashers["IPFS"] = IPFSHasher()
+                logger.debug("IPFS hasher added for file: '%s'", file_path)
 
         hasher_instances = list(active_hashers.values())
         num_hashers = len(hasher_instances)
@@ -400,3 +427,26 @@ class FileHasher:
         except ValueError as e:
             logger.warning("Could not generate TLSH for '%s': %s", file_path, e)
             return None
+
+    def hash_ipfs(self, file_path: str, follow_symlinks: bool = True) -> str | None:
+        """
+        Calculates the IPFS CIDv1 for a single file.
+        """
+        logger.debug("IPFS hashing file: '%s'", file_path)
+
+        if not self._check_ipfs_availability():
+            logger.warning("Cannot calculate IPFS CID for '%s': IPFS dependencies not available.", file_path)
+            return None
+
+        from dorsal.file.utils.ipfs_hasher import IPFSHasher
+
+        hasher = IPFSHasher()
+
+        try:
+            with self._stream_file_content(file_path, follow_symlinks=follow_symlinks) as fp:
+                for chunk in self._yield_chunks(fp):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except (IOError, PermissionError, OSError) as err:
+            logger.error("Failed to read file '%s' for IPFS hashing: %s", file_path, err)
+            raise

@@ -84,7 +84,7 @@ class HashReader:
                 hashes_to_process.clear()
 
         if hashes_to_process:
-            file_hasher_algos = hashes_to_process & {"SHA-256", "BLAKE3", "MD5", "SHA-1", "DORSAL", "TLSH"}
+            file_hasher_algos = hashes_to_process & {"SHA-256", "BLAKE3", "MD5", "SHA-1", "DORSAL", "IPFS", "TLSH"}
 
             if file_hasher_algos:
                 try:
@@ -96,6 +96,7 @@ class HashReader:
                         calculate_md5="MD5" in file_hasher_algos,
                         calculate_sha1="SHA-1" in file_hasher_algos,
                         calculate_validation="DORSAL" in file_hasher_algos,
+                        calculate_ipfs="IPFS" in file_hasher_algos,
                         calculate_tlsh="TLSH" in file_hasher_algos,
                     )
                     for hash_function, hash_val in calculated_hashes.items():
