@@ -96,17 +96,31 @@ def test_get_index_by_hash(mock_rich_console, mock_get_index_cmd):
     mock_get_index_cmd["create_panel"].assert_called_once()
 
 
-def test_get_index_not_found(mock_rich_console, mock_get_index_cmd):
-    """Tests graceful exit when no record is found by path or hash."""
+def test_get_index_not_found(mock_rich_console, mock_error_console, mock_get_index_cmd):
+    """Tests the error exit when no record is found by path or hash; the message goes to stderr."""
     mock_get_index_cmd["index_instance"].get_record.return_value = None
     mock_get_index_cmd["search_local"].return_value = []
 
     result = runner.invoke(app, ["index", "get", HASH_ID])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 1
 
-    all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
-    assert "No local records found" in all_output
+    stderr_text = "".join(str(call.args[0]) for call in mock_error_console.print.call_args_list)
+    assert "No local records found" in stderr_text
+    assert "dorsal hub get" in stderr_text
+
+
+def test_get_index_not_found_json(mock_rich_console, mock_error_console, mock_get_index_cmd):
+    """With --json, not-found is reported as JSON on stderr, and nothing is written to stdout."""
+    mock_get_index_cmd["index_instance"].get_record.return_value = None
+    mock_get_index_cmd["search_local"].return_value = []
+
+    result = runner.invoke(app, ["index", "get", HASH_ID, "--json"])
+
+    assert result.exit_code == 1
+    data = json.loads(mock_error_console.print.call_args.args[0])
+    assert data == {"success": False, "error": "Not Found", "detail": "No local records found."}
+    mock_rich_console.file.write.assert_not_called()
 
 
 def test_get_index_json_output(mock_rich_console, mock_get_index_cmd):
@@ -117,7 +131,7 @@ def test_get_index_json_output(mock_rich_console, mock_get_index_cmd):
     assert result.exit_code == 0
     mock_get_index_cmd["create_panel"].assert_not_called()
 
-    json_str = mock_rich_console.print.call_args.args[0]
+    json_str = mock_rich_console.file.write.call_args.args[0]
     data = json.loads(json_str)
     assert data["hash"] == HASH_ID
 
@@ -190,7 +204,7 @@ def test_get_index_save_ioerror(mock_get_index_cmd, mocker):
     assert "Error writing to file" in result.output
 
 
-def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, mocker):
+def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, mocker, mock_error_console):
     """Tests the warning panel fallback when a generic Exception occurs during save."""
     mocker.patch("builtins.open", side_effect=Exception("Unknown file error"))
     path_id = mock_get_index_cmd["path_id"]
@@ -199,5 +213,19 @@ def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, moc
 
     assert result.exit_code == 0
 
-    all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
+    all_output = "".join(str(call.args[0]) for call in mock_error_console.print.call_args_list if call.args)
     assert "Could not save JSON report" in all_output
+
+
+def test_get_index_json_with_save(mock_rich_console, mock_error_console, mock_get_index_cmd):
+    """--json no longer exits before --save; the saved file matches stdout and the confirmation goes to stderr."""
+    custom_out = mock_get_index_cmd["tmp_path"] / "record.json"
+    path_id = mock_get_index_cmd["path_id"]
+
+    result = runner.invoke(app, ["index", "get", path_id, "--json", "--output", str(custom_out)])
+
+    assert result.exit_code == 0
+    stdout_data = json.loads(mock_rich_console.file.write.call_args.args[0])
+    assert json.loads(custom_out.read_text(encoding="utf-8")) == stdout_data
+    mock_rich_console.print.assert_not_called()
+    assert "JSON record saved to" in "".join(str(c.args[0]) for c in mock_error_console.print.call_args_list)

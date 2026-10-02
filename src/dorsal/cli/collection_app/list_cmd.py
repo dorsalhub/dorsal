@@ -46,7 +46,12 @@ def list_dorsal_collections(
     Lists all available collections on DorsalHub.
     """
     from dorsal.api.collection import list_collections
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
     from dorsal.file.utils.size import human_filesize
 
@@ -65,7 +70,7 @@ def list_dorsal_collections(
         logger.debug("MANUAL DUMP OF PAGINATION: %s", raw_dump.get("pagination"))
 
         if json_output:
-            console.print(response.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+            print_raw_output(response.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
             exit_cli()
 
         if not response.records:

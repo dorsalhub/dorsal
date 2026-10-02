@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import typer
 from typing import Annotated
@@ -46,7 +45,12 @@ def show_index_summary(
     from datetime import datetime
     from rich.columns import Columns
     from dorsal.api.index import summary as get_index_summary
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+    )
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
@@ -59,7 +63,7 @@ def show_index_summary(
         summary = get_index_summary(verbose=verbose, limit=limit)
 
         if json_output:
-            console.print(json.dumps(summary, indent=2))
+            print_json_output(summary, console)
             exit_cli()
 
         created_dt = (

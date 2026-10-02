@@ -200,14 +200,14 @@ def test_whoami_auth_error(mocker, mock_auth_app):
     assert isinstance(result.exception, AuthError)
 
 
-def test_gitignore_no_git(mocker, mock_rich_console):
+def test_gitignore_no_git(mocker, mock_rich_console, mock_error_console):
     """Tests behavior when 'git' is not installed."""
     mocker.patch("shutil.which", return_value=None)
 
     result = runner.invoke(app, ["auth", "gitignore"])
 
     assert result.exit_code != 0
-    assert "'git' command not found" in str(mock_rich_console.print.call_args.args[0])
+    assert "'git' command not found" in str(mock_error_console.print.call_args.args[0])
 
 
 def test_gitignore_not_repo(mocker, mock_rich_console):

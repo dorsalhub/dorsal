@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 import typer
@@ -33,6 +32,9 @@ from dorsal.common.cli import (
     get_rich_console,
     determine_use_cache_value,
     exit_cli,
+    get_error_console,
+    print_json_output,
+    print_raw_output,
 )
 from dorsal.common.exceptions import (
     DorsalClientError,
@@ -260,6 +262,7 @@ def push_target(
 def _process_file_push(
     ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, ui_context, console
 ) -> None:
+    error_console = get_error_console()
     from dorsal.file.dorsal_file import LocalFile
 
     palette = ui_context["palette"]
@@ -281,11 +284,13 @@ def _process_file_push(
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
-        with console.status("Pushing to DorsalHub..."):
+        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
+        status_console = get_error_console() if json_output else console
+        with status_console.status("Pushing to DorsalHub..."):
             api_response = local_file.push(public=public, strict=strict)
 
         if json_output:
-            console.print(json.dumps(api_response.model_dump(mode="json"), indent=2, ensure_ascii=False))
+            print_json_output(api_response.model_dump(mode="json"), console)
             exit_cli()
 
         if api_response.results and api_response.success > 0:
@@ -318,13 +323,13 @@ def _process_file_push(
     except PartialIndexingError as e:
         if json_output:
             error_payload = {"error": "PartialIndexingError", "message": str(e), "summary": e.summary}
-            console.print(json.dumps(error_payload, indent=2, ensure_ascii=False))
+            print_json_output(error_payload, error_console)
         else:
-            console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Error:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Error:[/] {e}")
             if e.summary and "failures" in e.summary:
-                console.print(f"[{palette.get('warning', 'yellow')}]Failures detected:[/]")
+                error_console.print(f"[{palette.get('warning', 'yellow')}]Failures detected:[/]")
                 for failure in e.summary["failures"]:
-                    console.print(f"  - {failure}")
+                    error_console.print(f"  - {failure}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     except typer.Exit:
@@ -359,13 +364,15 @@ def _process_dir_push(
     ui_context,
     console,
 ) -> None:
+    error_console = get_error_console()
     from dorsal.common.exceptions import ExceedsApiLimitError
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
     palette = ui_context["palette"]
     borders = ui_context["borders"]
-    progress_console = None if json_output else console
+    # Always pass a console: with None, progress bars fall back to stdout whenever stdout is a TTY.
+    progress_console = get_error_console() if json_output else console
 
     if create_collection and not collection_name:
         collection_name = path.name
@@ -395,15 +402,18 @@ def _process_dir_push(
         if not collection:
             exit_cli(message=f"No valid files found in '{escape(str(path))}'.")
 
+        duplicate_groups = _find_duplicate_groups(collection)
         if ignore_duplicates:
-            original_count = len(collection)
-            unique_files = list({f.hash: f for f in collection}.values())
-            if len(unique_files) < original_count:
+            if duplicate_groups:
+                skipped = {file_path for _, paths in duplicate_groups for file_path in paths[1:]}
+                unique_files = [f for f in collection if f.file_path not in skipped]
                 collection = LocalFileCollection(source=cast(list[LocalFile], unique_files), use_cache=use_cache_value)
                 if not json_output:
-                    console.print(
-                        f"[{palette.get('info', 'dim')}]Ignoring {original_count - len(unique_files)} duplicate files.[/]"
-                    )
+                    console.print(f"[{palette.get('info', 'dim')}]Ignoring {len(skipped)} duplicate files.[/]")
+        elif duplicate_groups and not dry_run:
+            # The API rejects a batch containing duplicate files, so fail before sending anything.
+            _report_duplicate_files(path, duplicate_groups, json_output, ui_context, error_console)
+            exit_cli(code=EXIT_CODE_ERROR)
 
         if dry_run:
             _display_dry_run_panel(
@@ -426,7 +436,9 @@ def _process_dir_push(
             )
 
             if json_output:
-                console.print(remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+                print_raw_output(
+                    remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True), console
+                )
             else:
                 success_text = (
                     f"✅ Successfully pushed {len(collection)} files and created collection.\n\n"
@@ -465,43 +477,21 @@ def _process_dir_push(
                         break
 
             if is_duplicate_error:
-                if not json_output:
-                    command_color = palette.get("primary_value", "default")
-                    error_text = Text.from_markup(
-                        "[bold]Push failed because the directory contains duplicate files.[/]\n\n"
-                        "To get a summary of the duplicate files, run:\n"
-                        f'[bold {command_color}]dorsal local duplicates "{escape(str(path))}"[/]\n\n'
-                        "To push this directory anyway (the first of each duplicate will be indexed), run:\n"
-                        f'[bold {command_color}]dorsal local push "{escape(str(path))}" --ignore-duplicates[/]',
-                    )
-                    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]"
-
-                    is_none_style = borders == get_borders("none")
-                    if is_none_style:
-                        console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
-                    else:
-                        console.print(
-                            Panel(
-                                error_text,
-                                title=title_text,
-                                border_style=palette.get("panel_border_error", "red"),
-                                expand=False,
-                                box=borders,
-                            )
-                        )
+                if json_output:
+                    print_json_output(summary, console)
                 else:
-                    console.print(json.dumps(summary, indent=2, default=str, ensure_ascii=False))
+                    _report_duplicate_files(path, None, json_output, ui_context, error_console)
                 exit_cli(code=EXIT_CODE_ERROR)
 
             if json_output:
-                console.print(json.dumps(summary, indent=2, default=str, ensure_ascii=False))
+                print_json_output(summary, console)
             else:
                 _display_summary_panel(summary, public, ui_context, use_cache_value, collection, console)
 
     except ExceedsApiLimitError as e:
         if json_output:
             error_output = {"error": "ExceedsApiLimitError", "message": str(e), "excess": e.excess}
-            console.print(json.dumps(error_output, indent=2, default=str, ensure_ascii=False))
+            print_json_output(error_output, error_console)
         else:
             from dorsal.file.utils.size import human_filesize
 
@@ -520,9 +510,9 @@ def _process_dir_push(
 
             is_none_style = borders == get_borders("none")
             if is_none_style:
-                console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
+                error_console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
             else:
-                console.print(
+                error_console.print(
                     Panel(
                         error_text,
                         title=title_text,
@@ -540,9 +530,9 @@ def _process_dir_push(
                 "message": str(e),
                 "summary": e.summary,
             }
-            console.print(json.dumps(partial_error_output, indent=2, default=str, ensure_ascii=False))
+            print_json_output(partial_error_output, error_console)
         else:
-            console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Failed:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Failed:[/] {e}")
             summary = e.summary
             if summary and (summary.get("failed", 0) > 0 or summary.get("errors") or summary.get("failures")):
                 failed_table = Table(
@@ -564,7 +554,7 @@ def _process_dir_push(
                     for error in summary["errors"]:
                         msg = error.get("message") if isinstance(error, dict) else str(error)
                         failed_table.add_row(escape(str(msg)))
-                console.print(failed_table)
+                error_console.print(failed_table)
         exit_cli(code=EXIT_CODE_ERROR, message="Directory push failed strict integrity check.")
 
     except typer.Exit:
@@ -576,6 +566,65 @@ def _process_dir_push(
     except Exception as err:
         logger.exception("An unexpected error occurred in 'dir push'")
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
+
+
+def _find_duplicate_groups(collection) -> list[tuple[str, list[str]]]:
+    """Groups files that share a content hash, as `(hash, [paths...])` in scan order. Files without a hash are skipped."""
+    by_hash: dict[str, list[str]] = {}
+    for f in collection:
+        if f.hash:
+            by_hash.setdefault(f.hash, []).append(f.file_path)
+    return [(file_hash, paths) for file_hash, paths in by_hash.items() if len(paths) > 1]
+
+
+def _report_duplicate_files(path, duplicate_groups, json_output, ui_context, error_console) -> None:
+    """Prints the duplicate-files error to stderr: JSON with `json_output`, otherwise a panel with the fixes."""
+    palette = ui_context["palette"]
+    borders = ui_context["borders"]
+
+    if json_output:
+        error_payload: dict[str, Any] = {
+            "success": False,
+            "error": "Duplicate Files",
+            "detail": "The directory contains files with identical content. Use --ignore-duplicates to push the "
+            "first file of each duplicate set.",
+        }
+        if duplicate_groups:
+            error_payload["duplicates"] = [{"hash": h, "paths": paths} for h, paths in duplicate_groups]
+        print_json_output(error_payload, error_console)
+        return
+
+    command_color = palette.get("primary_value", "default")
+    error_text = Text.from_markup("[bold]Push failed because the directory contains duplicate files.[/]\n\n")
+    if duplicate_groups:
+        max_groups = 5
+        for _, paths in duplicate_groups[:max_groups]:
+            error_text.append(" = ".join(pathlib.Path(p).name for p in paths) + "\n")
+        if len(duplicate_groups) > max_groups:
+            error_text.append(f"... and {len(duplicate_groups) - max_groups} more duplicate sets.\n")
+        error_text.append("\n")
+    error_text.append_text(
+        Text.from_markup(
+            "To get a summary of the duplicate files, run:\n"
+            f'[bold {command_color}]dorsal local duplicates "{escape(str(path))}"[/]\n\n'
+            "To push this directory anyway (the first of each duplicate will be indexed), run:\n"
+            f'[bold {command_color}]dorsal local push "{escape(str(path))}" --ignore-duplicates[/]'
+        )
+    )
+    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]"
+
+    if borders == get_borders("none"):
+        error_console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
+    else:
+        error_console.print(
+            Panel(
+                error_text,
+                title=title_text,
+                border_style=palette.get("panel_border_error", "red"),
+                expand=False,
+                box=borders,
+            )
+        )
 
 
 def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:
@@ -622,6 +671,7 @@ def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:
 
 
 def _display_summary_panel(summary, public, ui_context, use_cache, collection, console):
+    error_console = get_error_console()
     palette = ui_context["palette"]
     borders = ui_context["borders"]
 
@@ -684,7 +734,7 @@ def _display_summary_panel(summary, public, ui_context, use_cache, collection, c
         )
 
     if summary.get("failed", 0) > 0 or summary.get("errors"):
-        console.print(f"\n[{palette.get('error', 'red')}]⚠️ Some batches failed to process:[/]")
+        error_console.print(f"\n[{palette.get('error', 'red')}]⚠️ Some batches failed to process:[/]")
         failed_table = Table(
             title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold"), box=borders
         )
@@ -701,4 +751,4 @@ def _display_summary_panel(summary, public, ui_context, use_cache, collection, c
                 error.get("error_type", "Unknown"),
                 error.get("error_message", "No message"),
             )
-        console.print(failed_table)
+        error_console.print(failed_table)

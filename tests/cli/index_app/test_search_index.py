@@ -194,7 +194,7 @@ def test_save_local_search_results_untitled_fallback(tmp_path, mocker, mock_rich
     assert query_file.exists()
 
 
-def test_save_local_search_results_ioerror_query_txt(tmp_path, mocker, mock_rich_console):
+def test_save_local_search_results_ioerror_query_txt(tmp_path, mocker, mock_rich_console, mock_error_console):
     """Tests the graceful handling of an IOError when writing the query.txt file."""
     mock_dir = tmp_path / "reports"
     mocker.patch("dorsal.common.constants.CLI_SEARCH_REPORTS_DIR", mock_dir)
@@ -212,18 +212,18 @@ def test_save_local_search_results_ioerror_query_txt(tmp_path, mocker, mock_rich
         "test query", {}, {"warning": "yellow", "success": "green", "primary_value": "blue"}, None, False
     )
 
-    output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
+    output = "".join(str(call.args[0]) for call in mock_error_console.print.call_args_list if call.args)
     assert "Could not write query.txt" in output
 
 
-def test_save_local_search_results_ioerror_json(tmp_path, mocker, mock_rich_console):
+def test_save_local_search_results_ioerror_json(tmp_path, mocker, mock_rich_console, mock_error_console):
     """Tests the graceful handling of an IOError when writing the final JSON payload."""
     file_path = tmp_path / "custom.json"
     mocker.patch("builtins.open", side_effect=IOError("Simulated json dump error"))
 
     _save_local_search_results("test query", {}, {"error": "red"}, file_path, False)
 
-    output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
+    output = "".join(str(call.args[0]) for call in mock_error_console.print.call_args_list if call.args)
     assert "Could not save JSON report" in output
 
 

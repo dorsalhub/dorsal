@@ -41,11 +41,17 @@ def init_model(
     """
     from rich.panel import Panel
     from dorsal.common.exceptions import DorsalError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+    )
 
     from dorsal.api.model import init_model_project
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
@@ -65,9 +71,9 @@ def init_model(
         )
 
     except DorsalError as e:
-        console.print(f"[{palette.get('error', 'bold red')}]Failed to create project:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Failed to create project:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         logger.exception("Unexpected error in model init")
-        console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 from typing import Annotated
 
@@ -32,7 +31,12 @@ def get_index_db_path(
     Prints the absolute path to the dorsal index database file.
     """
     from dorsal.api.index import get_path
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+    )
 
     console = get_rich_console()
 
@@ -40,7 +44,7 @@ def get_index_db_path(
         db_path_str = get_path()
 
         if json_output:
-            console.print(json.dumps({"path": db_path_str}))
+            print_json_output({"path": db_path_str}, console)
         else:
             console.print(db_path_str)
     except typer.Exit:

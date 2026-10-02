@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import json
 from typing import Annotated
 
 import typer
@@ -41,10 +40,17 @@ def delete_collection(
     Permanently deletes a collection from DorsalHub.
     """
     from dorsal.api.collection import delete_collection
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+        get_error_console,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
+    error_console = get_error_console()
 
     palette = ctx.obj["palette"]
 
@@ -60,12 +66,7 @@ def delete_collection(
         delete_collection(collection_id=collection_id)
 
         if json_output:
-            console.print(
-                json.dumps(
-                    {"success": True, "collection_id": collection_id, "deleted": True},
-                    indent=2,
-                )
-            )
+            print_json_output({"success": True, "collection_id": collection_id, "deleted": True}, console)
         else:
             console.print(f"\n[{palette.get('success')}]✅ Collection '{collection_id}' was successfully deleted.[/]")
     except DorsalOfflineError:
@@ -80,7 +81,7 @@ def delete_collection(
                 "error": e.message,
                 "collection_id": collection_id,
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
         else:
             exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {e.message}")
@@ -93,7 +94,7 @@ def delete_collection(
                 "error": str(e),
                 "collection_id": collection_id,
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
         else:
             exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")

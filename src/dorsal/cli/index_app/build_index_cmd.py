@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import typer
 import pathlib
@@ -82,13 +81,20 @@ def build_search_index(
     This command ensures that subsequent operations (like 'scan' or 'duplicates')
     on the same directory will be significantly faster by pre-populating the search index.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+        print_json_output,
+    )
     from dorsal.file.collection.local import LocalFileCollection
 
     console = get_rich_console()
 
     palette = ctx.obj["palette"]
-    progress_console = None if json_output else console
+    # Always pass a console: with None, progress bars fall back to stdout whenever stdout is a TTY.
+    progress_console = get_error_console() if json_output else console
 
     try:
         if force:
@@ -140,7 +146,7 @@ def build_search_index(
                 "loaded_from_index": files_from_index,
                 "newly_added_to_index": files_from_disk,
             }
-            console.print(json.dumps(result, indent=2))
+            print_json_output(result, console)
             exit_cli()
 
         console.print(f"[{palette.get('success', 'green')}]✅ Search Index updated successfully.[/]")

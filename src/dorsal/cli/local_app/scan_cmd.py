@@ -15,17 +15,19 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import typer
 import pathlib
 import datetime
-import json
 import time
-from typing import Annotated, Any, Optional, Literal, TYPE_CHECKING
+from enum import Enum
+from typing import Annotated, Any, Optional, TYPE_CHECKING
 
-from pydantic import BaseModel, ValidationError
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
+from rich.cells import cell_len
 from rich.markup import escape
 from rich.text import Text
 
@@ -33,8 +35,11 @@ from dorsal.common import constants
 from dorsal.common.cli import (
     exit_cli,
     EXIT_CODE_ERROR,
+    get_error_console,
     get_rich_console,
     determine_use_cache_value,
+    format_json_output,
+    print_json_output,
 )
 from dorsal.cli.themes.palettes import get_palette
 from dorsal.cli.themes.icons import get_icons
@@ -47,12 +52,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SortBy(BaseModel):
-    value: Literal["name", "size", "type", "date"]
+_REPORT_SUFFIXES = (".json", ".csv")
 
 
-class SortOrder(BaseModel):
-    value: Literal["asc", "desc"]
+class SortBy(str, Enum):
+    NAME = "name"
+    SIZE = "size"
+    TYPE = "type"
+    DATE = "date"
+
+
+class SortOrder(str, Enum):
+    ASC = "asc"
+    DESC = "desc"
 
 
 def scan_target(
@@ -67,16 +79,12 @@ def scan_target(
             help="The path to the file or directory to scan.",
         ),
     ],
-    output_path: Annotated[
-        Optional[pathlib.Path],
+    output: Annotated[
+        Optional[str],
         typer.Option(
             "-o",
             "--output",
-            help="Custom output path (file or directory) for generated reports.",
-            dir_okay=True,
-            file_okay=True,
-            writable=True,
-            resolve_path=True,
+            help="Custom output path for generated reports. An existing directory, or a path ending in a separator, is treated as a directory.",
             rich_help_panel="Output Options",
         ),
     ] = None,
@@ -107,14 +115,14 @@ def scan_target(
         ),
     ] = False,
     template: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             "--template",
             "-t",
-            help="Name or path of the report template to use.",
-            rich_help_panel="Output Options",
+            help="Deprecated: has no effect since HTML reports were removed.",
+            hidden=True,
         ),
-    ] = "default",
+    ] = None,
     csv: Annotated[
         bool,
         typer.Option(
@@ -138,26 +146,27 @@ def scan_target(
         typer.Option(
             "--limit",
             "-l",
+            min=1,
             help="[Dir Only] Limit the number of files displayed in the summary table.",
             rich_help_panel="Directory Scan Options",
         ),
     ] = 20,
     sort_by: Annotated[
-        str,
+        SortBy,
         typer.Option(
             case_sensitive=False,
-            help="[Dir Only] Column to sort by. One of: name, size, type, date.",
+            help="[Dir Only] Column to sort by.",
             rich_help_panel="Directory Scan Options",
         ),
-    ] = "name",
+    ] = SortBy.NAME,
     sort_order: Annotated[
-        str,
+        SortOrder,
         typer.Option(
             case_sensitive=False,
-            help="[Dir Only] Sort order. One of: asc, desc.",
+            help="[Dir Only] Sort order.",
             rich_help_panel="Directory Scan Options",
         ),
-    ] = "asc",
+    ] = SortOrder.ASC,
     lazy: Annotated[
         bool,
         typer.Option(
@@ -202,6 +211,8 @@ def scan_target(
     Scans a local file or directory, extracts metadata, and generates reports.
     """
     console = get_rich_console()
+    # With --json, stdout carries only the JSON document; warnings and status messages go to stderr.
+    status_console = get_error_console() if json_output else console
     palette = ctx.obj.get("palette", get_palette())
     icons = ctx.obj.get("icons", get_icons())
     borders = ctx.obj.get("borders", get_borders())
@@ -211,16 +222,27 @@ def scan_target(
     if skip_cache and overwrite_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache cannot be used together.")
 
-    if output_path:
-        out_str = str(output_path).lower()
+    if template is not None:
+        status_console.print(
+            "⚠️ [yellow]Warning:[/] --template has no effect: HTML reports are no longer generated.",
+            style=palette.get("warning", "yellow"),
+        )
+
+    output_path: Optional[pathlib.Path] = None
+    output_is_dir = False
+    if output:
+        separators = tuple(sep for sep in (os.sep, os.altsep) if sep)
+        output_path = pathlib.Path(output).expanduser().resolve()
+        output_is_dir = output.endswith(separators) or output_path.is_dir()
         if not (save or csv):
-            if out_str.endswith(".json"):
+            out_suffix = output_path.suffix.lower()
+            if not output_is_dir and out_suffix == ".json":
                 save = True
-            elif out_str.endswith(".csv"):
+            elif not output_is_dir and out_suffix == ".csv":
                 csv = True
             else:
-                console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified, but no report type was requested.",
+                status_console.print(
+                    f"⚠️ [yellow]Warning:[/] --output path '{escape(str(output_path))}' was specified, but no report type was requested.",
                     style=palette.get("warning", "yellow"),
                 )
 
@@ -228,7 +250,7 @@ def scan_target(
 
     if path.is_file():
         if csv or recursive or lazy:
-            console.print(
+            status_console.print(
                 "⚠️ [yellow]Warning:[/] Directory-specific flags (--csv, --recursive, --lazy) are ignored when scanning a single file.",
                 style=palette.get("warning", "yellow"),
             )
@@ -241,21 +263,16 @@ def scan_target(
             json_output=json_output,
             save=save,
             output_path=output_path,
-            template=template,
+            output_is_dir=output_is_dir,
             resolve_links=resolve_links,
             palette=palette,
             icons=icons,
             borders=borders,
             console=console,
+            status_console=status_console,
             calculate_hashes=deep,
         )
     else:
-        try:
-            SortBy(value=sort_by)
-            SortOrder(value=sort_order)
-        except ValidationError as e:
-            exit_cli(code=EXIT_CODE_ERROR, message=f"Invalid sorting option provided: {e}")
-
         _process_dir_scan(
             ctx=ctx,
             path=path,
@@ -265,17 +282,18 @@ def scan_target(
             save=save,
             csv=csv,
             output_path=output_path,
-            template=template,
+            output_is_dir=output_is_dir,
             resolve_links=resolve_links,
             recursive=recursive,
             limit=limit,
-            sort_by=sort_by,
-            sort_order=sort_order,
+            sort_by=sort_by.value,
+            sort_order=sort_order.value,
             lazy=lazy,
             palette=palette,
             icons=icons,
             borders=borders,
             console=console,
+            status_console=status_console,
             calculate_hashes=deep,
         )
 
@@ -288,19 +306,20 @@ def _process_file_scan(
     json_output,
     save,
     output_path,
-    template,
+    output_is_dir,
     resolve_links,
     palette,
     icons,
     borders,
     console,
+    status_console,
     calculate_hashes,
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
 
     if not json_output:
-        console.print(f"📄 Scanning metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/]")
+        console.print(f"📄 Scanning metadata for [{palette.get('primary_value', 'cyan')}]{escape(path.name)}[/]")
 
     try:
         local_file = LocalFile(
@@ -313,7 +332,7 @@ def _process_file_scan(
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
         if "local_attributes" in record_dict:
-            record_dict["local_filesystem"] = record_dict["local_attributes"]
+            record_dict["local_filesystem"] = dict(record_dict["local_attributes"])
             record_dict["local_filesystem"]["full_path"] = record_dict["local_attributes"].get("file_path", str(path))
             for key in ["date_created", "date_modified", "date_accessed"]:
                 val = record_dict["local_filesystem"].get(key)
@@ -330,11 +349,11 @@ def _process_file_scan(
             }
 
         if json_output:
-            console.print(json.dumps(record_dict, indent=2, default=str, ensure_ascii=False))
+            print_json_output(record_dict, console)
         else:
             panel = create_file_info_panel(
                 record_dict=record_dict,
-                title=f"File Record: {local_file.name}",
+                title=f"File Record: {escape(local_file.name or path.name)}",
                 palette=palette,
                 icons=icons,
                 box_style=borders,
@@ -344,10 +363,8 @@ def _process_file_scan(
             console.print(panel)
 
         if save:
-            final_path = _get_final_path(path, output_path, ".json", is_dir=False)
-            _save_report_to_disk(
-                final_path, json.dumps(record_dict, indent=2, default=str, ensure_ascii=False), "JSON", console, palette
-            )
+            final_path = _get_final_path(path, output_path, output_is_dir, ".json", is_dir=False)
+            _save_report_to_disk(final_path, format_json_output(record_dict), "JSON", status_console, palette)
 
     except Exception as err:
         logger.exception(f"CLI 'scan' command failed while processing {path}.")
@@ -363,7 +380,7 @@ def _process_dir_scan(
     save,
     csv,
     output_path,
-    template,
+    output_is_dir,
     resolve_links,
     recursive,
     limit,
@@ -374,16 +391,17 @@ def _process_dir_scan(
     icons,
     borders,
     console,
+    status_console,
     calculate_hashes,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
     start_time = time.perf_counter()
     try:
-        progress_console = None if json_output else console
+        # Always pass a console: with None, the progress bar falls back to stdout whenever stdout is a TTY.
         collection = LocalFileCollection(
             source=str(path),
-            console=progress_console,
+            console=status_console,
             palette=palette,
             recursive=recursive,
             use_cache=use_cache_value,
@@ -398,35 +416,31 @@ def _process_dir_scan(
 
     duration = time.perf_counter() - start_time
 
+    scan_data: dict[str, Any] | None = None
+    if json_output or save:
+        # The same document is printed with --json and written with --save.
+        scan_data = collection.to_dict(exclude={"embeddings", "text_chunks"})
+        scan_data["scan_metadata"]["duration_seconds"] = duration
+
     if json_output:
-        scan_data = {
-            "scan_metadata": {
-                "path": str(path),
-                "recursive": recursive,
-                "duration_seconds": duration,
-                "total_files_found": len(collection),
-            },
-            "results": collection.to_dict(),
-        }
-        console.print(json.dumps(scan_data, indent=2, default=str))
-        exit_cli()
+        print_json_output(scan_data, console)
+    else:
+        collection_info = collection.info()
+        files_from_cache = sum(
+            stat.get("count", 0) for stat in collection_info.get("by_source", []) if stat.get("source") == "cache"
+        )
+        cache_info_str = (
+            f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
+        )
 
-    collection_info = collection.info()
-    files_from_cache = sum(
-        stat.get("count", 0) for stat in collection_info.get("by_source", []) if stat.get("source") == "cache"
-    )
-    cache_info_str = (
-        f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
-    )
-
-    console.print(
-        f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
-    )
+        console.print(
+            f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+        )
 
     if collection.warnings:
-        console.print(
+        status_console.print(
             Panel(
-                "\n".join(f"- {w}" for w in collection.warnings),
+                "\n".join(f"- {escape(str(w))}" for w in collection.warnings),
                 title=f"[{palette.get('panel_title_warning', 'yellow')}]Warnings[/]",
                 border_style=palette.get("panel_border_warning", "yellow"),
                 title_align="left",
@@ -437,44 +451,72 @@ def _process_dir_scan(
     if not collection:
         exit_cli()
 
-    _print_directory_summary_panel(collection_info, palette, borders, console)
-    _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
+    if not json_output:
+        _print_directory_summary_panel(collection_info, palette, borders, console)
+        _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
 
     if save:
-        final_path = _get_final_path(path, output_path, ".json", is_dir=True)
-        try:
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            collection.to_json(str(final_path), exclude={"embeddings", "text_chunks"})
-            console.print(f"✅ JSON report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
-        except Exception as e:
-            logger.error(f"Failed to save JSON report: {e}")
-            console.print(f"⚠️ Could not save JSON report. Error: {e}", style=palette.get("warning", "yellow"))
+        final_path = _get_final_path(path, output_path, output_is_dir, ".json", is_dir=True)
+        _save_report_to_disk(final_path, format_json_output(scan_data), "JSON", status_console, palette)
 
     if csv:
-        final_path = _get_final_path(path, output_path, ".csv", is_dir=True)
+        final_path = _get_final_path(path, output_path, output_is_dir, ".csv", is_dir=True)
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             collection.to_csv(str(final_path))
-            console.print(f"✅ CSV report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
+            status_console.print(
+                f"✅ CSV report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]"
+            )
         except Exception as e:
             logger.error(f"Failed to save CSV report: {e}")
-            console.print(f"⚠️ Could not save CSV report. Error: {e}", style=palette.get("warning", "yellow"))
+            status_console.print(
+                f"⚠️ Could not save CSV report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
+            )
+
+
+def _safe_report_name(source_path: pathlib.Path, is_dir: bool) -> str:
+    resolved = source_path.resolve()
+    name = resolved.name if is_dir else resolved.stem
+    # Filesystem roots ("/", "C:\\") have no name.
+    return re.sub(r"[^\w.-]+", "_", name).strip("_") or "root"
 
 
 def _get_final_path(
-    source_path: pathlib.Path, output_path: Optional[pathlib.Path], suffix: str, is_dir: bool
+    source_path: pathlib.Path,
+    output_path: Optional[pathlib.Path],
+    output_is_dir: bool,
+    suffix: str,
+    is_dir: bool,
 ) -> pathlib.Path:
-    if output_path:
-        if output_path.is_dir():
-            prefix = "scan-dir-" if is_dir else ""
-            return output_path / f"{prefix}{source_path.stem}_report{suffix}"
-        return output_path
+    """Resolves where a report with the given `suffix` is written.
 
-    constants.CLI_SCAN_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    safe_name = source_path.name.replace(" ", "_")
+    - Directory output: `<output>/[scan-dir-]<name>_report<suffix>`.
+    - File output: used as-is when its suffix matches; otherwise the suffix is swapped (or appended), so that
+      `-o report.json --save --csv` writes `report.json` and `report.csv` rather than one overwriting the other.
+    - No output: a timestamped file in the CLI reports directory, never overwriting an existing report.
+    """
     prefix = "scan-dir-" if is_dir else ""
-    return constants.CLI_SCAN_REPORTS_DIR / f"{prefix}{safe_name}-{timestamp}{suffix}"
+    name = _safe_report_name(source_path, is_dir)
+
+    if output_path:
+        if output_is_dir:
+            return output_path / f"{prefix}{name}_report{suffix}"
+        out_suffix = output_path.suffix.lower()
+        if out_suffix == suffix:
+            return output_path
+        if out_suffix in _REPORT_SUFFIXES:
+            return output_path.with_suffix(suffix)
+        return output_path.with_name(output_path.name + suffix)
+
+    reports_dir = constants.CLI_SCAN_REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{prefix}{name}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    candidate = reports_dir / f"{stem}{suffix}"
+    counter = 1
+    while candidate.exists():
+        candidate = reports_dir / f"{stem}-{counter}{suffix}"
+        counter += 1
+    return candidate
 
 
 def _save_report_to_disk(path: pathlib.Path, content: str, doc_type: str, console, palette):
@@ -482,10 +524,12 @@ def _save_report_to_disk(path: pathlib.Path, content: str, doc_type: str, consol
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-        console.print(f"✅ {doc_type} report saved to: [{palette.get('primary_value', 'cyan')}]{path}[/]")
+        console.print(f"✅ {doc_type} report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
     except Exception as e:
         logger.error(f"Failed to save {doc_type} report: {e}")
-        console.print(f"⚠️ Could not save {doc_type} report. Error: {e}", style=palette.get("warning", "yellow"))
+        console.print(
+            f"⚠️ Could not save {doc_type} report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
+        )
 
 
 def _print_directory_summary_panel(collection_info: dict, palette, borders, console):
@@ -494,23 +538,22 @@ def _print_directory_summary_panel(collection_info: dict, palette, borders, cons
     overall, by_type = collection_info.get("overall", {}), collection_info.get("by_type", [])
     newest, oldest = overall.get("newest_file", {}), overall.get("oldest_file", {})
 
-    newest_str = (
-        f"{newest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({escape(newest['path'])})" if newest.get("path") else "N/A"
-    )
-    oldest_str = (
-        f"{oldest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({escape(oldest['path'])})" if oldest.get("path") else "N/A"
-    )
+    newest_str = f"{newest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({newest['path']})" if newest.get("path") else "N/A"
+    oldest_str = f"{oldest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({oldest['path']})" if oldest.get("path") else "N/A"
 
-    summary_text = Text(no_wrap=True)
-    for label, val in [
+    rows = [
         ("          Total Files: ", str(overall.get("total_files", 0))),
         ("           Total Size: ", human_filesize(overall.get("total_size", 0))),
         (" Newest Modified File: ", newest_str),
         (" Oldest Modified File: ", oldest_str),
         ("          Media Types: ", str(len(by_type))),
-    ]:
+    ]
+    summary_text = Text(no_wrap=True)
+    for i, (label, val) in enumerate(rows):
         summary_text.append(label, style=palette.get("key"))
-        summary_text.append(val + "\n" if "\n" not in label else val, style=palette.get("value"))
+        summary_text.append(val, style=palette.get("value"))
+        if i < len(rows) - 1:
+            summary_text.append("\n")
 
     is_none_style = borders == get_borders("none")
     title_text = f"[{palette.get('panel_title') or 'bold'}]Directory Scan Summary[/]"
@@ -557,27 +600,50 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
         expand=False,
     )
 
-    table.add_column("Filename", style=palette.get("primary_value", "cyan"), min_width=30, overflow="ellipsis")
-    table.add_column("Size", justify="right", style=palette.get("value"))
-    table.add_column("Media Type", style=palette.get("value"))
-    table.add_column("Record ID", style=palette.get("hash_value", "magenta"))
-    table.add_column("Modified Date", style=palette.get("value"))
-
+    headers = ("Size", "Media Type", "Record ID", "Modified Date")
+    rows = []
     for file in sorted_files[:limit]:
-        path_obj, display_name = pathlib.Path(file.file_path), file.name
+        path_obj, display_name = pathlib.Path(file.file_path), escape(file.name)
         if path_obj.is_symlink():
             try:
                 display_name = f"{escape(path_obj.name)} [dim italic]→ {escape(str(path_obj.readlink()))}[/]"
             except OSError:
                 display_name = f"{escape(path_obj.name)} [dim italic](symlink)[/]"
 
-        table.add_row(
-            display_name,
-            human_filesize(file.size),
-            file.media_type,
-            file.record_id,
-            file.date_modified.strftime("%Y-%m-%d %H:%M:%S"),
+        rows.append(
+            (
+                display_name,
+                human_filesize(file.size),
+                file.media_type,
+                file.record_id,
+                file.date_modified.strftime("%Y-%m-%d %H:%M:%S"),
+            )
         )
+
+    # Long filenames are truncated with an ellipsis rather than wrapped. Rich never shrinks a no-wrap column,
+    # so cap it at whatever the (short, fixed-format) metadata columns leave over.
+    pad = padding[1] * 2
+    metadata_width = sum(
+        max([cell_len(h)] + [cell_len(str(r[i + 1])) for r in rows]) + pad for i, h in enumerate(headers)
+    )
+    border_width = len(headers) + 2 if borders is not None else 0
+    filename_width = max(30, console.width - metadata_width - border_width - pad)
+
+    table.add_column(
+        "Filename",
+        style=palette.get("primary_value", "cyan"),
+        min_width=30,
+        max_width=filename_width,
+        no_wrap=True,
+        overflow="ellipsis",
+    )
+    table.add_column(headers[0], justify="right", style=palette.get("value"))
+    table.add_column(headers[1], style=palette.get("value"))
+    table.add_column(headers[2], style=palette.get("hash_value", "magenta"))
+    table.add_column(headers[3], style=palette.get("value"))
+
+    for row in rows:
+        table.add_row(*row)
 
     console.print(table)
     if len(collection) > limit:

@@ -162,6 +162,7 @@ def duplicates_target(
         get_rich_console,
         exit_cli,
         determine_use_cache_value,
+        print_json_output,
     )
 
     console = get_rich_console()
@@ -241,7 +242,7 @@ def duplicates_target(
             results["path"] = str(path)
 
         if json_output:
-            console.print(json.dumps(results, indent=2, default=str, ensure_ascii=False))
+            print_json_output(results, console)
             exit_cli()
 
         if not results or not results.get("duplicate_sets"):
@@ -365,9 +366,10 @@ def _save_duplicates_report(
     json_output: bool,
     original_path: pathlib.Path,
 ):
-    from dorsal.common.cli import get_rich_console
+    from dorsal.common.cli import get_rich_console, get_error_console
 
     console = get_rich_console()
+    error_console = get_error_console()
 
     save_path = _get_final_path(original_path, output_path, ".json")
 
@@ -383,4 +385,4 @@ def _save_duplicates_report(
     except IOError as e:
         logger.error(f"Failed to save duplicates report: {e}")
         if not json_output:
-            console.print(f"\n[{palette['error']}]Warning:[/] Could not save report to {save_path}. Error: {e}")
+            error_console.print(f"\n[{palette['error']}]Warning:[/] Could not save report to {save_path}. Error: {e}")

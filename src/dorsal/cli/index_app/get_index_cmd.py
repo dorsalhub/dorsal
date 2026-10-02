@@ -69,7 +69,14 @@ def get_index_record(
     """
     Retrieve and display a full file record from the local search index.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        get_error_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+        print_raw_output,
+    )
     from dorsal.api.search import search_local
     from dorsal.session import get_shared_index
     from dorsal.cli.views.file import create_file_info_panel
@@ -108,10 +115,16 @@ def get_index_record(
             record = results[0]
 
     if not record:
-        console.print(f"\n[{palette.get('warning', 'yellow')}]Not Found:[/] No local records found.")
+        error_console = get_error_console()
+        if json_output:
+            print_json_output(
+                {"success": False, "error": "Not Found", "detail": "No local records found."}, error_console
+            )
+            exit_cli(code=EXIT_CODE_ERROR)
+        error_console.print(f"\n[{palette.get('warning', 'yellow')}]Not Found:[/] No local records found.")
         if len(identifier) == 64:
             hub_cmd = f"dorsal hub get {identifier}"
-            console.print(
+            error_console.print(
                 f"\n[{palette.get('info', 'dim')}]Tip: To search DorsalHub:[/] [{palette.get('primary_value', 'cyan')}]{hub_cmd}[/]"
             )
         exit_cli(code=EXIT_CODE_ERROR)
@@ -137,24 +150,23 @@ def get_index_record(
     record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
 
     if json_output:
-        console.print(record_json_str)
-        exit_cli()
+        print_raw_output(record_json_str, console)
+    else:
+        base_record = record_dict.get("annotations", {}).get("file/base", {})
+        title = f"File Record: {record.name or 'Unknown'}"
+        is_private = base_record.get("private", False)
+        panel = create_file_info_panel(
+            record_dict=record_dict,
+            title=title,
+            private=is_private,
+            palette=palette,
+            icons=icons,
+            box_style=borders,
+            source="cache",
+        )
 
-    base_record = record_dict.get("annotations", {}).get("file/base", {})
-    title = f"File Record: {record.name or 'Unknown'}"
-    is_private = base_record.get("private", False)
-    panel = create_file_info_panel(
-        record_dict=record_dict,
-        title=title,
-        private=is_private,
-        palette=palette,
-        icons=icons,
-        box_style=borders,
-        source="cache",
-    )
-
-    console.print()
-    console.print(panel)
+        console.print()
+        console.print(panel)
 
     if save:
         _save_json_report(
@@ -188,9 +200,15 @@ def _save_json_report(
     json_to_stdout: bool,
 ):
     """Saves the fetched record to a JSON file."""
-    from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR, exit_cli
+    from dorsal.common.cli import (
+        get_rich_console,
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_error_console,
+    )
 
     console = get_rich_console()
+    error_console = get_error_console()
 
     final_path = _get_final_path(hash_string, output_path, ".json")
 
@@ -199,13 +217,14 @@ def _save_json_report(
         with open(final_path, "w", encoding="utf-8") as fp:
             fp.write(record_json_str)
 
-        if not json_to_stdout:
-            console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
+        # With --json, stdout carries only the JSON record, so the confirmation goes to stderr.
+        status_console = error_console if json_to_stdout else console
+        status_console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
     except IOError as err:
         logger.error(f"Failed to save get report: {err}")
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {err}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(
+        error_console.print(
             f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
         )
