@@ -38,6 +38,17 @@ def mock_rich_console(mocker):
 
 
 @pytest.fixture
+def mock_error_console(mocker):
+    mock_console = MagicMock()
+    mocker.patch("dorsal.cli.local_app.scan_cmd.get_error_console", return_value=mock_console)
+    return mock_console
+
+
+def _printed_text(console) -> str:
+    return "".join(str(c.args[0]) for c in console.print.call_args_list)
+
+
+@pytest.fixture
 def mock_exit_cli(mocker):
     """Patch the specific reference to exit_cli inside our command module."""
 
@@ -270,16 +281,114 @@ def test_scan_dir_init_error(mock_exit_cli, mock_dir_deps, tmp_path):
     assert "An error occurred during file discovery: Init failed" in mock_exit_cli.call_args.kwargs["message"]
 
 
-def test_scan_dir_json_stdout(mock_rich_console, mock_exit_cli, mock_dir_deps, tmp_path):
-    """Hits the early exit when outputting directory JSON to stdout."""
+def test_scan_dir_json_stdout(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
+    """Directory JSON is the only thing printed to stdout, with Rich wrapping/markup disabled."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    assert result.exit_code == 0
+    assert mock_rich_console.print.call_count == 1
+    call = mock_rich_console.print.call_args
+    data = json.loads(call.args[0])
+    assert data["scan_metadata"]["total_files_found"] == 2
+    assert call.kwargs == {"markup": False, "highlight": False, "emoji": False, "soft_wrap": True}
+
+
+def test_scan_file_json_disables_rich_processing(mock_rich_console, mock_file_deps, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+    tricky_name = "[bold]x[/] :smile: " + "long " * 100
+    mock_file_deps["local_file_class"].return_value.to_dict.return_value = {"name": tricky_name}
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    assert result.exit_code == 0
+    call = mock_rich_console.print.call_args
+    assert json.loads(call.args[0])["name"] == tricky_name
+    assert call.kwargs == {"markup": False, "highlight": False, "emoji": False, "soft_wrap": True}
+
+
+def test_scan_dir_json_with_save_and_csv(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
+    """--json no longer exits before writing --save / --csv reports; confirmations go to stderr."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+    out_dir = tmp_path / "reports"
+    out_dir.mkdir()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json", "--save", "--csv", "-o", str(out_dir)])
+
+    assert result.exit_code == 0
+    mock_dir_deps["collection_instance"].to_json.assert_called_once()
+    mock_dir_deps["collection_instance"].to_csv.assert_called_once()
+    assert mock_rich_console.print.call_count == 1
+    json.loads(mock_rich_console.print.call_args.args[0])
+    stderr_text = _printed_text(mock_error_console)
+    assert "JSON report saved to" in stderr_text
+    assert "CSV report saved to" in stderr_text
+
+
+def test_scan_dir_json_warnings_go_to_stderr(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+    mock_dir_deps["collection_instance"].warnings = ["This is a mock warning"]
+
+    runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    assert mock_rich_console.print.call_count == 1
+    json.loads(mock_rich_console.print.call_args.args[0])
+    panels = [c.args[0] for c in mock_error_console.print.call_args_list if isinstance(c.args[0], Panel)]
+    assert any("This is a mock warning" in str(p.renderable) for p in panels)
+
+
+def test_scan_dir_json_progress_goes_to_stderr(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
     target = tmp_path / "test_dir"
     target.mkdir()
 
     runner.invoke(app, ["local", "scan", str(target), "--json"])
-    mock_exit_cli.assert_called()
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "total_files_found" in printed_text
+    assert mock_dir_deps["collection_class"].call_args.kwargs["console"] is mock_error_console
+
+
+def test_scan_dir_json_skips_tables(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    printed = [c.args[0] for c in mock_rich_console.print.call_args_list]
+    assert not any(isinstance(p, (Panel, Group, Table)) for p in printed)
+    mock_dir_deps["collection_instance"].info.assert_not_called()
+
+
+def test_scan_file_json_warnings_go_to_stderr(mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json", "-r", "-o", str(tmp_path / "out.unknown")])
+
+    assert result.exit_code == 0
+    assert mock_rich_console.print.call_count == 1
+    json.loads(mock_rich_console.print.call_args.args[0])
+    stderr_text = _printed_text(mock_error_console)
+    assert "Directory-specific flags" in stderr_text
+    assert "no report type was requested" in stderr_text
+
+
+@patch("builtins.open")
+def test_scan_file_json_with_save_confirmation_to_stderr(
+    mock_open, mock_rich_console, mock_error_console, mock_file_deps, tmp_path
+):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json", "-s"])
+
+    assert result.exit_code == 0
+    assert mock_rich_console.print.call_count == 1
+    json.loads(mock_rich_console.print.call_args.args[0])
+    assert "JSON report saved to" in _printed_text(mock_error_console)
 
 
 def test_scan_dir_warnings(mock_rich_console, mock_dir_deps, tmp_path):

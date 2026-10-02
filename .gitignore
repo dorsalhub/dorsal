@@ -156,3 +156,5 @@ requirements.txt
 *.temp.bin
 coverage.xml
 dorsal.toml
+.claude
+CLAUDE.md

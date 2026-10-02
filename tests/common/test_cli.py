@@ -57,6 +57,41 @@ def test_exit_cli_no_message(mock_secho):
     mock_secho.assert_not_called()
 
 
+def test_print_json_output_is_valid_json_on_narrow_terminal():
+    """Long strings, markup-like brackets and emoji codes must round-trip unchanged."""
+    import datetime
+    import io
+    import json
+
+    from rich.console import Console
+
+    data = {
+        "name": "Drifting_Classroom_v08[Kagome999].rar",
+        "markup": "[bold]not bold[/] [/]",
+        "emoji": ":thumbs_up: :smile:",
+        "description": "word " * 100,
+        "unicode": "日本語",
+        "when": datetime.datetime(2025, 1, 2, 3, 4, 5),
+    }
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+
+    cli.print_json_output(data, console)
+
+    output = buffer.getvalue()
+    assert "\x1b" not in output
+    parsed = json.loads(output)
+    assert parsed == {**data, "when": "2025-01-02 03:04:05"}
+
+
+def test_print_json_output_defaults_to_shared_console(mock_rich_console):
+    cli.print_json_output({"a": 1})
+
+    mock_rich_console.print.assert_called_once_with(
+        '{\n  "a": 1\n}', markup=False, highlight=False, emoji=False, soft_wrap=True
+    )
+
+
 @pytest.mark.parametrize(
     "use_cache_flag, skip_cache_flag, expected_arg",
     [

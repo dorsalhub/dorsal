@@ -52,6 +52,27 @@ def get_error_console() -> Console:
     return _error_console_instance
 
 
+def print_json_output(data: Any, console: Console | None = None) -> None:
+    """Prints `data` as machine-readable JSON to the (stdout) console.
+
+    Rich's text processing is disabled so the output is always valid JSON: no line wrapping at the
+    terminal width, no markup parsing of `[...]`, no `:emoji:` substitution and no syntax highlighting.
+
+    Args:
+        data: A JSON-serializable object. Non-serializable values are converted with `str()`.
+        console: The console to print to. Defaults to the shared console from `get_rich_console()`.
+    """
+    if console is None:
+        console = get_rich_console()
+    console.print(
+        json.dumps(data, indent=2, default=str, ensure_ascii=False),
+        markup=False,
+        highlight=False,
+        emoji=False,
+        soft_wrap=True,
+    )
+
+
 def exit_cli(code: int = EXIT_CODE_SUCCESS, message: str | None = None) -> NoReturn:
     """Comprehensible and testable wrapper for exiting a CLI command.
 

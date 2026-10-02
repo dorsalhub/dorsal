@@ -33,8 +33,10 @@ from dorsal.common import constants
 from dorsal.common.cli import (
     exit_cli,
     EXIT_CODE_ERROR,
+    get_error_console,
     get_rich_console,
     determine_use_cache_value,
+    print_json_output,
 )
 from dorsal.cli.themes.palettes import get_palette
 from dorsal.cli.themes.icons import get_icons
@@ -202,6 +204,8 @@ def scan_target(
     Scans a local file or directory, extracts metadata, and generates reports.
     """
     console = get_rich_console()
+    # With --json, stdout carries only the JSON document; warnings and status messages go to stderr.
+    status_console = get_error_console() if json_output else console
     palette = ctx.obj.get("palette", get_palette())
     icons = ctx.obj.get("icons", get_icons())
     borders = ctx.obj.get("borders", get_borders())
@@ -219,7 +223,7 @@ def scan_target(
             elif out_str.endswith(".csv"):
                 csv = True
             else:
-                console.print(
+                status_console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified, but no report type was requested.",
                     style=palette.get("warning", "yellow"),
                 )
@@ -228,7 +232,7 @@ def scan_target(
 
     if path.is_file():
         if csv or recursive or lazy:
-            console.print(
+            status_console.print(
                 "⚠️ [yellow]Warning:[/] Directory-specific flags (--csv, --recursive, --lazy) are ignored when scanning a single file.",
                 style=palette.get("warning", "yellow"),
             )
@@ -247,6 +251,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            status_console=status_console,
             calculate_hashes=deep,
         )
     else:
@@ -276,6 +281,7 @@ def scan_target(
             icons=icons,
             borders=borders,
             console=console,
+            status_console=status_console,
             calculate_hashes=deep,
         )
 
@@ -294,6 +300,7 @@ def _process_file_scan(
     icons,
     borders,
     console,
+    status_console,
     calculate_hashes,
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
@@ -330,7 +337,7 @@ def _process_file_scan(
             }
 
         if json_output:
-            console.print(json.dumps(record_dict, indent=2, default=str, ensure_ascii=False))
+            print_json_output(record_dict, console)
         else:
             panel = create_file_info_panel(
                 record_dict=record_dict,
@@ -346,7 +353,11 @@ def _process_file_scan(
         if save:
             final_path = _get_final_path(path, output_path, ".json", is_dir=False)
             _save_report_to_disk(
-                final_path, json.dumps(record_dict, indent=2, default=str, ensure_ascii=False), "JSON", console, palette
+                final_path,
+                json.dumps(record_dict, indent=2, default=str, ensure_ascii=False),
+                "JSON",
+                status_console,
+                palette,
             )
 
     except Exception as err:
@@ -374,16 +385,17 @@ def _process_dir_scan(
     icons,
     borders,
     console,
+    status_console,
     calculate_hashes,
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
     start_time = time.perf_counter()
     try:
-        progress_console = None if json_output else console
+        # Always pass a console: with None, the progress bar falls back to stdout whenever stdout is a TTY.
         collection = LocalFileCollection(
             source=str(path),
-            console=progress_console,
+            console=status_console,
             palette=palette,
             recursive=recursive,
             use_cache=use_cache_value,
@@ -408,23 +420,22 @@ def _process_dir_scan(
             },
             "results": collection.to_dict(),
         }
-        console.print(json.dumps(scan_data, indent=2, default=str))
-        exit_cli()
+        print_json_output(scan_data, console)
+    else:
+        collection_info = collection.info()
+        files_from_cache = sum(
+            stat.get("count", 0) for stat in collection_info.get("by_source", []) if stat.get("source") == "cache"
+        )
+        cache_info_str = (
+            f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
+        )
 
-    collection_info = collection.info()
-    files_from_cache = sum(
-        stat.get("count", 0) for stat in collection_info.get("by_source", []) if stat.get("source") == "cache"
-    )
-    cache_info_str = (
-        f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
-    )
-
-    console.print(
-        f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
-    )
+        console.print(
+            f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+        )
 
     if collection.warnings:
-        console.print(
+        status_console.print(
             Panel(
                 "\n".join(f"- {w}" for w in collection.warnings),
                 title=f"[{palette.get('panel_title_warning', 'yellow')}]Warnings[/]",
@@ -437,28 +448,29 @@ def _process_dir_scan(
     if not collection:
         exit_cli()
 
-    _print_directory_summary_panel(collection_info, palette, borders, console)
-    _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
+    if not json_output:
+        _print_directory_summary_panel(collection_info, palette, borders, console)
+        _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
 
     if save:
         final_path = _get_final_path(path, output_path, ".json", is_dir=True)
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             collection.to_json(str(final_path), exclude={"embeddings", "text_chunks"})
-            console.print(f"✅ JSON report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
+            status_console.print(f"✅ JSON report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
         except Exception as e:
             logger.error(f"Failed to save JSON report: {e}")
-            console.print(f"⚠️ Could not save JSON report. Error: {e}", style=palette.get("warning", "yellow"))
+            status_console.print(f"⚠️ Could not save JSON report. Error: {e}", style=palette.get("warning", "yellow"))
 
     if csv:
         final_path = _get_final_path(path, output_path, ".csv", is_dir=True)
         try:
             final_path.parent.mkdir(parents=True, exist_ok=True)
             collection.to_csv(str(final_path))
-            console.print(f"✅ CSV report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
+            status_console.print(f"✅ CSV report saved to: [{palette.get('primary_value', 'cyan')}]{final_path}[/]")
         except Exception as e:
             logger.error(f"Failed to save CSV report: {e}")
-            console.print(f"⚠️ Could not save CSV report. Error: {e}", style=palette.get("warning", "yellow"))
+            status_console.print(f"⚠️ Could not save CSV report. Error: {e}", style=palette.get("warning", "yellow"))
 
 
 def _get_final_path(
