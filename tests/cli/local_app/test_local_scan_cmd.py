@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import json
+import os
 import datetime
 import pathlib
 from unittest.mock import MagicMock, ANY, patch
@@ -20,7 +22,7 @@ from unittest.mock import MagicMock, ANY, patch
 import pytest
 import typer
 from typer.testing import CliRunner
-from rich.console import Group
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 
@@ -32,6 +34,7 @@ runner = CliRunner()
 @pytest.fixture
 def mock_rich_console(mocker):
     mock_console = MagicMock()
+    mock_console.width = 120
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
     mocker.patch("dorsal.cli.local_app.scan_cmd.get_rich_console", return_value=mock_console)
     return mock_console
@@ -112,7 +115,10 @@ def mock_dir_deps(mocker):
         "by_source": [{"source": "disk", "count": 2}],
     }
     mock_instance.__iter__.return_value = iter([file_1, file_2])
-    mock_instance.to_dict.return_value = [{"name": "file1.txt"}]
+    mock_instance.to_dict.return_value = {
+        "scan_metadata": {"type": "local", "path": "/fake", "total_files_in_collection": 2},
+        "results": [{"name": "file1.txt"}, {"name": "file2.txt"}],
+    }
 
     return {"collection_class": mock_collection_class, "collection_instance": mock_instance}
 
@@ -194,15 +200,41 @@ def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):
     mock_dir_deps["collection_instance"].to_csv.assert_called_once()
 
 
-def test_scan_dir_invalid_sort(mock_exit_cli, tmp_path):
+def test_scan_dir_invalid_sort(mock_dir_deps, tmp_path):
+    """Invalid choices are rejected by Typer as a usage error before scanning."""
     target = tmp_path / "test_dir"
     target.mkdir()
 
     result = runner.invoke(app, ["local", "scan", str(target), "--sort-by", "fake_col"])
 
-    assert result.exit_code != 0
-    mock_exit_cli.assert_called()
-    assert "Invalid sorting option" in mock_exit_cli.call_args.kwargs["message"]
+    assert result.exit_code == 2
+    mock_dir_deps["collection_class"].assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "args", [["--sort-by", "SIZE", "--sort-order", "DESC"], ["--sort-by", "size", "--sort-order", "desc"]]
+)
+def test_scan_dir_sort_case_insensitive(mock_rich_console, mock_dir_deps, tmp_path, args):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "scan", str(target), *args])
+
+    assert result.exit_code == 0
+    tables = [c.args[0] for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Table)]
+    names = list(tables[0].columns[0].cells)
+    assert names == ["file2.txt", "file1.txt"]
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_scan_dir_limit_must_be_positive(mock_dir_deps, tmp_path, limit):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--limit", limit])
+
+    assert result.exit_code == 2
+    mock_dir_deps["collection_class"].assert_not_called()
 
 
 def test_scan_dir_empty_graceful_exit(mock_dir_deps, mock_exit_cli, tmp_path):
@@ -292,7 +324,10 @@ def test_scan_dir_json_stdout(mock_rich_console, mock_error_console, mock_dir_de
     assert mock_rich_console.print.call_count == 1
     call = mock_rich_console.print.call_args
     data = json.loads(call.args[0])
-    assert data["scan_metadata"]["total_files_found"] == 2
+    assert data["scan_metadata"]["total_files_in_collection"] == 2
+    assert "duration_seconds" in data["scan_metadata"]
+    assert [r["name"] for r in data["results"]] == ["file1.txt", "file2.txt"]
+    mock_dir_deps["collection_instance"].to_dict.assert_called_once_with(exclude={"embeddings", "text_chunks"})
     assert call.kwargs == {"markup": False, "highlight": False, "emoji": False, "soft_wrap": True}
 
 
@@ -320,10 +355,11 @@ def test_scan_dir_json_with_save_and_csv(mock_rich_console, mock_error_console, 
     result = runner.invoke(app, ["local", "scan", str(target), "--json", "--save", "--csv", "-o", str(out_dir)])
 
     assert result.exit_code == 0
-    mock_dir_deps["collection_instance"].to_json.assert_called_once()
     mock_dir_deps["collection_instance"].to_csv.assert_called_once()
     assert mock_rich_console.print.call_count == 1
-    json.loads(mock_rich_console.print.call_args.args[0])
+    stdout_data = json.loads(mock_rich_console.print.call_args.args[0])
+    saved = json.loads((out_dir / "scan-dir-test_dir_report.json").read_text(encoding="utf-8"))
+    assert saved == stdout_data
     stderr_text = _printed_text(mock_error_console)
     assert "JSON report saved to" in stderr_text
     assert "CSV report saved to" in stderr_text
@@ -408,13 +444,16 @@ def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_dir_deps, 
     """Hits the dir save logic and its exception handler."""
     target = tmp_path / "test_dir"
     target.mkdir()
+    out_file = tmp_path / "reports" / "dir.json"
 
-    runner.invoke(app, ["local", "scan", str(target), "-s"])
-    mock_dir_deps["collection_instance"].to_json.assert_called_once()
+    runner.invoke(app, ["local", "scan", str(target), "-s", "-o", str(out_file)])
+    saved = json.loads(out_file.read_text(encoding="utf-8"))
+    assert "duration_seconds" in saved["scan_metadata"]
+    assert len(saved["results"]) == 2
 
     mock_rich_console.reset_mock()
-    mock_dir_deps["collection_instance"].to_json.side_effect = Exception("Mock Dir JSON Error")
-    runner.invoke(app, ["local", "scan", str(target), "-s"])
+    with patch("builtins.open", side_effect=Exception("Mock Dir JSON Error")):
+        runner.invoke(app, ["local", "scan", str(target), "-s", "-o", str(out_file)])
     printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "Could not save JSON report. Error: Mock Dir JSON Error" in printed_text
 
@@ -467,3 +506,169 @@ def test_scan_dir_limit_message(mock_rich_console, mock_dir_deps, tmp_path):
 
     printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
     assert "Showing first 1 of 2 files" in printed_text
+
+
+def test_scan_output_trailing_separator_creates_directory(mock_rich_console, mock_dir_deps, tmp_path):
+    """A non-existent --output ending in a separator is a directory, not a file named after it."""
+    target = tmp_path / "test_dir"
+    target.mkdir()
+    out_dir = tmp_path / "new_reports"
+
+    result = runner.invoke(app, ["local", "scan", str(target), "-s", "-o", str(out_dir) + os.sep])
+
+    assert result.exit_code == 0
+    assert (out_dir / "scan-dir-test_dir_report.json").is_file()
+
+
+def test_scan_output_file_with_save_and_csv_writes_both(mock_rich_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+    out_file = tmp_path / "report.json"
+
+    runner.invoke(app, ["local", "scan", str(target), "-s", "-c", "-o", str(out_file)])
+
+    assert out_file.is_file()
+    mock_dir_deps["collection_instance"].to_csv.assert_called_once_with(str(tmp_path / "report.csv"))
+
+
+def test_scan_output_dir_without_report_type_warns(mock_rich_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "scan", str(target), "-o", str(tmp_path / "reports.json") + os.sep])
+
+    assert "no report type was requested" in _printed_text(mock_rich_console)
+    assert not (tmp_path / "reports.json").exists()
+
+
+def test_scan_file_local_attributes_not_mutated(mock_rich_console, mock_file_deps, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    data = json.loads(mock_rich_console.print.call_args.args[0])
+    assert "full_path" not in data["local_attributes"]
+    assert data["local_filesystem"]["full_path"] == "/fake/test.txt"
+
+
+def test_scan_template_is_deprecated(mock_rich_console, mock_file_deps, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "-t", "fancy"])
+
+    assert result.exit_code == 0
+    assert "--template has no effect" in _printed_text(mock_rich_console)
+
+
+def test_scan_file_name_markup_is_escaped(mock_rich_console, mock_file_deps, tmp_path):
+    target = tmp_path / "[bold]x[red].txt"
+    target.touch()
+    mock_file_deps["local_file_class"].return_value.name = "[bold]x[red].txt"
+
+    runner.invoke(app, ["local", "scan", str(target)])
+
+    assert r"\[bold]x\[red].txt" in _printed_text(mock_rich_console)
+    assert r"File Record: \[bold]x\[red].txt" in mock_file_deps["create_panel"].call_args.kwargs["title"]
+
+
+@pytest.mark.parametrize(
+    "source, is_dir, expected_prefix",
+    [
+        (".", True, "scan-dir-{cwd}-"),
+        ("my dir [1]", True, "scan-dir-my_dir_1-"),
+        ("report.final.pdf", False, "report.final-"),
+    ],
+)
+def test_get_final_path_default_names(tmp_path, monkeypatch, source, is_dir, expected_prefix):
+    from dorsal.cli.local_app import scan_cmd
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(scan_cmd.constants, "CLI_SCAN_REPORTS_DIR", tmp_path / "scans")
+
+    result = scan_cmd._get_final_path(pathlib.Path(source), None, False, ".json", is_dir=is_dir)
+
+    assert result.parent == tmp_path / "scans"
+    assert result.name.startswith(expected_prefix.format(cwd=tmp_path.name))
+    assert result.suffix == ".json"
+
+
+def test_get_final_path_root_and_collision(tmp_path, monkeypatch):
+    from dorsal.cli.local_app import scan_cmd
+
+    monkeypatch.setattr(scan_cmd.constants, "CLI_SCAN_REPORTS_DIR", tmp_path)
+    frozen = datetime.datetime(2026, 1, 2, 3, 4, 5)
+    monkeypatch.setattr(scan_cmd.datetime, "datetime", MagicMock(now=MagicMock(return_value=frozen)))
+
+    root = pathlib.Path(tmp_path.anchor)
+    first = scan_cmd._get_final_path(root, None, False, ".json", is_dir=True)
+    assert first.name == "scan-dir-root-20260102-030405.json"
+
+    first.touch()
+    second = scan_cmd._get_final_path(root, None, False, ".json", is_dir=True)
+    assert second.name == "scan-dir-root-20260102-030405-1.json"
+
+
+@pytest.mark.parametrize(
+    "output, suffix, expected",
+    [
+        ("r.json", ".json", "r.json"),
+        ("r.json", ".csv", "r.csv"),
+        ("r.CSV", ".csv", "r.CSV"),
+        ("report", ".json", "report.json"),
+        ("r.txt", ".json", "r.txt.json"),
+    ],
+)
+def test_get_final_path_output_file(tmp_path, output, suffix, expected):
+    from dorsal.cli.local_app import scan_cmd
+
+    result = scan_cmd._get_final_path(pathlib.Path("src"), tmp_path / output, False, suffix, is_dir=True)
+
+    assert result == tmp_path / expected
+
+
+def _render(renderable_fn, width=80) -> str:
+    console = Console(file=io.StringIO(), width=width, color_system=None)
+    renderable_fn(console)
+    return console.file.getvalue()
+
+
+def test_file_table_escapes_names_and_truncates(mock_dir_deps):
+    from dorsal.cli.local_app import scan_cmd
+    from dorsal.cli.themes.borders import get_borders
+
+    collection = mock_dir_deps["collection_instance"]
+    files = list(collection.__iter__.return_value)
+    files[0].name = "[bold]x[/] " + "long " * 40 + ".txt"
+    collection.__iter__.return_value = iter(files)
+
+    out = _render(lambda c: scan_cmd._print_file_details_table(collection, {}, {}, get_borders(), 20, "name", "asc", c))
+
+    name_lines = [line for line in out.splitlines() if "[bold]x[/]" in line]
+    assert len(name_lines) == 1
+    assert "…" in name_lines[0]
+    assert sum("long" in line for line in out.splitlines()) == 1
+
+
+def test_summary_panel_has_no_trailing_blank_line():
+    from dorsal.cli.local_app import scan_cmd
+    from dorsal.cli.themes.borders import get_borders
+
+    info = {
+        "overall": {
+            "total_files": 1,
+            "total_size": 3,
+            "newest_file": {"date": datetime.datetime(2025, 1, 1), "path": "[a].txt"},
+            "oldest_file": {"date": datetime.datetime(2024, 1, 1), "path": "[a].txt"},
+        },
+        "by_type": [],
+    }
+
+    out = _render(lambda c: scan_cmd._print_directory_summary_panel(info, {}, get_borders(), c))
+
+    lines = out.splitlines()
+    assert "Media Types: 0" in lines[-3]
+    assert lines[-2].strip("│ ") == ""
+    assert "(\\[a].txt)" not in out
+    assert "([a].txt)" in out

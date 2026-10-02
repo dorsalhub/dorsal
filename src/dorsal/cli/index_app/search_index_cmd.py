@@ -40,9 +40,10 @@ def _save_local_search_results(
     Saves a page of local search results to a timestamped JSON file.
     Matches the behavior of remote_search._save_search_results.
     """
-    from dorsal.common.cli import get_rich_console
+    from dorsal.common.cli import get_rich_console, get_error_console
 
     console = get_rich_console()
+    error_console = get_error_console()
     filepath: pathlib.Path
 
     page_number = page_data.get("pagination", {}).get("current_page", 0)
@@ -68,7 +69,7 @@ def _save_local_search_results(
             with open(query_dir / "query.txt", "w", encoding="utf-8") as f:
                 f.write(query)
         except IOError:
-            console.print(f"[{palette['warning']}]Warning:[/] Could not write query.txt to report directory.")
+            error_console.print(f"[{palette['warning']}]Warning:[/] Could not write query.txt to report directory.")
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"{timestamp}-p{page_number}.json"
@@ -84,7 +85,7 @@ def _save_local_search_results(
                 f"[{palette['success']}]✅ Full JSON report saved to:[/] [{palette['primary_value']}]{filepath}[/]"
             )
     except IOError as e:
-        console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
+        error_console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
 
 
 def search_index_cmd(
@@ -177,7 +178,12 @@ def search_index_cmd(
     """
     Search Dorsal's local file index.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+    )
     from dorsal.api.search import search_local_paginated
     from dorsal.cli.views.search import display_local_search_results
     from dorsal.cli.themes import UIContext
@@ -221,7 +227,7 @@ def search_index_cmd(
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
         if json_output:
-            console.print(json.dumps(response_dict, indent=2, default=str, ensure_ascii=False))
+            print_json_output(response_dict, console)
             exit_cli()
 
         if not response.records:

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import json
 import sys
 import pytest
 from unittest.mock import ANY, patch, MagicMock
@@ -81,7 +82,26 @@ def test_print_json_output_is_valid_json_on_narrow_terminal():
     output = buffer.getvalue()
     assert "\x1b" not in output
     parsed = json.loads(output)
-    assert parsed == {**data, "when": "2025-01-02 03:04:05"}
+    assert parsed == {**data, "when": "2025-01-02T03:04:05"}
+
+
+def test_format_json_output_iso_dates():
+    import datetime
+    import json
+    import pathlib
+
+    tz = datetime.timezone(datetime.timedelta(hours=1))
+    data = {
+        "aware": datetime.datetime(2025, 4, 13, 18, 14, 25, tzinfo=tz),
+        "date": datetime.date(2025, 1, 2),
+        "path": pathlib.PurePosixPath("/a/b"),
+    }
+
+    assert json.loads(cli.format_json_output(data)) == {
+        "aware": "2025-04-13T18:14:25+01:00",
+        "date": "2025-01-02",
+        "path": "/a/b",
+    }
 
 
 def test_print_json_output_defaults_to_shared_console(mock_rich_console):
@@ -204,29 +224,29 @@ def mock_ui_context():
 
 
 @patch("dorsal.common.cli.exit_cli")
-def test_handle_error_json(mock_exit, mock_rich_console, mock_ui_context):
+def test_handle_error_json(mock_exit, mock_rich_console, mock_ui_context, mock_error_console):
     """Tests that handle_error outputs raw JSON when requested."""
     cli.handle_error(mock_ui_context, "Something broke.", json_output=True)
 
-    mock_rich_console.print.assert_called_once()
-    output = mock_rich_console.print.call_args[0][0]
+    mock_error_console.print.assert_called_once()
+    output = mock_error_console.print.call_args[0][0]
     assert '"error": true' in output
     assert "Something broke." in output
     mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
 
 
 @patch("dorsal.common.cli.exit_cli")
-def test_handle_error_panel(mock_exit, mock_rich_console, mock_ui_context):
+def test_handle_error_panel(mock_exit, mock_rich_console, mock_ui_context, mock_error_console):
     """Tests that handle_error outputs a Rich Panel by default."""
     cli.handle_error(mock_ui_context, "Something broke.", json_output=False)
 
-    printed_obj = mock_rich_console.print.call_args[0][0]
+    printed_obj = mock_error_console.print.call_args[0][0]
     assert isinstance(printed_obj, Panel)
     mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
 
 
 @patch("dorsal.common.cli.exit_cli")
-def test_handle_error_none_borders(mock_exit, mock_rich_console, mock_ui_context, mocker):
+def test_handle_error_none_borders(mock_exit, mock_rich_console, mock_ui_context, mocker, mock_error_console):
     """Tests that handle_error strips the Panel when borders are 'none'."""
 
     class MatchAnyBorder:
@@ -237,21 +257,22 @@ def test_handle_error_none_borders(mock_exit, mock_rich_console, mock_ui_context
 
     cli.handle_error(mock_ui_context, "Something broke.", json_output=False)
 
-    printed_obj = mock_rich_console.print.call_args[0][0]
+    printed_obj = mock_error_console.print.call_args[0][0]
     assert isinstance(printed_obj, Group)
     mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
 
 
 @patch.object(sys, "argv", ["dorsal", "auth", "--json"])
-def test_handle_auth_error_json(capsys, mock_rich_console, mock_ui_context):
-    """Tests that auth errors bypass Rich and print raw JSON when --json is in sys.argv."""
+def test_handle_auth_error_json(mock_ui_context, mock_error_console):
+    """With --json in sys.argv, the error is printed as raw JSON to the console passed in (stderr in the CLI)."""
     err = AuthError("Fake auth error")
-    cli.handle_auth_error(err, mock_rich_console, mock_ui_context)
+    cli.handle_auth_error(err, mock_error_console, mock_ui_context)
 
-    captured = capsys.readouterr()
-    assert '"success": false' in captured.out
-    assert '"error": "Authentication Required"' in captured.out
-    assert mock_rich_console.print.call_count == 0
+    call = mock_error_console.print.call_args
+    data = json.loads(call.args[0])
+    assert data["success"] is False
+    assert data["error"] == "Authentication Required"
+    assert call.kwargs == {"markup": False, "highlight": False, "emoji": False, "soft_wrap": True}
 
 
 @patch.object(sys, "argv", ["dorsal", "auth"])
@@ -265,15 +286,16 @@ def test_handle_auth_error_panel(mock_rich_console, mock_ui_context):
 
 
 @patch.object(sys, "argv", ["dorsal", "search", "--json"])
-def test_handle_offline_error_json(capsys, mock_rich_console, mock_ui_context):
-    """Tests that offline errors bypass Rich and print raw JSON when --json is in sys.argv."""
+def test_handle_offline_error_json(mock_ui_context, mock_error_console):
+    """With --json in sys.argv, the error is printed as raw JSON to the console passed in (stderr in the CLI)."""
     err = Exception("Fake offline error")
-    cli.handle_offline_error(err, mock_rich_console, mock_ui_context)
+    cli.handle_offline_error(err, mock_error_console, mock_ui_context)
 
-    captured = capsys.readouterr()
-    assert '"success": false' in captured.out
-    assert '"error": "Offline Mode Active"' in captured.out
-    assert mock_rich_console.print.call_count == 0
+    call = mock_error_console.print.call_args
+    data = json.loads(call.args[0])
+    assert data["success"] is False
+    assert data["error"] == "Offline Mode Active"
+    assert call.kwargs == {"markup": False, "highlight": False, "emoji": False, "soft_wrap": True}
 
 
 @patch.object(sys, "argv", ["dorsal", "search"])
@@ -563,3 +585,25 @@ def test_render_model_help_panel_not_installed_local(mock_ui_context):
     assert isinstance(panel, Panel)
     assert "MyTarget" in str(panel.renderable)
     assert "organization/project" in str(panel.renderable)
+
+
+@pytest.mark.parametrize("end", ["\n", ""])
+def test_print_raw_output_is_byte_exact(end):
+    """Tabs, markup, emoji codes and long lines must reach the stream untouched."""
+    import io
+
+    from rich.console import Console
+
+    text = "col_a\tcol_b\t[bold]x[/]\t:smile:\n" + "word " * 100
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+
+    cli.print_raw_output(text, console, end=end)
+
+    assert buffer.getvalue() == text + end
+
+
+def test_print_raw_output_defaults_to_shared_console(mock_rich_console):
+    cli.print_raw_output("a\tb")
+
+    mock_rich_console.file.write.assert_called_once_with("a\tb\n")

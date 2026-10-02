@@ -21,7 +21,6 @@ import typer
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
-import json
 import os
 from typing import Annotated, Optional
 
@@ -198,9 +197,15 @@ def logout(
     """
     from dorsal.session import clear_shared_dorsal_client
     from dorsal.common.auth import get_api_key_details, remove_api_key, APIKeySource
-    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_rich_console,
+        get_error_console,
+    )
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
@@ -249,7 +254,7 @@ def logout(
         return exit_cli()
 
     except OSError as err:
-        console.print(f"[{palette['error']}]Error:[/] Could not modify config file. {err}")
+        error_console.print(f"[{palette['error']}]Error:[/] Could not modify config file. {err}")
         return exit_cli(code=EXIT_CODE_ERROR, message=f"Could not modify config file. {err}")
 
 
@@ -258,11 +263,17 @@ def gitignore(ctx: typer.Context):
     """
     Check if the project config file is in .gitignore, and add it if not.
     """
-    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_rich_console,
+        get_error_console,
+    )
     from dorsal.common.config import get_project_level_config
     from dorsal.common import constants
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
@@ -270,7 +281,9 @@ def gitignore(ctx: typer.Context):
 
     if not shutil.which("git"):
         logger.warning("'git' command not found.")
-        console.print(f"[{palette['warning']}]'git' command not found. Cannot check or update .gitignore.[/]")
+        get_error_console().print(
+            f"[{palette['warning']}]'git' command not found. Cannot check or update .gitignore.[/]"
+        )
         return exit_cli(code=EXIT_CODE_ERROR)
 
     current_cwd = pathlib.Path.cwd()
@@ -392,8 +405,8 @@ def gitignore(ctx: typer.Context):
 
     except (OSError, subprocess.CalledProcessError) as e:
         logger.error(f"Failed during .gitignore write operation: {e}", exc_info=True)
-        console.print(f"[{palette['error']}]Error:[/] Could not write to .gitignore: {e}")
-        console.print("Please add the file to .gitignore manually.")
+        error_console.print(f"[{palette['error']}]Error:[/] Could not write to .gitignore: {e}")
+        error_console.print("Please add the file to .gitignore manually.")
         exit_cli(code=EXIT_CODE_ERROR)
 
 
@@ -412,7 +425,12 @@ def whoami(
     Check the currently authenticated user and session status.
     """
     from dorsal.session import get_shared_dorsal_client
-    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_rich_console,
+        print_json_output,
+    )
     from dorsal.common.exceptions import AuthError, NetworkError
 
     console = get_rich_console()
@@ -427,7 +445,7 @@ def whoami(
         user_info = client.verify_credentials()
 
         if json_output:
-            console.print(json.dumps(user_info, indent=2, default=str, ensure_ascii=False))
+            print_json_output(user_info, console)
         else:
             console.print()
             _display_user_info(

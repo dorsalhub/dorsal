@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import json
 import sys
 from typing import Any, NoReturn, Sequence, TYPE_CHECKING
@@ -52,20 +53,51 @@ def get_error_console() -> Console:
     return _error_console_instance
 
 
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, (datetime.date, datetime.time)):
+        return obj.isoformat()
+    return str(obj)
+
+
+def format_json_output(data: Any) -> str:
+    """Serializes `data` the way CLI commands emit JSON (stdout and saved reports).
+
+    Dates and datetimes become ISO 8601 strings; any other non-serializable value is converted with `str()`.
+    """
+    return json.dumps(data, indent=2, default=_json_default, ensure_ascii=False)
+
+
+def print_raw_output(text: str, console: Console | None = None, end: str = "\n") -> None:
+    """Prints pre-formatted, machine-readable text (JSON, CSV/TSV, subtitles, ...) exactly as given.
+
+    The text is written straight to the console's underlying stream, bypassing Rich entirely: Rich would otherwise
+    wrap long lines, parse `[...]` as markup, substitute `:emoji:` codes and expand tab characters into spaces.
+
+    Args:
+        text: The text to print.
+        console: The console whose stream is written to. Defaults to the shared console from `get_rich_console()`.
+        end: String appended after the text.
+    """
+    if console is None:
+        console = get_rich_console()
+    console.file.write(text + end)
+    console.file.flush()
+
+
 def print_json_output(data: Any, console: Console | None = None) -> None:
     """Prints `data` as machine-readable JSON to the (stdout) console.
 
-    Rich's text processing is disabled so the output is always valid JSON: no line wrapping at the
-    terminal width, no markup parsing of `[...]`, no `:emoji:` substitution and no syntax highlighting.
+    Serialized with `format_json_output` and printed with Rich's text processing disabled, so the output is always
+    valid JSON (JSON escapes tabs and control characters, so Rich's tab expansion never applies).
 
     Args:
-        data: A JSON-serializable object. Non-serializable values are converted with `str()`.
+        data: A JSON-serializable object.
         console: The console to print to. Defaults to the shared console from `get_rich_console()`.
     """
     if console is None:
         console = get_rich_console()
     console.print(
-        json.dumps(data, indent=2, default=str, ensure_ascii=False),
+        format_json_output(data),
         markup=False,
         highlight=False,
         emoji=False,
@@ -105,14 +137,15 @@ def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
 
 
 def handle_error(ui_context: "UIContext", message: str, json_output: bool):
+    """Prints an error (as JSON with `json_output`, otherwise as a panel) to stderr and exits with an error code."""
     from dorsal.cli.themes.borders import get_borders
 
-    console = get_rich_console()
+    console = get_error_console()
     palette = ui_context["palette"]
     borders = ui_context["borders"]
 
     if json_output:
-        console.print(json.dumps({"error": True, "detail": message}, indent=2, ensure_ascii=False))
+        print_json_output({"error": True, "detail": message}, console)
     else:
         title_text = f"[{palette.get('panel_title_error', 'bold red')}]Error[/]"
 
@@ -132,7 +165,7 @@ def handle_error(ui_context: "UIContext", message: str, json_output: bool):
 
 
 def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext") -> None:
-    """Handler for AuthError."""
+    """Handler for AuthError. Pass the stderr console (`get_error_console()`), as errors belong on stderr."""
     from dorsal.cli.themes.borders import get_borders
 
     palette = ui_context["palette"]
@@ -147,7 +180,7 @@ def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext")
             "original_message": str(err),
             "fix": "Run 'dorsal auth login' or set the DORSAL_API_KEY environment variable.",
         }
-        print(json.dumps(error_payload, indent=2))
+        print_json_output(error_payload, console)
         return
 
     message = Text.assemble(
@@ -181,7 +214,7 @@ def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext")
 
 def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"):
     """
-    Centralized handler for DorsalOfflineError.
+    Centralized handler for DorsalOfflineError. Pass the stderr console (`get_error_console()`), as errors belong on stderr.
     """
     from dorsal.cli.themes.borders import get_borders
 
@@ -197,7 +230,7 @@ def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"
             "original_message": str(e),
             "fix": "Unset the 'DORSAL_OFFLINE' environment variable.",
         }
-        print(json.dumps(error_payload, indent=2))
+        print_json_output(error_payload, console)
         return
 
     message = Text.assemble(

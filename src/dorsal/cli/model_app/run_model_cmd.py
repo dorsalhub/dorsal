@@ -137,7 +137,14 @@ def run_model(
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
     from dorsal.common.exceptions import DorsalError, AuthError
-    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console, get_error_console, parse_cli_options
+    from dorsal.common.cli import (
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_rich_console,
+        get_error_console,
+        parse_cli_options,
+        print_json_output,
+    )
     from dorsal.api.model import prepare_model_target, run_or_install_model
     from dorsal.api.adapters import export_record, get_format_extension
     from dorsal.cli.views.model import create_model_result_panel
@@ -354,7 +361,7 @@ def run_model(
         raise
     except DorsalError as e:
         if json_output:
-            error_console.print(json.dumps({"error": str(e)}))
+            print_json_output({"error": str(e)}, error_console)
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Run Failed:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
@@ -363,7 +370,7 @@ def run_model(
     except Exception as e:
         logger.exception("Unexpected error during model run")
         if json_output:
-            error_console.print(json.dumps({"error": "Unexpected internal error", "details": str(e)}))
+            print_json_output({"error": "Unexpected internal error", "details": str(e)}, error_console)
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
@@ -393,7 +400,7 @@ def run_model(
         for _, text in export_files_to_save:
             console.print(text, end="")
     elif json_output:
-        console.print(json.dumps(final_json_data, indent=2, ensure_ascii=False, default=str))
+        print_json_output(final_json_data, console)
     else:
         if is_batch:
             table = Table(

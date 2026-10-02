@@ -15,7 +15,6 @@
 import logging
 import typer
 from typing import Annotated
-import json
 
 from rich.panel import Panel
 from rich.table import Table
@@ -41,18 +40,26 @@ def optimize_search_index(
     - Reclaiming disk space (VACUUM).
     """
     from dorsal.api.index import optimize
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+        print_json_output,
+    )
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
-        with console.status("Optimizing search index... (this may take a moment)"):
+        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
+        status_console = get_error_console() if json_output else console
+        with status_console.status("Optimizing search index... (this may take a moment)"):
             results = optimize(force_recompression=force_recompression)
 
         if json_output:
-            console.print(json.dumps(results))
+            print_json_output(results, console)
             exit_cli()
 
         summary_table = Table.grid(expand=False)

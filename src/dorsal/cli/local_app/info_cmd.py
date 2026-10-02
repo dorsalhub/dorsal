@@ -29,7 +29,13 @@ from rich.console import Group
 import typer
 
 from dorsal.common import constants
-from dorsal.common.cli import EXIT_CODE_ERROR, get_rich_console, exit_cli
+from dorsal.common.cli import (
+    EXIT_CODE_ERROR,
+    get_rich_console,
+    exit_cli,
+    print_json_output,
+    get_error_console,
+)
 from dorsal.cli.themes import UIContext
 from dorsal.cli.themes.borders import get_borders
 from rich.box import Box
@@ -191,7 +197,7 @@ def _process_file_info(
         }
 
         if json_output:
-            console.print(json.dumps(file_info, indent=2, ensure_ascii=False))
+            print_json_output(file_info, console)
             exit_cli()
 
         summary_table = Table.grid(expand=False, padding=(0, 1))
@@ -296,7 +302,7 @@ def _process_dir_info(
             exit_cli()
 
         if json_output:
-            console.print(json.dumps(dir_info, indent=2, default=str, ensure_ascii=False))
+            print_json_output(dir_info, console)
             exit_cli()
 
         overall: dict[str, Any] = dir_info["overall"]
@@ -430,6 +436,7 @@ def _save_json_report(
     json_to_stdout: bool,
     console,
 ) -> None:
+    error_console = get_error_console()
     final_path = _get_final_path(source_path, output_path, ".json", is_dir=is_dir)
 
     try:
@@ -444,6 +451,6 @@ def _save_json_report(
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {e}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(
+        error_console.print(
             f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
         )

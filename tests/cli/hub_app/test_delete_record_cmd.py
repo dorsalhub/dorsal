@@ -101,19 +101,22 @@ def test_delete_record_success_json_output(mock_rich_console, mock_delete_cmd):
     result = runner.invoke(app, ["hub", "delete", HASH_STRING, "--yes", "--json"])
 
     assert result.exit_code == 0
-    mock_rich_console.print.assert_called_once()
+    mock_rich_console.file.write.assert_called_once()
     mock_delete_cmd["delete_response"].model_dump_json.assert_called_once()
-    assert mock_rich_console.print.call_args.args[0] == mock_delete_cmd["delete_response"].model_dump_json.return_value
+    assert (
+        mock_rich_console.file.write.call_args.args[0]
+        == mock_delete_cmd["delete_response"].model_dump_json.return_value + "\n"
+    )
 
 
-def test_delete_record_not_found(mock_rich_console, mock_delete_cmd):
+def test_delete_record_not_found(mock_rich_console, mock_delete_cmd, mock_error_console):
     """Tests error handling when the record to delete is not found in interactive mode."""
     mock_delete_cmd["get_record"].side_effect = NotFoundError("test")
 
     result = runner.invoke(app, ["hub", "delete", HASH_STRING])  # No --yes flag
 
     assert result.exit_code != 0
-    printed_object = mock_rich_console.print.call_args.args[0]
+    printed_object = mock_error_console.print.call_args.args[0]
     assert isinstance(printed_object, Panel)
     assert "Error" in str(printed_object.title)
     assert "Cannot delete" in str(printed_object.renderable)

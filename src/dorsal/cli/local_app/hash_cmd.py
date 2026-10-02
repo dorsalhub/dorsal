@@ -16,7 +16,6 @@ import logging
 import typer
 import pathlib
 from typing import Annotated, List, Literal
-import json
 
 from rich.panel import Panel
 from rich.table import Table
@@ -79,6 +78,7 @@ def hash_target(
         get_rich_console,
         determine_use_cache_value,
         exit_cli,
+        print_json_output,
     )
     from dorsal.file.hash_reader import HASH_READER
     from dorsal.file.utils.quick_hasher import QuickHasher
@@ -125,7 +125,7 @@ def hash_target(
         return exit_cli(code=EXIT_CODE_ERROR, message=str(err))
 
     if json_output:
-        console.print(json.dumps(file_hashes, indent=2, ensure_ascii=False, default=str))
+        print_json_output(file_hashes, console)
         return exit_cli()
 
     if len(hashes_to_get) == 1:

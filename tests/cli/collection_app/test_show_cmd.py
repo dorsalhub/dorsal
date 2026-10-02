@@ -115,7 +115,7 @@ def test_show_collection_json_output(mock_rich_console, mock_show_collection_cmd
 
     assert mock_show_collection_cmd["get_collection"].call_args.kwargs["hydrate"] is True
 
-    mock_rich_console.print.assert_called_once()
+    mock_rich_console.file.write.assert_called_once()
     MOCK_API_RESPONSE.model_dump_json.assert_called_once()
 
     mock_show_collection_cmd["view"].assert_not_called()
