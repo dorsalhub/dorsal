@@ -14,7 +14,6 @@
 
 import typer
 import pathlib
-import json
 import logging
 from typing import Annotated
 
@@ -79,10 +78,13 @@ def identify_target(
         exit_cli,
         EXIT_CODE_ERROR,
         determine_use_cache_value,
+        print_json_output,
+        get_error_console,
     )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, NotFoundError
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette: dict[str, str] = ctx.obj["palette"]
     icons: dict[str, str] = ctx.obj.get("icons", {})
     borders: Box | None = ctx.obj.get("borders")
@@ -109,7 +111,7 @@ def identify_target(
         )
 
         if json_output:
-            console.print(json.dumps(file_record_dict, indent=2, default=str, ensure_ascii=False))
+            print_json_output(file_record_dict, console)
             raise typer.Exit(0)
 
         panel = create_file_info_panel(
@@ -131,7 +133,7 @@ def identify_target(
                 "error": "Not Found",
                 "detail": e.message,
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
         else:
             message = Text.assemble(
                 ("This file has not been indexed to DorsalHub.\n\n", "default"),
@@ -146,7 +148,7 @@ def identify_target(
                     f"bold {palette.get('primary_value', 'default')}",
                 ),
             )
-            console.print(
+            error_console.print(
                 Panel(
                     message,
                     title=f"[{palette.get('panel_title_warning', 'bold yellow')}]⚠️ Not Found[/]",
@@ -167,7 +169,7 @@ def identify_target(
                 "error": "API Error",
                 "detail": err.message,
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
         else:
             exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {err.message}")
         exit_cli(code=EXIT_CODE_ERROR)
@@ -179,7 +181,7 @@ def identify_target(
                 "error": "Unexpected Error",
                 "detail": str(err),
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
         else:
             exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
         exit_cli(code=EXIT_CODE_ERROR)

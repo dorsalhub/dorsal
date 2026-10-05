@@ -88,16 +88,16 @@ def test_delete_collection_api_error_panel_output(mock_delete_collection_cmd):
     assert "API Error: Permission denied" in result.output
 
 
-def test_delete_collection_api_error_json_output(mock_rich_console, mock_delete_collection_cmd):
+def test_delete_collection_api_error_json_output(mock_rich_console, mock_delete_collection_cmd, mock_error_console):
     """Tests an API error with --json output."""
     mock_delete_collection_cmd.side_effect = DorsalClientError("Permission denied")
 
     result = runner.invoke(app, ["collection", "delete", COLLECTION_ID, "--yes", "--json"])
 
     assert result.exit_code != 0
-    mock_rich_console.print.assert_called_once()
+    mock_error_console.print.assert_called_once()
 
-    json_str = mock_rich_console.print.call_args.args[0]
+    json_str = mock_error_console.print.call_args.args[0]
     data = json.loads(json_str)
 
     assert data == {

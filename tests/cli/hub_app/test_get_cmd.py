@@ -79,8 +79,8 @@ def test_get_record_json_output(mock_rich_console, mock_get_cmd):
     result = runner.invoke(app, ["hub", "get", HASH_STRING, "--json"])
 
     assert result.exit_code == 0
-    mock_rich_console.print.assert_called_once()
-    json_str = mock_rich_console.print.call_args.args[0]
+    mock_rich_console.file.write.assert_called_once()
+    json_str = mock_rich_console.file.write.call_args.args[0]
     data = json.loads(json_str)
 
     assert data == MOCK_RECORD_DICT
@@ -98,24 +98,24 @@ def test_get_record_save_to_output_file(mock_get_cmd, tmp_path):
     assert mock_get_cmd["save_get_report"].call_args.kwargs["output_path"] == output_file
 
 
-def test_get_record_not_found_panel(mock_rich_console, mock_get_cmd):
+def test_get_record_not_found_panel(mock_rich_console, mock_get_cmd, mock_error_console):
     """Tests the not-found case with standard output."""
     mock_get_cmd["get_dorsal_file_record"].side_effect = NotFoundError("No file found.")
 
     result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
-    assert result.exit_code == 0  # Graceful exit with message
-    assert "Not Found" in mock_rich_console.print.call_args.args[0]
+    assert result.exit_code == 1  # Not found is an error, with or without --json
+    assert "Not Found" in mock_error_console.print.call_args.args[0]
 
 
-def test_get_record_not_found_json(mock_rich_console, mock_get_cmd):
+def test_get_record_not_found_json(mock_rich_console, mock_get_cmd, mock_error_console):
     """Tests the not-found case with --json output."""
     mock_get_cmd["get_dorsal_file_record"].side_effect = NotFoundError("No file found.")
 
     result = runner.invoke(app, ["hub", "get", HASH_STRING, "--json"])
 
     assert result.exit_code != 0
-    json_str = mock_rich_console.print.call_args.args[0]
+    json_str = mock_error_console.print.call_args.args[0]
     data = json.loads(json_str)
     assert data["success"] is False
     assert data["error"] == "Not Found"
@@ -137,3 +137,26 @@ def test_get_record_api_error(mock_get_cmd):
 
     assert result.exit_code != 0
     assert "API Error: Connection failed." in result.output
+
+
+def test_get_record_json_with_save(mock_rich_console, mock_get_cmd):
+    """--json no longer exits before --save."""
+    result = runner.invoke(app, ["hub", "get", HASH_STRING, "--json", "--save"])
+
+    assert result.exit_code == 0
+    assert json.loads(mock_rich_console.file.write.call_args.args[0]) == MOCK_RECORD_DICT
+    mock_get_cmd["create_file_info_panel"].assert_not_called()
+    mock_get_cmd["save_get_report"].assert_called_once()
+    assert mock_get_cmd["save_get_report"].call_args.kwargs["json_to_stdout"] is True
+
+
+def test_save_json_report_confirmation_to_stderr_with_json(mock_rich_console, mock_error_console, tmp_path):
+    out = tmp_path / "r.json"
+
+    get_cmd._save_json_report(
+        record_json_str="{}", output_path=out, hash_string=HASH_STRING, palette={}, json_to_stdout=True
+    )
+
+    assert out.read_text(encoding="utf-8") == "{}"
+    mock_rich_console.print.assert_not_called()
+    assert "JSON record saved to" in str(mock_error_console.print.call_args.args[0])

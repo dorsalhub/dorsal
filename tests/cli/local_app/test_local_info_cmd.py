@@ -253,14 +253,14 @@ def test_info_save_io_error(mock_open, mock_rich_console, mock_file_deps, mock_e
 
 @patch("json.dump")
 @patch("builtins.open")
-def test_info_save_generic_error(mock_open, mock_json, mock_rich_console, mock_file_deps, tmp_path):
+def test_info_save_generic_error(mock_open, mock_json, mock_rich_console, mock_file_deps, tmp_path, mock_error_console):
     target = tmp_path / "test.txt"
     target.touch()
     mock_json.side_effect = TypeError("Not serializable")
 
     runner.invoke(app, ["local", "info", str(target), "-s"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    printed_text = "".join(str(c.args[0]) for c in mock_error_console.print.call_args_list)
     assert "Could not save JSON report" in printed_text
     assert "Not serializable" in printed_text
 

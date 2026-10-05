@@ -15,7 +15,6 @@
 import logging
 import typer
 from typing import Annotated
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +33,21 @@ def prune_search_index(
     or has been modified since it was indexed.
     """
     from dorsal.api.index import prune
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+        print_json_output,
+    )
 
     console = get_rich_console()
     palette = ctx.obj["palette"]
 
     try:
-        with console.status("Pruning stale records from the search index..."):
+        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
+        status_console = get_error_console() if json_output else console
+        with status_console.status("Pruning stale records from the search index..."):
             pruned_count, total_records = prune()
 
         result = {
@@ -49,7 +56,7 @@ def prune_search_index(
         }
 
         if json_output:
-            console.print(json.dumps(result))
+            print_json_output(result, console)
             exit_cli()
 
         if pruned_count > 0:

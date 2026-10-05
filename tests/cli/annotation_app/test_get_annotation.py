@@ -77,7 +77,7 @@ def test_get_annotation_json(mock_rich_console, mock_get_deps):
 
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="json")
-    mock_rich_console.print.assert_called_with('{"data": "raw"}', end="\n")
+    mock_rich_console.file.write.assert_called_with('{"data": "raw"}\n')
     mock_get_deps["panel"].assert_not_called()
 
 
@@ -179,7 +179,7 @@ def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps)
 
     assert result.exit_code == 0
     mock_export.assert_called_once_with(record={"title": "Test Paper"}, schema_id="Article", target_format="csl")
-    mock_rich_console.print.assert_called_with("exported_csl_string", end="")
+    mock_rich_console.file.write.assert_called_with("exported_csl_string")
 
 
 def test_get_annotation_export_fallback_model_dump(mocker, mock_rich_console, mock_get_deps):

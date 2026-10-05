@@ -124,7 +124,9 @@ def test_add_files_json_output(mock_rich_console, mock_add_files_cmd):
 
     assert result.exit_code == 0
     mock_add_files_cmd["add_response"].model_dump_json.assert_called_once()
-    mock_rich_console.print.assert_called_once_with(mock_add_files_cmd["add_response"].model_dump_json.return_value)
+    mock_rich_console.file.write.assert_called_once_with(
+        mock_add_files_cmd["add_response"].model_dump_json.return_value + "\n"
+    )
 
 
 def test_add_files_with_invalid_count(mock_rich_console, mock_add_files_cmd):

@@ -87,7 +87,7 @@ def test_compression_index_set_global_partial_args(mock_compression_api, mock_ri
     assert not any("Level: " in text for text in printed_texts if "✅" in text)
 
 
-def test_compression_index_value_error_handling(mock_compression_api, mock_rich_console):
+def test_compression_index_value_error_handling(mock_compression_api, mock_rich_console, mock_error_console):
     """Tests that ValueError from set_compression is caught and handled via exit_cli."""
     mock_compression_api["set"].side_effect = ValueError("Invalid compression level '99'.")
 
@@ -96,7 +96,7 @@ def test_compression_index_value_error_handling(mock_compression_api, mock_rich_
     assert result.exit_code == EXIT_CODE_ERROR
     mock_compression_api["exit"].assert_called_once_with(code=EXIT_CODE_ERROR)
 
-    printed_texts = [str(args[0]) for args, _ in mock_rich_console.print.call_args_list]
+    printed_texts = [str(args[0]) for args, _ in mock_error_console.print.call_args_list]
     assert any("Validation Error:" in text and "Invalid compression level '99'." in text for text in printed_texts)
 
 

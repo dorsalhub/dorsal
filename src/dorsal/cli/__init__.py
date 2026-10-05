@@ -136,13 +136,14 @@ def main(
     else:
         log_level = logging.WARNING
 
+    # Log records are diagnostics, so they always go to stderr and never mix with a command's output on stdout.
     if is_json_output:
         log_level = logging.CRITICAL
         log_console = Console(stderr=True)
     else:
-        from dorsal.common.cli import get_rich_console
+        from dorsal.common.cli import get_error_console
 
-        log_console = get_rich_console()
+        log_console = get_error_console()
 
     logging.basicConfig(
         level=log_level,
@@ -225,9 +226,9 @@ def cli_app():
     try:
         app()
     except AuthError as err:
-        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+        from dorsal.common.cli import get_error_console, EXIT_CODE_ERROR
 
-        console = get_rich_console()
+        console = get_error_console()
 
         theme_override = _extract_global_flag("--theme")
         icons_override = _extract_global_flag("--icons")
@@ -241,9 +242,9 @@ def cli_app():
         sys.exit(EXIT_CODE_ERROR)
 
     except DorsalOfflineError as err:
-        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+        from dorsal.common.cli import get_error_console, EXIT_CODE_ERROR
 
-        console = get_rich_console()
+        console = get_error_console()
 
         theme_override = _extract_global_flag("--theme")
         icons_override = _extract_global_flag("--icons")

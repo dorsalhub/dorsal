@@ -20,7 +20,6 @@ from rich.table import Table
 from rich.text import Text
 from rich.box import Box
 from typing import Dict, Annotated, Optional
-import json
 
 from dorsal.cli.themes import UIContext
 
@@ -54,7 +53,7 @@ def show_config(
     """
     Displays the current configuration status and paths.
     """
-    from dorsal.common.cli import get_rich_console
+    from dorsal.common.cli import get_rich_console, print_json_output
     from dorsal.common.config import load_config
     from dorsal.api.config import get_config_summary
     from dorsal.cli.themes.borders import get_borders
@@ -67,7 +66,7 @@ def show_config(
     config_data = get_config_summary()
 
     if json_output:
-        console.print(json.dumps(config_data, indent=2, default=str))
+        print_json_output(config_data, console)
         raise typer.Exit()
 
     raw_config, _ = load_config()
@@ -246,13 +245,19 @@ def set_ui_preferences(
     ] = False,
 ):
     """Sets UI preferences (theme, icons, borders) and saves them to the config file."""
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+    )
     from dorsal.common.auth import write_ui_config
     from dorsal.cli.themes.palettes import BUILT_IN_PALETTES, _load_custom_palettes
     from dorsal.cli.themes.icons import ICON_SETS
     from dorsal.cli.themes.borders import BORDER_SETS
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
 
@@ -265,19 +270,19 @@ def set_ui_preferences(
     if theme_name:
         all_palettes = {**BUILT_IN_PALETTES, **_load_custom_palettes()}
         if theme_name not in all_palettes:
-            console.print(
+            error_console.print(
                 f"[{palette.get('error', 'red')}]Error:[/] Theme '{theme_name}' not found. Use `dorsal config theme list` to see available themes."
             )
             exit_cli(code=EXIT_CODE_ERROR)
 
     if icons and icons not in ICON_SETS:
-        console.print(
+        error_console.print(
             f"[{palette.get('error', 'red')}]Error:[/] Icon set '{icons}' not found. Valid options: {', '.join(ICON_SETS.keys())}"
         )
         exit_cli(code=EXIT_CODE_ERROR)
 
     if borders and borders not in BORDER_SETS:
-        console.print(
+        error_console.print(
             f"[{palette.get('error', 'red')}]Error:[/] Border style '{borders}' not found. Valid options: {', '.join(BORDER_SETS.keys())}"
         )
         exit_cli(code=EXIT_CODE_ERROR)
@@ -308,9 +313,15 @@ def _handle_pipeline_action(target: str, func_index, func_name, action_desc: str
     """
     Helper to dispatch commands to either index-based or name-based API functions.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+    )
 
     console = get_rich_console()
+    error_console = get_error_console()
 
     try:
         idx = int(target)
@@ -321,10 +332,10 @@ def _handle_pipeline_action(target: str, func_index, func_name, action_desc: str
             func_name(name=target)
             console.print(f"[green]Successfully {action_desc} model '{target}'.[/]")
         except Exception as e:
-            console.print(f"[red]Error: {e} [/]")
+            error_console.print(f"[red]Error: {e} [/]")
             exit_cli(EXIT_CODE_ERROR)
     except Exception as e:
-        console.print(f"[red]Error: {e} [/]")
+        error_console.print(f"[red]Error: {e} [/]")
         exit_cli(EXIT_CODE_ERROR)
 
 
@@ -339,9 +350,8 @@ def show_pipeline(
     """
     Show the current effective pipeline configuration.
     """
-    from dorsal.common.cli import get_rich_console
+    from dorsal.common.cli import get_rich_console, print_json_output
     from dorsal.api.config import show_model_pipeline
-    import json
 
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
@@ -351,7 +361,7 @@ def show_pipeline(
     summary = show_model_pipeline()
 
     if json_output:
-        console.print(json.dumps(summary, indent=2, default=str))
+        print_json_output(summary, console)
         raise typer.Exit()
 
     if not summary:
@@ -432,11 +442,17 @@ def check_pipeline(
     """
     Verifies that all registered models can be imported.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+    )
     from dorsal.common.validators import import_callable, CallableImportPath
     from dorsal.api.config import get_model_pipeline, remove_model_by_index
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
 
@@ -470,7 +486,7 @@ def check_pipeline(
                 remove_model_by_index(index=idx)
                 console.print(f"  [yellow]Removed broken model '{name}' (Index {idx})[/]")
             except Exception as e:
-                console.print(f"  [red]Failed to remove index {idx}: {e}[/]")
+                error_console.print(f"  [red]Failed to remove index {idx}: {e}[/]")
 
         console.print(f"\n[{palette.get('success', 'green')}]Cleanup complete.[/]")
     else:

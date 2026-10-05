@@ -81,10 +81,18 @@ def get_file_record(
     """
     from dorsal.api import get_dorsal_file_record
     from dorsal.cli.views.file import create_file_info_panel
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+        print_raw_output,
+        get_error_console,
+    )
     from dorsal.common.exceptions import NotFoundError, AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette: dict[str, str] = ctx.obj["palette"]
     icons: dict[str, str] = ctx.obj.get("icons", {})
     borders: Box | None = ctx.obj.get("borders")
@@ -133,23 +141,22 @@ def get_file_record(
         record_json_str = json.dumps(record_dict, indent=2, ensure_ascii=False)
 
         if json_output:
-            console.print(record_json_str)
-            exit_cli()
-
-        if file_record.annotations:
-            title = f"File Record: {file_record.annotations.file_base.record.name}"
+            print_raw_output(record_json_str, console)
         else:
-            title = "File Record"
+            if file_record.annotations:
+                title = f"File Record: {file_record.annotations.file_base.record.name}"
+            else:
+                title = "File Record"
 
-        panel = create_file_info_panel(
-            record_dict=record_dict,
-            title=title,
-            private=is_private,
-            palette=palette,
-            icons=icons,
-            box_style=borders,
-        )
-        console.print(panel)
+            panel = create_file_info_panel(
+                record_dict=record_dict,
+                title=title,
+                private=is_private,
+                palette=palette,
+                icons=icons,
+                box_style=borders,
+            )
+            console.print(panel)
 
         if save:
             _save_json_report(
@@ -169,11 +176,11 @@ def get_file_record(
                 "error": "Not Found",
                 "detail": e.message,
             }
-            console.print(json.dumps(error_payload, indent=2))
+            print_json_output(error_payload, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
         else:
-            console.print(f"\n[{palette['warning']}]⚠️ Not Found:[/] {e.message}")
-            exit_cli()
+            error_console.print(f"\n[{palette['warning']}]⚠️ Not Found:[/] {e.message}")
+            exit_cli(code=EXIT_CODE_ERROR)
     except DorsalOfflineError:
         raise
     except AuthError:
@@ -207,9 +214,15 @@ def _save_json_report(
     json_to_stdout: bool,
 ):
     """Saves the fetched record to a JSON file."""
-    from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR, exit_cli
+    from dorsal.common.cli import (
+        get_rich_console,
+        EXIT_CODE_ERROR,
+        exit_cli,
+        get_error_console,
+    )
 
     console = get_rich_console()
+    error_console = get_error_console()
 
     final_path = _get_final_path(hash_string, output_path, ".json")
 
@@ -218,13 +231,14 @@ def _save_json_report(
         with open(final_path, "w", encoding="utf-8") as fp:
             fp.write(record_json_str)
 
-        if not json_to_stdout:
-            console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
+        # With --json, stdout carries only the JSON record, so the confirmation goes to stderr.
+        status_console = error_console if json_to_stdout else console
+        status_console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
     except IOError as err:
         logger.error(f"Failed to save get report: {err}")
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {err}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
-        console.print(
+        error_console.print(
             f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
         )

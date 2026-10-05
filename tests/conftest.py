@@ -55,10 +55,15 @@ from dorsal.session import clear_shared_index
 @pytest.fixture(scope="session", autouse=True)
 def global_disable_cache():
     """
-    Sets the env var to disable cache for the entire test session.
+    Sets the env var to disable the local index (cache) for the entire test session.
     This prevents accidental SQLite file creation/locking.
+
+    Also clears env vars that force Rich to render as if attached to a terminal (colours, cursor control), which
+    would otherwise leak ANSI codes into captured CLI output depending on the developer's shell.
     """
-    os.environ[constants.ENV_DORSAL_CACHE_ENABLED] = "false"
+    os.environ[constants.ENV_DORSAL_INDEX_ENABLED] = "false"
+    for var in ("FORCE_COLOR", "TTY_COMPATIBLE", "TTY_INTERACTIVE"):
+        os.environ.pop(var, None)
     yield
 
 
@@ -116,6 +121,21 @@ def mock_rich_console(mocker):
     mock_console.is_interactive = False
 
     mocker.patch.object(common_cli, "_console_instance", mock_console)
+    return mock_console
+
+
+@pytest.fixture
+def mock_error_console(mocker):
+    """Mocks the shared stderr console (`get_error_console()`), where errors, warnings and logs are printed."""
+    mock_console = mocker.MagicMock(spec=Console)
+
+    mock_console.time = 0.0
+    mock_console.width = 120
+
+    mock_console.is_terminal = False
+    mock_console.is_interactive = False
+
+    mocker.patch.object(common_cli, "_error_console_instance", mock_console)
     return mock_console
 
 
