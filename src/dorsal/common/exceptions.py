@@ -13,13 +13,36 @@
 # limitations under the License.
 
 import json
-from typing import Any
-
-from pydantic import ValidationError as PydanticValidationError  # noqa: F401
-from jsonschema_rs import ValidationError as JsonSchemaValidationError  # noqa: F401
+from typing import Any, TYPE_CHECKING
 
 from dorsal.common import constants
 from dorsal.common.constants import BASE_URL
+
+if TYPE_CHECKING:
+    from jsonschema_rs import ValidationError as JsonSchemaValidationError
+    from pydantic import ValidationError as PydanticValidationError
+
+_LAZY_EXCEPTIONS = {
+    "PydanticValidationError": ("pydantic", "ValidationError"),
+    "JsonSchemaValidationError": ("jsonschema_rs", "ValidationError"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolves the lazily re-exported third-party validation errors."""
+    try:
+        module_name, attr = _LAZY_EXCEPTIONS[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    import importlib
+
+    value = getattr(importlib.import_module(module_name), attr)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXCEPTIONS])
 
 
 class DorsalError(Exception):

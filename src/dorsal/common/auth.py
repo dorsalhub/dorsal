@@ -26,7 +26,7 @@ from dorsal.common.config import (
 )
 from dorsal.common import constants
 from dorsal.common.exceptions import AuthError
-from dorsal.common.validators import get_truthy_envvar
+from dorsal.common.constants import get_truthy_envvar
 
 logger = logging.getLogger(__name__)
 

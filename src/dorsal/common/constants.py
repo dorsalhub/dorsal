@@ -16,6 +16,26 @@ import os
 import pathlib
 
 
+def get_truthy_envvar(envvar: str, strict: bool = False) -> bool:
+    """Check envvar exists and its value.
+
+    If envvar does not exist, return False
+    If `strict` is True, return True IFF envvar has obvious positive boolean value
+    If `strict` is False, return True IFF envvar does not have an obvious negative boolean value
+
+    """
+    value = os.environ.get(envvar)
+    if not value:
+        return False
+    if strict:
+        if value.lower() in ("1", "true", "y", "t", "yes"):
+            return True
+        return False
+    if value.lower() in ("0", "false", "n", "f", "no"):
+        return False
+    return True
+
+
 def get_int_envvar(envvar: str, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
     value_str = os.getenv(envvar)
     if value_str is None:
