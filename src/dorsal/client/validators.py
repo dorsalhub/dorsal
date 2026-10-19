@@ -41,6 +41,8 @@ class IndexResultAnnotation(BaseModel):
     name: str
     status: str
     detail: str | None = None
+    schema_id: str | None = None
+    schema_version: str | None = None
 
 
 class IndexResult(BaseModel):

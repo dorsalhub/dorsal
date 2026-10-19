@@ -106,3 +106,108 @@ def test_validate_records_non_dict_item(simple_schema):
     error = summary["error_details"][0]
     assert "Invalid record type: str" in error["error_message"]
     assert error["record_index"] == 1
+
+
+BIG = 5_000_000
+ERROR_TEXT_LIMIT = 2_000
+
+
+@pytest.fixture
+def bounded_schema():
+    return {
+        "type": "object",
+        "properties": {
+            "label": {"enum": ["cat", "dog"]},
+            "text": {"type": "string", "maxLength": 10},
+        },
+        "additionalProperties": {"type": "string", "maxLength": 2},
+    }
+
+
+def _assert_bounded_error(err: BaseException) -> None:
+    import traceback
+
+    assert len(str(err)) < ERROR_TEXT_LIMIT
+    assert len(repr(err)) < ERROR_TEXT_LIMIT
+    assert len("".join(traceback.format_exception(err))) < ERROR_TEXT_LIMIT * 2
+    assert len(getattr(err, "message", "")) < ERROR_TEXT_LIMIT
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"label": "x" * BIG},
+        {"text": "x" * BIG},
+        {"k" * BIG: "too long"},
+    ],
+    ids=["enum", "maxLength", "huge-key"],
+)
+def test_validate_errors_are_bounded(bounded_schema, record):
+    import jsonschema_rs
+
+    validator = get_json_schema_validator(bounded_schema)
+
+    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
+        validator.validate(record)
+
+    _assert_bounded_error(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [{"label": "x" * BIG}, {"text": "x" * BIG}, {"k" * BIG: "too long"}],
+    ids=["enum", "maxLength", "huge-key"],
+)
+def test_validate_records_errors_are_bounded(bounded_schema, record, caplog):
+    import logging
+
+    validator = get_json_schema_validator(bounded_schema)
+
+    with caplog.at_level(logging.DEBUG):
+        summary = json_schema_validate_records([record], validator)
+
+    assert summary["invalid_records"] == 1
+    detail = summary["error_details"][0]
+    assert len(detail["error_message"]) < ERROR_TEXT_LIMIT
+    assert len(detail["record_preview"]) <= 150
+    assert sum(len(rec.getMessage()) for rec in caplog.records) < ERROR_TEXT_LIMIT * 5
+
+
+def test_validate_records_reports_keyword(simple_schema):
+    validator = get_json_schema_validator(simple_schema)
+
+    summary = json_schema_validate_records([{"age": 1}, {"name": 5}], validator)
+
+    messages = [detail["error_message"] for detail in summary["error_details"]]
+    assert "(required)" in messages[0]
+    assert "(type)" in messages[1]
+    assert "limit of" not in " ".join(messages)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [{"description": "x" * BIG}, {"data": {"k": "x" * BIG}, "producer": 7}, {"k" * BIG: 1}],
+    ids=["maxLength", "type", "huge-key"],
+)
+def test_open_schema_errors_are_bounded(record, caplog):
+    import logging
+
+    import jsonschema_rs
+
+    from dorsal.file.validators.open_schema import get_open_schema_validator
+
+    validator = get_open_schema_validator("generic")
+
+    assert not validator.is_valid(record)
+
+    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
+        validator.validate(record)
+    _assert_bounded_error(exc_info.value)
+
+    with caplog.at_level(logging.DEBUG):
+        summary = json_schema_validate_records([record], validator)
+
+    detail = summary["error_details"][0]
+    assert len(detail["error_message"]) < ERROR_TEXT_LIMIT
+    assert len(detail["record_preview"]) <= 150
+    assert sum(len(rec.getMessage()) for rec in caplog.records) < ERROR_TEXT_LIMIT * 5

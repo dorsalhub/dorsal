@@ -246,11 +246,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.7.22"
+version = "2026.10.18"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/eb/a2aa1ac3ea30dd3f30ca57f40232138b6b0040719316ecb85daf61167771/certifi-2026.10.18.tar.gz", hash = "sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e", size = 135227, upload-time = "2026-10-18T16:21:07.655Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+    { url = "https://files.pythonhosted.org/packages/08/ba/95dd616042484f7c83a06974388b37b837732740ee70bc5dc715b5fcd55a/certifi-2026.10.18-py3-none-any.whl", hash = "sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62", size = 134093, upload-time = "2026-10-18T16:21:06.276Z" },
 ]
 
 [[package]]
@@ -539,13 +539,14 @@ toml = [
 
 [[package]]
 name = "dorsalhub"
-version = "0.10.6"
+version = "0.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "blake3" },
     { name = "dorsalhub-adapters" },
     { name = "jsonschema-rs" },
     { name = "langcodes" },
+    { name = "oatschema", extra = ["validate"] },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "pymediainfo" },
@@ -596,6 +597,7 @@ requires-dist = [
     { name = "dorsalhub-adapters", specifier = ">=0.4.2" },
     { name = "jsonschema-rs", specifier = ">=0.38.1" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },
+    { name = "oatschema", extras = ["validate"], specifier = ">=0.8.0.1,<0.9" },
     { name = "packaging", specifier = ">=23.0" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0.0" },
     { name = "py-tlsh", marker = "extra == 'tlsh'", specifier = ">=4.7.2" },
@@ -1185,6 +1187,20 @@ wheels = [
 ]
 
 [[package]]
+name = "oatschema"
+version = "0.8.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/de/3a14b26d2660a6d29cee18c66b765abc4f320507de9caf85e0c965eca0b8/oatschema-0.8.0.1.tar.gz", hash = "sha256:6978dbca7ffb46048c8a8cca5490a367f646939e4eee8ed8bb8ff3e99252b46b", size = 83736, upload-time = "2026-10-19T17:32:26.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/03/d1544fb6d112e181c0620006a0a974bbe248dc0f2b8b387785b6be3d9623/oatschema-0.8.0.1-py3-none-any.whl", hash = "sha256:f96345ea7455a4b2d3f0836ed23900b80f96897070caef5278d4ef3f42516924", size = 116048, upload-time = "2026-10-19T17:32:25.178Z" },
+]
+
+[package.optional-dependencies]
+validate = [
+    { name = "jsonschema-rs" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1275,11 +1291,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.13.4"
+version = "4.13.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b7/89/dfd269de936e76319cf27787d9eaaca513491f635d49b0fbe7cdb6d3bf6f/platformdirs-4.13.4.tar.gz", hash = "sha256:dd96496961684a7f42041923f842ec7494e09f5e87aded99117e1109cd40570e", size = 62364, upload-time = "2026-10-17T19:31:53.69Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/e6/d0abbb256b44e6a05748c6942511ff67db8dbb068de0c35b24bf1b395b09/platformdirs-4.13.5.tar.gz", hash = "sha256:05831adf87d392760f4b5c3a0a95579ab5a10b18b9b9bd43680dcb47544788a0", size = 62362, upload-time = "2026-10-19T01:02:11.778Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/51/5614d0537dd830ca64d95a2f254bd66bdf3ac61d41cffcccaec62121fcfd/platformdirs-4.13.4-py3-none-any.whl", hash = "sha256:502ce08e9d36cf90579ee44e1e764838842fa658e4975ef47344fd053011d2c8", size = 32782, upload-time = "2026-10-17T19:31:52.293Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/8a/1d8cb3842909dc193a73835adedf412e32e18f8ffd59f43983949622fe6f/platformdirs-4.13.5-py3-none-any.whl", hash = "sha256:53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e", size = 32779, upload-time = "2026-10-19T01:02:10.17Z" },
 ]
 
 [[package]]

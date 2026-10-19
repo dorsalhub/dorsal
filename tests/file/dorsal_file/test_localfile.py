@@ -42,9 +42,16 @@ from dorsal.common.exceptions import (
     AuthError,
     DorsalClientError,
     AttributeConflictError,
+    BadRequestError,
     PartialIndexingError,
 )
-from dorsal.client.validators import FileIndexResponse
+from dorsal.client.validators import (
+    AnnotationIndexResult,
+    AnnotationIndexResultItem,
+    FileIndexResponse,
+    IndexResult,
+    IndexResultAnnotation,
+)
 
 
 @pytest.fixture
@@ -1026,8 +1033,8 @@ def test_push_heavy_logic_success(mock_metadata_reader, mock_file_record_strict,
     file_path = "/fake.txt"
     fs.create_file(file_path)
 
-    mock_ann_1 = MagicMock()
-    mock_ann_2 = MagicMock()
+    mock_ann_1 = MagicMock(schema_version="0.5.0")
+    mock_ann_2 = MagicMock(schema_version="0.5.0")
     mock_file_record_strict.annotations.__pydantic_extra__ = {"open/document-extraction": [mock_ann_1, mock_ann_2]}
 
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
@@ -1059,7 +1066,7 @@ def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_recor
     file_path = "/fake.txt"
     fs.create_file(file_path)
 
-    mock_ann_1 = MagicMock()
+    mock_ann_1 = MagicMock(schema_version="0.4.0")
     mock_file_record_strict.annotations.__pydantic_extra__ = {"open/document-extraction": [mock_ann_1]}
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
@@ -1078,6 +1085,110 @@ def test_push_heavy_partial_failure_strict(mock_metadata_reader, mock_file_recor
     assert "PARTIAL FAILURE" in str(exc_info.value)
     assert mock_response.error == 1
     assert mock_response.success == 1
+    assert exc_info.value.summary["failures"] == ["Annotation 'open/document-extraction': Payload chunk rejected"]
+
+
+def _heavy_local_file(mock_metadata_reader, mock_file_record_strict, fs, annotations, mock_client):
+    file_path = "/fake.txt"
+    fs.create_file(file_path)
+    mock_file_record_strict.annotations.__pydantic_extra__ = annotations
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    lf = LocalFile(file_path, client=mock_client)
+    lf.hash = "a" * 64
+    return lf
+
+
+def _index_response(file_hash="a" * 64):
+    return FileIndexResponse(
+        total=1,
+        success=1,
+        error=0,
+        unauthorized=0,
+        results=[
+            IndexResult(
+                hash=file_hash,
+                url="https://dorsalhub.com/f/x",
+                annotations=[IndexResultAnnotation(name="file/base", status="created")],
+            )
+        ],
+    )
+
+
+def test_push_heavy_failure_details_without_strict(mock_metadata_reader, mock_file_record_strict, fs):
+    """Rejected large annotations are reported in the response, not only counted, when strict is off."""
+    good = MagicMock(schema_version="0.5.0")
+    bad = MagicMock(schema_version="0.4.0")
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.return_value = _index_response()
+    accepted = AnnotationIndexResult(
+        total=1,
+        success=1,
+        error=0,
+        dataset_id="open/generic",
+        results=[AnnotationIndexResultItem(key="k", annotation_id="a1", private=True, status="updated")],
+    )
+    mock_client.add_file_annotation.side_effect = [
+        accepted,
+        BadRequestError("Bad Request: record does not match schema 0.4.0", request_url="https://x"),
+    ]
+
+    lf = _heavy_local_file(
+        mock_metadata_reader,
+        mock_file_record_strict,
+        fs,
+        {"open/generic": [good], "open/audio-transcription": [bad]},
+        mock_client,
+    )
+
+    response = lf._push_heavy(strict=False)
+
+    assert response.total == 3
+    assert response.success == 2
+    assert response.error == 1
+    assert len(response.results) == 1
+    annotations = {annotation.name: annotation for annotation in response.results[0].annotations}
+    assert annotations["file/base"].status == "created"
+    assert annotations["open/generic"].status == "updated"
+    assert annotations["open/generic"].schema_version == "0.5.0"
+    failed = annotations["open/audio-transcription"]
+    assert failed.status == "error"
+    assert failed.detail == "Bad Request: record does not match schema 0.4.0"
+    assert failed.schema_id == "open/audio-transcription"
+    assert failed.schema_version == "0.4.0"
+
+
+def test_push_heavy_error_in_annotation_result(mock_metadata_reader, mock_file_record_strict, fs):
+    """An annotation the hub answers with an error result is counted and reported as a failure."""
+    item = MagicMock(schema_version="0.5.0")
+    mock_client = MagicMock()
+    mock_client.index_private_file_records.return_value = FileIndexResponse(
+        total=1, success=1, error=0, unauthorized=0, results=[]
+    )
+    mock_client.add_file_annotation.return_value = AnnotationIndexResult(
+        total=1,
+        success=0,
+        error=1,
+        dataset_id="open/generic",
+        results=[
+            AnnotationIndexResultItem(
+                key="k", annotation_id=None, private=True, status="error", detail="Schema version not accepted"
+            )
+        ],
+    )
+
+    lf = _heavy_local_file(mock_metadata_reader, mock_file_record_strict, fs, {"open/generic": [item]}, mock_client)
+
+    response = lf._push_heavy()
+
+    assert response.error == 1
+    assert response.success == 1
+    assert len(response.results) == 1
+    assert response.results[0].hash == "a" * 64
+    failed = response.results[0].annotations[0]
+    assert failed.name == "open/generic"
+    assert failed.status == "error"
+    assert failed.detail == "Schema version not accepted"
+    assert failed.schema_version == "0.5.0"
 
 
 def test_push_heavy_extract_none_handling(mock_metadata_reader, mock_file_record_strict, fs):

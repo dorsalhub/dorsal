@@ -15,6 +15,9 @@
 
 import json
 import os
+from typing import get_args
+
+import oatschema
 import pytest
 from unittest.mock import MagicMock, patch
 from dorsal.file.helpers import (
@@ -25,14 +28,17 @@ from dorsal.file.helpers import (
     build_transcription_record,
     build_generic_record,
 )
-from dorsal.file.validators.open_schema import get_open_schema_validator
+from dorsal.common.validators.json_schema import JsonSchemaValidator
+from dorsal.file.validators.open_schema import OpenSchemaValidator, get_open_schema_validator
 import dorsal.file.validators.open_schema as open_schema_module
 from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER, ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR
 from dorsal.file.schemas import (
     OPEN_SCHEMA_NAME_MAP,
+    OpenSchemaName,
     get_open_schema,
     _load_schema_from_package,
     OPEN_VALIDATION_SCHEMAS_VER,
+    schema_version_of,
 )
 
 
@@ -85,69 +91,92 @@ def test_build_generic_record():
         build_generic_record(description="d", data={"nested": {"a": 1}})
 
 
-@patch("dorsal.file.schemas.importlib.resources.files")
-def test_get_open_schema(mock_files):
-    expected_schema = {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
-
-    class FakePath:
-        def __truediv__(self, other):
-            return self
-
-        def read_text(self, encoding="utf-8"):
-            return json.dumps(expected_schema)
-
-    mock_files.return_value = FakePath()
+def test_get_open_schema():
+    _load_schema_from_package.cache_clear()
 
     schema = get_open_schema("generic")
-    assert schema == {"type": "object", "version": OPEN_VALIDATION_SCHEMAS_VER}
+    assert schema_version_of(schema) == OPEN_VALIDATION_SCHEMAS_VER
+    assert schema == oatschema.get_schema("generic", OPEN_VALIDATION_SCHEMAS_VER)
 
     with pytest.raises(ValueError):
         get_open_schema("invalid_name")
 
-    class BadVersionPath:
-        def __truediv__(self, other):
-            return self
+    with pytest.raises(FileNotFoundError):
+        get_open_schema("generic", version="9.9.9")
 
-        def read_text(self, encoding="utf-8"):
-            return json.dumps({"type": "object", "version": "99.9.9"})
+    with pytest.raises(FileNotFoundError):
+        get_open_schema("generic", version="0.5")
 
-    mock_files.return_value = BadVersionPath()
+    with pytest.raises(FileNotFoundError):
+        get_open_schema("ranking")
+
+
+def test_get_open_schema_integrity_error():
     _load_schema_from_package.cache_clear()
+    try:
+        with patch("oatschema.get_schema", return_value=json.dumps({"type": "object", "version": "99.9.9"})):
+            with pytest.raises(RuntimeError, match="Critical Package Integrity Error"):
+                get_open_schema("generic")
+    finally:
+        _load_schema_from_package.cache_clear()
 
-    with pytest.raises(RuntimeError, match="Critical Package Integrity Error"):
-        get_open_schema("generic")
+
+def test_schema_version_of():
+    assert schema_version_of({"version": "0.7.0"}) == "0.7.0"
+    assert schema_version_of({"x-version": "0.8.0"}) == "0.8.0"
+    assert schema_version_of({"x-version": "0.8.0", "version": "0.7.0"}) == "0.8.0"
+    assert schema_version_of({}) is None
+    assert schema_version_of({"version": 1}) is None
 
 
-@patch("dorsal.file.validators.open_schema.get_open_schema")
-@patch("dorsal.file.validators.open_schema.get_json_schema_validator")
-def test_get_open_schema_validator(mock_get_validator, mock_get_schema):
+def test_get_open_schema_validator():
     open_schema_module._build_and_cache_validator.cache_clear()
-    mock_get_schema.return_value = {"mock": "schema"}
-    mock_get_validator.return_value = "MockValidatorInstance"
 
     val = get_open_schema_validator("generic")
-    assert val == "MockValidatorInstance"
-    mock_get_schema.assert_called_with("generic", version=OPEN_VALIDATION_SCHEMAS_VER)
+    assert isinstance(val, OpenSchemaValidator)
+    assert isinstance(val, JsonSchemaValidator)
+    assert val.schema_version == OPEN_VALIDATION_SCHEMAS_VER
+    assert val is get_open_schema_validator("generic")
 
     with pytest.raises(ValueError):
         get_open_schema_validator("bad_name")
 
-    val_lazy = open_schema_module.__getattr__("generic_validator")
-    assert val_lazy == "MockValidatorInstance"
+    with pytest.raises(RuntimeError):
+        get_open_schema_validator("generic", version="9.9.9")
+
+    assert open_schema_module.__getattr__("generic_validator") is val
+    assert open_schema_module.__getattr__("generic") is val
 
     with pytest.raises(AttributeError):
         open_schema_module.__getattr__("random_attribute")
 
+    assert not hasattr(open_schema_module, "ranking_validator")
 
-def test_bundled_schemas_integrity():
+
+def test_open_schema_names_match_oatschema():
+    assert set(OPEN_SCHEMA_NAME_MAP) == set(get_args(OpenSchemaName)) == set(get_args(oatschema.SchemaName))
+
+
+@pytest.mark.parametrize("version", oatschema.available_versions())
+def test_every_oatschema_version_loads(version):
     _load_schema_from_package.cache_clear()
+    open_schema_module._build_and_cache_validator.cache_clear()
 
-    for schema_name in OPEN_SCHEMA_NAME_MAP.keys():
-        schema = get_open_schema(schema_name)
+    for schema_name in OPEN_SCHEMA_NAME_MAP:
+        try:
+            oatschema.get_schema(schema_name, version)
+        except LookupError:
+            with pytest.raises(FileNotFoundError):
+                get_open_schema(schema_name, version=version)
+            continue
 
-        assert schema.get("version") == OPEN_VALIDATION_SCHEMAS_VER, (
-            f"Schema '{schema_name}' has version {schema.get('version')}, expected {OPEN_VALIDATION_SCHEMAS_VER}"
-        )
+        schema = get_open_schema(schema_name, version=version)
+        assert schema_version_of(schema) == version
+
+        validator = get_open_schema_validator(schema_name, version=version)
+        assert validator.schema_version == version
+        assert validator.oats_validator is not None
+        assert validator.oats_validator.schema_version == version
 
 
 def test_get_open_schema_with_override(tmp_path):
@@ -184,3 +213,33 @@ def test_get_open_schema_override_missing_file(tmp_path):
                 get_open_schema("generic")
     finally:
         _load_schema_from_package.cache_clear()
+
+
+def test_open_schema_validator_with_override(tmp_path):
+    custom_schema = {
+        "version": "0.4.0",
+        "title": "Overridden Generic Schema",
+        "type": "object",
+        "properties": {"custom_field": {"type": "string", "maxLength": 3}},
+        "required": ["custom_field"],
+    }
+    (tmp_path / "generic.json").write_text(json.dumps(custom_schema), encoding="utf-8")
+
+    _load_schema_from_package.cache_clear()
+    open_schema_module._build_and_cache_validator.cache_clear()
+    try:
+        with patch.dict(os.environ, {ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR: str(tmp_path)}):
+            validator = get_open_schema_validator("generic")
+
+        assert validator.oats_validator is None
+        assert validator.schema_version == "0.4.0"
+        assert validator.is_valid({"custom_field": "abc"})
+        assert not validator.is_valid({"custom_field": "abcd"})
+        error = validator.first_error({"custom_field": "x" * 1_000_000})
+        assert error is not None
+        assert len(error[0]) < 200
+        assert error[1] == ["custom_field"]
+        assert error[2] == "maxLength"
+    finally:
+        _load_schema_from_package.cache_clear()
+        open_schema_module._build_and_cache_validator.cache_clear()
