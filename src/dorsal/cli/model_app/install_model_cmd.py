@@ -42,12 +42,18 @@ def install_model(
     """
     from rich.panel import Panel
     from dorsal.common.exceptions import DorsalError, AuthError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+    )
 
     from dorsal.api.model import prepare_model_target, install_model as api_install_model
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
@@ -56,7 +62,7 @@ def install_model(
 
     resolution = prepare_model_target(target)
     if resolution.strategy == "error":
-        console.print(f"[{palette.get('error', 'bold red')}]Install Failed:[/] {resolution.error_message}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Install Failed:[/] {resolution.error_message}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     check_and_confirm_model_install(resolution, ui_context, force=force, yes=yes)
@@ -70,11 +76,11 @@ def install_model(
             raise
 
         except DorsalError as e:
-            console.print(f"[{palette.get('error', 'bold red')}]Install Failed:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Install Failed:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
         except Exception as e:
             logger.exception("Unexpected error during installation")
-            console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
     success_color = palette.get("primary_value", "cyan")

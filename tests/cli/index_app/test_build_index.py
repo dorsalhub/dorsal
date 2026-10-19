@@ -109,3 +109,13 @@ def test_build_index_exception_handling(mock_build_index_cmd):
 
     assert result.exit_code != 0
     assert "Cannot read directory" in result.output
+
+
+def test_build_index_json_progress_goes_to_stderr(mocker, mock_rich_console, mock_build_index_cmd):
+    """Passing console=None would let the progress bar fall back to stdout when stdout is a TTY."""
+    mock_error_console = mocker.patch("dorsal.common.cli.get_error_console").return_value
+
+    result = runner.invoke(app, ["index", "build", TEST_DATA_DIR, "--json"])
+
+    assert result.exit_code == 0
+    assert mock_build_index_cmd["collection_class"].call_args.kwargs["console"] is mock_error_console

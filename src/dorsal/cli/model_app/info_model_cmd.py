@@ -15,7 +15,13 @@
 import typer
 from typing import Annotated
 
-from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR, render_model_help_panel
+from dorsal.common.cli import (
+    get_rich_console,
+    exit_cli,
+    EXIT_CODE_ERROR,
+    render_model_help_panel,
+    get_error_console,
+)
 
 
 def info_model(
@@ -34,13 +40,14 @@ def info_model(
 
     ui_context = ctx.obj
     console = get_rich_console()
+    error_console = get_error_console()
     palette = ui_context.get("palette", {})
     borders = ui_context.get("borders", "rounded")
 
     resolution = prepare_model_target(target)
 
     if resolution.strategy == "error":
-        console.print(f"[{palette.get('error', 'bold red')}]Error:[/] {resolution.error_message}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Error:[/] {resolution.error_message}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     help_info = get_model_help(target=target)

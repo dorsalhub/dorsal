@@ -39,22 +39,28 @@ def uninstall_model(
     from rich.panel import Panel
     from rich.prompt import Confirm
     from dorsal.common.exceptions import DorsalError
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+    )
 
     from dorsal.api.model import prepare_model_target, uninstall_model as api_uninstall_model
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette: dict[str, str] = ctx.obj["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
     resolution = prepare_model_target(target)
 
     if resolution.strategy == "error":
-        console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {resolution.error_message}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {resolution.error_message}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     if resolution.strategy == "pipeline":
-        console.print(
+        error_console.print(
             f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] "
             f"Target '{target}' is a built-in core model. Use 'dorsal config pipeline remove' instead of uninstalling."
         )
@@ -77,11 +83,11 @@ def uninstall_model(
             package_name = api_uninstall_model(target, scope=scope)
 
         except DorsalError as e:
-            console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
         except Exception as e:
             logger.exception("Unexpected error during uninstall")
-            console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
     success_color = palette.get("primary_value", "cyan")

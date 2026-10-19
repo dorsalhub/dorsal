@@ -49,7 +49,12 @@ def update_collection(
     Update the name or description of a remote collection.
     """
     from dorsal.api.collection import update_collection as api_update_collection
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
@@ -83,7 +88,7 @@ def update_collection(
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")
 
     if json_output:
-        console.print(updated_collection.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+        print_raw_output(updated_collection.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
     else:
         title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
         message_text = f"✅ Collection '[bold]{updated_collection.name}[/]' updated successfully."

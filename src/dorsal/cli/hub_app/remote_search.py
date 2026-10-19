@@ -45,9 +45,10 @@ def _save_search_results(
     If output_path is provided, it's used. Otherwise, results are
     stored in a directory derived from the search query.
     """
-    from dorsal.common.cli import get_rich_console
+    from dorsal.common.cli import get_rich_console, get_error_console
 
     console = get_rich_console()
+    error_console = get_error_console()
     filepath: pathlib.Path
 
     page_number = page_data.get("pagination", {}).get("current_page", 0)
@@ -73,7 +74,7 @@ def _save_search_results(
             with open(query_dir / "query.txt", "w", encoding="utf-8") as f:
                 f.write(query)
         except IOError:
-            console.print(f"[{palette['warning']}]Warning:[/] Could not write query.txt to report directory.")
+            error_console.print(f"[{palette['warning']}]Warning:[/] Could not write query.txt to report directory.")
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"{timestamp}-p{page_number}.json"
@@ -89,7 +90,7 @@ def _save_search_results(
                 f"[{palette['success']}]✅ Full JSON report saved to:[/] [{palette['primary_value']}]{filepath}[/]"
             )
     except IOError as e:
-        console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
+        error_console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
 
 
 SortByField = Literal["date_modified", "date_created", "size", "name"]
@@ -114,12 +115,19 @@ def search_and_display(
     A helper function to perform the search and display results,
     shared by both 'user' and 'global' commands.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+        get_error_console,
+    )
     from dorsal.api.file import search_user_files, search_global_files
     from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenError
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
@@ -137,7 +145,7 @@ def search_and_display(
                 )
 
     if not query or not query.strip():
-        console.print(f"[{palette['error']}]Error:[/] Please provide a search query.")
+        error_console.print(f"[{palette['error']}]Error:[/] Please provide a search query.")
         exit_cli(code=1)
 
     try:
@@ -165,7 +173,7 @@ def search_and_display(
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
         if json_output:
-            console.print(json.dumps(response_dict, indent=2, default=str, ensure_ascii=False))
+            print_json_output(response_dict, console)
             exit_cli()
 
         if not response.results:
@@ -279,17 +287,7 @@ def search_and_display(
 
     except ForbiddenError:
         if json_output:
-            console.print(
-                json.dumps(
-                    {
-                        "error": "Forbidden",
-                        "detail": "Global search is a premium feature.",
-                    },
-                    indent=2,
-                    default=str,
-                    ensure_ascii=False,
-                )
-            )
+            print_json_output({"error": "Forbidden", "detail": "Global search is a premium feature."}, error_console)
         else:
             upgrade_message = Text.assemble(
                 ("The 'global' search scope is a premium feature.\n\n", "default"),
@@ -304,7 +302,7 @@ def search_and_display(
             )
 
             if is_none_style:
-                console.print(Group(Text.from_markup(f"\n{title_text}"), upgrade_message))
+                error_console.print(Group(Text.from_markup(f"\n{title_text}"), upgrade_message))
             else:
                 panel = Panel(
                     upgrade_message,
@@ -314,6 +312,6 @@ def search_and_display(
                     padding=(1, 2),
                     box=borders,
                 )
-                console.print(panel)
+                error_console.print(panel)
     except typer.Exit:
         raise

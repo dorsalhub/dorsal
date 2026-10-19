@@ -104,7 +104,7 @@ def test_info_model_basic_success(mock_rich_console, mock_info_cmd):
     assert "dorsal model run dorsalhub/receipt-scanner ./path/to/file" in rendered_text
 
 
-def test_info_model_resolution_error(mock_rich_console, mock_info_cmd):
+def test_info_model_resolution_error(mock_rich_console, mock_info_cmd, mock_error_console):
     """Tests handling when the model target cannot be resolved (error strategy)."""
     mock_info_cmd["prepare"].return_value = ModelTargetResolution(
         target="missing-model",
@@ -116,9 +116,9 @@ def test_info_model_resolution_error(mock_rich_console, mock_info_cmd):
 
     assert mock_info_cmd["exit_cli"].called
 
-    assert mock_rich_console.print.called
+    assert mock_error_console.print.called
 
-    error_output = str(mock_rich_console.print.call_args_list[0].args[0])
+    error_output = str(mock_error_console.print.call_args_list[0].args[0])
     assert "Error:" in error_output
     assert "Model 'missing-model' not found in registry." in error_output
 

@@ -33,11 +33,17 @@ def set_index_compression_cmd(
     ] = False,
 ):
     """View or set the compression algorithm and level for the local search index."""
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_error_console,
+    )
     from dorsal.api.config import set_compression
     from dorsal.cli.themes import UIContext
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
     borders = ui_context["borders"]
@@ -107,7 +113,7 @@ def set_index_compression_cmd(
         )
 
     except ValueError as e:
-        console.print(f"[{palette.get('error', 'red')}]Validation Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'red')}]Validation Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Failed to save settings: {e}")

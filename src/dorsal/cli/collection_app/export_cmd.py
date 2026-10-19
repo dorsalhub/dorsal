@@ -31,7 +31,7 @@ def export_dorsal_collection(
         typer.Option(
             "--output-dir",
             "-o",
-            help="Directory to save the export file. Defaults to ~/.dorsal/exports/<collection_id>/",
+            help="Directory to save the export file. Defaults to ~/.dorsal/export/.",
             file_okay=False,
             dir_okay=True,
             writable=True,
@@ -52,6 +52,7 @@ def export_dorsal_collection(
         exit_cli,
         EXIT_CODE_ERROR,
         EXIT_CODE_SUCCESS,
+        print_json_output,
     )
     from dorsal.common import constants
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
@@ -99,7 +100,7 @@ def export_dorsal_collection(
                 "output_path": str(output_file),
                 "duration_seconds": duration,
             }
-            console.print(json.dumps(summary, indent=2, ensure_ascii=False))
+            print_json_output(summary, console)
         else:
             console.print(f"\n[{palette.get('success')}]✅ Export complete in {duration:.2f}s.[/]")
 

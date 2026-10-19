@@ -13,14 +13,20 @@
 # limitations under the License.
 
 import typer
-import json
 from typing import Annotated, cast
 
 from rich.panel import Panel
 from rich.text import Text
 
 from dorsal.cli.themes import UIContext
-from dorsal.common.cli import get_rich_console, exit_cli, handle_error, EXIT_CODE_ERROR
+from dorsal.common.cli import (
+    get_rich_console,
+    exit_cli,
+    handle_error,
+    EXIT_CODE_ERROR,
+    print_json_output,
+    print_raw_output,
+)
 from dorsal.common.exceptions import (
     AuthError,
     DorsalClientError,
@@ -115,7 +121,7 @@ def add_tag(
             )
 
         if json_output:
-            console.print(response.model_dump_json(indent=2))
+            print_raw_output(response.model_dump_json(indent=2), console)
         else:
             tag_style = palette.get("tag_public") if is_public_tag else palette.get("tag_private")
             success_message = Text.assemble(
@@ -174,12 +180,7 @@ def remove_tag(
         remove_tag_from_file(hash_string=hash_string, tag_id=tag_id)
 
         if json_output:
-            console.print(
-                json.dumps(
-                    {"success": True, "detail": f"Tag '{tag_id}' removed."},
-                    ensure_ascii=False,
-                )
-            )
+            print_json_output({"success": True, "detail": f"Tag '{tag_id}' removed."}, console)
         else:
             success_message = Text.assemble(
                 ("✅ Successfully removed tag '", palette.get("success", "green")),

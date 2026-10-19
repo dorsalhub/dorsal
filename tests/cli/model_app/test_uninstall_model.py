@@ -102,7 +102,7 @@ def test_uninstall_model_global_flag(mock_uninstall_cmd):
     mock_uninstall_cmd["uninstaller"].assert_called_once_with("dorsal/gpt-neo", scope="global")
 
 
-def test_uninstall_model_dorsal_error(mock_rich_console, mock_uninstall_cmd):
+def test_uninstall_model_dorsal_error(mock_rich_console, mock_uninstall_cmd, mock_error_console):
     """Tests handling of specific DorsalErrors (e.g., package not found)."""
     mock_uninstall_cmd["uninstaller"].side_effect = DorsalError("Package not installed.")
 
@@ -110,13 +110,13 @@ def test_uninstall_model_dorsal_error(mock_rich_console, mock_uninstall_cmd):
 
     assert result.exit_code != 0
 
-    assert mock_rich_console.print.called
-    output_str = str(mock_rich_console.print.call_args.args[0])
+    assert mock_error_console.print.called
+    output_str = str(mock_error_console.print.call_args.args[0])
     assert "Uninstall Failed" in output_str
     assert "Package not installed" in output_str
 
 
-def test_uninstall_model_unexpected_error(mock_rich_console, mock_uninstall_cmd):
+def test_uninstall_model_unexpected_error(mock_rich_console, mock_uninstall_cmd, mock_error_console):
     """Tests handling of generic unexpected exceptions."""
     mock_uninstall_cmd["uninstaller"].side_effect = Exception("Permission denied")
 
@@ -124,18 +124,18 @@ def test_uninstall_model_unexpected_error(mock_rich_console, mock_uninstall_cmd)
 
     assert result.exit_code != 0
 
-    assert mock_rich_console.print.called
-    output_str = str(mock_rich_console.print.call_args.args[0])
+    assert mock_error_console.print.called
+    output_str = str(mock_error_console.print.call_args.args[0])
     assert "Unexpected Error" in output_str
     assert "Permission denied" in output_str
 
 
-def test_uninstall_model_pipeline_error(mock_rich_console, mock_uninstall_cmd):
+def test_uninstall_model_pipeline_error(mock_rich_console, mock_uninstall_cmd, mock_error_console):
     """Tests that the CLI blocks uninstalling a core pipeline model."""
     mock_uninstall_cmd["prepare"].return_value = ModelTargetResolution(target="BuiltIn", strategy="pipeline")
 
     result = runner.invoke(cli_app, ["uninstall", "BuiltIn", "--yes"])
 
     assert result.exit_code != 0
-    output_str = str(mock_rich_console.print.call_args.args[0])
+    output_str = str(mock_error_console.print.call_args.args[0])
     assert "built-in core model" in output_str

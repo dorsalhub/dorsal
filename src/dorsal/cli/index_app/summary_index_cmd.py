@@ -12,18 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import typer
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from dorsal.cli.themes import UIContext
 from dorsal.cli.themes.borders import get_borders
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,16 @@ def show_index_summary(
     from datetime import datetime
     from rich.columns import Columns
     from dorsal.api.index import summary as get_index_summary
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+    )
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
     icons = ui_context["icons"]
     borders = ui_context["borders"]
@@ -59,7 +65,7 @@ def show_index_summary(
         summary = get_index_summary(verbose=verbose, limit=limit)
 
         if json_output:
-            console.print(json.dumps(summary, indent=2))
+            print_json_output(summary, console)
             exit_cli()
 
         created_dt = (

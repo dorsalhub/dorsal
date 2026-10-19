@@ -60,7 +60,12 @@ def show_collection(
     Note: the order of records will always be by date added.
     """
     from dorsal.api.collection import get_collection
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, NotFoundError
     from dorsal.file.utils.size import human_filesize
     from dorsal.cli.views.collection import collection_metadata
@@ -84,7 +89,7 @@ def show_collection(
                 per_page=0 if meta_only else per_page,
                 mode="pydantic",
             )
-            console.print(response.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+            print_raw_output(response.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
             return exit_cli()
         else:
             response = get_collection(

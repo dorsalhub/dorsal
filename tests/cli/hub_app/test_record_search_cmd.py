@@ -115,7 +115,7 @@ def test_search_no_results(mock_rich_console, mock_search_cmd):
     assert "No records found" in all_output
 
 
-def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_cmd):
+def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_cmd, mock_error_console):
     """Tests the specific error handling for the premium feature gate."""
     mock_search_cmd["global_search"].side_effect = ForbiddenError("test")
 
@@ -123,7 +123,7 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
 
     assert result.exit_code == 0
 
-    printed_object = mock_rich_console.print.call_args.args[0]
+    printed_object = mock_error_console.print.call_args.args[0]
     assert isinstance(printed_object, Panel)
     assert "Upgrade Required" in str(printed_object.title)
 

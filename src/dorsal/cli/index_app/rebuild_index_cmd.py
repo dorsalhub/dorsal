@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import typer
 from typing import Annotated
@@ -51,7 +50,12 @@ def rebuild_index_cmd(
     Use this command after updating your Dorsal version or modifying custom
     extractors to ensure all cached files are fully searchable under the new rules.
     """
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_json_output,
+    )
     from dorsal.api.index import rebuild
 
     console = get_rich_console()
@@ -64,7 +68,7 @@ def rebuild_index_cmd(
                 "success": True,
                 "total_records_rebuilt": count,
             }
-            console.print(json.dumps(result, indent=2))
+            print_json_output(result, console)
             return
 
         with Progress(

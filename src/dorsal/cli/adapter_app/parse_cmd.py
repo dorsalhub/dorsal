@@ -75,7 +75,14 @@ def parse_adapter(
     """
     Parse a standard file format into a valid Dorsal JSON record using an adapter.
     """
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, parse_cli_options
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+        parse_cli_options,
+        print_json_output,
+    )
     from dorsal.common.exceptions import DorsalError
     from dorsal.api.adapters import parse_file_from_path
 
@@ -116,7 +123,7 @@ def parse_adapter(
             error_console.print(f"\n[{palette.get('error', 'bold red')}]Failed to write output file:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
-    console.print(json.dumps(final_payload, indent=2, ensure_ascii=False))
+    print_json_output(final_payload, console)
 
     if not no_save and saved_path_msg:
         error_console.print(

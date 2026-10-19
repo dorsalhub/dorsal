@@ -38,7 +38,13 @@ def make_private(
     Makes a remote collection private.
     """
     from dorsal.api.collection import make_collection_private as api_make_private
-    from dorsal.common.cli import get_rich_console, exit_cli, handle_error, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        handle_error,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, ConflictError
 
     console = get_rich_console()
@@ -52,7 +58,7 @@ def make_private(
             response = api_make_private(collection_id=collection_id)
 
         if json_output:
-            console.print(response.model_dump_json(by_alias=True, exclude_none=True, indent=2))
+            print_raw_output(response.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
         else:
             title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
             message_text = f"✅ Collection is now private.\n\n[dim]URL:[/] {response.location_url}"

@@ -71,3 +71,14 @@ def test_optimize_index_exception_handling(mock_optimize_index_cmd):
 
     assert result.exit_code != 0
     assert "An error occurred while optimizing the search index: General corruption" in result.output
+
+
+def test_optimize_index_json_spinner_goes_to_stderr(mocker, mock_rich_console, mock_optimize_index_cmd):
+    """With --json, stdout carries only the JSON document; the spinner is drawn on stderr."""
+    mock_error_console = mocker.patch("dorsal.common.cli.get_error_console").return_value
+
+    result = runner.invoke(app, ["index", "optimize", "--json"])
+
+    assert result.exit_code == 0
+    mock_error_console.status.assert_called_once()
+    mock_rich_console.status.assert_not_called()

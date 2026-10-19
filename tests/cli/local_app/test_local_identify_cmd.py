@@ -92,33 +92,33 @@ def test_identify_success_json_output(mock_rich_console, mock_identify_cmd):
     mock_identify_cmd["create_panel"].assert_not_called()
 
 
-def test_identify_not_found_panel_output(mock_rich_console, mock_identify_cmd):
+def test_identify_not_found_panel_output(mock_rich_console, mock_identify_cmd, mock_error_console):
     """Tests the 'Not Found' case with Rich Panel output."""
     mock_identify_cmd["identify_file"].side_effect = NotFoundError("File not in database")
 
     result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH])
 
     assert result.exit_code != 0
-    panel_output = mock_rich_console.print.call_args.args[0]
+    panel_output = mock_error_console.print.call_args.args[0]
     assert isinstance(panel_output, Panel)
     assert "Not Found" in str(panel_output.title)
 
 
-def test_identify_not_found_json_output(mock_rich_console, mock_identify_cmd):
+def test_identify_not_found_json_output(mock_rich_console, mock_identify_cmd, mock_error_console):
     """Tests the 'Not Found' case with --json output."""
     mock_identify_cmd["identify_file"].side_effect = NotFoundError("File not in database")
 
     result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH, "--json"])
 
     assert result.exit_code != 0
-    json_output_str = mock_rich_console.print.call_args.args[0]
+    json_output_str = mock_error_console.print.call_args.args[0]
     data = json.loads(json_output_str)
     assert data["success"] is False
     assert data["error"] == "Not Found"
 
 
 @pytest.mark.parametrize("json_flag", [[], ["--json"]])
-def test_identify_api_error(json_flag, mock_rich_console, mock_identify_cmd):
+def test_identify_api_error(json_flag, mock_rich_console, mock_identify_cmd, mock_error_console):
     """Tests a generic DorsalClientError with and without --json."""
     mock_identify_cmd["identify_file"].side_effect = DorsalClientError("Invalid API Key")
 
@@ -126,7 +126,7 @@ def test_identify_api_error(json_flag, mock_rich_console, mock_identify_cmd):
 
     assert result.exit_code != 0
     if json_flag:
-        json_output_str = mock_rich_console.print.call_args.args[0]
+        json_output_str = mock_error_console.print.call_args.args[0]
         data = json.loads(json_output_str)
         assert data["error"] == "API Error"
         assert "Invalid API Key" in data["detail"]

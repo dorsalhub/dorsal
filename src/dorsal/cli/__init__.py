@@ -17,13 +17,9 @@ from typing import Annotated, Optional
 import pathlib
 import sys
 import typer
-from rich.logging import RichHandler
-from rich.console import Console
 
 from dorsal.version import __version__
 from dorsal.common.exceptions import AuthError, DorsalOfflineError
-from dorsal.common.cli import get_rich_console, handle_auth_error, handle_offline_error, exit_cli, EXIT_CODE_ERROR
-from dorsal.cli.themes import get_ui_theme
 from dorsal.cli.adapter_app import app as adapter_app_
 from dorsal.cli.index_app import app as index_app_
 from dorsal.cli.config_app import app as config_app_
@@ -136,13 +132,17 @@ def main(
     else:
         log_level = logging.WARNING
 
+    from rich.logging import RichHandler
+
     if is_json_output:
+        from rich.console import Console
+
         log_level = logging.CRITICAL
         log_console = Console(stderr=True)
     else:
-        from dorsal.common.cli import get_rich_console
+        from dorsal.common.cli import get_error_console
 
-        log_console = get_rich_console()
+        log_console = get_error_console()
 
     logging.basicConfig(
         level=log_level,
@@ -160,6 +160,8 @@ def main(
 
     logger = logging.getLogger("dorsal")
     logger.info(f"Logging level set to {logging.getLevelName(log_level)}")
+    from dorsal.cli.themes import get_ui_theme
+
     ctx.obj = get_ui_theme(theme_override=theme, icon_override=icons, border_override=borders)
 
 
@@ -225,9 +227,11 @@ def cli_app():
     try:
         app()
     except AuthError as err:
-        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+        from dorsal.common.cli import get_error_console, handle_auth_error, EXIT_CODE_ERROR
 
-        console = get_rich_console()
+        console = get_error_console()
+
+        from dorsal.cli.themes import get_ui_theme
 
         theme_override = _extract_global_flag("--theme")
         icons_override = _extract_global_flag("--icons")
@@ -241,9 +245,11 @@ def cli_app():
         sys.exit(EXIT_CODE_ERROR)
 
     except DorsalOfflineError as err:
-        from dorsal.common.cli import get_rich_console, EXIT_CODE_ERROR
+        from dorsal.common.cli import get_error_console, handle_offline_error, EXIT_CODE_ERROR
 
-        console = get_rich_console()
+        console = get_error_console()
+
+        from dorsal.cli.themes import get_ui_theme
 
         theme_override = _extract_global_flag("--theme")
         icons_override = _extract_global_flag("--icons")

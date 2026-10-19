@@ -17,8 +17,7 @@ from typing import TypedDict
 from rich.box import Box
 
 
-from dorsal.common import config as dorsal_config
-from dorsal.common.validators import get_truthy_envvar
+from dorsal.common.constants import get_truthy_envvar
 from dorsal.cli.themes.palettes import get_palette
 from dorsal.cli.themes.icons import get_icons
 from dorsal.cli.themes.borders import get_borders
@@ -39,6 +38,8 @@ def get_ui_theme(
     Constructs the complete UI state by merging CLI flags,
     environment variables, config files, and defaults.
     """
+    from dorsal.common import config as dorsal_config
+
     config, _ = dorsal_config.load_config()
     ui_config = config.get("ui", {})
 

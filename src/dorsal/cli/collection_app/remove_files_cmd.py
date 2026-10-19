@@ -78,7 +78,12 @@ def remove_files(
     Remove one or more files from a remote collection by their hash.
     """
     from dorsal.api.collection import remove_files_from_collection
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
@@ -110,7 +115,7 @@ def remove_files(
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")
 
     if json_output:
-        console.print(response.model_dump_json(indent=2))
+        print_raw_output(response.model_dump_json(indent=2), console)
         exit_cli()
 
     output_text = Text()

@@ -86,7 +86,7 @@ def test_init_model_success_explicit_dir(mock_rich_console, mock_init_cmd, tmp_p
     assert args.kwargs["target_dir"].name == "my_projects"
 
 
-def test_init_model_dorsal_error(mock_rich_console, mock_init_cmd):
+def test_init_model_dorsal_error(mock_rich_console, mock_init_cmd, mock_error_console):
     """Tests handling of specific DorsalErrors (e.g., directory already exists)."""
     mock_init_cmd["create_project"].side_effect = DorsalError("Project directory already exists.")
 
@@ -94,13 +94,13 @@ def test_init_model_dorsal_error(mock_rich_console, mock_init_cmd):
 
     assert result.exit_code != 0
 
-    assert mock_rich_console.print.called
-    output_str = str(mock_rich_console.print.call_args.args[0])
+    assert mock_error_console.print.called
+    output_str = str(mock_error_console.print.call_args.args[0])
     assert "Failed to create project" in output_str
     assert "Project directory already exists" in output_str
 
 
-def test_init_model_unexpected_error(mock_rich_console, mock_init_cmd):
+def test_init_model_unexpected_error(mock_rich_console, mock_init_cmd, mock_error_console):
     """Tests handling of generic unexpected exceptions."""
     mock_init_cmd["create_project"].side_effect = Exception("Disk full")
 
@@ -108,7 +108,7 @@ def test_init_model_unexpected_error(mock_rich_console, mock_init_cmd):
 
     assert result.exit_code != 0
 
-    assert mock_rich_console.print.called
-    output_str = str(mock_rich_console.print.call_args.args[0])
+    assert mock_error_console.print.called
+    output_str = str(mock_error_console.print.call_args.args[0])
     assert "Unexpected Error" in output_str
     assert "Disk full" in output_str

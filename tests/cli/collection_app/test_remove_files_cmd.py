@@ -111,8 +111,8 @@ def test_remove_files_json_output(mock_rich_console, mock_remove_files_cmd):
 
     assert result.exit_code == 0
     mock_remove_files_cmd["remove_response"].model_dump_json.assert_called_once()
-    mock_rich_console.print.assert_called_once_with(
-        mock_remove_files_cmd["remove_response"].model_dump_json.return_value
+    mock_rich_console.file.write.assert_called_once_with(
+        mock_remove_files_cmd["remove_response"].model_dump_json.return_value + "\n"
     )
 
 

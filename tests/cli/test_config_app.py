@@ -225,27 +225,27 @@ def test_set_ui_preferences_empty(mock_rich_console, mock_config_app):
     assert "No UI preferences provided" in error_message
 
 
-def test_set_ui_preferences_invalid_theme(mock_rich_console, mock_config_app):
+def test_set_ui_preferences_invalid_theme(mock_rich_console, mock_config_app, mock_error_console):
     """Tests setting a theme that does not exist."""
     result = runner.invoke(app, ["config", "theme", "set", "invalid_theme"])
     assert result.exit_code != 0
-    error_message = str(mock_rich_console.print.call_args.args[0])
+    error_message = str(mock_error_console.print.call_args.args[0])
     assert "Theme 'invalid_theme' not found" in error_message
 
 
-def test_set_ui_preferences_invalid_icons(mock_rich_console, mock_config_app):
+def test_set_ui_preferences_invalid_icons(mock_rich_console, mock_config_app, mock_error_console):
     """Tests setting an icon style that does not exist."""
     result = runner.invoke(app, ["config", "theme", "set", "--icons", "invalid_icon_style"])
     assert result.exit_code != 0
-    error_message = str(mock_rich_console.print.call_args.args[0])
+    error_message = str(mock_error_console.print.call_args.args[0])
     assert "Icon set 'invalid_icon_style' not found" in error_message
 
 
-def test_set_ui_preferences_invalid_borders(mock_rich_console, mock_config_app):
+def test_set_ui_preferences_invalid_borders(mock_rich_console, mock_config_app, mock_error_console):
     """Tests setting a border style that does not exist."""
     result = runner.invoke(app, ["config", "theme", "set", "--borders", "invalid_border_style"])
     assert result.exit_code != 0
-    error_message = str(mock_rich_console.print.call_args.args[0])
+    error_message = str(mock_error_console.print.call_args.args[0])
     assert "Border style 'invalid_border_style' not found" in error_message
 
 
@@ -356,14 +356,14 @@ def test_pipeline_actions(mock_rich_console, mock_pipeline_api, command, api_idx
     assert f"Successfully {verb} model 'MyModel'" in str(mock_rich_console.print.call_args.args[0])
 
 
-def test_pipeline_action_error(mock_rich_console, mock_pipeline_api):
+def test_pipeline_action_error(mock_rich_console, mock_pipeline_api, mock_error_console):
     """Test error handling in pipeline actions."""
     mock_pipeline_api["remove_idx"].side_effect = IndexError("Index out of range")
 
     result = runner.invoke(app, ["config", "pipeline", "remove", "99"])
 
     assert result.exit_code != 0
-    assert "Error: Index out of range" in str(mock_rich_console.print.call_args.args[0])
+    assert "Error: Index out of range" in str(mock_error_console.print.call_args.args[0])
 
 
 def test_pipeline_check_clean(mock_rich_console, mock_pipeline_api):

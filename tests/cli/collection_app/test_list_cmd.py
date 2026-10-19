@@ -107,7 +107,9 @@ def test_list_collections_json_output(mock_rich_console, mock_list_collections_c
     assert result.exit_code == 0
 
     mock_list_collections_cmd.return_value.model_dump_json.assert_called_once()
-    mock_rich_console.print.assert_called_once_with(mock_list_collections_cmd.return_value.model_dump_json.return_value)
+    mock_rich_console.file.write.assert_called_once_with(
+        mock_list_collections_cmd.return_value.model_dump_json.return_value + "\n"
+    )
 
 
 def test_list_collections_api_error(mock_list_collections_cmd):

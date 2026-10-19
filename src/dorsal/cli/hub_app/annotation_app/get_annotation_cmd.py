@@ -76,6 +76,8 @@ def get_annotation(
         get_rich_console,
         get_error_console,
         parse_cli_options,
+        print_json_output,
+        print_raw_output,
     )
     from dorsal.common.exceptions import NotFoundError, DorsalClientError
     from dorsal.cli.views.model import create_model_result_panel
@@ -151,7 +153,7 @@ def get_annotation(
 
         else:
             if json_output or export_format:
-                console.print(data_str, end="" if export_format else "\n")
+                print_raw_output(data_str, console, end="" if export_format else "\n")
             else:
                 panel = create_model_result_panel(
                     result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", ui_context=ui_context
@@ -162,26 +164,26 @@ def get_annotation(
         raise
     except ValueError as e:
         if json_output or export_format:
-            error_console.print(json.dumps({"success": False, "error": "Data Error", "detail": str(e)}))
+            print_json_output({"success": False, "error": "Data Error", "detail": str(e)}, error_console)
         else:
             error_console.print(f"[{palette.get('warning', 'yellow')}]Data Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except NotFoundError as e:
         if json_output or export_format:
-            error_console.print(json.dumps({"success": False, "error": "Not Found", "detail": e.message}))
+            print_json_output({"success": False, "error": "Not Found", "detail": e.message}, error_console)
         else:
             error_console.print(f"[{palette.get('warning', 'yellow')}]Not Found:[/] {e.message}")
         exit_cli(code=EXIT_CODE_ERROR)
     except DorsalClientError as e:
         if json_output or export_format:
-            error_console.print(json.dumps({"success": False, "error": "API Error", "detail": e.message}))
+            print_json_output({"success": False, "error": "API Error", "detail": e.message}, error_console)
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]API Error:[/] {e.message}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         logger.exception("Unexpected error during annotation fetch")
         if json_output or export_format:
-            error_console.print(json.dumps({"success": False, "error": "Unexpected Error", "detail": str(e)}))
+            print_json_output({"success": False, "error": "Unexpected Error", "detail": str(e)}, error_console)
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Failed to get annotation:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)

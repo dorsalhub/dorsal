@@ -78,7 +78,12 @@ def delete_file_record(
     """
     from dorsal.api.file import get_dorsal_file_record, _delete_dorsal_file_record
     from dorsal.cli.views.file import create_file_info_panel
-    from dorsal.common.cli import get_rich_console, exit_cli, handle_error
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        handle_error,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, NotFoundError
 
     console = get_rich_console()
@@ -178,7 +183,7 @@ def delete_file_record(
         )
 
         if json_output:
-            console.print(response.model_dump_json(indent=2))
+            print_raw_output(response.model_dump_json(indent=2), console)
         else:
             if response.file_deleted == 0 and response.file_modified == 0:
                 message = "Operation completed. No records were deleted or modified."

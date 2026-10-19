@@ -81,7 +81,12 @@ def add_files(
     - Piping from another command: cat my_hashes.txt | dorsal collection add-files <id> --from-stdin
     """
     from dorsal.api.collection import add_files_to_collection, get_collection
-    from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
+    from dorsal.common.cli import (
+        get_rich_console,
+        exit_cli,
+        EXIT_CODE_ERROR,
+        print_raw_output,
+    )
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
@@ -111,7 +116,7 @@ def add_files(
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {e}")
 
     if json_output:
-        console.print(response.model_dump_json(indent=2))
+        print_raw_output(response.model_dump_json(indent=2), console)
         exit_cli()
 
     output_text = Text()

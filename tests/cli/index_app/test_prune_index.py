@@ -80,3 +80,15 @@ def test_prune_index_exception_handling(mock_prune_index_cmd):
 
     assert result.exit_code != 0
     assert "An error occurred while pruning the search index: Database is corrupt" in result.output
+
+
+def test_prune_index_json_spinner_goes_to_stderr(mocker, mock_rich_console, mock_prune_index_cmd):
+    """With --json, stdout carries only the JSON document; the spinner is drawn on stderr."""
+    mock_prune_index_cmd["prune"].return_value = (0, 10)
+    mock_error_console = mocker.patch("dorsal.common.cli.get_error_console").return_value
+
+    result = runner.invoke(app, ["index", "prune", "--json"])
+
+    assert result.exit_code == 0
+    mock_error_console.status.assert_called_once()
+    mock_rich_console.status.assert_not_called()

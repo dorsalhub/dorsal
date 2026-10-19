@@ -19,6 +19,7 @@ from typing import Annotated, Any, Callable, NamedTuple, Type
 
 from pydantic import AfterValidator, BaseModel, TypeAdapter
 
+from dorsal.common.constants import get_truthy_envvar  # noqa: F401
 from dorsal.common.exceptions import ValidationError
 from dorsal.common.language import get_language_set
 from dorsal.common.validators.datasets import DatasetID, is_valid_dataset_id_or_schema_id
@@ -105,26 +106,6 @@ def import_callable(import_path: CallableImportPath) -> Callable:
 def check_local_file_exists(local_path: str) -> None:
     if not os.path.isfile(local_path):
         raise ValidationError(f"File '{local_path}' does not exist or cannot be accessed.")
-
-
-def get_truthy_envvar(envvar: str, strict=False) -> bool:
-    """Check envvar exists and its value.
-
-    If envvar does not exist, return False
-    If `strict` is True, return True IFF envvar has obvious positive boolean value
-    If `strict` is False, return True IFF envvar does not have an obvious negative boolean value
-
-    """
-    value = os.environ.get(envvar)
-    if not value:
-        return False
-    if strict:
-        if value.lower() in ("1", "true", "y", "t", "yes"):
-            return True
-        return False
-    if value.lower() in ("0", "false", "n", "f", "no"):
-        return False
-    return True
 
 
 class Pagination(BaseModel):
