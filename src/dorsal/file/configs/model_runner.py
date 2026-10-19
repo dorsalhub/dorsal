@@ -355,6 +355,35 @@ BASE_ANNOTATION_MODEL = {
 }
 
 
+OPEN_SCHEMA_VALIDATOR_MODULE = "dorsal.file.validators.open_schema"
+
+
+def resolve_open_schema_step_validator(
+    pipeline_step_obj: "ModelRunnerPipelineStep",
+) -> JsonSchemaValidator | None:
+    """
+    Return the open schema validator for a step that validates with Dorsal's built-in `open/` validators.
+
+    The validator matches the step's `schema_id` and its `schema_version` pin, or OPEN_VALIDATION_SCHEMAS_VER
+    when the step has no pin. Returns None for any other step.
+    """
+    validation_model = pipeline_step_obj.validation_model
+    schema_id = pipeline_step_obj.schema_id
+    if not (
+        isinstance(validation_model, CallableImportPath)
+        and validation_model.module == OPEN_SCHEMA_VALIDATOR_MODULE
+        and schema_id.startswith("open/")
+    ):
+        return None
+
+    from dorsal.file.validators.open_schema import get_open_schema_validator
+
+    return get_open_schema_validator(
+        cast(Any, schema_id.removeprefix("open/")),
+        version=pipeline_step_obj.schema_version or constants.OPEN_VALIDATION_SCHEMAS_VER,
+    )
+
+
 def resolve_pipeline_step_models(
     pipeline_step_obj: "ModelRunnerPipelineStep",
 ) -> tuple[Type[AnnotationModel], Type[BaseModel] | JsonSchemaValidator | None]:
@@ -367,8 +396,8 @@ def resolve_pipeline_step_models(
             raise TypeError(f"Imported callable '{annotator_callable.__name__}' is not a subclass of AnnotationModel.")
         annotator_class = cast(Type[AnnotationModel], annotator_callable)
 
-        validator: Type[BaseModel] | JsonSchemaValidator | None = None
-        if pipeline_step_obj.validation_model:
+        validator: Type[BaseModel] | JsonSchemaValidator | None = resolve_open_schema_step_validator(pipeline_step_obj)
+        if validator is None and pipeline_step_obj.validation_model:
             if isinstance(pipeline_step_obj.validation_model, dict):
                 validator = get_json_schema_validator(schema=pipeline_step_obj.validation_model, strict=True)
             else:
@@ -382,7 +411,7 @@ def resolve_pipeline_step_models(
 
         return annotator_class, validator
 
-    except (ImportError, AttributeError, TypeError) as err:
+    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as err:
         msg = (
             "Failed to import model/validator from config: "
             f"{pipeline_step_obj.annotation_model.module}.{pipeline_step_obj.annotation_model.name}"

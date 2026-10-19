@@ -74,6 +74,42 @@ JSON_SCHEMA_CONSTRAINT_KEYWORDS = {
 if TYPE_CHECKING:
     from jsonschema_rs import Validator as JsonSchemaRustValidator
 
+VALUE_MASK = "…"
+ERROR_MESSAGE_LIMIT = 1000
+RECORD_PREVIEW_LIMIT = 150
+
+
+def shorten_text(text: str, limit: int) -> str:
+    """Return `text`, cut to at most `limit` characters with a trailing ellipsis."""
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
+def bound_validation_error(err: Any) -> None:
+    """Cap the text a jsonschema-rs `ValidationError` carries in its message, `str()` and `repr()`."""
+    message = shorten_text(str(getattr(err, "message", "")), ERROR_MESSAGE_LIMIT)
+    for attr, value in (
+        ("message", message),
+        ("verbose_message", shorten_text(str(getattr(err, "verbose_message", message)), ERROR_MESSAGE_LIMIT)),
+    ):
+        try:
+            setattr(err, attr, value)
+        except AttributeError:  # pragma: no cover
+            pass
+    err.args = (message,)
+
+
+def preview_record(record: Any, limit: int = RECORD_PREVIEW_LIMIT) -> str:
+    """Return a short preview of a record without formatting the whole of it."""
+    import reprlib
+
+    shortener = reprlib.Repr()
+    shortener.maxlevel = 3
+    shortener.maxdict = 6
+    shortener.maxlist = 6
+    shortener.maxstring = 60
+    shortener.maxother = 60
+    return shorten_text(shortener.repr(record), limit)
+
 
 class JsonSchemaValidator:
     """
@@ -95,7 +131,9 @@ class JsonSchemaValidator:
         self.__name__ = f"JsonSchemaValidator[{title}]"
 
         try:
-            self.validator: JsonSchemaRustValidator = jsonschema_rs.validator_for(schema, validate_formats=True)
+            self.validator: JsonSchemaRustValidator = jsonschema_rs.validator_for(
+                schema, validate_formats=True, mask=VALUE_MASK
+            )
         except Exception as err:
             logger.exception(
                 "The provided schema is structurally invalid and cannot be used to create a validator: %s",
@@ -128,8 +166,24 @@ class JsonSchemaValidator:
     def validate(self, instance: Any) -> None:
         """
         Validate the instance, raising jsonschema_rs.ValidationError on failure.
+
+        The error's message shows record values as `…` and is capped in length.
         """
-        self.validator.validate(instance)
+        try:
+            self.validator.validate(instance)
+        except jsonschema_rs.ValidationError as err:
+            bound_validation_error(err)
+            raise
+
+    def first_error(self, instance: Any) -> tuple[str, list[str | int], str] | None:
+        """Return the message, instance path and keyword of an error in `instance`, or None if it is valid."""
+        try:
+            self.validator.validate(instance)
+        except jsonschema_rs.ValidationError as err:
+            bound_validation_error(err)
+            keyword = next((str(part) for part in reversed(err.schema_path) if isinstance(part, str)), "")
+            return err.message, list(err.instance_path), keyword
+        return None
 
     def is_valid(self, instance: Any) -> bool:
         """Return True if valid, False otherwise."""
@@ -174,7 +228,7 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
             error_details_list.append(
                 {
                     "record_index": index,
-                    "record_preview": str(record)[:100],
+                    "record_preview": preview_record(record, limit=100),
                     "error_message": f"Invalid record type: {type(record).__name__}",
                     "path": [],
                     "validator": "type_check",
@@ -183,62 +237,42 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
             continue
 
         try:
-            validator.validate(record)
-            valid_records_count += 1
-        except JsonSchemaValidationError as err:
-            path_str = " -> ".join(map(str, err.instance_path)) if err.instance_path else "root"
-            failed_rule = str(err.schema_path[-1]) if err.schema_path else "constraint"
-            limit_value = "unknown"
-            try:
-                curr: Any = validator.schema
-                for segment in err.schema_path:
-                    curr = curr[segment]
-                if isinstance(curr, (int, float)) and not isinstance(curr, bool):
-                    limit_value = f"{curr:,}"
-                else:
-                    limit_value = str(curr)
-            except (KeyError, TypeError):
-                pass
-
-            actual_info = ""
-            try:
-                if isinstance(err.instance, (list, dict, str)):
-                    actual_info = f" (found {len(err.instance):,} items)"
-            except Exception:
-                pass
-
-            public_error = (
-                f"Validation failed at '{path_str}': "
-                f"The '{failed_rule}' limit of {limit_value} was exceeded{actual_info}."
-            )
-
-            record_str = str(record)
-            record_preview = record_str[:150] + "..." if len(record_str) > 150 else record_str
-
-            error_details_list.append(
-                {
-                    "record_index": index,
-                    "record_preview": record_preview,
-                    "error_message": public_error,
-                    "path": list(err.instance_path),
-                    "validator": validator_name,
-                }
-            )
-
-            logger.debug("Record %d: %s", index, public_error)
+            error = validator.first_error(record)
         except Exception as err:
-            record_str = str(record)
-            record_preview = record_str[:150] + "..." if len(record_str) > 150 else record_str
             error_details_list.append(
                 {
                     "record_index": index,
-                    "record_preview": record_preview,
-                    "error_message": f"An unexpected error occurred during this record's validation: {str(err)}",
+                    "record_preview": preview_record(record),
+                    "error_message": "An unexpected error occurred during this record's validation: "
+                    + shorten_text(str(err), ERROR_MESSAGE_LIMIT),
                     "path": [],
                     "validator": "unknown_error",
                 }
             )
-            logger.exception("Unexpected error validating record at index %d.", index)
+            logger.error("Unexpected %s validating record at index %d.", type(err).__name__, index)
+            continue
+
+        if error is None:
+            valid_records_count += 1
+            continue
+
+        message, path, keyword = error
+        path_str = " -> ".join(shorten_text(str(part), 100) for part in path) if path else "root"
+        public_error = shorten_text(
+            f"Validation failed at '{path_str}' ({keyword or 'schema'}): {message}", ERROR_MESSAGE_LIMIT
+        )
+
+        error_details_list.append(
+            {
+                "record_index": index,
+                "record_preview": preview_record(record),
+                "error_message": public_error,
+                "path": path,
+                "validator": validator_name,
+            }
+        )
+
+        logger.debug("Record %d: %s", index, public_error)
 
     invalid_records_count = len(records) - valid_records_count
 

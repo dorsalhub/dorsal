@@ -46,7 +46,9 @@ from dorsal.common.validators import (
     import_callable,
     json_schema_validate_records,
 )
+from dorsal.common.validators.json_schema import preview_record
 from dorsal.file.linters import apply_linter
+from dorsal.file.schemas import schema_version_of
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -385,9 +387,20 @@ class ModelRunner:
                 original_exception=err,
             ) from err
 
+        from dorsal.file.configs.model_runner import resolve_open_schema_step_validator
+
         validator: Type[BaseModel] | JsonSchemaValidator | None = None
 
-        if config_step.validation_model is not None:
+        try:
+            validator = resolve_open_schema_step_validator(config_step)
+        except (ValueError, RuntimeError) as err:
+            raise ModelImportError(
+                f"{config_step.schema_id} (schema version "
+                f"{config_step.schema_version or constants.OPEN_VALIDATION_SCHEMAS_VER}) validator",
+                original_exception=err,
+            ) from err
+
+        if validator is None and config_step.validation_model is not None:
             if isinstance(config_step.validation_model, dict):
                 try:
                     from dorsal.common.validators.json_schema import (
@@ -538,10 +551,8 @@ class ModelRunner:
             if error_details:
                 for err_detail in error_details:
                     idx = err_detail.get("record_index", 0)
-                    snippet = (
-                        str(records_to_validate[idx])[:200]
-                        if idx < len(records_to_validate)
-                        else str(raw_model_output)[:200]
+                    snippet = preview_record(
+                        records_to_validate[idx] if idx < len(records_to_validate) else raw_model_output, limit=200
                     )
 
                     logger.log(
@@ -562,7 +573,7 @@ class ModelRunner:
                     annotator_model_name,
                     file_path,
                     summary,
-                    str(raw_model_output)[:200],
+                    preview_record(raw_model_output, limit=200),
                 )
             return None, error_details
 
@@ -746,7 +757,7 @@ class ModelRunner:
                     can_rescue = bool(schema_id and validation_model)
                     log_level = logging.DEBUG if can_rescue else logging.WARNING
                     if isinstance(validation_model, JsonSchemaValidator):
-                        result_data["schema_version"] = validation_model.schema.get("version")
+                        result_data["schema_version"] = schema_version_of(validation_model.schema)
                         validated_data, validation_error_payload = (
                             self._json_schema_validate_raw_annotation_model_output(
                                 raw_model_output=raw_data,

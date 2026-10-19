@@ -57,6 +57,7 @@ from dorsal.common.model import AnnotationModel, scrub_pii_from_model
 
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.permissions import is_permitted_public_media_type
+from dorsal.file.schemas import schema_version_of
 from dorsal.file.utils.hashes import hash_string_validator, make_local_record_id
 from dorsal.file.utils.size import human_filesize
 from dorsal.file.validators.open_schema import get_open_schema_validator
@@ -1743,27 +1744,55 @@ class LocalFile(_DorsalFile):
             logger.error("Failed to push lite file record for '%s'. Error: %s", self.file_path, err)
             raise
 
-        failed_details = []
+        from dorsal.client.validators import AnnotationIndexResult, IndexResult, IndexResultAnnotation
+
+        file_result = next((result for result in response.results if result.hash == file_hash), None)
+        if file_result is None:
+            file_result = IndexResult(
+                file_path=str(self.file_path), name=self.name, hash=file_hash, url="", annotations=[]
+            )
+            response.results.append(file_result)
 
         for dataset_id, items in extracted_annotations.items():
             for item in items:
+                status = "created"
+                detail: str | None = None
                 try:
-                    client.add_file_annotation(
+                    append_result = client.add_file_annotation(
                         file_hash=file_hash, schema_id=dataset_id, annotation=item, overwrite=True, api_key=api_key
                     )
-                    response.success += 1
-                    response.total += 1
+                    if isinstance(append_result, AnnotationIndexResult):
+                        if append_result.error > 0 or any(r.status == "error" for r in append_result.results):
+                            status = "error"
+                            detail = "; ".join(r.detail for r in append_result.results if r.detail) or None
+                        elif append_result.results:
+                            status = append_result.results[0].status
                 except DorsalClientError as err:
+                    status = "error"
+                    detail = getattr(err, "message", None) or str(err)
+
+                response.total += 1
+                if status == "error":
                     response.error += 1
-                    response.total += 1
-                    detail_str = f"Heavy Annotation Append '{dataset_id}': {err}"
-                    logger.warning("  > %s", detail_str)
-                    failed_details.append(detail_str)
+                    logger.warning("  > Heavy Annotation Append '%s': %s", dataset_id, detail)
+                else:
+                    response.success += 1
+
+                file_result.annotations.append(
+                    IndexResultAnnotation(
+                        name=dataset_id,
+                        status=status,
+                        detail=detail,
+                        schema_id=dataset_id,
+                        schema_version=item.schema_version,
+                    )
+                )
 
         if response.error > 0:
             error_msg = f"PARTIAL FAILURE pushing file '{self.file_path}'. The base record was created, but {response.error} annotation(s) were rejected."
             logger.warning(error_msg)
 
+            failed_details = []
             for result in response.results:
                 if result.annotations:
                     for annotation in result.annotations:
@@ -2215,7 +2244,7 @@ class LocalFile(_DorsalFile):
 
         schema_version = None
         if isinstance(validator, JsonSchemaValidator):
-            schema_version = validator.schema.get("version")
+            schema_version = schema_version_of(validator.schema)
 
         try:
             self._annotate_using_manual_annotation(

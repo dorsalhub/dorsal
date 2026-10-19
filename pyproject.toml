@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.10.6"
+version = "0.11.0"
 description = "Dorsal is a file annotation toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,6 +36,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "typer>=0.16.0",
     "jsonschema-rs>=0.38.1",
+    "oatschema[validate]>=0.8.0.1,<0.9",
     "pypdfium2>=5.2.0",
     "pymediainfo>=6.1.0",
     "tomlkit>=0.12.0"
@@ -61,7 +62,6 @@ packages = ["src/dorsal"]
 include = [
     "LICENSE",
     "NOTICE",
-    "/src/dorsal/schemas/open/*.json",
     "/src/dorsal/py.typed",
 ]
 
