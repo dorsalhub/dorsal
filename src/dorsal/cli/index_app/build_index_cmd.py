@@ -93,7 +93,6 @@ def build_search_index(
     console = get_rich_console()
 
     palette = ctx.obj["palette"]
-    # Always pass a console: with None, progress bars fall back to stdout whenever stdout is a TTY.
     progress_console = get_error_console() if json_output else console
 
     try:

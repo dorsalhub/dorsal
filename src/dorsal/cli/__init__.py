@@ -134,7 +134,6 @@ def main(
 
     from rich.logging import RichHandler
 
-    # Log records are diagnostics, so they always go to stderr and never mix with a command's output on stdout.
     if is_json_output:
         from rich.console import Console
 

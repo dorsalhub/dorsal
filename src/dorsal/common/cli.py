@@ -68,10 +68,7 @@ def format_json_output(data: Any) -> str:
 
 
 def print_raw_output(text: str, console: Console | None = None, end: str = "\n") -> None:
-    """Prints pre-formatted, machine-readable text (JSON, CSV/TSV, subtitles, ...) exactly as given.
-
-    The text is written straight to the console's underlying stream, bypassing Rich entirely: Rich would otherwise
-    wrap long lines, parse `[...]` as markup, substitute `:emoji:` codes and expand tab characters into spaces.
+    """Writes pre-formatted text (JSON, CSV/TSV, subtitles, ...) to the console's stream exactly as given, bypassing Rich.
 
     Args:
         text: The text to print.
@@ -85,10 +82,7 @@ def print_raw_output(text: str, console: Console | None = None, end: str = "\n")
 
 
 def print_json_output(data: Any, console: Console | None = None) -> None:
-    """Prints `data` as machine-readable JSON to the (stdout) console.
-
-    Serialized with `format_json_output` and printed with Rich's text processing disabled, so the output is always
-    valid JSON (JSON escapes tabs and control characters, so Rich's tab expansion never applies).
+    """Prints `data` as JSON (via `format_json_output`) with Rich's markup, emoji, highlighting and wrapping disabled.
 
     Args:
         data: A JSON-serializable object.
@@ -165,7 +159,7 @@ def handle_error(ui_context: "UIContext", message: str, json_output: bool):
 
 
 def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext") -> None:
-    """Handler for AuthError. Pass the stderr console (`get_error_console()`), as errors belong on stderr."""
+    """Handler for AuthError. Pass the stderr console (`get_error_console()`)."""
     from dorsal.cli.themes.borders import get_borders
 
     palette = ui_context["palette"]
@@ -214,7 +208,7 @@ def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext")
 
 def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"):
     """
-    Centralized handler for DorsalOfflineError. Pass the stderr console (`get_error_console()`), as errors belong on stderr.
+    Centralized handler for DorsalOfflineError. Pass the stderr console (`get_error_console()`).
     """
     from dorsal.cli.themes.borders import get_borders
 

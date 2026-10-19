@@ -231,7 +231,6 @@ def _save_json_report(
         with open(final_path, "w", encoding="utf-8") as fp:
             fp.write(record_json_str)
 
-        # With --json, stdout carries only the JSON record, so the confirmation goes to stderr.
         status_console = error_console if json_to_stdout else console
         status_console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
     except IOError as err:

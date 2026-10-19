@@ -346,7 +346,6 @@ def test_push_dir_duplicate_error_handled(
     )
     assert "Duplicate Files Detected" in str(panel_output.title)
 
-    # With --json, the push summary (which records the failure) is the command's result document on stdout.
     mock_rich_console.reset_mock()
     runner.invoke(app, ["local", "push", str(target), "--json"])
     json_str = mock_rich_console.print.call_args_list[0].args[0]
@@ -476,7 +475,6 @@ def test_display_summary_panel_with_failures(mocker, mock_error_console):
 
     _display_summary_panel(summary_data, True, mock_ui_context, False, mock_collection, mock_console)
 
-    # The summary panel is the command's output (stdout); the failed batch details are errors (stderr).
     assert mock_console.print.call_count == 1
     assert mock_error_console.print.call_count == 2
     last_print_arg = mock_error_console.print.call_args_list[-1].args[0]

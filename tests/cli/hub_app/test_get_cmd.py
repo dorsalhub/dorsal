@@ -104,7 +104,7 @@ def test_get_record_not_found_panel(mock_rich_console, mock_get_cmd, mock_error_
 
     result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
-    assert result.exit_code == 1  # Not found is an error, with or without --json
+    assert result.exit_code == 1
     assert "Not Found" in mock_error_console.print.call_args.args[0]
 
 

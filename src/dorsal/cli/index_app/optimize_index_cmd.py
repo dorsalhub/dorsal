@@ -53,7 +53,6 @@ def optimize_search_index(
     palette: dict[str, str] = ctx.obj["palette"]
 
     try:
-        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
         status_console = get_error_console() if json_output else console
         with status_console.status("Optimizing search index... (this may take a moment)"):
             results = optimize(force_recompression=force_recompression)

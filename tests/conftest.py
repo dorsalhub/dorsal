@@ -58,8 +58,7 @@ def global_disable_cache():
     Sets the env var to disable the local index (cache) for the entire test session.
     This prevents accidental SQLite file creation/locking.
 
-    Also clears env vars that force Rich to render as if attached to a terminal (colours, cursor control), which
-    would otherwise leak ANSI codes into captured CLI output depending on the developer's shell.
+    Also clears env vars that force Rich to render as if attached to a terminal.
     """
     os.environ[constants.ENV_DORSAL_INDEX_ENABLED] = "false"
     for var in ("FORCE_COLOR", "TTY_COMPATIBLE", "TTY_INTERACTIVE"):

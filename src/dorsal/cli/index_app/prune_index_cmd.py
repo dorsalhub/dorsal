@@ -45,7 +45,6 @@ def prune_search_index(
     palette = ctx.obj["palette"]
 
     try:
-        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
         status_console = get_error_console() if json_output else console
         with status_console.status("Pruning stale records from the search index..."):
             pruned_count, total_records = prune()

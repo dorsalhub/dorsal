@@ -284,7 +284,6 @@ def _process_file_push(
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
-        # With --json, stdout carries only the JSON document, so the spinner goes to stderr.
         status_console = get_error_console() if json_output else console
         with status_console.status("Pushing to DorsalHub..."):
             api_response = local_file.push(public=public, strict=strict)
@@ -371,7 +370,6 @@ def _process_dir_push(
 
     palette = ui_context["palette"]
     borders = ui_context["borders"]
-    # Always pass a console: with None, progress bars fall back to stdout whenever stdout is a TTY.
     progress_console = get_error_console() if json_output else console
 
     if create_collection and not collection_name:
@@ -411,7 +409,6 @@ def _process_dir_push(
                 if not json_output:
                     console.print(f"[{palette.get('info', 'dim')}]Ignoring {len(skipped)} duplicate files.[/]")
         elif duplicate_groups and not dry_run:
-            # The API rejects a batch containing duplicate files, so fail before sending anything.
             _report_duplicate_files(path, duplicate_groups, json_output, ui_context, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
 

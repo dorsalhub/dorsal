@@ -131,14 +131,14 @@ def test_scan_cache_conflict(mock_exit_cli, tmp_path):
     mock_exit_cli.assert_called_with(code=ANY, message="Error: --use-cache and --skip-cache cannot be used together.")
 
 
-def test_scan_output_inference_warning(mock_rich_console, tmp_path):
+def test_scan_output_inference_warning(mock_rich_console, mock_error_console, tmp_path):
     target = tmp_path / "test.txt"
     target.touch()
     result = runner.invoke(app, ["local", "scan", str(target), "--output", "report.unknown"])
 
     assert result.exit_code == 0
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "was specified, but no report type was requested" in printed_text
+    assert "was specified, but no report type was requested" in _printed_text(mock_error_console)
+    assert "no report type was requested" not in _printed_text(mock_rich_console)
 
 
 def test_scan_file_default(mock_rich_console, mock_file_deps, tmp_path):
@@ -259,13 +259,13 @@ def test_scan_skip_overwrite_conflict(mock_exit_cli, tmp_path):
     )
 
 
-def test_scan_file_ignored_dir_flags(mock_rich_console, mock_file_deps, tmp_path):
+def test_scan_file_ignored_dir_flags(mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
     """Hits the directory-flag warning when scanning a file."""
     target = tmp_path / "test.txt"
     target.touch()
     runner.invoke(app, ["local", "scan", str(target), "--csv", "--recursive", "--lazy"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    printed_text = _printed_text(mock_error_console)
     assert "Directory-specific flags" in printed_text
     assert "are ignored when scanning a single file" in printed_text
 
@@ -285,20 +285,18 @@ def test_scan_file_fallback_local_filesystem(mock_file_deps, tmp_path):
 
 
 @patch("builtins.open")
-def test_scan_file_save_success_and_error(mock_open, mock_rich_console, mock_file_deps, tmp_path):
+def test_scan_file_save_success_and_error(mock_open, mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
     """Hits the file save block and the exception block in _save_report_to_disk."""
     target = tmp_path / "test.txt"
     target.touch()
 
     runner.invoke(app, ["local", "scan", str(target), "-s"])
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "JSON report saved to" in printed_text
+    assert "JSON report saved to" in _printed_text(mock_rich_console)
 
     mock_rich_console.reset_mock()
     mock_open.side_effect = Exception("Mock Write Failure")
     runner.invoke(app, ["local", "scan", str(target), "-s"])
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Could not save JSON report. Error: Mock Write Failure" in printed_text
+    assert "Could not save JSON report. Error: Mock Write Failure" in _printed_text(mock_error_console)
 
 
 def test_scan_dir_init_error(mock_exit_cli, mock_dir_deps, tmp_path):
@@ -427,7 +425,7 @@ def test_scan_file_json_with_save_confirmation_to_stderr(
     assert "JSON report saved to" in _printed_text(mock_error_console)
 
 
-def test_scan_dir_warnings(mock_rich_console, mock_dir_deps, tmp_path):
+def test_scan_dir_warnings(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
     """Hits the warnings block for directory scans."""
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -435,12 +433,15 @@ def test_scan_dir_warnings(mock_rich_console, mock_dir_deps, tmp_path):
     mock_dir_deps["collection_instance"].warnings = ["This is a mock warning"]
     runner.invoke(app, ["local", "scan", str(target)])
 
-    print_calls = mock_rich_console.print.call_args_list
-    panels = [call.args[0] for call in print_calls if isinstance(call.args[0], Panel)]
-    assert any("This is a mock warning" in str(p.renderable) for p in panels)
+    def warning_panels(console):
+        panels = [call.args[0] for call in console.print.call_args_list if isinstance(call.args[0], Panel)]
+        return [p for p in panels if "This is a mock warning" in str(p.renderable)]
+
+    assert warning_panels(mock_error_console)
+    assert not warning_panels(mock_rich_console)
 
 
-def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_dir_deps, tmp_path):
+def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
     """Hits the dir save logic and its exception handler."""
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -454,11 +455,10 @@ def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_dir_deps, 
     mock_rich_console.reset_mock()
     with patch("builtins.open", side_effect=Exception("Mock Dir JSON Error")):
         runner.invoke(app, ["local", "scan", str(target), "-s", "-o", str(out_file)])
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Could not save JSON report. Error: Mock Dir JSON Error" in printed_text
+    assert "Could not save JSON report. Error: Mock Dir JSON Error" in _printed_text(mock_error_console)
 
 
-def test_scan_dir_save_csv_error(mock_rich_console, mock_dir_deps, tmp_path):
+def test_scan_dir_save_csv_error(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
     """Hits the exception handler when saving a dir CSV fails."""
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -466,8 +466,7 @@ def test_scan_dir_save_csv_error(mock_rich_console, mock_dir_deps, tmp_path):
     mock_dir_deps["collection_instance"].to_csv.side_effect = Exception("Mock CSV Error")
     runner.invoke(app, ["local", "scan", str(target), "--csv"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Could not save CSV report. Error: Mock CSV Error" in printed_text
+    assert "Could not save CSV report. Error: Mock CSV Error" in _printed_text(mock_error_console)
 
 
 def test_scan_output_path_is_dir(mock_file_deps, tmp_path):
@@ -531,13 +530,13 @@ def test_scan_output_file_with_save_and_csv_writes_both(mock_rich_console, mock_
     mock_dir_deps["collection_instance"].to_csv.assert_called_once_with(str(tmp_path / "report.csv"))
 
 
-def test_scan_output_dir_without_report_type_warns(mock_rich_console, mock_dir_deps, tmp_path):
+def test_scan_output_dir_without_report_type_warns(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
     target = tmp_path / "test_dir"
     target.mkdir()
 
     runner.invoke(app, ["local", "scan", str(target), "-o", str(tmp_path / "reports.json") + os.sep])
 
-    assert "no report type was requested" in _printed_text(mock_rich_console)
+    assert "no report type was requested" in _printed_text(mock_error_console)
     assert not (tmp_path / "reports.json").exists()
 
 
@@ -552,14 +551,15 @@ def test_scan_file_local_attributes_not_mutated(mock_rich_console, mock_file_dep
     assert data["local_filesystem"]["full_path"] == "/fake/test.txt"
 
 
-def test_scan_template_is_deprecated(mock_rich_console, mock_file_deps, tmp_path):
+def test_scan_template_is_deprecated(mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
     target = tmp_path / "test.txt"
     target.touch()
 
     result = runner.invoke(app, ["local", "scan", str(target), "-t", "fancy"])
 
     assert result.exit_code == 0
-    assert "--template has no effect" in _printed_text(mock_rich_console)
+    assert "--template has no effect" in _printed_text(mock_error_console)
+    assert "--template has no effect" not in _printed_text(mock_rich_console)
 
 
 def test_scan_file_name_markup_is_escaped(mock_rich_console, mock_file_deps, tmp_path):

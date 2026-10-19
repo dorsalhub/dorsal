@@ -211,8 +211,8 @@ def scan_target(
     Scans a local file or directory, extracts metadata, and generates reports.
     """
     console = get_rich_console()
-    # With --json, stdout carries only the JSON document; warnings and status messages go to stderr.
-    status_console = get_error_console() if json_output else console
+    error_console = get_error_console()
+    status_console = error_console if json_output else console
     palette = ctx.obj.get("palette", get_palette())
     icons = ctx.obj.get("icons", get_icons())
     borders = ctx.obj.get("borders", get_borders())
@@ -223,7 +223,7 @@ def scan_target(
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache cannot be used together.")
 
     if template is not None:
-        status_console.print(
+        error_console.print(
             "⚠️ [yellow]Warning:[/] --template has no effect: HTML reports are no longer generated.",
             style=palette.get("warning", "yellow"),
         )
@@ -241,7 +241,7 @@ def scan_target(
             elif not output_is_dir and out_suffix == ".csv":
                 csv = True
             else:
-                status_console.print(
+                error_console.print(
                     f"⚠️ [yellow]Warning:[/] --output path '{escape(str(output_path))}' was specified, but no report type was requested.",
                     style=palette.get("warning", "yellow"),
                 )
@@ -250,7 +250,7 @@ def scan_target(
 
     if path.is_file():
         if csv or recursive or lazy:
-            status_console.print(
+            error_console.print(
                 "⚠️ [yellow]Warning:[/] Directory-specific flags (--csv, --recursive, --lazy) are ignored when scanning a single file.",
                 style=palette.get("warning", "yellow"),
             )
@@ -398,7 +398,6 @@ def _process_dir_scan(
 
     start_time = time.perf_counter()
     try:
-        # Always pass a console: with None, the progress bar falls back to stdout whenever stdout is a TTY.
         collection = LocalFileCollection(
             source=str(path),
             console=status_console,
@@ -418,7 +417,6 @@ def _process_dir_scan(
 
     scan_data: dict[str, Any] | None = None
     if json_output or save:
-        # The same document is printed with --json and written with --save.
         scan_data = collection.to_dict(exclude={"embeddings", "text_chunks"})
         scan_data["scan_metadata"]["duration_seconds"] = duration
 
@@ -438,7 +436,7 @@ def _process_dir_scan(
         )
 
     if collection.warnings:
-        status_console.print(
+        get_error_console().print(
             Panel(
                 "\n".join(f"- {escape(str(w))}" for w in collection.warnings),
                 title=f"[{palette.get('panel_title_warning', 'yellow')}]Warnings[/]",
@@ -469,7 +467,7 @@ def _process_dir_scan(
             )
         except Exception as e:
             logger.error(f"Failed to save CSV report: {e}")
-            status_console.print(
+            get_error_console().print(
                 f"⚠️ Could not save CSV report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
             )
 
@@ -477,7 +475,6 @@ def _process_dir_scan(
 def _safe_report_name(source_path: pathlib.Path, is_dir: bool) -> str:
     resolved = source_path.resolve()
     name = resolved.name if is_dir else resolved.stem
-    # Filesystem roots ("/", "C:\\") have no name.
     return re.sub(r"[^\w.-]+", "_", name).strip("_") or "root"
 
 
@@ -491,8 +488,8 @@ def _get_final_path(
     """Resolves where a report with the given `suffix` is written.
 
     - Directory output: `<output>/[scan-dir-]<name>_report<suffix>`.
-    - File output: used as-is when its suffix matches; otherwise the suffix is swapped (or appended), so that
-      `-o report.json --save --csv` writes `report.json` and `report.csv` rather than one overwriting the other.
+    - File output: used as-is when its suffix matches; otherwise the suffix is swapped (or appended), e.g.
+      `-o report.json --save --csv` writes `report.json` and `report.csv`.
     - No output: a timestamped file in the CLI reports directory, never overwriting an existing report.
     """
     prefix = "scan-dir-" if is_dir else ""
@@ -527,7 +524,7 @@ def _save_report_to_disk(path: pathlib.Path, content: str, doc_type: str, consol
         console.print(f"✅ {doc_type} report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
     except Exception as e:
         logger.error(f"Failed to save {doc_type} report: {e}")
-        console.print(
+        get_error_console().print(
             f"⚠️ Could not save {doc_type} report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
         )
 
@@ -620,8 +617,6 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
             )
         )
 
-    # Long filenames are truncated with an ellipsis rather than wrapped. Rich never shrinks a no-wrap column,
-    # so cap it at whatever the (short, fixed-format) metadata columns leave over.
     pad = padding[1] * 2
     metadata_width = sum(
         max([cell_len(h)] + [cell_len(str(r[i + 1])) for r in rows]) + pad for i, h in enumerate(headers)
