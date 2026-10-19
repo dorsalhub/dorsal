@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.11.0 (2026-10-19)
 
 ### Added
 - Every OATS schema version from 0.4.0 to 0.8.0 can be loaded and validated against, through the `oatschema`
