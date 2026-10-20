@@ -461,3 +461,63 @@ def test_create_file_info_panel_shows_local_time(utc_plus_9, date_modified):
     output = capture.get()
     assert "2023-11-15 07:13:20" in output
     assert "22:13" not in output
+
+
+def _render_search_results(modified_time: float, width: int = 200) -> str:
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(
+        name="file.txt",
+        size=1,
+        media_type="text/plain",
+        local_record_id="d4797053287babe5",
+        modified_time=modified_time,
+        hash_sha256=None,
+    )
+    response = SimpleNamespace(
+        records=[record],
+        pagination=SimpleNamespace(
+            start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
+        ),
+    )
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+    console = Console(width=width)
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+    return capture.get()
+
+
+@pytest.mark.parametrize("width", [200, 80])
+def test_display_local_search_results_near_epoch(width):
+    """A modified time just after the epoch renders on every platform, Windows included."""
+    output = _render_search_results(1.0, width=width)
+
+    assert "file.txt" in output
+    assert "1970-01-01" in output or "1969-12-31" in output
+
+
+@pytest.mark.parametrize("width", [200, 80])
+def test_display_local_search_results_falls_back_to_utc(utc_plus_9, width):
+    """A time that cannot be shown in local time is shown in UTC instead of failing."""
+    year_9999 = datetime.datetime(9999, 12, 31, 23, 0, tzinfo=datetime.timezone.utc).timestamp()
+
+    output = _render_search_results(year_9999, width=width)
+
+    assert "9999-12-31 23:00" in output
+
+
+def test_create_file_info_panel_falls_back_to_utc(utc_plus_9):
+    """The file panel shows a time it cannot convert to local time in UTC instead of failing."""
+    record_dict = {
+        **DUMMY_FILE_RECORD,
+        "local_filesystem": {"full_path": "/f.txt", "date_modified": "9999-12-31T23:00:00+00:00"},
+    }
+
+    panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
+    console = Console(width=200)
+    with console.capture() as capture:
+        console.print(panel)
+
+    assert "9999-12-31 23:00:00" in capture.get()

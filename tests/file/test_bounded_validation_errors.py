@@ -64,6 +64,14 @@ class ManyErrorsModel(AnnotationModel):
         return {"count": BIG_WITH_MARKER, "items": [BIG] + ["x"] * 100_000}
 
 
+class RaisesPydanticModel(AnnotationModel):
+    id = "test/raises-pydantic"
+    version = "1.0.0"
+
+    def main(self):
+        StrictOutput.model_validate({"count": BIG_WITH_MARKER, "items": ["x"] * 100_000})
+
+
 def _make_error(data):
     try:
         StrictOutput.model_validate(data)
@@ -134,6 +142,17 @@ def test_model_output_failing_pydantic_validation_with_schema_id_is_bounded(mode
 
     assert results[0].error is not None
     assert len(results[0].error) < SIZE_LIMIT
+    assert max(_formatted_log_sizes(caplog)) < SIZE_LIMIT
+
+
+def test_pydantic_error_raised_inside_model_is_bounded(text_file, caplog):
+    caplog.set_level(logging.DEBUG)
+
+    results = run_model(annotation_model=RaisesPydanticModel, file_path=text_file)
+
+    assert results[0].error is not None
+    assert len(results[0].error) < SIZE_LIMIT
+    assert MARKER + "x" * 200 not in results[0].error
     assert max(_formatted_log_sizes(caplog)) < SIZE_LIMIT
 
 

@@ -274,6 +274,19 @@ def test_add_tag_raises_type_error_for_invalid_inputs(
         lf._add_local_tag(name=name, value=value, private=private)
 
 
+def test_add_local_tag_invalid_name_is_bounded(mock_metadata_reader, mock_file_record_strict, fs):
+    """A tag that fails validation raises ValueError with previews, not the whole value."""
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    lf = LocalFile(file_path)
+
+    with pytest.raises(ValueError, match="Invalid tag data for name=") as exc_info:
+        lf._add_local_tag(name="bad name " + "x" * 1_000_000, value="ok")
+
+    assert len(str(exc_info.value)) < 5_000
+
+
 def test_local_file_push_public_success(mock_metadata_reader, mock_file_record_strict, fs):
     """Test pushing a local file record publicly."""
     file_path = "/fake/local.txt"
@@ -1552,6 +1565,13 @@ def test_add_annotation_with_schema_version(annotatable_local_file):
 def test_add_annotation_without_version_names_available_versions(annotatable_local_file, schema_name):
     with pytest.raises(ValueError, match=r"not in schema version 0\.5\.0, the default.*0\.8\.0"):
         annotatable_local_file.add_annotation(f"open/{schema_name}", {})
+
+
+def test_add_annotation_other_schema_load_errors_propagate(annotatable_local_file, mocker):
+    mocker.patch("dorsal.file.dorsal_file.get_open_schema_validator", side_effect=RuntimeError("corrupt schema"))
+
+    with pytest.raises(RuntimeError, match="corrupt schema"):
+        annotatable_local_file.add_annotation("open/classification", {"labels": []})
 
 
 def test_add_annotation_unknown_version(annotatable_local_file):

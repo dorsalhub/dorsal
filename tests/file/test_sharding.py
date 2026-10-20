@@ -312,6 +312,16 @@ class TestReassembly:
             reassemble_record(group)
         assert "Incomplete group" in str(exc.value)
 
+    def test_reassemble_chunk_missing_group(self):
+        """A chunk without group info raises ValueError with a bounded summary."""
+        anns = [MockAnnotation({"objects": []}, index=0, total=2), MockAnnotation({"objects": []}, index=1, total=2)]
+        anns[1].group = None
+        group = MockAnnotationGroup(anns)
+
+        with pytest.raises(ValueError, match="Chunk missing required fields") as exc:
+            reassemble_record(group)
+        assert exc.value.__cause__ is None
+
     def test_reassemble_unknown_strategy(self):
         """If the record structure doesn't match any registry entry, fail."""
         anns = [

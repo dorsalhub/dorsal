@@ -196,6 +196,35 @@ def test_validate_tag_success(client, requests_mock):
     assert result.valid is True
 
 
+def test_validate_tag_invalid_dict_is_bounded(client):
+    """An invalid tag dict raises DorsalClientError with a bounded summary."""
+    with pytest.raises(DorsalClientError, match="Invalid data for FileTag at index 0") as exc_info:
+        client.validate_tag([{"name": "bad name " + "x" * 1_000_000, "value": "ok"}])
+
+    assert len(str(exc_info.value)) < 5_000
+
+
+def test_index_file_records_invalid_dict_is_bounded(client):
+    """An invalid record dict raises DorsalClientError with a bounded summary and no chained cause."""
+    with pytest.raises(DorsalClientError, match="Invalid data for record at index 0") as exc_info:
+        client.index_public_file_records([{"hash": "x" * 1_000_000}])
+
+    assert len(str(exc_info.value)) < 5_000
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.original_exception is not None
+
+
+def test_search_files_invalid_response(client, requests_mock):
+    """A search response that fails validation raises ApiDataValidationError with bounded errors."""
+    requests_mock.get(f"{_DUMMY_BASE_URL}/v1/files/search", json={"api_version": "x" * 1_000_000}, status_code=200)
+
+    with pytest.raises(ApiDataValidationError, match="FileSearchResponse") as exc_info:
+        client.search_files(q="name:test", match_any=False, deep=False)
+
+    assert len(str(exc_info.value)) < 5_000
+    assert exc_info.value.validation_errors
+
+
 def test_add_tags_to_file_success(client, requests_mock):
     """Test adding tags."""
     tag = NewFileTag(name="status", value="ok", private=False)
@@ -266,6 +295,16 @@ def test_delete_file_granular(client, requests_mock):
     result = client.delete_file(file_hash=_DUMMY_SHA256, record="private")
     assert isinstance(result, FileDeleteResponse)
     assert result.file_deleted == 1
+
+
+def test_delete_file_invalid_response(client, requests_mock):
+    """A delete response that fails validation raises ApiDataValidationError."""
+    requests_mock.delete(f"{_DUMMY_BASE_URL}/v1/files/{_DUMMY_SHA256}", json={"file_deleted": -1}, status_code=200)
+
+    with pytest.raises(ApiDataValidationError, match="FileDeleteResponse") as exc_info:
+        client.delete_file(file_hash=_DUMMY_SHA256, record="private")
+
+    assert exc_info.value.validation_errors
 
 
 def test_add_file_url_success(client, requests_mock):
