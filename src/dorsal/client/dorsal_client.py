@@ -53,7 +53,10 @@ from dorsal.common.exceptions import (
 from dorsal.common.model import scrub_pii_from_model
 from dorsal.common.validators.json_schema import (
     JsonSchemaValidator,
+    bound_pydantic_errors,
+    format_pydantic_errors,
     get_json_schema_validator,
+    preview_record,
 )
 from dorsal.common.validators.datasets import (
     Dataset,
@@ -575,8 +578,9 @@ class DorsalClient:
                         raise TypeError(f"Item at index {i} is not a FileTag instance or a dict.")
                 request_body.append(tag.model_dump(mode="json"))
             except PydanticValidationError as err:
-                logger.error("Validation error for FileTag at index %s: %s", i, err.errors())
-                raise DorsalClientError(f"Invalid data for FileTag at index {i}: {err}") from err
+                error_summary = format_pydantic_errors(err)
+                logger.error("Validation error for FileTag at index %s: %s", i, error_summary)
+                raise DorsalClientError(f"Invalid data for FileTag at index {i}: {error_summary}") from err
             except TypeError as err:
                 logger.error("Type error for FileTag at index %s: %s", i, err)
                 raise DorsalClientError(str(err)) from err
@@ -658,17 +662,17 @@ class DorsalClient:
                 "Successful tag validation response (status %s) for %s failed Pydantic validation against ValidateTagsResult. Errors: %s",
                 response.status_code,
                 target_url,
-                err.errors(),
+                format_pydantic_errors(err),
             )
             raise ApiDataValidationError(
                 message="API response on tag validation success failed data validation against ValidateTagsResult.",
                 request_url=target_url,
-                validation_errors=err.errors(),
+                validation_errors=bound_pydantic_errors(err),
                 response_text_snippet=(
-                    json.dumps(json_response)[:200] if "json_response" in locals() else response.text[:200]
+                    preview_record(json_response, limit=200) if "json_response" in locals() else response.text[:200]
                 ),
                 original_exception=err,
-            ) from err
+            ) from None
 
     def add_tags_to_file(
         self, file_hash: str, tags: "list[NewFileTag]", api_key: str | None = None
@@ -801,17 +805,17 @@ class DorsalClient:
                 "Successful tag operation response (status %s) for %s failed Pydantic validation. Errors: %s",
                 response.status_code,
                 target_url,
-                err.errors(),
+                format_pydantic_errors(err),
             )
             raise ApiDataValidationError(
                 message="API response on success failed data validation against FileTagResponse.",
                 request_url=target_url,
-                validation_errors=err.errors(),
+                validation_errors=bound_pydantic_errors(err),
                 response_text_snippet=(
-                    json.dumps(json_response)[:200] if "json_response" in locals() else response.text[:200]
+                    preview_record(json_response, limit=200) if "json_response" in locals() else response.text[:200]
                 ),
                 original_exception=err,
-            ) from err
+            ) from None
 
     def delete_tag(self, *, file_hash: str, tag_id: str, api_key: str | None = None) -> None:
         """Deletes a single tag from a file using its unique tag ID.
@@ -1000,8 +1004,11 @@ class DorsalClient:
                     raise TypeError(f"Item at index {i} is not a FileRecordStrict instance or a dict.")
                 validated_records.append(file_record_item)
             except PydanticValidationError as err:
-                logger.error("Validation error for record at index %s: %s", i, err.errors())
-                raise DorsalClientError(f"Invalid data for record at index {i}: {err}") from err
+                error_summary = format_pydantic_errors(err)
+                logger.error("Validation error for record at index %s: %s", i, error_summary)
+                raise DorsalClientError(
+                    f"Invalid data for record at index {i}: {error_summary}", original_exception=err
+                ) from None
             except TypeError as err:
                 logger.error("Type error for record at index %s: %s", i, err)
                 raise DorsalClientError(str(err)) from err
@@ -1114,17 +1121,17 @@ class DorsalClient:
                 "Successful API response (status %s) for %s failed Pydantic validation for FileIndexResponse. Errors: %s",
                 response.status_code,
                 target_url,
-                err.errors(),
+                format_pydantic_errors(err),
             )
             raise ApiDataValidationError(
                 message="API response on success failed data validation against FileIndexResponse.",
                 request_url=target_url,
-                validation_errors=err.errors(),
+                validation_errors=bound_pydantic_errors(err),
                 response_text_snippet=(
-                    json.dumps(json_response)[:200] if "json_response" in locals() else response.text[:200]
+                    preview_record(json_response, limit=200) if "json_response" in locals() else response.text[:200]
                 ),
                 original_exception=err,
-            ) from err
+            ) from None
 
     def _make_search_files_url(self) -> str:
         """Constructs the URL for the file search API endpoint."""
@@ -1260,13 +1267,13 @@ class DorsalClient:
                 original_exception=err,
             ) from err
         except PydanticValidationError as err:
-            logger.error("File search response failed Pydantic validation: %s", err.errors())
+            logger.error("File search response failed Pydantic validation: %s", format_pydantic_errors(err))
             raise ApiDataValidationError(
                 message="API response on success failed data validation against FileSearchResponse.",
                 request_url=target_url,
-                validation_errors=err.errors(),
+                validation_errors=bound_pydantic_errors(err),
                 original_exception=err,
-            ) from err
+            ) from None
 
     def check_files_indexed(self, file_hashes: list[str], api_key: str | None = None) -> dict[str, bool]:
         """Checks which files from a list have been indexed by the user.
@@ -1455,10 +1462,10 @@ class DorsalClient:
             raise ApiDataValidationError(
                 message="API response failed data validation.",
                 request_url=download_url,
-                validation_errors=err.errors(),
-                response_text_snippet=json.dumps(json_response)[:200],
+                validation_errors=bound_pydantic_errors(err),
+                response_text_snippet=preview_record(json_response, limit=200),
                 original_exception=err,
-            ) from err
+            ) from None
 
         logger.debug(
             "Successfully downloaded and parsed %s file record from: %s",
@@ -1707,13 +1714,13 @@ class DorsalClient:
                 original_exception=err,
             ) from err
         except PydanticValidationError as err:
-            logger.exception("File deletion response failed Pydantic validation.")
+            logger.error("File deletion response failed Pydantic validation: %s", format_pydantic_errors(err))
             raise ApiDataValidationError(
                 message="API response on success failed data validation against FileDeleteResponse.",
                 request_url=target_url,
-                validation_errors=err.errors(),
+                validation_errors=bound_pydantic_errors(err),
                 original_exception=err,
-            ) from err
+            ) from None
 
     def get_dataset(self, dataset_id: str, api_key: str | None = None) -> Dataset:
         """Retrieves a specific dataset by its ID.
@@ -1808,17 +1815,17 @@ class DorsalClient:
                 logger.error(
                     "Successful GET dataset response (status 200) for %s failed Pydantic validation. Errors: %s",
                     target_url,
-                    err.errors(),
+                    format_pydantic_errors(err),
                 )
                 raise ApiDataValidationError(
                     message="API response on GET dataset success failed data validation.",
                     request_url=target_url,
-                    validation_errors=err.errors(),
+                    validation_errors=bound_pydantic_errors(err),
                     response_text_snippet=(
-                        json.dumps(json_response)[:200] if "json_response" in locals() else response.text[:200]
+                        preview_record(json_response, limit=200) if "json_response" in locals() else response.text[:200]
                     ),
                     original_exception=err,
-                ) from err
+                ) from None
         else:
             logger.warning(
                 "Failed to retrieve dataset %s. API responded with status %s.",
@@ -2254,7 +2261,7 @@ class DorsalClient:
                 message="API response on collection creation success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     @overload
     def get_collection(
@@ -2352,7 +2359,7 @@ class DorsalClient:
                 message="API response on get_collection success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def add_files_to_collection(
         self, collection_id: str, hashes: list[str], api_key: str | None = None
@@ -2430,7 +2437,7 @@ class DorsalClient:
                 message="API response on add_files_to_collection success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def remove_files_from_collection(
         self, collection_id: str, hashes: list[str], api_key: str | None = None
@@ -2510,7 +2517,7 @@ class DorsalClient:
                 message="API response on remove_files_from_collection success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def list_collections(self, page: int = 1, per_page: int = 50, api_key: str | None = None) -> "CollectionsResponse":
         """
@@ -2573,7 +2580,7 @@ class DorsalClient:
                 message="API response on list_collections success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def update_collection(
         self,
@@ -2632,7 +2639,7 @@ class DorsalClient:
                 message="API response on collection update success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def delete_collections(self, *, collection_ids: list[str], api_key: str | None = None) -> None:
         """
@@ -2728,7 +2735,7 @@ class DorsalClient:
                 message="API response on make_collection_public failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def make_collection_private(
         self, collection_id: str, api_key: str | None = None
@@ -2779,7 +2786,7 @@ class DorsalClient:
                 message="API response on make_collection_private failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def start_collection_export(self, collection_id: str, api_key: str | None = None) -> "ExportJobStatus":
         """
@@ -2835,7 +2842,7 @@ class DorsalClient:
                 message="API response on start_collection_export failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def get_export_job_status(self, job_id: str, api_key: str | None = None) -> "ExportJobStatus":
         """
@@ -2884,7 +2891,7 @@ class DorsalClient:
                 message="API response on get_export_job_status failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def _download_export_file(self, download_url: str, output_path: str) -> None:
         logger.info("Downloading file from %s", download_url)
@@ -3135,7 +3142,7 @@ class DorsalClient:
                 message="API response on starting sync job failed data validation.",
                 request_url=start_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
         status_url = self._make_collection_sync_job_url(job_id)
         start_time = time.time()
@@ -3167,7 +3174,7 @@ class DorsalClient:
                     message=f"Polling response for job {job_id} failed data validation.",
                     request_url=status_url,
                     original_exception=err,
-                ) from err
+                ) from None
 
             if status_data.status == "SUCCESS":
                 logger.info("Job %s completed successfully.", job_id)
@@ -3261,7 +3268,7 @@ class DorsalClient:
                 message="API response on add_file_annotation failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def _parse_annotation_response(self, response: requests.Response, target_url: str) -> "FileAnnotationResponse":
         """Helper to parse annotation responses and transparently reassemble sharded groups."""
@@ -3302,8 +3309,9 @@ class DorsalClient:
                     raise ApiDataValidationError(
                         message="API returned a malformed Sharded Group response.",
                         request_url=target_url,
+                        validation_errors=bound_pydantic_errors(err),
                         original_exception=err,
-                    ) from err
+                    ) from None
                 except Exception as err:
                     logger.exception("Failed to reassemble sharded annotation group.")
                     raise ApiDataValidationError(
@@ -3319,7 +3327,7 @@ class DorsalClient:
                 message="API response on get_file_annotation failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def get_file_annotation(
         self, *, annotation_id: str, file_hash: str | None = None, api_key: str | None = None
@@ -3626,7 +3634,7 @@ class DorsalClient:
                 message="API response on add_file_url success failed data validation.",
                 request_url=target_url,
                 original_exception=err,
-            ) from err
+            ) from None
 
     def delete_file_url(self, url_id: str, api_key: str | None = None) -> None:
         """Deletes a specific URL submission by its unique ID.

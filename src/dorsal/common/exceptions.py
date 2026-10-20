@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import sys
 from typing import Any, TYPE_CHECKING
 
 from dorsal.common import constants
@@ -43,6 +44,15 @@ def __getattr__(name: str) -> Any:
 
 def __dir__() -> list[str]:
     return sorted([*globals(), *_LAZY_EXCEPTIONS])
+
+
+def _bounded_exception_text(err: BaseException) -> str:
+    pydantic_core = sys.modules.get("pydantic_core")
+    if pydantic_core is not None and isinstance(err, pydantic_core.ValidationError):
+        from dorsal.common.validators.json_schema import format_pydantic_errors
+
+        return format_pydantic_errors(err)
+    return str(err)
 
 
 class DorsalError(Exception):
@@ -404,7 +414,10 @@ class ApiDataValidationError(DorsalClientError):
         if self.response_text_snippet:
             message += f"\nProblematic Response Snippet: {self.response_text_snippet}"
         if self.original_exception and not self.validation_errors:
-            message += f"\nUnderlying Error: {type(self.original_exception).__name__}: {str(self.original_exception)}"
+            message += (
+                f"\nUnderlying Error: {type(self.original_exception).__name__}: "
+                f"{_bounded_exception_text(self.original_exception)}"
+            )
 
         message += f"\n\n{self.extra_info_template}"
         return message

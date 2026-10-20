@@ -150,6 +150,14 @@ def _build_annotation_table(
             table.add_row(f"{indent}...", Text(f"[ {len(data) - max_items} more items hidden ]", style="dim italic"))
 
 
+def to_local_time(value: datetime.datetime) -> datetime.datetime:
+    """Return `value` in the local time zone, or unchanged if the platform cannot convert it."""
+    try:
+        return value.astimezone()
+    except (OSError, OverflowError, ValueError):
+        return value
+
+
 def create_file_info_panel(
     *,
     record_dict: dict,
@@ -259,7 +267,7 @@ def create_file_info_panel(
     if local_info.get("date_modified"):
         file_info_table.add_row(
             "Modified:",
-            datetime.datetime.fromisoformat(local_info["date_modified"]).strftime("%Y-%m-%d %H:%M:%S"),
+            to_local_time(datetime.datetime.fromisoformat(local_info["date_modified"])).strftime("%Y-%m-%d %H:%M:%S"),
         )
     if base_info:
         file_info_table.add_row("Name:", base_info.get("name"))

@@ -96,6 +96,42 @@ def test_get_index_by_hash(mock_rich_console, mock_get_index_cmd):
     mock_get_index_cmd["create_panel"].assert_called_once()
 
 
+def test_get_index_by_record_id(mock_rich_console, mock_get_index_cmd):
+    """A 16-character identifier is looked up as a local Record ID, case-insensitively."""
+    mock_get_index_cmd["index_instance"].get_record.return_value = None
+
+    result = runner.invoke(app, ["index", "get", "D4797053287BABE5"])
+
+    assert result.exit_code == 0
+    assert mock_get_index_cmd["search_local"].call_args.args[0] == ["record_id:d4797053287babe5"]
+    mock_get_index_cmd["create_panel"].assert_called_once()
+
+
+def test_get_by_record_id_with_real_index(mock_rich_console, make_mock_record, mocker, tmp_path):
+    """`dorsal get <Record ID>` finds the indexed file whose Record ID it is."""
+    from dorsal.file.index.dorsal_index import DorsalIndex
+    from dorsal.file.utils.hashes import make_local_record_id
+
+    index = DorsalIndex(db_path=tmp_path / "cache.db", use_compression=True)
+    index.connect()
+    paths = []
+    for name in ("a.pdf", "b.pdf"):
+        path = tmp_path / name
+        path.write_bytes(name.encode())
+        index.upsert_record(path=str(path), modified_time=path.stat().st_mtime, record=make_mock_record(str(path)))
+        paths.append(path)
+    mocker.patch("dorsal.session.get_shared_index", return_value=index)
+
+    record_id = make_local_record_id(str(paths[1]))
+    result = runner.invoke(app, ["get", record_id, "--json"])
+    index.close()
+
+    assert result.exit_code == 0
+    data = json.loads(mock_rich_console.file.write.call_args.args[0])
+    assert data["local_filesystem"]["full_path"] == str(paths[1])
+    assert data["local_filesystem"]["local_record_id"] == record_id
+
+
 def test_get_index_not_found(mock_rich_console, mock_error_console, mock_get_index_cmd):
     """Tests the error exit when no record is found by path or hash; the message goes to stderr."""
     mock_get_index_cmd["index_instance"].get_record.return_value = None

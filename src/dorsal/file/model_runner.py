@@ -46,7 +46,12 @@ from dorsal.common.validators import (
     import_callable,
     json_schema_validate_records,
 )
-from dorsal.common.validators.json_schema import preview_record
+from dorsal.common.validators.json_schema import (
+    PYDANTIC_ERRORS_LIMIT,
+    bound_pydantic_errors,
+    format_pydantic_errors,
+    preview_record,
+)
 from dorsal.file.linters import apply_linter
 from dorsal.file.schemas import schema_version_of
 
@@ -239,8 +244,7 @@ class ModelRunner:
         except PydanticValidationError as err:
             logger.critical(
                 "Failed to validate internal BASE_ANNOTATION_MODEL structure: %s. This is a critical setup error.",
-                err.errors(),
-                exc_info=True,
+                format_pydantic_errors(err),
             )
             raise ModelRunnerConfigError("Internal BASE_ANNOTATION_MODEL is invalid.", original_exception=err) from err
         return pre_model
@@ -321,13 +325,13 @@ class ModelRunner:
                 validated_step = ModelRunnerPipelineStep.model_validate(step_config_dict)
                 validated_pipeline.append(validated_step)
             except PydanticValidationError as err:
-                error_details = err.errors()
+                error_details = format_pydantic_errors(err)
                 logger.error(
                     "Invalid configuration for pipeline step at index %d (source: '%s'): %s. Step data: %s",
                     i,
                     self.pipeline_config_source,
                     error_details,
-                    str(step_config_dict)[:500],
+                    preview_record(step_config_dict, limit=500),
                 )
                 raise ModelRunnerConfigError(
                     f"Invalid config for pipeline step {i} (source: '{self.pipeline_config_source}'). Details: {error_details}",
@@ -472,7 +476,9 @@ class ModelRunner:
         )
 
         validated_records = []
-        all_errors = []
+        all_errors: list[dict[str, Any]] = []
+        invalid_records = 0
+        first_error_summary = ""
 
         for record in records_to_validate:
             try:
@@ -481,20 +487,26 @@ class ModelRunner:
                     validated_model_instance.model_dump(mode="json", exclude_none=self.exclude_none)
                 )
             except PydanticValidationError as err:
-                all_errors.extend(err.errors())
+                invalid_records += 1
+                if not first_error_summary:
+                    first_error_summary = format_pydantic_errors(err)
+                if len(all_errors) < PYDANTIC_ERRORS_LIMIT:
+                    all_errors.extend(bound_pydantic_errors(err, max_errors=PYDANTIC_ERRORS_LIMIT - len(all_errors)))
 
-        if all_errors:
+        if invalid_records:
             logger.log(
                 error_log_level,
                 "Pydantic validation failed for annotator '%s' output on file '%s' with validator '%s'. "
-                "Errors: %s. Raw output snippet: %s",
+                "Invalid records: %d of %d. First errors: %s. Raw output snippet: %s",
                 annotator_model_name,
                 file_path,
                 pydantic_class.__name__,
-                all_errors,
-                str(raw_model_output)[:200],
+                invalid_records,
+                len(records_to_validate),
+                first_error_summary,
+                preview_record(raw_model_output, limit=200),
             )
-            return None, cast(list[dict[str, Any]], all_errors)
+            return None, all_errors
 
         logger.debug(
             "Pydantic validation successful for annotator '%s', file '%s'. Validated %d record(s).",
@@ -842,11 +854,13 @@ class ModelRunner:
         except ModelRunnerConfigError:
             raise
         except PydanticValidationError as err:
-            logger.exception("PydanticValidationError encountered for model '%s'.", model_name)
+            logger.error(
+                "PydanticValidationError encountered for model '%s': %s", model_name, format_pydantic_errors(err)
+            )
             val_error = ModelOutputValidationError(
                 model_name=model_name,
                 validator_name="RunModelResultInternal",
-                errors=err.errors(),
+                errors=bound_pydantic_errors(err),
                 original_exception=err,
             )
             return [self._build_fallback_error_result(annotation_model, schema_id, schema_version, str(val_error))]
@@ -1221,15 +1235,15 @@ class ModelRunner:
         try:
             base_file_data = ValidationClass.model_validate(base_model_output.records[0])
         except PydanticValidationError as err:
+            error_summary = format_pydantic_errors(err)
             logger.error(
                 "Failed to validate base model's record during merge for file '%s'. Errors: %s. Record: %s",
                 file_path_for_log,
-                err.errors(),
-                base_model_output.records[0],
-                exc_info=True,
+                error_summary,
+                preview_record(base_model_output.records[0], limit=500),
             )
             raise PipelineIntegrityError(
-                f"Base model record failed validation at merge for '{file_path_for_log}' - {err}",
+                f"Base model record failed validation at merge for '{file_path_for_log}' - {error_summary}",
                 original_exception=err,
             ) from err
 
@@ -1345,16 +1359,16 @@ class ModelRunner:
         try:
             file_record = RecordClass(**merged_data)
         except PydanticValidationError as err:
-            logger.exception(
+            logger.error(
                 "Final merged record failed validation for file '%s'. Errors: %s. Data snippet: %s",
                 file_path_for_log,
-                err.errors(),
-                str(merged_data)[:1000],
+                format_pydantic_errors(err),
+                preview_record(merged_data, limit=1000),
             )
             raise PipelineIntegrityError(
                 f"Final merged record for file '{file_path_for_log}' is invalid.",
                 original_exception=err,
-            ) from err
+            ) from None
 
         return file_record
 

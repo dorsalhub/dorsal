@@ -244,7 +244,11 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
     try:
         chunks = [ShardedAnnotation.model_validate(ann, from_attributes=True) for ann in group.annotations]
     except PydanticValidationError as e:
-        raise ValueError(f"Sharding integrity error: Chunk missing required fields. Details: {e}") from e
+        from dorsal.common.validators.json_schema import format_pydantic_errors
+
+        raise ValueError(
+            f"Sharding integrity error: Chunk missing required fields. Details: {format_pydantic_errors(e)}"
+        ) from None
 
     sorted_chunks = sorted(chunks, key=lambda x: x.group.index)
     head = sorted_chunks[0]

@@ -81,6 +81,12 @@ class TestQueryCompiler:
 
         assert params_iec == [".pdf", 5242880]
 
+    def test_compile_record_id(self):
+        sql, params = QueryCompiler.compile(QueryParser.parse("record_id:d4797053287babe5"))
+
+        assert "c.local_record_id = ?" in sql
+        assert params == ["d4797053287babe5"]
+
     def test_compile_eav_tags(self):
         processed = {"text": [], "filters": [("project", "=", "alpha"), ("score", ">=", "0.9")]}
         sql, params = QueryCompiler.compile(processed)

@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import datetime
+import os
+import time
+
 import pytest
 from rich.console import Console
 from rich.table import Table
@@ -340,7 +343,7 @@ def test_display_local_search_results_wide_console():
 
     assert "file_with_hash.bin" in output
     assert "rec_1234567890" in output
-    assert "2023-11-14 22:13:20" in output
+    assert datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") in output
     assert "e3b0c442" in output
 
     assert "Unknown" in output
@@ -387,3 +390,134 @@ def test_display_local_search_results_wide_console_no_hashes():
     assert "Modified Date" in output
     assert "SHA256 Hash" not in output
     assert "rec_0001" in output
+
+
+@pytest.fixture
+def utc_plus_9():
+    """Run the test with the process time zone set to a fixed UTC+9."""
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is not available on this platform")
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = "XST-9"
+    time.tzset()
+    yield
+    if previous is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = previous
+    time.tzset()
+
+
+@pytest.mark.parametrize(("width", "expected"), [(200, "2023-11-15 07:13:20"), (80, "2023-11-15 07:13")])
+def test_display_local_search_results_shows_local_time(utc_plus_9, width, expected):
+    """Search results show the modified time in the local time zone, as `dorsal scan` does."""
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(
+        name="file.txt",
+        size=1,
+        media_type="text/plain",
+        local_record_id="d4797053287babe5",
+        modified_time=1700000000.0,
+        hash_sha256=None,
+    )
+    response = SimpleNamespace(
+        records=[record],
+        pagination=SimpleNamespace(
+            start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
+        ),
+    )
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+    console = Console(width=width)
+
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+
+    output = capture.get()
+    assert expected in output
+    assert "22:13" not in output
+
+
+@pytest.mark.parametrize(
+    "date_modified",
+    [
+        "2023-11-14T22:13:20+00:00",
+        lambda: datetime.datetime.fromtimestamp(1700000000.0).astimezone().isoformat(),
+    ],
+    ids=["utc-from-index", "local-from-scan"],
+)
+def test_create_file_info_panel_shows_local_time(utc_plus_9, date_modified):
+    """The file panel shows the modified time in the local time zone, whichever zone the record carries."""
+    value = date_modified() if callable(date_modified) else date_modified
+    record_dict = {**DUMMY_FILE_RECORD, "local_filesystem": {"full_path": "/f.txt", "date_modified": value}}
+
+    panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
+    console = Console(width=200)
+    with console.capture() as capture:
+        console.print(panel)
+
+    output = capture.get()
+    assert "2023-11-15 07:13:20" in output
+    assert "22:13" not in output
+
+
+def _render_search_results(modified_time: float, width: int = 200) -> str:
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(
+        name="file.txt",
+        size=1,
+        media_type="text/plain",
+        local_record_id="d4797053287babe5",
+        modified_time=modified_time,
+        hash_sha256=None,
+    )
+    response = SimpleNamespace(
+        records=[record],
+        pagination=SimpleNamespace(
+            start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
+        ),
+    )
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+    console = Console(width=width)
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+    return capture.get()
+
+
+@pytest.mark.parametrize("width", [200, 80])
+def test_display_local_search_results_near_epoch(width):
+    """A modified time just after the epoch renders on every platform, Windows included."""
+    output = _render_search_results(1.0, width=width)
+
+    assert "file.txt" in output
+    assert "1970-01-01" in output or "1969-12-31" in output
+
+
+@pytest.mark.parametrize("width", [200, 80])
+def test_display_local_search_results_falls_back_to_utc(utc_plus_9, width):
+    """A time that cannot be shown in local time is shown in UTC instead of failing."""
+    year_9999 = datetime.datetime(9999, 12, 31, 23, 0, tzinfo=datetime.timezone.utc).timestamp()
+
+    output = _render_search_results(year_9999, width=width)
+
+    assert "9999-12-31 23:00" in output
+
+
+def test_create_file_info_panel_falls_back_to_utc(utc_plus_9):
+    """The file panel shows a time it cannot convert to local time in UTC instead of failing."""
+    record_dict = {
+        **DUMMY_FILE_RECORD,
+        "local_filesystem": {"full_path": "/f.txt", "date_modified": "9999-12-31T23:00:00+00:00"},
+    }
+
+    panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
+    console = Console(width=200)
+    with console.capture() as capture:
+        console.print(panel)
+
+    assert "9999-12-31 23:00:00" in capture.get()

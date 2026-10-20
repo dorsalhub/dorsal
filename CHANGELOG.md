@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.0 (2026-10-20)
+
+### Added
+- `LocalFile.add_annotation(schema_id, record, *, schema_version=None, ...)` adds an annotation for any schema,
+  including `open/ranking` and `open/temporal-segmentation`, which have no `add_*` helper.
+- `add_classification`, `add_embedding`, `add_llm_output`, `add_location`, `add_transcription` and
+  `add_regression` take a keyword-only `schema_version`. The annotation is validated against that OATS version
+  and stamped with it. The default stays 0.5.0.
+- Local search takes a `record_id:` field, matching a file's local Record ID.
+
+### Fixed
+- `dorsal get <Record ID>` finds the record. A 16-character Record ID was looked up as a hash and never matched.
+- `dorsal search` and `dorsal get` show the modified time in local time, as `dorsal scan` does. They showed UTC
+  without saying so. `dorsal get --json` still gives UTC with its `+00:00` offset.
+- Pydantic validation errors no longer carry whole record values. In logs, raised messages, `str()`, `repr()`
+  and tracebacks, each error keeps its `loc` and `type`, `input` becomes a preview of about 100 characters,
+  `msg` is capped, and at most 20 errors are kept. This covers model output validated by a Pydantic model,
+  manual annotations, data quality linters, merged file records, annotation entries in a `FileRecord`, tags,
+  URLs, sharded groups, and DorsalHub responses that fail validation.
+- `ApiDataValidationError`, `AnnotationValidationError`, `DataQualityError` and `PipelineIntegrityError` raised
+  for record or response content no longer chain the Pydantic error as `__cause__`, whose text grows with the
+  number of errors. The error stays available as `original_exception`.
+- Adding an `open/*` annotation in a schema version that does not contain it, such as `open/ranking` at the
+  default 0.5.0, raises `ValueError` that names the versions that have it, in place of a `RuntimeError`.
+- Logs no longer format a whole record or API response just to cut it to a snippet.
+
 ## 0.11.0 (2026-10-19)
 
 ### Added

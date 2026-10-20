@@ -271,11 +271,12 @@ class Annotations(BaseModel):
                     validated_instance.model_fields_set.add(key)
 
                 except PydanticValidationError as err:
-                    error_details = err.errors(include_url=False)
+                    from dorsal.common.validators.json_schema import format_pydantic_errors
+
                     raise ValueError(
                         f"Annotation key '{key}' contains invalid data. "
                         f"Could not validate as Annotation, Group, or Stub. "
-                        f"Details: {error_details}"
+                        f"Details: {format_pydantic_errors(err)}"
                     ) from err
                 except Exception as err:
                     raise ValueError(

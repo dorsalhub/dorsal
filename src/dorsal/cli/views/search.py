@@ -21,6 +21,7 @@ from rich.text import Text
 
 from dorsal.cli.themes import UIContext
 from dorsal.cli.themes.borders import get_borders
+from dorsal.cli.views.file import to_local_time
 
 
 def display_local_search_results(console: Console, response: Any, ui_context: UIContext) -> None:
@@ -74,7 +75,7 @@ def display_local_search_results(console: Console, response: Any, ui_context: UI
             size_text = Text(human_filesize(record.size or 0))
             type_text = Text(record.media_type or "Unknown", style=palette.get("info", "dim"))
 
-            dt_mod = datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc)
+            dt_mod = to_local_time(datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc))
             date_text = Text(dt_mod.strftime("%Y-%m-%d %H:%M"), style=palette.get("info", "dim"))
 
             meta_group = Group(size_text, type_text, date_text)
@@ -97,7 +98,7 @@ def display_local_search_results(console: Console, response: Any, ui_context: UI
             )
 
         for record in response.records:
-            dt_mod = datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc)
+            dt_mod = to_local_time(datetime.datetime.fromtimestamp(record.modified_time, tz=datetime.timezone.utc))
             date_str = dt_mod.strftime("%Y-%m-%d %H:%M:%S")
 
             row_data = [
