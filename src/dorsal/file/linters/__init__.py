@@ -15,6 +15,7 @@
 import logging
 
 from dorsal.common.exceptions import DataQualityError, PydanticValidationError
+from dorsal.common.validators.json_schema import format_pydantic_errors
 from dorsal.file.linters.open_classification import OpenClassificationLinter
 from dorsal.file.linters.open_entity_extraction import OpenEntityExtractionLinter
 
@@ -75,9 +76,11 @@ def apply_linter(schema_id: str | None, record: dict, raise_on_error: bool = Tru
                 "`LocalFile` method used to create the annotation"
             )
 
-            full_msg = f"Data quality validation failed for '{schema_id}': {err}\n\n{bypass_msg}"
-            raise DataQualityError(full_msg) from err
+            full_msg = (
+                f"Data quality validation failed for '{schema_id}': {format_pydantic_errors(err)}\n\n{bypass_msg}"
+            )
+            raise DataQualityError(full_msg, original_exception=err) from None
         else:
-            logger.warning("Ignoring data quality warning for '%s': %s", schema_id, err)
+            logger.warning("Ignoring data quality warning for '%s': %s", schema_id, format_pydantic_errors(err))
 
     return None

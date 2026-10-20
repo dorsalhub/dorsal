@@ -122,6 +122,7 @@ class QueryCompiler:
         "dorsal": "hash_dorsal",
         "quick": "hash_quick",
         "tlsh": "hash_tlsh",
+        "record_id": "local_record_id",
     }
 
     SORT_COLUMNS = {

@@ -110,7 +110,8 @@ def get_index_record(
         record = index.get_record(path=path_str)
 
     if not record and len(identifier) in (16, 32, 40, 64) and all(c in string.hexdigits for c in identifier):
-        results = search_local([identifier], index=index, limit=1)
+        query = f"record_id:{identifier.lower()}" if len(identifier) == 16 else identifier
+        results = search_local([query], index=index, limit=1)
         if results:
             record = results[0]
 

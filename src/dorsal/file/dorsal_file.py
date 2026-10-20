@@ -53,11 +53,12 @@ from dorsal.common.validators import (
     import_callable,
     is_valid_dataset_id_or_schema_id,
 )
+from dorsal.common.validators.json_schema import format_pydantic_errors, preview_record
 from dorsal.common.model import AnnotationModel, scrub_pii_from_model
 
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.permissions import is_permitted_public_media_type
-from dorsal.file.schemas import schema_version_of
+from dorsal.file.schemas import OPEN_SCHEMA_NAME_MAP, OpenSchemaName, open_schema_versions, schema_version_of
 from dorsal.file.utils.hashes import hash_string_validator, make_local_record_id
 from dorsal.file.utils.size import human_filesize
 from dorsal.file.validators.open_schema import get_open_schema_validator
@@ -787,7 +788,7 @@ class DorsalFile(_DorsalFile):
             logger.debug(
                 "DorsalFile: Pydantic model validation failed during %s instantiation. Errors: %s",
                 target_model_class.__name__,
-                err.errors(),
+                format_pydantic_errors(err),
             )
             logger.exception(
                 "DorsalFile: Failed to set validation_hash '%s' for file (primary hash: %s) "
@@ -1217,6 +1218,22 @@ class DorsalFile(_DorsalFile):
         logger.debug("DorsalFile for hash '%s' refreshed successfully.", self.hash)
 
 
+def _resolve_open_schema_validator(schema_name: OpenSchemaName, schema_version: str | None) -> JsonSchemaValidator:
+    version = schema_version or constants.OPEN_VALIDATION_SCHEMAS_VER
+    try:
+        return get_open_schema_validator(schema_name, version)
+    except RuntimeError as err:
+        if not isinstance(err.__cause__, FileNotFoundError):
+            raise
+        available = open_schema_versions(schema_name)
+        default_note = "" if schema_version else ", the default"
+        raise ValueError(
+            f"Open schema '{schema_name}' is not in schema version {version}{default_note}. "
+            f"Versions that have it: {', '.join(available) or 'none installed'}. "
+            "Pass `schema_version` to choose one."
+        ) from err
+
+
 class LocalFile(_DorsalFile):
     _client: DorsalClient | None
     _identity: Literal["dorsal.LocalFile"] = "dorsal.LocalFile"
@@ -1462,7 +1479,7 @@ class LocalFile(_DorsalFile):
         try:
             record_model = FileRecordStrict.model_validate(data)
         except PydanticValidationError as e:
-            raise ValueError(f"JSON data is not a valid FileRecordStrict: {e}") from e
+            raise ValueError(f"JSON data is not a valid FileRecordStrict: {format_pydantic_errors(e)}") from None
 
         return cls(file_path=original_file_path, _file_record=record_model)
 
@@ -1590,13 +1607,16 @@ class LocalFile(_DorsalFile):
                 private=private,
             )
         except PydanticValidationError as err:
+            error_summary = format_pydantic_errors(err)
             logger.warning(
-                "Failed to create FileTag(name='%s', value='%s') due to Pydantic validation error: %s",
-                name,
-                value,
-                err.errors(),
+                "Failed to create FileTag(name=%s, value=%s) due to Pydantic validation error: %s",
+                preview_record(name, limit=100),
+                preview_record(value, limit=100),
+                error_summary,
             )
-            raise ValueError(f"Invalid tag data for name='{name}'. Details: {err.errors()}") from err
+            raise ValueError(
+                f"Invalid tag data for name={preview_record(name, limit=100)}. Details: {error_summary}"
+            ) from err
 
         existing_tags = {(tag.name, tag.value) for tag in self.tags if tag.origin == "dorsal.LocalFile"}
         if (new_tag.name, new_tag.value) in existing_tags:
@@ -2135,7 +2155,7 @@ class LocalFile(_DorsalFile):
         logger.debug(
             "Attempting to add manual annotation to file '%s', snippet: %s, Overwrite: %s",
             self.file_path,
-            str(annotation)[:200],
+            preview_record(annotation, limit=200),
             overwrite,
         )
         if not force:
@@ -2167,6 +2187,7 @@ class LocalFile(_DorsalFile):
         schema_id: str,
         annotation_record: BaseModel | dict[str, Any],
         validator: Type[BaseModel] | JsonSchemaValidator | None = None,
+        schema_version: str | None = None,
         source_id: str | None = None,
         api_key: str | None = None,
         overwrite: bool = False,
@@ -2189,6 +2210,8 @@ class LocalFile(_DorsalFile):
             annotation_record: The annotation data (a Pydantic model or dict).
             validator: An optional explicit validator. If provided, overrides
                        automatic resolution.
+            schema_version: The version of an 'open/' schema to validate against and record.
+                            Defaults to OPEN_VALIDATION_SCHEMAS_VER. Cannot be combined with `validator`.
             source_id: An optional string describing the source of the data.
             api_key: An optional API key for fetching remote schemas.
             overwrite: If True, overwrite an existing annotation for the same dataset.
@@ -2199,7 +2222,9 @@ class LocalFile(_DorsalFile):
             The LocalFile instance, for method chaining.
 
         Raises:
-            ValueError: If `schema_id` is invalid or refers to a protected Core schema.
+            ValueError: If `schema_id` is invalid or refers to a protected Core schema, if `schema_version`
+                        is given for a schema other than a built-in 'open/' one, or if the schema version
+                        does not contain the schema.
             DorsalClientError: If an API error occurs while fetching a remote schema.
             FileAnnotatorError: If validation or application fails.
         """
@@ -2215,15 +2240,24 @@ class LocalFile(_DorsalFile):
         if not isinstance(schema_id, str) or not is_valid_dataset_id_or_schema_id(schema_id):
             raise ValueError(f"Schema ID is not valid: {schema_id}")
 
+        schema_name = schema_id.removeprefix("open/") if schema_id.startswith("open/") else None
+        if schema_version is not None:
+            if validator is not None:
+                raise ValueError("Pass either `validator` or `schema_version`, not both.")
+            if schema_name not in OPEN_SCHEMA_NAME_MAP:
+                raise ValueError(
+                    f"`schema_version` applies only to the built-in 'open/' schemas, not '{schema_id}'. "
+                    f"Valid schemas are: {', '.join(f'open/{name}' for name in OPEN_SCHEMA_NAME_MAP)}"
+                )
+
         if force:
             logger.warning("`force=True`: Skipping all validation checks.")
         elif validator is None:
-            if schema_id.startswith("open/"):
-                schema_name = schema_id.removeprefix("open/")
-                try:
-                    validator = get_open_schema_validator(cast(Any, schema_name))
+            if schema_name is not None:
+                if schema_name in OPEN_SCHEMA_NAME_MAP:
+                    validator = _resolve_open_schema_validator(cast(OpenSchemaName, schema_name), schema_version)
                     logger.debug("Resolved '%s' to local bundled validator.", schema_id)
-                except (ValueError, TypeError):
+                else:
                     logger.warning("Could not resolve local validator for '%s'", schema_id)
 
             if validator is None:
@@ -2242,7 +2276,6 @@ class LocalFile(_DorsalFile):
                         schema_id,
                     )
 
-        schema_version = None
         if isinstance(validator, JsonSchemaValidator):
             schema_version = schema_version_of(validator.schema)
 
@@ -2420,6 +2453,56 @@ class LocalFile(_DorsalFile):
 
         return self
 
+    def add_annotation(
+        self,
+        schema_id: str,
+        record: BaseModel | dict[str, Any],
+        *,
+        schema_version: str | None = None,
+        source: str | None = None,
+        overwrite: bool = False,
+        api_key: str | None = None,
+        ignore_linter_errors: bool = False,
+        force: bool = False,
+    ) -> "LocalFile":
+        """
+        Adds an annotation for any schema to the file.
+
+        Built-in 'open/' schemas are validated locally, against `schema_version`. Other schemas are validated
+        against the schema fetched from DorsalHub, or added without validation in offline mode.
+
+        Args:
+            schema_id: The schema identifier (e.g. 'open/ranking' or 'my-org/my-schema').
+                Core schemas such as 'file/pdf' cannot be added manually.
+            record: The annotation record, as a dict or a Pydantic model.
+            schema_version: The version of an 'open/' schema to validate against and record on the
+                annotation (e.g. '0.8.0'). Defaults to OPEN_VALIDATION_SCHEMAS_VER.
+            source: An optional string describing the source of the annotation.
+            overwrite: Whether to overwrite an existing annotation.
+            api_key: API key for fetching a remote schema.
+            ignore_linter_errors: Skip linter checks.
+            force: Add the annotation without validation.
+
+        Returns:
+            The LocalFile instance, for method chaining.
+
+        Raises:
+            ValueError: If `schema_id` is invalid or a Core schema, if `schema_version` is given for a
+                schema other than a built-in 'open/' one, or if the schema version does not contain the schema.
+            DorsalClientError: If an API error occurs while fetching a remote schema.
+            FileAnnotatorError: If validation fails.
+        """
+        return self._add_annotation(
+            schema_id=schema_id,
+            annotation_record=record,
+            schema_version=schema_version,
+            source_id=source,
+            overwrite=overwrite,
+            api_key=api_key,
+            ignore_linter_errors=ignore_linter_errors,
+            force=force,
+        )
+
     def add_classification(
         self,
         labels: list[str | ClassificationLabel],
@@ -2428,6 +2511,7 @@ class LocalFile(_DorsalFile):
         source: str | None = None,
         score_explanation: str | None = None,
         vocabulary_url: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2442,6 +2526,8 @@ class LocalFile(_DorsalFile):
             source: Source of the classification.
             score_explanation: Explanation string for the score.
             vocabulary_url: URL to the vocabulary definition.
+            schema_version: The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite: If True, overwrites existing classification.
             api_key: API key for validation.
             ignore_linter_errors: Skip linter checks.
@@ -2481,6 +2567,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/classification",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2494,6 +2581,7 @@ class LocalFile(_DorsalFile):
         model: str | None = None,
         target: str | None = None,
         source: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2513,6 +2601,8 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'Local CLIP Model v1.2').
                 This will be passed to the 'detail' field.
+            schema_version (str, optional): The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2537,6 +2627,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/embedding",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2555,6 +2646,7 @@ class LocalFile(_DorsalFile):
         generation_params: dict[str, Any] | None = None,
         generation_metadata: dict[str, Any] | None = None,
         source: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2584,6 +2676,8 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'OpenAI Summarizer v3').
                 This will be passed to the 'detail' field.
+            schema_version (str, optional): The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2616,6 +2710,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/llm-output",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2632,6 +2727,7 @@ class LocalFile(_DorsalFile):
         camera_model: str | None = None,
         bbox: list[float] | None = None,
         source: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2656,6 +2752,8 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'EXIF Data Parser').
                 This will be passed to the 'detail' field.
+            schema_version (str, optional): The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2687,6 +2785,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/geolocation",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2700,6 +2799,7 @@ class LocalFile(_DorsalFile):
         *,
         track_id: str | int | None = None,
         source: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2713,7 +2813,7 @@ class LocalFile(_DorsalFile):
 
         NOTE: This helper populates the top-level 'text' field. It does
         NOT handle 'segments'. For timed transcriptions, build the
-        dictionary and use the generic 'add_private_annotation' method.
+        dictionary and use the generic 'add_annotation' method.
 
         Args:
             text (str): The full, concatenated transcribed text.
@@ -2724,6 +2824,8 @@ class LocalFile(_DorsalFile):
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'Whisper v3 (simple)').
                 This will be passed to the 'detail' field.
+            schema_version (str, optional): The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2752,6 +2854,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/audio-transcription",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2774,6 +2877,7 @@ class LocalFile(_DorsalFile):
         timestamp: str | datetime.datetime | None = None,
         attributes: dict[str, Any] | None = None,
         source: str | None = None,
+        schema_version: str | None = None,
         overwrite: bool = False,
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
@@ -2786,7 +2890,7 @@ class LocalFile(_DorsalFile):
 
         Use for scalar predictions (e.g. a price).
 
-        For multi-point data (e.g. time-series, distributions), use `add_private_annotation` / `add_public_annotation` and
+        For multi-point data (e.g. time-series, distributions), use `add_annotation` and
         construct the record manually with a list of points using `dorsal.file.helpers.build_regression_point`
 
         Args:
@@ -2803,6 +2907,8 @@ class LocalFile(_DorsalFile):
             timestamp (str | datetime, optional): The specific time this prediction applies to.
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'PricePredictor v1.0').
+            schema_version (str, optional): The schema version to validate against and record.
+                Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
 
@@ -2859,6 +2965,7 @@ class LocalFile(_DorsalFile):
             schema_id="open/regression",
             annotation_record=record_data,
             source_id=source,
+            schema_version=schema_version,
             overwrite=overwrite,
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
@@ -2883,7 +2990,7 @@ class LocalFile(_DorsalFile):
         try:
             new_url = NewFileUrl(url=url, source=UrlSource(parent_url=parent_url, reference=reference))
         except PydanticValidationError as err:
-            raise ValueError(f"Invalid URL data: {err.errors()}") from err
+            raise ValueError(f"Invalid URL data: {format_pydantic_errors(err)}") from err
 
         existing_urls = {str(existing.url) for existing in self.model.urls}
         if str(new_url.url) in existing_urls:

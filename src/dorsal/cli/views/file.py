@@ -259,7 +259,7 @@ def create_file_info_panel(
     if local_info.get("date_modified"):
         file_info_table.add_row(
             "Modified:",
-            datetime.datetime.fromisoformat(local_info["date_modified"]).strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.datetime.fromisoformat(local_info["date_modified"]).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
         )
     if base_info:
         file_info_table.add_row("Name:", base_info.get("name"))

@@ -77,6 +77,8 @@ if TYPE_CHECKING:
 VALUE_MASK = "…"
 ERROR_MESSAGE_LIMIT = 1000
 RECORD_PREVIEW_LIMIT = 150
+ERROR_INPUT_PREVIEW_LIMIT = 100
+PYDANTIC_ERRORS_LIMIT = 20
 
 
 def shorten_text(text: str, limit: int) -> str:
@@ -109,6 +111,49 @@ def preview_record(record: Any, limit: int = RECORD_PREVIEW_LIMIT) -> str:
     shortener.maxstring = 60
     shortener.maxother = 60
     return shorten_text(shortener.repr(record), limit)
+
+
+def bound_pydantic_errors(err: Any, max_errors: int = PYDANTIC_ERRORS_LIMIT) -> list[dict[str, Any]]:
+    """
+    Return up to `max_errors` of a Pydantic `ValidationError`'s error dicts, with record values bounded.
+
+    `loc`, `type` and `url` are kept, `msg` is capped, and `input` and `ctx` values are replaced by short previews.
+    """
+    bounded: list[dict[str, Any]] = []
+    for error in err.errors()[:max_errors]:
+        item: dict[str, Any] = {
+            "type": error.get("type"),
+            "loc": tuple(
+                shorten_text(part, ERROR_INPUT_PREVIEW_LIMIT) if isinstance(part, str) else part
+                for part in error.get("loc", ())
+            ),
+            "msg": shorten_text(str(error.get("msg", "")), ERROR_MESSAGE_LIMIT),
+            "input": preview_record(error.get("input"), ERROR_INPUT_PREVIEW_LIMIT),
+        }
+        ctx = error.get("ctx")
+        if ctx:
+            item["ctx"] = {
+                key: value
+                if value is None or isinstance(value, (bool, int, float))
+                else preview_record(value, ERROR_INPUT_PREVIEW_LIMIT)
+                for key, value in ctx.items()
+            }
+        if "url" in error:
+            item["url"] = error["url"]
+        bounded.append(item)
+    return bounded
+
+
+def format_pydantic_errors(err: Any, limit: int = ERROR_MESSAGE_LIMIT) -> str:
+    """Return a one-line summary of a Pydantic `ValidationError`, capped at `limit` characters."""
+    count = err.error_count()
+    parts = [
+        f"{'.'.join(str(part) for part in error['loc']) or '<root>'}: {error['msg']} "
+        f"[type={error['type']}, input={error['input']}]"
+        for error in bound_pydantic_errors(err, max_errors=5)
+    ]
+    noun = "error" if count == 1 else "errors"
+    return shorten_text(f"{count} validation {noun}: " + "; ".join(parts), limit)
 
 
 class JsonSchemaValidator:

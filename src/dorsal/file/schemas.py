@@ -150,6 +150,20 @@ def get_open_schema(name: OpenSchemaName, version: str = OPEN_VALIDATION_SCHEMAS
     return _load_schema_from_package(schema_filename, version)
 
 
+def open_schema_versions(name: OpenSchemaName) -> list[str]:
+    """Return the schema versions, oldest first, in which the installed `oatschema` package provides `name`."""
+    import oatschema
+
+    versions = []
+    for version in oatschema.available_versions():
+        try:
+            oatschema.get_schema(cast("oatschema.SchemaName", name), version, mode="json")
+        except (LookupError, ValueError):
+            continue
+        versions.append(version)
+    return versions
+
+
 def normalize_schema_id(schema_id: str | None) -> str | None:
     if not schema_id:
         return schema_id

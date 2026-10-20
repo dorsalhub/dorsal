@@ -1501,3 +1501,81 @@ def test_to_dict_json_mode_serialization(mock_metadata_reader, mock_file_record_
         assert '"date_modified":' in json_str
     except TypeError as e:
         pytest.fail(f"to_dict(mode='json') output was not JSON serializable: {e}")
+
+
+@pytest.fixture
+def annotatable_local_file(mock_metadata_reader, mock_file_record_strict, fs):
+    import oatschema
+
+    fs.add_real_directory(os.path.dirname(oatschema.__file__))
+    file_path = "/fake/local.txt"
+    fs.create_file(file_path)
+    mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
+    return LocalFile(file_path, client=MagicMock())
+
+
+RANKING_RECORD = {"results": [{"id": "doc-1", "rank": 1}]}
+
+
+def test_add_classification_defaults_to_0_5_0(annotatable_local_file):
+    annotatable_local_file.add_classification(labels=["cat"])
+
+    assert annotatable_local_file.get_annotations("open/classification")[0].schema_version == "0.5.0"
+
+
+@pytest.mark.parametrize(
+    "method, kwargs, schema_id",
+    [
+        ("add_classification", {"labels": ["cat"]}, "open/classification"),
+        ("add_embedding", {"vector": [0.1, 0.2]}, "open/embedding"),
+        ("add_llm_output", {"model": "m", "response_data": "hi"}, "open/llm-output"),
+        ("add_location", {"longitude": 1.0, "latitude": 2.0}, "open/geolocation"),
+        ("add_transcription", {"text": "hi", "language": "eng"}, "open/audio-transcription"),
+        ("add_regression", {"value": 1.0}, "open/regression"),
+    ],
+)
+def test_add_helpers_validate_and_stamp_schema_version(annotatable_local_file, method, kwargs, schema_id):
+    getattr(annotatable_local_file, method)(**kwargs, schema_version="0.8.0")
+
+    assert annotatable_local_file.get_annotations(schema_id)[0].schema_version == "0.8.0"
+
+
+def test_add_annotation_with_schema_version(annotatable_local_file):
+    annotatable_local_file.add_annotation("open/ranking", RANKING_RECORD, schema_version="0.8.0", source="ranker")
+
+    annotation = annotatable_local_file.get_annotations("open/ranking")[0]
+    assert annotation.schema_version == "0.8.0"
+    assert annotation.source.id == "ranker"
+
+
+@pytest.mark.parametrize("schema_name", ["ranking", "temporal-segmentation"])
+def test_add_annotation_without_version_names_available_versions(annotatable_local_file, schema_name):
+    with pytest.raises(ValueError, match=r"not in schema version 0\.5\.0, the default.*0\.8\.0"):
+        annotatable_local_file.add_annotation(f"open/{schema_name}", {})
+
+
+def test_add_annotation_unknown_version(annotatable_local_file):
+    with pytest.raises(ValueError, match=r"not in schema version 9\.9\.9.*0\.4\.0, 0\.5\.0"):
+        annotatable_local_file.add_annotation("open/classification", {"labels": []}, schema_version="9.9.9")
+
+
+def test_add_annotation_rejects_version_for_custom_schema(annotatable_local_file):
+    with pytest.raises(ValueError, match="applies only to the built-in 'open/' schemas"):
+        annotatable_local_file.add_annotation("my-org/my-schema", {}, schema_version="0.8.0")
+
+
+def test_add_annotation_rejects_version_with_validator(annotatable_local_file):
+    with pytest.raises(ValueError, match="either `validator` or `schema_version`"):
+        annotatable_local_file._add_annotation(
+            schema_id="open/classification",
+            annotation_record={"labels": []},
+            validator=MagicMock(),
+            schema_version="0.8.0",
+        )
+
+
+def test_add_annotation_invalid_record_for_version(annotatable_local_file):
+    from dorsal.common.exceptions import FileAnnotatorError
+
+    with pytest.raises(FileAnnotatorError):
+        annotatable_local_file.add_annotation("open/ranking", {"results": "nope"}, schema_version="0.8.0")

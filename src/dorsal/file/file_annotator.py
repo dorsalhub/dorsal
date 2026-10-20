@@ -45,6 +45,7 @@ from dorsal.common.validators import (
     is_valid_dataset_id_or_schema_id,
     json_schema_validate_records,
 )
+from dorsal.common.validators.json_schema import bound_pydantic_errors, format_pydantic_errors
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult, resolve_pipeline_step_models
 from dorsal.file.linters import apply_linter
@@ -418,9 +419,10 @@ class FileAnnotator:
         except PydanticValidationError as err:
             logger.debug("Pydantic validation failed for manual annotation.")
             raise AnnotationValidationError(
-                "Manual annotation failed Pydantic validation.",
-                validation_errors=err.errors(),
-            ) from err
+                f"Manual annotation failed Pydantic validation: {format_pydantic_errors(err)}",
+                validation_errors=bound_pydantic_errors(err),
+                original_exception=err,
+            ) from None
         except ValidationError as err:
             logger.debug("Schema validation failed for manual annotation.")
             raise err
