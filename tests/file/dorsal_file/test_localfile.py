@@ -1553,6 +1553,17 @@ def test_add_helpers_validate_and_stamp_schema_version(annotatable_local_file, m
     assert annotatable_local_file.get_annotations(schema_id)[0].schema_version == "0.8.0"
 
 
+@pytest.mark.parametrize(
+    "schema_version, expected", [(None, 1), ("0.5.0", 1), ("0.6.0", 1), ("0.7.0", "1"), ("0.8.0", "1")]
+)
+def test_add_transcription_integer_track_id(annotatable_local_file, schema_version, expected):
+    annotatable_local_file.add_transcription(text="hi", language="eng", track_id=1, schema_version=schema_version)
+
+    annotation = annotatable_local_file.get_annotations("open/audio-transcription")[0]
+    assert annotation.record.track_id == expected
+    assert annotation.schema_version == (schema_version or "0.5.0")
+
+
 def test_add_annotation_with_schema_version(annotatable_local_file):
     annotatable_local_file.add_annotation("open/ranking", RANKING_RECORD, schema_version="0.8.0", source="ranker")
 

@@ -2820,7 +2820,8 @@ class LocalFile(_DorsalFile):
             language (str): The 3-letter ISO-639-3 language
                 code of the transcription (e.g., 'eng').
             track_id (str | int, optional): Identifier for the specific
-                audio track or channel in the source file.
+                audio track or channel in the source file. An integer is written
+                as a string for schema versions that only accept strings (0.7.0 on).
             source (str, optional): An optional string describing the source
                 of the annotation (e.g., 'Whisper v3 (simple)').
                 This will be passed to the 'detail' field.
@@ -2848,6 +2849,7 @@ class LocalFile(_DorsalFile):
             language=language,
             text=text,
             track_id=track_id,
+            schema_version=schema_version or constants.OPEN_VALIDATION_SCHEMAS_VER,
         )
 
         return self._add_annotation(

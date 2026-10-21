@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Callable, NamedTuple, Sequence, Type, TYPE_CHECKING, TypeVar, cast
 import uuid
@@ -67,6 +68,37 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+_SECRET_OPTION_WORDS = frozenset(
+    {"auth", "authorization", "bearer", "cookie", "credential", "credentials", "key", "pwd", "token"}
+)
+_SECRET_OPTION_SUFFIXES = (
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "token",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "secretkey",
+    "credential",
+    "credentials",
+)
+_OPTION_NAME_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def _is_secret_option(name: Any) -> bool:
+    words = (word.lower() for word in _OPTION_NAME_WORD.findall(str(name)))
+    return any(word in _SECRET_OPTION_WORDS or word.endswith(_SECRET_OPTION_SUFFIXES) for word in words)
+
+
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: "<redacted>" if _is_secret_option(key) else _redact_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_redact_value(item) for item in value)
+    return value
 
 
 def model_debug_timer(method):
@@ -232,6 +264,11 @@ class ModelRunner:
                 coerced[key] = val
 
         return coerced
+
+    @staticmethod
+    def _redact_options(options: dict[str, Any]) -> dict[str, Any]:
+        """Returns a copy of `options` that is safe to log, with secret-looking values replaced at any depth."""
+        return _redact_value(options)
 
     def _load_pre_pipeline_model_step(self) -> ModelRunnerPipelineStep:
         from dorsal.file.configs.model_runner import (
@@ -606,9 +643,12 @@ class ModelRunner:
 
         raw_records = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
         rescued_records = []
+        chunk_version = (
+            schema_version_of(validation_model.schema) if isinstance(validation_model, JsonSchemaValidator) else None
+        )
 
         for rec in raw_records:
-            rescued_records.extend(chunk_record(rec, schema_id))
+            rescued_records.extend(chunk_record(rec, schema_id, schema_version=chunk_version))
 
         if len(rescued_records) <= len(raw_records):
             return None, None
@@ -704,7 +744,11 @@ class ModelRunner:
             expected_schema = self._get_schema_for_model(annotation_model)
             safe_options = self._coerce_options(options, expected_schema) if options else {}
 
-            logger.debug("Running model '%s' main method with safe options: %s", model_name, safe_options or "None")
+            logger.debug(
+                "Running model '%s' main method with safe options: %s",
+                model_name,
+                self._redact_options(safe_options) if safe_options else "None",
+            )
 
             raw_model_output: Any = (
                 annotation_model_instance.main(**safe_options) if safe_options else annotation_model_instance.main()

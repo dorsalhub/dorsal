@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from functools import lru_cache
 from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,8 @@ class DictUpdateStrategy:
 class DocumentExtractionStrategy:
     """Handles open/document-extraction."""
 
+    list_field = "blocks"
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["blocks"] = list(unified.get("blocks", []))
@@ -222,6 +225,8 @@ class DocumentExtractionStrategy:
 class AudioTranscriptionStrategy:
     """Handles open/audio-transcription."""
 
+    list_field = "segments"
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["text"] = unified.get("text", "")
@@ -229,7 +234,7 @@ class AudioTranscriptionStrategy:
 
         for chunk in records[1:]:
             if "text" in chunk:
-                unified["text"] += "\n" + str(chunk.get("text", ""))
+                unified["text"] += str(chunk.get("text", ""))
             if "segments" in chunk:
                 unified["segments"].extend(chunk.get("segments", []))
         return unified
@@ -251,16 +256,89 @@ class AudioTranscriptionStrategy:
             chunk = record.copy()
             if i < len(seg_chunks) and seg_chunks[i]:
                 chunk["segments"] = seg_chunks[i]
-            elif "segments" in chunk:
-                chunk["segments"] = []
+            else:
+                chunk.pop("segments", None)
 
             if i < len(text_chunks) and text_chunks[i]:
                 chunk["text"] = text_chunks[i]
-            elif "text" in chunk:
-                chunk["text"] = ""
+            else:
+                chunk.pop("text", None)
 
             chunks.append(chunk)
         return chunks
+
+
+class EntityExtractionStrategy:
+    """Handles open/entity-extraction, keeping each relation with the entity it starts from.
+
+    Relations come back grouped by entity, not in their original order.
+    """
+
+    list_field = "entities"
+
+    def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
+        unified = records[0].copy()
+        unified["entities"] = [e for r in records for e in r.get("entities", [])]
+        relations = merge_relations(records)
+        if relations is not None:
+            unified["relations"] = relations
+        return unified
+
+    def split(
+        self, record: dict[str, Any], limit: int = SPLIT_LIMIT_DEFAULT, relations_limit: int = SPLIT_LIMIT_DEFAULT
+    ) -> list[dict[str, Any]]:
+        entities = record.get("entities", [])
+        relations = record.get("relations")
+        if not isinstance(relations, list) or not relations:
+            if len(entities) <= limit:
+                return [record]
+            return GenericListStrategy("entities").split(record, limit=limit)
+
+        if len(entities) <= limit and len(relations) <= relations_limit:
+            return [record]
+
+        entity_groups = [entities[i : i + limit] for i in range(0, max(1, len(entities)), limit)]
+        chunk_of_id: dict[Any, int] = {}
+        for index, group in enumerate(entity_groups):
+            for entity in group:
+                if isinstance(entity, dict) and "id" in entity:
+                    chunk_of_id.setdefault(entity["id"], index)
+
+        relation_groups: list[list[Any]] = [[] for _ in entity_groups]
+        for relation in relations:
+            relation_groups[relation_home(relation, chunk_of_id)].append(relation)
+
+        chunks = []
+        for group, group_relations in zip(entity_groups, relation_groups, strict=True):
+            for offset in range(0, max(1, len(group_relations)), relations_limit):
+                chunk = record.copy()
+                chunk["entities"] = group if offset == 0 else []
+                chunk["relations"] = group_relations[offset : offset + relations_limit]
+                chunks.append(chunk)
+        return chunks
+
+
+def relation_home(relation: Any, chunk_of_id: dict[Any, int]) -> int:
+    """Returns the index of the chunk that holds a relation's subject entity, else its object, else 0."""
+    if isinstance(relation, dict):
+        for key in ("subject_id", "object_id"):
+            index = chunk_of_id.get(relation.get(key))
+            if index is not None:
+                return index
+    return 0
+
+
+def merge_relations(records: list[dict[str, Any]]) -> list[Any] | None:
+    """Joins the `relations` of entity-extraction chunks.
+
+    When every chunk holds entities and the same `relations` list, that list is taken once.
+    """
+    lists = [r["relations"] for r in records if isinstance(r.get("relations"), list)]
+    if not lists:
+        return None
+    if len(lists) > 1 and all(p == lists[0] for p in lists[1:]) and all(r.get("entities") for r in records):
+        return list(lists[0])
+    return [relation for p in lists for relation in p]
 
 
 class EmbeddingStrategy:
@@ -320,17 +398,20 @@ class EmbeddingStrategy:
 _document_strategy = DocumentExtractionStrategy()
 _audio_strategy = AudioTranscriptionStrategy()
 _embedding_strategy = EmbeddingStrategy()
+_entity_strategy = EntityExtractionStrategy()
 
 MERGE_STRATEGY_REGISTRY: dict[str, MergeStrategy] = {
     "open/document-extraction": _document_strategy,
     "open/audio-transcription": _audio_strategy,
     "open/embedding": _embedding_strategy,
     "open/object-detection": GenericListStrategy(list_field="objects"),
-    "open/entity-extraction": GenericListStrategy(list_field="entities"),
+    "open/entity-extraction": _entity_strategy,
     "open/classification": GenericListStrategy(list_field="labels"),
     "open/regression": GenericListStrategy(list_field="points"),
     "open/generic": DictUpdateStrategy(dict_field="data"),
     "open/llm-output": StringStrategy(text_field="response_data"),
+    "open/ranking": GenericListStrategy(list_field="results"),
+    "open/temporal-segmentation": GenericListStrategy(list_field="segments"),
 }
 
 SPLIT_STRATEGY_REGISTRY: dict[str, SplitStrategy] = {
@@ -338,11 +419,13 @@ SPLIT_STRATEGY_REGISTRY: dict[str, SplitStrategy] = {
     "open/audio-transcription": _audio_strategy,
     "open/embedding": _embedding_strategy,
     "open/object-detection": GenericListStrategy(list_field="objects"),
-    "open/entity-extraction": GenericListStrategy(list_field="entities"),
+    "open/entity-extraction": _entity_strategy,
     "open/classification": GenericListStrategy(list_field="labels"),
     "open/regression": GenericListStrategy(list_field="points"),
     "open/generic": DictUpdateStrategy(dict_field="data"),
     "open/llm-output": StringStrategy(text_field="response_data"),
+    "open/ranking": GenericListStrategy(list_field="results"),
+    "open/temporal-segmentation": GenericListStrategy(list_field="segments"),
 }
 
 
@@ -363,18 +446,57 @@ def merge_chunked_records(records: list[dict[str, Any]], schema_id: str) -> dict
     return records[0]
 
 
-def chunk_record(record: dict[str, Any], schema_id: str) -> list[dict[str, Any]]:
-    """Splits oversize record into valid chunks. Returns original if unsupported or small enough."""
+FALLBACK_LIST_LIMITS: dict[tuple[str, str], int] = {
+    ("open/classification", "labels"): 10_000,
+    ("open/regression", "points"): 10_000,
+    ("open/ranking", "results"): 10_000,
+}
+
+
+@lru_cache(maxsize=256)
+def _schema_max_items(schema_id: str, field: str, schema_version: str | None) -> int | None:
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
+    from dorsal.file.schemas import get_open_schema
+
+    if not schema_id.startswith("open/"):
+        return None
+    try:
+        schema = get_open_schema(schema_id.removeprefix("open/"), schema_version or OPEN_VALIDATION_SCHEMAS_VER)  # type: ignore[arg-type]
+    except (FileNotFoundError, ValueError, RuntimeError):
+        return None
+    max_items = schema.get("properties", {}).get(field, {}).get("maxItems")
+    return max_items if isinstance(max_items, int) and max_items > 0 else None
+
+
+def list_limit(schema_id: str, field: str, schema_version: str | None = None) -> int:
+    """Returns the most items a chunk may hold in `field`: the schema's `maxItems`, capped at SPLIT_LIMIT_DEFAULT."""
+    limit = _schema_max_items(schema_id, field, schema_version)
+    if limit is None:
+        limit = FALLBACK_LIST_LIMITS.get((schema_id, field), SPLIT_LIMIT_DEFAULT)
+    return min(limit, SPLIT_LIMIT_DEFAULT)
+
+
+def chunk_record(record: dict[str, Any], schema_id: str, schema_version: str | None = None) -> list[dict[str, Any]]:
+    """Splits oversize record into valid chunks. Returns original if unsupported or small enough.
+
+    List limits come from the schema at `schema_version` (default: OPEN_VALIDATION_SCHEMAS_VER).
+    """
     strategy = SPLIT_STRATEGY_REGISTRY.get(schema_id)
 
-    if strategy:
-        if schema_id == "open/generic":
-            limit = SPLIT_LIMIT_GENERIC
-        elif schema_id == "open/llm-output":
-            limit = SPLIT_LIMIT_STRING
-        else:
-            limit = SPLIT_LIMIT_DEFAULT
+    if strategy is None:
+        return [record]
 
-        return strategy.split(record, limit=limit)
+    if isinstance(strategy, DictUpdateStrategy):
+        return strategy.split(record, limit=SPLIT_LIMIT_GENERIC)
+    if isinstance(strategy, StringStrategy):
+        return strategy.split(record, limit=SPLIT_LIMIT_STRING)
+    if isinstance(strategy, EntityExtractionStrategy):
+        return strategy.split(
+            record,
+            limit=list_limit(schema_id, "entities", schema_version),
+            relations_limit=list_limit(schema_id, "relations", schema_version),
+        )
 
-    return [record]
+    field = getattr(strategy, "list_field", None)
+    limit = list_limit(schema_id, field, schema_version) if field else SPLIT_LIMIT_DEFAULT
+    return strategy.split(record, limit=limit)

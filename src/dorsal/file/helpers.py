@@ -263,6 +263,8 @@ def build_transcription_record(
     text: str,
     language: str | None = None,
     track_id: str | int | None = None,
+    *,
+    schema_version: str | None = None,
 ) -> dict[str, Any]:
     """
     Builds a simple 'open/audio-transcription' record.
@@ -271,6 +273,8 @@ def build_transcription_record(
         text: The full transcribed text.
         language: Optional 3-letter ISO-639-3 language code.
         track_id: Optional identifier for the audio track.
+        schema_version: Optional schema version the record is for. When that version's `track_id` only
+            accepts strings (0.7.0 on), an integer `track_id` is written as a string.
 
     Returns:
         A dictionary structured to match the 'open/audio-transcription' schema.
@@ -281,8 +285,28 @@ def build_transcription_record(
     if language is not None:
         record_data["language"] = language
     if track_id is not None:
+        if schema_version is not None and _requires_string_track_id(track_id, schema_version):
+            track_id = str(track_id)
         record_data["track_id"] = track_id
     return record_data
+
+
+def _requires_string_track_id(track_id: str | int, schema_version: str) -> bool:
+    if not isinstance(track_id, int) or isinstance(track_id, bool):
+        return False
+    from dorsal.file.schemas import get_open_schema
+
+    try:
+        schema = get_open_schema("audio-transcription", schema_version)
+    except (FileNotFoundError, ValueError, RuntimeError):
+        return False
+    definition = schema.get("properties", {}).get("track_id", {})
+    alternatives = [definition, *definition.get("anyOf", []), *definition.get("oneOf", [])]
+    allowed_types: set[str] = set()
+    for alternative in alternatives:
+        declared = alternative.get("type")
+        allowed_types.update(declared if isinstance(declared, list) else [declared] if declared else [])
+    return "integer" not in allowed_types and "string" in allowed_types
 
 
 def build_generic_record(

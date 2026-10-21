@@ -1277,7 +1277,7 @@ class TestModelRunnerChunkRescueAndMultiOutput:
     def test_chunking_rescue_multi_output_mixed(self, base_model_runner, mocker):
         """Tests that chunk rescue correctly merges valid outputs with rescued chunks."""
 
-        def mock_smart_chunker(record, schema_id):
+        def mock_smart_chunker(record, schema_id, schema_version=None):
 
             if record.get("text") == "way_too_long_string":
                 return [{"text": "chk1"}, {"text": "chk2"}]
@@ -1473,3 +1473,78 @@ class TestModelRunnerTypeCoercion:
 
         assert isinstance(coerced["batch_size"], str)
         assert isinstance(coerced["language"], str)
+
+
+class PasswordOptionModel(AnnotationModel):
+    """A model that takes a secret option."""
+
+    id = "test/password-model"
+    version = "1.0"
+    received: dict[str, Any] = {}
+
+    def main(self, password: str | None = None, api_key: str | None = None, strict: bool = False):
+        PasswordOptionModel.received = {"password": password, "api_key": api_key, "strict": strict}
+        return {"text": "ok"}
+
+
+def test_secret_option_values_are_redacted_from_debug_logs(base_model_runner, caplog):
+    caplog.set_level(logging.DEBUG, logger="dorsal.file.model_runner")
+
+    result = base_model_runner.run_single_model(
+        annotation_model=PasswordOptionModel,
+        validation_model=None,
+        file_path="/fake/path",
+        options={"password": "hunter2-pdf-secret", "api_key": "sk-test-value", "strict": True},
+    )
+
+    assert result[0].error is None
+    assert PasswordOptionModel.received == {
+        "password": "hunter2-pdf-secret",
+        "api_key": "sk-test-value",
+        "strict": True,
+    }
+    assert "hunter2-pdf-secret" not in caplog.text
+    assert "sk-test-value" not in caplog.text
+    assert "'password': '<redacted>'" in caplog.text
+    assert "'strict': True" in caplog.text
+
+
+def test_redact_options_matches_secret_names_case_insensitively():
+    redacted = ModelRunner._redact_options(
+        {"PDF_Password": "a", "passwd": "b", "client_secret": "c", "AuthToken": "d", "API_KEY": "e", "lang": "eng"}
+    )
+
+    assert redacted == {
+        "PDF_Password": "<redacted>",
+        "passwd": "<redacted>",
+        "client_secret": "<redacted>",
+        "AuthToken": "<redacted>",
+        "API_KEY": "<redacted>",
+        "lang": "eng",
+    }
+
+
+def test_redact_options_matches_whole_words_only():
+    options = {"max_keypoints": 5, "keywords": ["a"], "keyframes": True, "max_tokens": 10, "sort_key": "name"}
+
+    assert ModelRunner._redact_options(options) == {**options, "sort_key": "<redacted>"}
+
+
+def test_redact_options_covers_common_names_and_nested_values():
+    redacted = ModelRunner._redact_options(
+        {
+            "auth": "Bearer abc",
+            "pwd": "x",
+            "apiKey": "k",
+            "client": {"password": "x", "region": "eu"},
+            "hosts": [{"token": "t"}],
+        }
+    )
+
+    assert redacted == {
+        "auth": "<redacted>",
+        "pwd": "<redacted>",
+        "apiKey": "<redacted>",
+        "client": {"password": "<redacted>", "region": "eu"},
+        "hosts": [{"token": "<redacted>"}],
+    }
