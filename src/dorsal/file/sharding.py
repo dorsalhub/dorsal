@@ -115,6 +115,91 @@ class ListBasedStrategy:
         return chunks
 
 
+class EntityShardingStrategy(ListBasedStrategy):
+    """
+    Splits open/entity-extraction by entity, keeping each relation in the shard that holds the entity it
+    starts from (else the entity it points to). Relations only spill into the next shard when they do not fit.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(list_field="entities")
+
+    def split(self, record: dict[str, Any]) -> list[dict[str, Any]]:
+        from dorsal.file.chunking import relation_home
+
+        entities = record.get("entities")
+        relations = record.get("relations")
+        if not isinstance(relations, list) or not relations:
+            return super().split(record)
+        if not isinstance(entities, list):
+            entities = []
+
+        template = copy.deepcopy(record)
+        template["entities"] = []
+        template["relations"] = []
+        size_template = check_record_size(template)
+        if size_template > ANNOTATION_MAX_SIZE_BYTES:
+            raise ValueError(f"Metadata header is too large ({size_template} bytes) to allow sharding.")
+
+        index_of_id: dict[Any, int] = {}
+        for index, entity in enumerate(entities):
+            if isinstance(entity, dict) and "id" in entity:
+                index_of_id.setdefault(entity["id"], index)
+
+        units: list[tuple[Any, list[Any]]] = [(entity, []) for entity in entities] or [(None, [])]
+        for relation in relations:
+            units[relation_home(relation, index_of_id)][1].append(relation)
+
+        chunks: list[dict[str, Any]] = []
+        current_entities: list[Any] = []
+        current_relations: list[Any] = []
+        current_size = size_template
+
+        def flush() -> None:
+            nonlocal current_entities, current_relations, current_size
+            chunk = template.copy()
+            chunk["entities"] = current_entities
+            chunk["relations"] = current_relations
+            chunks.append(chunk)
+            current_entities, current_relations, current_size = [], [], size_template
+
+        def add(target: list[Any], item: Any, field: str) -> None:
+            nonlocal current_size
+            item_size = check_record_size(item)
+            cost = item_size + (1 if target else 0)
+            if current_size + cost > ANNOTATION_MAX_SIZE_BYTES:
+                if not current_entities and not current_relations:
+                    raise ValueError(
+                        f"A single item in '{field}' exceeds the {human_filesize(ANNOTATION_MAX_SIZE_BYTES)} limit. Cannot shard."
+                    )
+                flush()
+                target = current_entities if field == "entities" else current_relations
+                cost = item_size
+            target.append(item)
+            current_size += cost
+
+        for entity, entity_relations in units:
+            unit_size = sum(check_record_size(item) + 1 for item in entity_relations)
+            if entity is not None:
+                unit_size += check_record_size(entity) + 1
+            has_content = bool(current_entities or current_relations)
+            if (
+                has_content
+                and current_size + unit_size > ANNOTATION_MAX_SIZE_BYTES
+                and size_template + unit_size <= ANNOTATION_MAX_SIZE_BYTES
+            ):
+                flush()
+            if entity is not None:
+                add(current_entities, entity, "entities")
+            for relation in entity_relations:
+                add(current_relations, relation, "relations")
+
+        if current_entities or current_relations:
+            flush()
+
+        return chunks
+
+
 class StringShardingStrategy:
     """
     Splits a record by chunking a massive string field (e.g. LLM response text).
@@ -183,10 +268,12 @@ class StringShardingStrategy:
 SHARDING_REGISTRY: dict[str, ShardingStrategy] = {
     "open/document-extraction": ListBasedStrategy(list_field="blocks"),
     "open/object-detection": ListBasedStrategy(list_field="objects"),
-    "open/entity-extraction": ListBasedStrategy(list_field="entities"),
+    "open/entity-extraction": EntityShardingStrategy(),
     "open/classification": ListBasedStrategy(list_field="labels"),
     "open/audio-transcription": ListBasedStrategy(list_field="segments", fields_to_drop_in_successors=["text"]),
     "open/regression": ListBasedStrategy(list_field="points"),
+    "open/ranking": ListBasedStrategy(list_field="results"),
+    "open/temporal-segmentation": ListBasedStrategy(list_field="segments"),
     "open/llm-output": StringShardingStrategy(
         text_field="response_data", fields_to_drop_in_successors=["prompt", "generation_params"]
     ),
@@ -231,6 +318,20 @@ def process_record_for_sharding(schema_id: str | None, record: dict[str, Any]) -
     return chunks
 
 
+def _record_fits_strategy(schema_id: str, strategy: ShardingStrategy, record: dict[str, Any]) -> bool:
+    if isinstance(strategy, ListBasedStrategy):
+        items = record.get(strategy.list_field)
+        if not isinstance(items, list):
+            return False
+        if strategy.list_field == "segments" and items and isinstance(items[0], dict):
+            looks_temporal = "label" in items[0] and "text" not in items[0]
+            return looks_temporal == (schema_id == "open/temporal-segmentation")
+        return True
+    if isinstance(strategy, StringShardingStrategy):
+        return isinstance(record.get(strategy.text_field), str)
+    return False
+
+
 def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
     """
     Reassembles a sharded AnnotationGroup into a single atomic record.
@@ -261,14 +362,14 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
     strategy: ShardingStrategy | None = None
     matched_schema_id: str | None = None
 
-    for schema_id, strat in SHARDING_REGISTRY.items():
-        if isinstance(strat, ListBasedStrategy):
-            if strat.list_field in head_record and isinstance(head_record[strat.list_field], list):
-                strategy = strat
-                matched_schema_id = schema_id
-                break
-        elif isinstance(strat, StringShardingStrategy):
-            if strat.text_field in head_record and isinstance(head_record[strat.text_field], str):
+    if head.schema_id in SHARDING_REGISTRY and _record_fits_strategy(
+        head.schema_id, SHARDING_REGISTRY[head.schema_id], head_record
+    ):
+        matched_schema_id = head.schema_id
+        strategy = SHARDING_REGISTRY[head.schema_id]
+    else:
+        for schema_id, strat in SHARDING_REGISTRY.items():
+            if _record_fits_strategy(schema_id, strat, head_record):
                 strategy = strat
                 matched_schema_id = schema_id
                 break
@@ -280,10 +381,19 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
 
     if isinstance(strategy, ListBasedStrategy):
         master_list = reassembled_record[strategy.list_field]
-        for chunk in sorted_chunks[1:]:
-            chunk_data = chunk.record.model_dump()
+        chunk_records = [chunk.record.model_dump() for chunk in sorted_chunks[1:]]
+        for chunk_data in chunk_records:
             items = chunk_data.get(strategy.list_field, [])
             master_list.extend(items)
+
+        if isinstance(strategy, EntityShardingStrategy):
+            from dorsal.file.chunking import merge_relations
+
+            relations = merge_relations(
+                [head_record.get("relations")] + [chunk_data.get("relations") for chunk_data in chunk_records]
+            )
+            if relations is not None:
+                reassembled_record["relations"] = relations
 
     elif isinstance(strategy, StringShardingStrategy):
         text_parts = [reassembled_record[strategy.text_field]]

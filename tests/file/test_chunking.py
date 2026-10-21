@@ -266,7 +266,7 @@ class TestAudioTranscriptionStrategy:
         assert chunks[1]["segments"] == [3, 4]
 
         assert chunks[2]["text"] == "!"
-        assert chunks[2]["segments"] == []
+        assert "segments" not in chunks[2]
 
     @patch("dorsal.file.chunking.SPLIT_LIMIT_STRING", 50)
     def test_split_segments_longer_than_text(self):
@@ -275,7 +275,7 @@ class TestAudioTranscriptionStrategy:
         assert len(chunks) == 2
         assert chunks[0]["text"] == "Hi"
         assert chunks[0]["segments"] == [1, 2]
-        assert chunks[1]["text"] == ""
+        assert "text" not in chunks[1]
         assert chunks[1]["segments"] == [3]
 
     @patch("dorsal.file.chunking.SPLIT_LIMIT_STRING", 2)

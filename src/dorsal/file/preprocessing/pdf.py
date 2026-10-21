@@ -15,7 +15,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
-from typing import Any, Generic, Generator, TypeVar
+from typing import Any, Callable, Generic, Generator, TypeVar
 
 from dorsal.common.exceptions import DependencyError, PDFProcessingError
 
@@ -34,7 +34,11 @@ class PDFToken(Generic[CoordType]):
 
 @dataclass(slots=True, frozen=True)
 class PDFPage(Generic[CoordType]):
-    """A single PDF page."""
+    """A single PDF page.
+
+    `width` and `height` are the size of the page as displayed (CropBox and `/Rotate` applied),
+    in whole PDF points. A page smaller than 1 pt reports 1.
+    """
 
     page_number: int
     width: int
@@ -65,6 +69,38 @@ def _pdfium_open_pdf(file_path: str, password: str | None) -> Generator[Any, Non
                 pdf.close()
             except Exception:
                 pass
+
+
+def _page_dimension(size_pt: float) -> int:
+    if 0 < size_pt < 1:
+        return 1
+    return int(size_pt)
+
+
+def _display_mapper(
+    page: Any,
+) -> tuple[float, float, Callable[[float, float, float, float], tuple[float, float, float, float]]]:
+    width_pt, height_pt = page.get_size()
+    rotation = page.get_rotation() % 360
+    box_left, box_bottom, _, _ = page.get_bbox()
+
+    if rotation in (90, 270):
+        unrotated_w, unrotated_h = height_pt, width_pt
+    else:
+        unrotated_w, unrotated_h = width_pt, height_pt
+
+    def to_display(left: float, bottom: float, right: float, top: float) -> tuple[float, float, float, float]:
+        u0, u1 = left - box_left, right - box_left
+        v0, v1 = bottom - box_bottom, top - box_bottom
+        if rotation == 90:
+            return v0, u0, v1, u1
+        if rotation == 180:
+            return unrotated_w - u1, v0, unrotated_w - u0, v1
+        if rotation == 270:
+            return unrotated_h - v1, unrotated_w - u1, unrotated_h - v0, unrotated_w - u0
+        return u0, unrotated_h - v1, u1, unrotated_h - v0
+
+    return width_pt, height_pt, to_display
 
 
 def extract_pdf_text(file_path: str, password: str | None = None) -> list[str]:
@@ -113,8 +149,10 @@ def extract_pdf_layout_per_mille(
     This is the standard input format for models like LayoutLM (v1/v2/v3), LiLT,
     and Donut, which require integer coordinates discretized to a 1000x1000 grid.
 
+    Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied.
+
     Coordinates:
-        - Origin: Top-Left (0, 0)
+        - Origin: Top-Left (0, 0) of the displayed page
         - Unit: Integer (0 to 1000)
         - Format: [x0, y0, x1, y1]
 
@@ -130,7 +168,7 @@ def extract_pdf_layout_per_mille(
 
     with _pdfium_open_pdf(file_path, password) as pdf:
         for i, page in enumerate(pdf):
-            width_pt, height_pt = page.get_size()
+            width_pt, height_pt, to_display = _display_mapper(page)
 
             if width_pt <= 0 or height_pt <= 0:
                 msg = (
@@ -156,8 +194,7 @@ def extract_pdf_layout_per_mille(
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, x1 = left, right
-                y0, y1 = height_pt - top, height_pt - bottom
+                x0, y0, x1, y1 = to_display(left, bottom, right, top)
 
                 box_int = (
                     int(max(0, min(scale, scale * (x0 / w_s)))),
@@ -170,8 +207,8 @@ def extract_pdf_layout_per_mille(
             results.append(
                 PDFPage(
                     page_number=i + 1,
-                    width=int(width_pt),
-                    height=int(height_pt),
+                    width=_page_dimension(width_pt),
+                    height=_page_dimension(height_pt),
                     tokens=tokens,
                     raw_text=page.get_textpage().get_text_range(),
                 )
@@ -188,8 +225,10 @@ def extract_pdf_layout_normalized(
     Useful for resolution-independent geometry processing or Computer Vision
     models (like YOLO/R-CNN) that expect relative coordinates.
 
+    Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied.
+
     Coordinates:
-        - Origin: Top-Left (0, 0)
+        - Origin: Top-Left (0, 0) of the displayed page
         - Unit: Float (0.0 to 1.0)
         - Format: [x0, y0, x1, y1]
 
@@ -205,7 +244,7 @@ def extract_pdf_layout_normalized(
 
     with _pdfium_open_pdf(file_path, password) as pdf:
         for i, page in enumerate(pdf):
-            width_pt, height_pt = page.get_size()
+            width_pt, height_pt, to_display = _display_mapper(page)
 
             if width_pt <= 0 or height_pt <= 0:
                 msg = (
@@ -230,8 +269,7 @@ def extract_pdf_layout_normalized(
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, x1 = left, right
-                y0, y1 = height_pt - top, height_pt - bottom
+                x0, y0, x1, y1 = to_display(left, bottom, right, top)
 
                 box_float = (float(x0 / w_s), float(y0 / h_s), float(x1 / w_s), float(y1 / h_s))
                 tokens.append(PDFToken(text=text_segment, box=box_float))
@@ -239,8 +277,8 @@ def extract_pdf_layout_normalized(
             results.append(
                 PDFPage(
                     page_number=i + 1,
-                    width=int(width_pt),
-                    height=int(height_pt),
+                    width=_page_dimension(width_pt),
+                    height=_page_dimension(height_pt),
                     tokens=tokens,
                     raw_text=page.get_textpage().get_text_range(),
                 )
@@ -252,12 +290,11 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
     """
     Extracts text and layout using raw PDF Points (pt).
 
-    Note: While PDF uses a Bottom-Left origin internally, this function
-    transforms coordinates to Top-Left origin to match standard computer
-    vision and web coordinate systems.
+    Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied,
+    and a Top-Left origin to match standard computer vision and web coordinate systems.
 
     Coordinates:
-        - Origin: Top-Left (0, 0)
+        - Origin: Top-Left (0, 0) of the displayed page
         - Unit: PDF Points (1/72 inch) - Float
         - Format: [x0, y0, x1, y1]
 
@@ -273,7 +310,7 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
 
     with _pdfium_open_pdf(file_path, password) as pdf:
         for i, page in enumerate(pdf):
-            width_pt, height_pt = page.get_size()
+            width_pt, height_pt, to_display = _display_mapper(page)
 
             if width_pt <= 0 or height_pt <= 0:
                 msg = f"Page {i + 1} in '{file_path}' has invalid dimensions (w={width_pt}, h={height_pt})."
@@ -292,8 +329,7 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, x1 = left, right
-                y0, y1 = height_pt - top, height_pt - bottom
+                x0, y0, x1, y1 = to_display(left, bottom, right, top)
 
                 box_float = (float(x0), float(y0), float(x1), float(y1))
                 tokens.append(PDFToken(text=text_segment, box=box_float))
@@ -301,8 +337,8 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
             results.append(
                 PDFPage(
                     page_number=i + 1,
-                    width=int(width_pt),
-                    height=int(height_pt),
+                    width=_page_dimension(width_pt),
+                    height=_page_dimension(height_pt),
                     tokens=tokens,
                     raw_text=page.get_textpage().get_text_range(),
                 )

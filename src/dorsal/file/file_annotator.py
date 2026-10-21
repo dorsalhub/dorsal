@@ -492,7 +492,12 @@ class FileAnnotator:
                         else cast(dict[str, Any], ann)
                     )
 
-                    chunks = chunk_record(raw_dict, schema_id)
+                    chunk_version = schema_version
+                    if chunk_version is None and isinstance(validator, JsonSchemaValidator):
+                        from dorsal.file.schemas import schema_version_of
+
+                        chunk_version = schema_version_of(validator.schema)
+                    chunks = chunk_record(raw_dict, schema_id, schema_version=chunk_version)
 
                     if len(chunks) > 1:
                         logger.info(

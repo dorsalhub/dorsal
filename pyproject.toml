@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dorsalhub"
-version = "0.12.0"
+version = "0.12.1"
 description = "Dorsal is a file annotation toolkit."
 readme = "README.md"
 requires-python = ">=3.11"
