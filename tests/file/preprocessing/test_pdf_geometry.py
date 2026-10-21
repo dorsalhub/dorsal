@@ -281,3 +281,51 @@ def test_token_texts_and_order_are_unchanged_by_geometry(tmp_path, extract):
     assert expected[0] == ["First line of the page", "Second line", "Third"]
     assert got == expected
     assert all(sorted(page_texts) == sorted(expected[0]) for page_texts in got)
+
+
+CROP = (50, 100, 545, 800)
+MARGIN_PAGE = {
+    "media": (0, 0, *A4),
+    "crop": CROP,
+    "content": (
+        "BT /F1 12 Tf 72 700 Td (Inside) Tj ET "
+        "BT /F1 12 Tf 10 20 Td (Margin) Tj ET "
+        "BT /F1 12 Tf 30 400 Td (Straddling the crop edge) Tj ET"
+    ),
+}
+
+
+@pytest.fixture(scope="module")
+def margin_pdf(tmp_path_factory) -> str:
+    path = tmp_path_factory.mktemp("pdf_margin") / "margin.pdf"
+    _write_pdf(path, [MARGIN_PAGE])
+    return str(path)
+
+
+@pytest.mark.parametrize(
+    "extract", [extract_pdf_layout_per_mille, extract_pdf_layout_normalized, extract_pdf_layout_pts]
+)
+def test_text_outside_the_cropbox_is_left_out(margin_pdf, extract):
+    (page,) = extract(margin_pdf)
+
+    assert sorted(token.text for token in page.tokens) == ["Inside", "Straddling the crop edge"]
+
+
+@pytest.mark.parametrize(
+    "extract, upper",
+    [
+        (extract_pdf_layout_pts, (CROP[2] - CROP[0], CROP[3] - CROP[1])),
+        (extract_pdf_layout_normalized, (1.0, 1.0)),
+        (extract_pdf_layout_per_mille, (1000, 1000)),
+    ],
+)
+def test_boxes_are_clipped_to_the_displayed_page(margin_pdf, extract, upper):
+    (page,) = extract(margin_pdf)
+    max_x, max_y = upper
+
+    for token in page.tokens:
+        x0, y0, x1, y1 = token.box
+        assert 0 <= x0 < x1 <= max_x
+        assert 0 <= y0 < y1 <= max_y
+    straddling = next(token for token in page.tokens if token.text.startswith("Straddling"))
+    assert straddling.box[0] == 0

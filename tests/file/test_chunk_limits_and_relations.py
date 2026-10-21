@@ -16,7 +16,7 @@ import copy
 
 import pytest
 
-from dorsal.file.chunking import chunk_record, list_limit, merge_chunked_records
+from dorsal.file.chunking import chunk_record, list_limit, merge_chunked_records, merge_relations
 from dorsal.file.sharding import (
     ANNOTATION_MAX_SIZE_BYTES,
     EntityShardingStrategy,
@@ -272,3 +272,73 @@ def test_audio_transcription_text_overflow_chunks_are_valid_at_0_8_0(monkeypatch
     assert len(chunks) == 3
     assert "segments" not in chunks[1] and "segments" not in chunks[2]
     _assert_valid(chunks, "audio-transcription", "0.8.0")
+
+
+def test_audio_transcription_text_survives_a_chunk_round_trip():
+    record = {
+        "text": "word " * 120_000,
+        "segments": [{"text": "a", "start_time": 0, "end_time": 1}],
+    }
+
+    chunks = chunk_record(copy.deepcopy(record), "open/audio-transcription", schema_version="0.8.0")
+
+    assert len(chunks) == 3
+    assert merge_chunked_records(chunks, "open/audio-transcription") == record
+
+
+def test_duplicate_relations_survive_chunking(monkeypatch):
+    monkeypatch.setattr("dorsal.file.chunking.SPLIT_LIMIT_DEFAULT", 1)
+    relation = {"label": "mentions", "subject_id": "a", "object_id": "a"}
+    record = {"entities": [{"id": "a", "label": "thing"}], "relations": [relation, relation]}
+    _assert_valid([record], "entity-extraction", "0.8.0")
+
+    chunks = chunk_record(copy.deepcopy(record), "open/entity-extraction", schema_version="0.8.0")
+
+    assert [c["relations"] for c in chunks] == [[relation], [relation]]
+    assert merge_chunked_records(chunks, "open/entity-extraction") == record
+
+
+def test_identical_relation_lists_are_taken_once_only_when_every_chunk_has_entities():
+    relation = {"label": "mentions", "subject_id": "a", "object_id": "a"}
+    a, b = {"id": "a", "label": "thing"}, {"id": "b", "label": "thing"}
+
+    assert merge_relations([{"entities": [a], "relations": [relation]}, {"entities": [], "relations": [relation]}]) == [
+        relation,
+        relation,
+    ]
+    assert merge_relations(
+        [{"entities": [a], "relations": [relation]}, {"entities": [b], "relations": [relation]}]
+    ) == [relation]
+
+
+def test_spilled_relations_get_shards_without_entities():
+    record = {
+        "entities": [{"id": "hub", "label": "thing"}, {"id": "leaf", "label": "thing"}],
+        "relations": [{"label": "linked_to", "subject_id": "hub", "object_id": "leaf", "text": "r" * 200}] * 8_000
+        + [{"label": "linked_to", "subject_id": "leaf", "object_id": "hub"}],
+    }
+
+    shards = EntityShardingStrategy().split(copy.deepcopy(record))
+
+    assert len(shards) > 2
+    for shard in shards:
+        ids = {e["id"] for e in shard["entities"]}
+        assert not shard["entities"] or all(r["subject_id"] in ids for r in shard["relations"])
+    assert shards[-1]["entities"] == [{"id": "leaf", "label": "thing"}]
+
+
+def test_relations_come_back_grouped_by_entity(monkeypatch):
+    monkeypatch.setattr("dorsal.file.chunking.SPLIT_LIMIT_DEFAULT", 3)
+    record = {
+        "entities": [{"id": f"e{i}", "label": "thing"} for i in range(6)],
+        "relations": [
+            {"label": "r", "subject_id": "e5", "object_id": "e0"},
+            {"label": "r", "subject_id": "e0", "object_id": "e1"},
+        ],
+    }
+
+    chunks = chunk_record(copy.deepcopy(record), "open/entity-extraction", schema_version="0.8.0")
+    merged = merge_chunked_records(chunks, "open/entity-extraction")
+
+    assert [r["subject_id"] for r in merged["relations"]] == ["e0", "e5"]
+    assert sorted(map(str, merged["relations"])) == sorted(map(str, record["relations"]))

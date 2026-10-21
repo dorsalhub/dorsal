@@ -251,7 +251,7 @@ class TestAudioTranscriptionStrategy:
     def test_merge(self):
         records = [{"text": "Hello", "segments": [{"id": 1}]}, {"text": "World", "segments": [{"id": 2}]}]
         merged = self.strategy.merge(records)
-        assert merged["text"] == "Hello\nWorld"
+        assert merged["text"] == "HelloWorld"
         assert len(merged["segments"]) == 2
 
     @patch("dorsal.file.chunking.SPLIT_LIMIT_STRING", 5)

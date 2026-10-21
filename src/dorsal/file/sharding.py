@@ -118,7 +118,8 @@ class ListBasedStrategy:
 class EntityShardingStrategy(ListBasedStrategy):
     """
     Splits open/entity-extraction by entity, keeping each relation in the shard that holds the entity it
-    starts from (else the entity it points to). Relations only spill into the next shard when they do not fit.
+    starts from (else the entity it points to). Relations that do not fit there spill into shards of their own.
+    Relations come back grouped by entity, not in their original order.
     """
 
     def __init__(self) -> None:
@@ -134,9 +135,10 @@ class EntityShardingStrategy(ListBasedStrategy):
         if not isinstance(entities, list):
             entities = []
 
-        template = copy.deepcopy(record)
-        template["entities"] = []
-        template["relations"] = []
+        template = {
+            key: [] if key in ("entities", "relations") else copy.deepcopy(value) for key, value in record.items()
+        }
+        template.setdefault("entities", [])
         size_template = check_record_size(template)
         if size_template > ANNOTATION_MAX_SIZE_BYTES:
             raise ValueError(f"Metadata header is too large ({size_template} bytes) to allow sharding.")
@@ -163,9 +165,8 @@ class EntityShardingStrategy(ListBasedStrategy):
             chunks.append(chunk)
             current_entities, current_relations, current_size = [], [], size_template
 
-        def add(target: list[Any], item: Any, field: str) -> None:
+        def add(target: list[Any], item: Any, item_size: int, field: str) -> None:
             nonlocal current_size
-            item_size = check_record_size(item)
             cost = item_size + (1 if target else 0)
             if current_size + cost > ANNOTATION_MAX_SIZE_BYTES:
                 if not current_entities and not current_relations:
@@ -179,9 +180,11 @@ class EntityShardingStrategy(ListBasedStrategy):
             current_size += cost
 
         for entity, entity_relations in units:
-            unit_size = sum(check_record_size(item) + 1 for item in entity_relations)
-            if entity is not None:
-                unit_size += check_record_size(entity) + 1
+            relation_sizes = [check_record_size(relation) for relation in entity_relations]
+            entity_size = check_record_size(entity) if entity is not None else 0
+            unit_size = sum(relation_sizes) + len(relation_sizes) + (entity_size + 1 if entity is not None else 0)
+            if current_relations and not current_entities:
+                flush()
             has_content = bool(current_entities or current_relations)
             if (
                 has_content
@@ -190,9 +193,9 @@ class EntityShardingStrategy(ListBasedStrategy):
             ):
                 flush()
             if entity is not None:
-                add(current_entities, entity, "entities")
-            for relation in entity_relations:
-                add(current_relations, relation, "relations")
+                add(current_entities, entity, entity_size, "entities")
+            for relation, relation_size in zip(entity_relations, relation_sizes, strict=True):
+                add(current_relations, relation, relation_size, "relations")
 
         if current_entities or current_relations:
             flush()
@@ -389,9 +392,7 @@ def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
         if isinstance(strategy, EntityShardingStrategy):
             from dorsal.file.chunking import merge_relations
 
-            relations = merge_relations(
-                [head_record.get("relations")] + [chunk_data.get("relations") for chunk_data in chunk_records]
-            )
+            relations = merge_relations([head_record, *chunk_records])
             if relations is not None:
                 reassembled_record["relations"] = relations
 

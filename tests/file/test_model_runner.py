@@ -1522,3 +1522,29 @@ def test_redact_options_matches_secret_names_case_insensitively():
         "API_KEY": "<redacted>",
         "lang": "eng",
     }
+
+
+def test_redact_options_matches_whole_words_only():
+    options = {"max_keypoints": 5, "keywords": ["a"], "keyframes": True, "max_tokens": 10, "sort_key": "name"}
+
+    assert ModelRunner._redact_options(options) == {**options, "sort_key": "<redacted>"}
+
+
+def test_redact_options_covers_common_names_and_nested_values():
+    redacted = ModelRunner._redact_options(
+        {
+            "auth": "Bearer abc",
+            "pwd": "x",
+            "apiKey": "k",
+            "client": {"password": "x", "region": "eu"},
+            "hosts": [{"token": "t"}],
+        }
+    )
+
+    assert redacted == {
+        "auth": "<redacted>",
+        "pwd": "<redacted>",
+        "apiKey": "<redacted>",
+        "client": {"password": "<redacted>", "region": "eu"},
+        "hosts": [{"token": "<redacted>"}],
+    }

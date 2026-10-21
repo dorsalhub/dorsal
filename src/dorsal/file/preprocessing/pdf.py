@@ -79,7 +79,7 @@ def _page_dimension(size_pt: float) -> int:
 
 def _display_mapper(
     page: Any,
-) -> tuple[float, float, Callable[[float, float, float, float], tuple[float, float, float, float]]]:
+) -> tuple[float, float, Callable[[float, float, float, float], tuple[float, float, float, float] | None]]:
     width_pt, height_pt = page.get_size()
     rotation = page.get_rotation() % 360
     box_left, box_bottom, _, _ = page.get_bbox()
@@ -89,7 +89,7 @@ def _display_mapper(
     else:
         unrotated_w, unrotated_h = width_pt, height_pt
 
-    def to_display(left: float, bottom: float, right: float, top: float) -> tuple[float, float, float, float]:
+    def rotate(left: float, bottom: float, right: float, top: float) -> tuple[float, float, float, float]:
         u0, u1 = left - box_left, right - box_left
         v0, v1 = bottom - box_bottom, top - box_bottom
         if rotation == 90:
@@ -99,6 +99,14 @@ def _display_mapper(
         if rotation == 270:
             return unrotated_h - v1, unrotated_w - u1, unrotated_h - v0, unrotated_w - u0
         return u0, unrotated_h - v1, u1, unrotated_h - v0
+
+    def to_display(left: float, bottom: float, right: float, top: float) -> tuple[float, float, float, float] | None:
+        x0, y0, x1, y1 = rotate(left, bottom, right, top)
+        if width_pt <= 0 or height_pt <= 0:
+            return x0, y0, x1, y1
+        if x1 <= 0 or y1 <= 0 or x0 >= width_pt or y0 >= height_pt:
+            return None
+        return max(0.0, x0), max(0.0, y0), min(width_pt, x1), min(height_pt, y1)
 
     return width_pt, height_pt, to_display
 
@@ -150,6 +158,7 @@ def extract_pdf_layout_per_mille(
     and Donut, which require integer coordinates discretized to a 1000x1000 grid.
 
     Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied.
+    Text outside the displayed page is left out, and boxes are clipped to it.
 
     Coordinates:
         - Origin: Top-Left (0, 0) of the displayed page
@@ -194,7 +203,10 @@ def extract_pdf_layout_per_mille(
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+                display_box = to_display(left, bottom, right, top)
+                if display_box is None:
+                    continue
+                x0, y0, x1, y1 = display_box
 
                 box_int = (
                     int(max(0, min(scale, scale * (x0 / w_s)))),
@@ -226,6 +238,7 @@ def extract_pdf_layout_normalized(
     models (like YOLO/R-CNN) that expect relative coordinates.
 
     Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied.
+    Text outside the displayed page is left out, and boxes are clipped to it.
 
     Coordinates:
         - Origin: Top-Left (0, 0) of the displayed page
@@ -269,7 +282,10 @@ def extract_pdf_layout_normalized(
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+                display_box = to_display(left, bottom, right, top)
+                if display_box is None:
+                    continue
+                x0, y0, x1, y1 = display_box
 
                 box_float = (float(x0 / w_s), float(y0 / h_s), float(x1 / w_s), float(y1 / h_s))
                 tokens.append(PDFToken(text=text_segment, box=box_float))
@@ -292,6 +308,7 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
 
     Coordinates are in the page as displayed by a PDF viewer, with the CropBox and `/Rotate` applied,
     and a Top-Left origin to match standard computer vision and web coordinate systems.
+    Text outside the displayed page is left out, and boxes are clipped to it.
 
     Coordinates:
         - Origin: Top-Left (0, 0) of the displayed page
@@ -329,7 +346,10 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
                 if not text_segment or not text_segment.strip():
                     continue
 
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+                display_box = to_display(left, bottom, right, top)
+                if display_box is None:
+                    continue
+                x0, y0, x1, y1 = display_box
 
                 box_float = (float(x0), float(y0), float(x1), float(y1))
                 tokens.append(PDFToken(text=text_segment, box=box_float))

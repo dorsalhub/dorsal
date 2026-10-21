@@ -125,6 +125,8 @@ class DictUpdateStrategy:
 class DocumentExtractionStrategy:
     """Handles open/document-extraction."""
 
+    list_field = "blocks"
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["blocks"] = list(unified.get("blocks", []))
@@ -223,6 +225,8 @@ class DocumentExtractionStrategy:
 class AudioTranscriptionStrategy:
     """Handles open/audio-transcription."""
 
+    list_field = "segments"
+
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["text"] = unified.get("text", "")
@@ -230,7 +234,7 @@ class AudioTranscriptionStrategy:
 
         for chunk in records[1:]:
             if "text" in chunk:
-                unified["text"] += "\n" + str(chunk.get("text", ""))
+                unified["text"] += str(chunk.get("text", ""))
             if "segments" in chunk:
                 unified["segments"].extend(chunk.get("segments", []))
         return unified
@@ -265,12 +269,17 @@ class AudioTranscriptionStrategy:
 
 
 class EntityExtractionStrategy:
-    """Handles open/entity-extraction, keeping each relation with the entity it starts from."""
+    """Handles open/entity-extraction, keeping each relation with the entity it starts from.
+
+    Relations come back grouped by entity, not in their original order.
+    """
+
+    list_field = "entities"
 
     def merge(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         unified = records[0].copy()
         unified["entities"] = [e for r in records for e in r.get("entities", [])]
-        relations = merge_relations([r.get("relations") for r in records])
+        relations = merge_relations(records)
         if relations is not None:
             unified["relations"] = relations
         return unified
@@ -319,15 +328,15 @@ def relation_home(relation: Any, chunk_of_id: dict[Any, int]) -> int:
     return 0
 
 
-def merge_relations(parts: list[Any]) -> list[Any] | None:
-    """Reassembles the `relations` of entity-extraction chunks.
+def merge_relations(records: list[dict[str, Any]]) -> list[Any] | None:
+    """Joins the `relations` of entity-extraction chunks.
 
-    Chunks made before relations were split each carry the full list, so identical lists are taken once.
+    When every chunk holds entities and the same `relations` list, that list is taken once.
     """
-    lists = [p for p in parts if isinstance(p, list)]
+    lists = [r["relations"] for r in records if isinstance(r.get("relations"), list)]
     if not lists:
         return None
-    if len(lists) > 1 and all(p == lists[0] for p in lists[1:]):
+    if len(lists) > 1 and all(p == lists[0] for p in lists[1:]) and all(r.get("entities") for r in records):
         return list(lists[0])
     return [relation for p in lists for relation in p]
 
@@ -437,17 +446,6 @@ def merge_chunked_records(records: list[dict[str, Any]], schema_id: str) -> dict
     return records[0]
 
 
-LIST_FIELDS: dict[str, str] = {
-    "open/document-extraction": "blocks",
-    "open/audio-transcription": "segments",
-    "open/object-detection": "objects",
-    "open/entity-extraction": "entities",
-    "open/classification": "labels",
-    "open/regression": "points",
-    "open/ranking": "results",
-    "open/temporal-segmentation": "segments",
-}
-
 FALLBACK_LIST_LIMITS: dict[tuple[str, str], int] = {
     ("open/classification", "labels"): 10_000,
     ("open/regression", "points"): 10_000,
@@ -488,9 +486,9 @@ def chunk_record(record: dict[str, Any], schema_id: str, schema_version: str | N
     if strategy is None:
         return [record]
 
-    if schema_id == "open/generic":
+    if isinstance(strategy, DictUpdateStrategy):
         return strategy.split(record, limit=SPLIT_LIMIT_GENERIC)
-    if schema_id == "open/llm-output":
+    if isinstance(strategy, StringStrategy):
         return strategy.split(record, limit=SPLIT_LIMIT_STRING)
     if isinstance(strategy, EntityExtractionStrategy):
         return strategy.split(
@@ -499,6 +497,6 @@ def chunk_record(record: dict[str, Any], schema_id: str, schema_version: str | N
             relations_limit=list_limit(schema_id, "relations", schema_version),
         )
 
-    field = LIST_FIELDS.get(schema_id)
+    field = getattr(strategy, "list_field", None)
     limit = list_limit(schema_id, field, schema_version) if field else SPLIT_LIMIT_DEFAULT
     return strategy.split(record, limit=limit)

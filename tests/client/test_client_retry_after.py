@@ -99,3 +99,21 @@ def test_exhausted_retries_raise_the_final_api_error(online):
 
 def test_max_retry_after_defaults_to_sixty_seconds():
     assert LoggingRetry.max_retry_after == 60
+
+
+def test_long_retry_after_on_503_fails_fast(online):
+    with _Server([(503, {"Retry-After": "3600"}, {"detail": "Maintenance"})]) as server:
+        with pytest.raises(APIError) as exc:
+            _client(server.url).get_dataset("test/data")
+
+    assert server.requests == 1
+    assert exc.value.status_code == 503
+
+
+def test_malformed_retry_after_is_ignored(online):
+    responses = [(429, {"Retry-After": "soon"}, {"detail": "Slow down"}), (404, {}, {"detail": "No such dataset"})]
+    with _Server(responses) as server:
+        with pytest.raises(NotFoundError):
+            _client(server.url).get_dataset("test/data")
+
+    assert server.requests == 2

@@ -26,7 +26,7 @@ import logging
 import requests
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
-from urllib3.exceptions import MaxRetryError, ResponseError
+from urllib3.exceptions import InvalidHeader, MaxRetryError, ResponseError
 from urllib3.util.retry import Retry
 
 from dorsal.common import constants
@@ -122,22 +122,36 @@ SEARCH_PER_PAGE_MAX = 50
 class LoggingRetry(Retry):
     """Retry policy for DorsalHub requests.
 
-    A 429 whose Retry-After is longer than `max_retry_after` seconds is not retried, so the caller gets the
-    429 (and its Retry-After) at once instead of the client sleeping until the limit resets.
+    A 413, 429 or 503 whose Retry-After is longer than `max_retry_after` seconds is not retried, so the caller
+    gets the response (and its Retry-After) at once instead of the client sleeping until then.
+    A malformed Retry-After is ignored.
     """
 
     max_retry_after: float = constants.API_MAX_RETRY_AFTER
 
+    def get_retry_after(self, response):
+        try:
+            return super().get_retry_after(response)
+        except InvalidHeader:
+            return None
+
     def increment(self, method=None, url=None, response=None, error=None, _pool=None, _stacktrace=None):
-        if response is not None and response.status == 429 and self.respect_retry_after_header:
+        if (
+            response is not None
+            and response.status in self.RETRY_AFTER_STATUS_CODES
+            and self.respect_retry_after_header
+        ):
             retry_after = self.get_retry_after(response)
             if retry_after is not None and retry_after > self.max_retry_after:
                 logger.warning(
-                    "Rate limit reached. Retry-After is %d seconds, longer than the %d seconds this client waits.",
+                    "HTTP %d with Retry-After of %d seconds, longer than the %d seconds this client waits.",
+                    response.status,
                     int(retry_after),
                     int(self.max_retry_after),
                 )
-                raise MaxRetryError(_pool, url, ResponseError(f"429 with Retry-After {int(retry_after)}s"))
+                raise MaxRetryError(
+                    _pool, url, ResponseError(f"{response.status} with Retry-After {int(retry_after)}s")
+                )
         return super().increment(
             method=method, url=url, response=response, error=error, _pool=_pool, _stacktrace=_stacktrace
         )

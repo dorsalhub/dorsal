@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Callable, NamedTuple, Sequence, Type, TYPE_CHECKING, TypeVar, cast
 import uuid
@@ -68,7 +69,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SECRET_OPTION_MARKERS = ("password", "passwd", "passphrase", "secret", "token", "key", "credential")
+_SECRET_OPTION_WORDS = frozenset(
+    {"auth", "authorization", "bearer", "cookie", "credential", "credentials", "key", "pwd", "token"}
+)
+_SECRET_OPTION_SUFFIXES = (
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "token",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "secretkey",
+    "credential",
+    "credentials",
+)
+_OPTION_NAME_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def _is_secret_option(name: Any) -> bool:
+    words = (word.lower() for word in _OPTION_NAME_WORD.findall(str(name)))
+    return any(word in _SECRET_OPTION_WORDS or word.endswith(_SECRET_OPTION_SUFFIXES) for word in words)
+
+
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: "<redacted>" if _is_secret_option(key) else _redact_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_redact_value(item) for item in value)
+    return value
 
 
 def model_debug_timer(method):
@@ -237,11 +267,8 @@ class ModelRunner:
 
     @staticmethod
     def _redact_options(options: dict[str, Any]) -> dict[str, Any]:
-        """Returns a copy of `options` that is safe to log, with secret-looking values replaced."""
-        return {
-            key: "<redacted>" if any(marker in str(key).lower() for marker in _SECRET_OPTION_MARKERS) else value
-            for key, value in options.items()
-        }
+        """Returns a copy of `options` that is safe to log, with secret-looking values replaced at any depth."""
+        return _redact_value(options)
 
     def _load_pre_pipeline_model_step(self) -> ModelRunnerPipelineStep:
         from dorsal.file.configs.model_runner import (
