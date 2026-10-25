@@ -75,14 +75,15 @@ def export_adapter(
     """
     Export a Dorsal JSON result into a different format using an adapter.
     """
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
+    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, print_raw_output
     from dorsal.cli.adapter_app.helpers import extract_records
     from dorsal.api.adapters import export_record, export_record_to_file, get_format_extension
-    from rich.table import Table
+    from dorsal.cli.themes import get_ui_theme
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj.get("palette", {}) if ctx.obj else {}
+    ui_context = ctx.obj or get_ui_theme()
+    palette = ui_context["palette"]
 
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
@@ -93,7 +94,7 @@ def export_adapter(
     try:
         records_to_process = extract_records(data, schema_override=schema_id)
     except ValueError as e:
-        error_console.print(f"[{palette.get('error', 'bold red')}]Validation Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Validation error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     if merge and len(records_to_process) > 1:
@@ -108,7 +109,7 @@ def export_adapter(
             records_to_process = [(base_schema, merged_payload, base_file_path)]
         except Exception as e:
             logger.exception("Failed to merge chunked records.")
-            error_console.print(f"[{palette.get('error', 'bold red')}]Merge Error:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Merge error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
     resolved_format = target_format
@@ -117,7 +118,7 @@ def export_adapter(
             resolved_format = output_path.suffix.lstrip(".")
         else:
             error_console.print(
-                f"[{palette.get('error', 'bold red')}]Usage Error:[/] You must provide a "
+                f"[{palette.get('error', 'bold red')}]Usage error:[/] You must provide a "
                 "'target_format' argument (e.g., 'srt') unless an '--output' file path "
                 "with an extension is provided."
             )
@@ -177,29 +178,32 @@ def export_adapter(
             results_data.append({"input_name": input_name, "status": "Error", "error": str(e)})
             if not is_batch:
                 error_console.print(
-                    f"[{palette.get('error', 'bold red')}]Export Failed for schema '{current_schema_id}':[/] {e}"
+                    f"[{palette.get('error', 'bold red')}]Export failed for schema '{current_schema_id}':[/] {e}"
                 )
                 exit_cli(code=EXIT_CODE_ERROR)
 
     if not is_batch:
         # Only dump output to terminal if user requested no-save
         if no_save:
-            console.print(terminal_outputs[0], end="")
+            print_raw_output(terminal_outputs[0], console, end="")
 
         if not no_save and saved_paths_msg:
             error_console.print(
                 f"\n[{palette.get('info', 'dim')}]Outputs saved successfully:\n  ↳ {saved_paths_msg[0]}[/]"
             )
     else:
-        table = Table(
-            title=f"[{palette.get('panel_title', 'bold')}]Export Results: {file_path.name}[/]",
-            header_style=palette.get("table_header", "bold blue"),
+        from dorsal.cli.views.layout import table as themed_table
+
+        table = themed_table(
+            ui_context,
+            title=f"Export results: {file_path.name}",
+            title_style=palette.get("panel_title", "bold"),
         )
-        table.add_column("Input File")
+        table.add_column("Input file")
         table.add_column("Status")
 
         if not no_save:
-            table.add_column(f"{resolved_format.upper()} Output")
+            table.add_column(f"{resolved_format.upper()} output")
 
         for item in results_data:
             row = []

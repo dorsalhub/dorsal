@@ -17,17 +17,16 @@ import json
 import logging
 import pathlib
 import re
-from typing import Literal, cast, Optional
+from typing import TYPE_CHECKING, Literal, cast, Optional
 
-from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 from rich.console import Group
 import typer
 
 from dorsal.common import constants
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,7 @@ def _save_search_results(
     palette: dict,
     output_path: Optional[pathlib.Path],
     json_to_stdout: bool,
+    icons: dict[str, str] | None = None,
 ):
     """
     Saves a page of search results to a timestamped JSON file.
@@ -86,8 +86,9 @@ def _save_search_results(
             json.dump(page_data, f, indent=2, default=str, ensure_ascii=False)
 
         if not json_to_stdout:
+            success_icon = (icons or {}).get("success", "")
             console.print(
-                f"[{palette['success']}]✅ Full JSON report saved to:[/] [{palette['primary_value']}]{filepath}[/]"
+                f"[{palette['success']}]{success_icon}Full JSON report saved to:[/] [{palette['primary_value']}]{filepath}[/]"
             )
     except IOError as e:
         error_console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
@@ -125,12 +126,14 @@ def search_and_display(
     from dorsal.api.file import search_user_files, search_global_files
     from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenError
     from dorsal.file.utils.size import human_filesize
+    from rich.markup import escape
+
+    from dorsal.cli.views.layout import is_borderless, message, table as themed_table
 
     console = get_rich_console()
     error_console = get_error_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     icons = ui_context.get("icons", {})
 
     if output_path and not save:
@@ -138,10 +141,10 @@ def search_and_display(
             save = True
         else:
             if not output_path.is_dir():
-                console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
+                error_console.print(
+                    f"[{palette.get('warning', 'yellow')}]{icons.get('warning', '')}Warning:[/] --output path "
+                    f"'{output_path}' was specified with an unknown extension."
                     f" Please use -s (for .json) or specify a .json file.",
-                    style=palette.get("warning", "yellow"),
                 )
 
     if not query or not query.strip():
@@ -151,24 +154,20 @@ def search_and_display(
     try:
         search_function = search_user_files if scope == "user" else search_global_files
 
-        if not json_output:
-            console.print(
-                f"{icons.get('search', '🔎 ')}Searching DorsalHub [{palette['primary_value']}]{scope}[/] scope for records matching: [{palette['success']}]'{query}'[/]"
-            )
-
         casted_sort_by = cast(SortByField, sort_by)
         casted_sort_order = cast(SortOrder, sort_order)
 
-        response = search_function(
-            query=query,
-            page=page,
-            per_page=per_page,
-            sort_by=casted_sort_by,
-            sort_order=casted_sort_order,
-            match_any=match_any,
-            deep=deep,
-            mode="pydantic",
-        )
+        with error_console.status(f"Searching DorsalHub {scope} records for '{escape(query)}'"):
+            response = search_function(
+                query=query,
+                page=page,
+                per_page=per_page,
+                sort_by=casted_sort_by,
+                sort_order=casted_sort_order,
+                match_any=match_any,
+                deep=deep,
+                mode="pydantic",
+            )
 
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -177,33 +176,28 @@ def search_and_display(
             exit_cli()
 
         if not response.results:
-            console.print(f"\n[{palette['warning']}]No records found matching your criteria.[/]")
+            console.print(f"[{palette['warning']}]No records found matching your criteria.[/]")
             exit_cli()
 
         search_caption = (
             f"Search powered by DorsalHub Search {response.api_version}. "
-            f"For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
+            f"For search syntax, visit:\nhttps://docs.dorsalhub.com/reference/search-syntax/"
         )
 
-        title_text: str | None = f"{scope.capitalize()} Search Results"
-        if borders == get_borders("none"):
-            title_text = None
-
-        table = Table(
-            title=title_text,
+        table = themed_table(
+            ui_context,
+            title=f"{icons.get('search', '')}{scope.capitalize()} search results",
             show_header=True,
-            header_style=palette.get("table_header", "bold blue"),
             caption=search_caption,
             caption_style="dim",
             caption_justify="left",
-            expand=True,
-            box=borders,
+            expand=not is_borderless(ui_context),
             row_styles=["", palette.get("table_row_alt", "dim")],
         )
 
         if console.width < 115:
-            table.add_column("File Details (Name / Hash)", ratio=1, overflow="fold")
-            table.add_column("Size / Type", justify="right", width=20)
+            table.add_column("File details (name / hash)", ratio=1, overflow="fold")
+            table.add_column("Size / type", justify="right", width=20)
 
             for record in response.results:
                 if not record.annotations or not record.annotations.file_base:
@@ -234,9 +228,9 @@ def search_and_display(
                 vertical="middle",
             )
             table.add_column("Size", justify="right", min_width=7, vertical="middle")
-            table.add_column("Media Type", min_width=8, vertical="middle")
+            table.add_column("Media type", min_width=8, vertical="middle")
             table.add_column(
-                "SHA256 Hash",
+                "SHA256 hash",
                 style=palette.get("hash_value", ""),
                 no_wrap=True,
                 width=66,
@@ -283,6 +277,7 @@ def search_and_display(
                 palette=palette,
                 output_path=output_path,
                 json_to_stdout=json_output,
+                icons=icons,
             )
 
     except ForbiddenError:
@@ -296,22 +291,8 @@ def search_and_display(
                 style=palette.get("text_default", "default"),
             )
 
-            is_none_style = borders == get_borders("none")
-            title_text = (
-                f"[{palette.get('panel_title_warning', 'bold yellow')}]{icons.get('lock', '🔒 ')}Upgrade Required[/]"
+            error_console.print(
+                message(f"{icons.get('warning', '')}Upgrade required", upgrade_message, ui_context, level="warning")
             )
-
-            if is_none_style:
-                error_console.print(Group(Text.from_markup(f"\n{title_text}"), upgrade_message))
-            else:
-                panel = Panel(
-                    upgrade_message,
-                    title=title_text,
-                    border_style=palette.get("panel_border_warning", "yellow"),
-                    expand=False,
-                    padding=(1, 2),
-                    box=borders,
-                )
-                error_console.print(panel)
     except typer.Exit:
         raise

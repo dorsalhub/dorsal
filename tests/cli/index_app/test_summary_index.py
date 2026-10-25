@@ -16,9 +16,6 @@
 import pytest
 import json
 from typer.testing import CliRunner
-from rich.columns import Columns
-from rich.panel import Panel
-from rich.console import Group
 
 from dorsal.cli import app
 
@@ -59,15 +56,16 @@ def mock_summary_index_cmd(mocker):
     return {"summary": mock_summary}
 
 
-def test_summary_index_panel_output(mock_rich_console, mock_summary_index_cmd):
-    """Tests the default command, expecting a Rich Panel or Group."""
-    result = runner.invoke(app, ["index", "summary"])
+def test_summary_index_panel_output(mock_rich_console, mock_summary_index_cmd, rendered):
+    """Tests the bordered summary panel."""
+    result = runner.invoke(app, ["--borders", "rounded", "index", "summary"])
 
     assert result.exit_code == 0
     mock_summary_index_cmd["summary"].assert_called_once()
 
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, (Panel, Group))
+    text = rendered(mock_rich_console)
+    assert text.startswith("╭─ Index summary")
+    assert "│  Index path         /fake/home/.dorsal/cache.db" in text
 
 
 def test_summary_index_json_output(mock_rich_console, mock_summary_index_cmd):
@@ -93,17 +91,18 @@ def test_summary_index_exception_handling(mock_summary_index_cmd):
     assert "An error occurred while getting search index info: Permission denied" in result.output
 
 
-def test_summary_index_verbose_output(mock_rich_console, mock_summary_index_cmd_verbose):
+def test_summary_index_verbose_output(mock_rich_console, mock_summary_index_cmd_verbose, rendered):
     """Tests the --verbose flag, ensuring extended metrics and side-by-side distributions are printed."""
     result = runner.invoke(app, ["index", "summary", "--verbose"])
 
     assert result.exit_code == 0
     mock_summary_index_cmd_verbose.assert_called_once_with(verbose=True, limit=10)
 
-    printed_objects = [call.args[0] for call in mock_rich_console.print.call_args_list if call.args]
-
-    has_columns = any(isinstance(obj, Columns) for obj in printed_objects)
-    assert has_columns, "Expected a Rich Columns object to be printed for verbose distributions."
+    lines = rendered(mock_rich_console).splitlines()
+    assert "  Compression ratio      2.34x" in lines
+    assert any(line.startswith("Top extensions") and "Top media types" in line for line in lines)
+    assert any(line.startswith(".txt") and "100" in line for line in lines)
+    assert all(line == line.rstrip() for line in lines)
 
 
 def test_summary_index_verbose_compressed_records_fallback(mock_rich_console, mocker):
@@ -122,18 +121,16 @@ def test_summary_index_verbose_compressed_records_fallback(mock_rich_console, mo
     assert mock_rich_console.print.called
 
 
-def test_summary_index_none_style_output(mock_rich_console, mock_summary_index_cmd, mocker):
-    """Tests the output formatting when borders are set to 'none'."""
-
-    class MatchAnyBorder:
-        def __eq__(self, other):
-            return True
-
-    mocker.patch("dorsal.cli.index_app.summary_index_cmd.get_borders", return_value=MatchAnyBorder())
-
+def test_summary_index_none_style_output(mock_rich_console, mock_summary_index_cmd, rendered):
+    """Tests the default borderless output: a heading with left-aligned keys and no trailing whitespace."""
     result = runner.invoke(app, ["index", "summary"])
 
     assert result.exit_code == 0
 
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Group), "Expected a Group object to be printed when border style is 'none'."
+    assert rendered(mock_rich_console).splitlines() == [
+        "Index summary",
+        "  Index path         /fake/home/.dorsal/cache.db",
+        "  Index size         1,234 records",
+        "  Record cache size  0 B",
+        "  Search index size  0 B",
+    ]

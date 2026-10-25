@@ -18,7 +18,6 @@ import logging
 from typing import Annotated
 
 from rich.box import Box
-from rich.panel import Panel
 from rich.text import Text
 from rich.markup import escape
 
@@ -97,18 +96,16 @@ def identify_target(
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
 
-    if not json_output:
-        console.print(f"🔎 Identifying file [{palette['primary_value']}]{escape(path.name)}[/]...")
-
     try:
         is_quick_mode = not secure
 
-        file_record_dict = identify_file(
-            file_path=str(path),
-            quick=is_quick_mode,
-            use_cache=use_cache_value,
-            mode="dict",
-        )
+        with error_console.status(f"Identifying [{palette['primary_value']}]{escape(path.name)}[/]"):
+            file_record_dict = identify_file(
+                file_path=str(path),
+                quick=is_quick_mode,
+                use_cache=use_cache_value,
+                mode="dict",
+            )
 
         if json_output:
             print_json_output(file_record_dict, console)
@@ -116,7 +113,7 @@ def identify_target(
 
         panel = create_file_info_panel(
             record_dict=file_record_dict,
-            title="✅ File Identified",
+            title=f"{icons.get('success', '')}File identified",
             private=None,
             palette=palette,
             icons=icons,
@@ -148,14 +145,9 @@ def identify_target(
                     f"bold {palette.get('primary_value', 'default')}",
                 ),
             )
-            error_console.print(
-                Panel(
-                    message,
-                    title=f"[{palette.get('panel_title_warning', 'bold yellow')}]⚠️ Not Found[/]",
-                    border_style=palette.get("panel_border_warning", "yellow"),
-                    expand=False,
-                )
-            )
+            from dorsal.cli.views.layout import message as format_message
+
+            error_console.print(format_message("Not found", message, ctx.obj, level="warning"))
         exit_cli(code=EXIT_CODE_ERROR)
     except DorsalOfflineError:
         raise

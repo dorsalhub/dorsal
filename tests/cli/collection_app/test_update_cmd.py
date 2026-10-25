@@ -15,7 +15,7 @@
 import pytest
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -23,6 +23,13 @@ from dorsal.common.exceptions import DorsalClientError
 
 runner = CliRunner()
 COLLECTION_ID = "col_abc123"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 @pytest.fixture
@@ -61,10 +68,10 @@ def test_update_collection_name_and_desc(mock_rich_console, mock_update_collecti
     )
 
     # Check that a success panel was printed
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Update Complete" in str(printed_object.title)
-    assert "updated successfully" in str(printed_object.renderable)
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert output.startswith("Update complete: Collection '")
+    assert output.rstrip().endswith("' updated successfully.")
+    assert "\n" not in output.rstrip()
 
 
 def test_update_collection_only_name(mock_rich_console, mock_update_collection_cmd):

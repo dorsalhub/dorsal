@@ -62,7 +62,7 @@ def test_render_classification():
     panel = create_model_result_panel(res, "sentiment-model", "test.txt", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
-    assert "Classification Result" in str(panel.title)
+    assert "Classification result" in str(panel.title)
     assert "positive" in output
     assert "0.9500" in output
 
@@ -78,7 +78,7 @@ def test_render_llm_output():
     panel = create_model_result_panel(res, "llm-task", "query.txt", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
-    assert "LLM Output Result" in str(panel.title)
+    assert "LLM Output result" in str(panel.title)
     assert "The answer is 4" in output
     assert "Tokens: 10" in output
 
@@ -94,7 +94,7 @@ def test_render_entity_extraction():
     panel = create_model_result_panel(res, "ner-model", "doc.pdf", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
-    assert "Entity Extraction Result" in str(panel.title)
+    assert "Entity Extraction result" in str(panel.title)
     assert "Extracted 2 entities" in output
     assert "John Doe" in output
 
@@ -116,7 +116,7 @@ def test_render_object_detection():
     panel = create_model_result_panel(res, "yolo", "image.jpg", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Object Detection Result" in str(panel.title)
+    assert "Object Detection result" in str(panel.title)
     assert "Found 2 objects" in output
 
 
@@ -130,7 +130,7 @@ def test_render_embedding():
     panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Embedding Result" in str(panel.title)
+    assert "Embedding result" in str(panel.title)
     assert "Dimensions 10" in output
     assert "0.1000" in output
 
@@ -145,7 +145,7 @@ def test_render_audio_transcription():
     panel = create_model_result_panel(res, "whisper", "audio.mp3", DUMMY_UI_CONTEXT)
 
     output = render_to_string(panel)
-    assert "Audio Transcription Result" in str(panel.title)
+    assert "Audio Transcription result" in str(panel.title)
     assert "Hello world" in output
     assert "Alice" in output
 
@@ -162,7 +162,7 @@ def test_render_document_extraction():
     panel = create_model_result_panel(res, "ocr", "scan.pdf", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Document Extraction Result" in str(panel.title)
+    assert "Document Extraction result" in str(panel.title)
     assert "Paragraph 1" in output
     assert "text: 2" in output
 
@@ -177,7 +177,7 @@ def test_render_regression():
     panel = create_model_result_panel(res, "weather-model", "sensor.log", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Regression Result" in str(panel.title)
+    assert "Regression result" in str(panel.title)
     assert "Regression Target: temperature" in output
     assert "22.5000" in output
 
@@ -192,7 +192,7 @@ def test_render_geolocation():
     panel = create_model_result_panel(res, "geocoder", "loc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Geolocation Result" in str(panel.title)
+    assert "Geolocation result" in str(panel.title)
     assert "Coordinates [-0.1278, 51.5074]" in output
     assert "city: London" in output
 
@@ -203,7 +203,7 @@ def test_render_generic():
     panel = create_model_result_panel(res, "stat-model", "data.csv", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Generic Data Result" in str(panel.title)
+    assert "Generic Data result" in str(panel.title)
     assert "Custom Statistics" in output
     assert "mean" in output
     assert "10" in output
@@ -230,7 +230,7 @@ def test_render_annotation_group():
     panel = create_model_result_panel(group_res, "multi-embed", "file.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Embedding Result (Group of 2)" in str(panel.title)
+    assert "Embedding result (Group of 2)" in str(panel.title)
     assert "Dimensions 2" in output
 
 
@@ -240,7 +240,7 @@ def test_render_fallback_raw_output():
     panel = create_model_result_panel(res, "unknown-model", "test.bin", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Raw Output Result" in str(panel.title)
+    assert "Raw output result" in str(panel.title)
     assert "unexpected_field" in output
 
 
@@ -249,7 +249,7 @@ def test_render_empty_data():
     panel = create_model_result_panel(res, "empty-model", "empty.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Empty Result" in str(panel.title)
+    assert "Empty result" in str(panel.title)
     assert "No record data returned" in output
 
 
@@ -280,7 +280,7 @@ def test_render_arxiv():
     panel = create_model_result_panel(res, "arxiv-fetcher", "paper.pdf", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "ArXiv Record Result" in str(panel.title)
+    assert "ArXiv Record result" in str(panel.title)
     assert "Deep Learning For Cats" in output
     assert "2104.12345 (v2)" in output
     assert "Alice Smith, Bob Jones" in output
@@ -296,7 +296,7 @@ def test_render_classification_with_vocabulary():
     panel = create_model_result_panel(res, "topic-model", "doc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Classification Result" in str(panel.title)
+    assert "Classification result" in str(panel.title)
     assert "Vocabulary: sports, finance, technology" in output
 
 
@@ -307,7 +307,7 @@ def test_render_classification_with_vocabulary_url():
     panel = create_model_result_panel(res, "topic-model", "doc.txt", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Classification Result" in str(panel.title)
+    assert "Classification result" in str(panel.title)
     assert "Vocabulary URL: https://example.com/vocab.json" in output
 
 
@@ -322,7 +322,7 @@ def test_render_embedding_sparse_dict():
     panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Embedding Result" in str(panel.title)
+    assert "Embedding result" in str(panel.title)
     assert "Type Sparse Object" in output
     assert "Dimensions 1000" in output
     assert "Non-zero Elements 3" in output
@@ -337,5 +337,17 @@ def test_render_embedding_unknown_format():
     panel = create_model_result_panel(res, "embedder", "data.json", DUMMY_UI_CONTEXT)
 
     output = normalize_ws(render_to_string(panel))
-    assert "Embedding Result" in str(panel.title)
+    assert "Embedding result" in str(panel.title)
     assert "Unknown vector format." in output
+
+
+def test_render_borderless_has_no_panel():
+    data = {"target": "sentiment", "labels": [{"label": "positive", "score": 0.95}]}
+    res = create_run_result(data, schema_id="open/classification")
+    ui_context = {**DUMMY_UI_CONTEXT, "borders": None}
+
+    lines = render_to_string(create_model_result_panel(res, "sentiment-model", "test.txt", ui_context)).splitlines()
+
+    assert lines[0] == "Classification result"
+    assert lines[1] == "  sentiment-model  test.txt"
+    assert not any(char in "\n".join(lines) for char in "╭╰│─")

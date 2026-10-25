@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+import io
 import pytest
 import typer
+from rich.box import ROUNDED
+from rich.console import Console
 from typer.testing import CliRunner
 
 from dorsal.cli.model_app.uninstall_model_cmd import uninstall_model
@@ -27,12 +29,19 @@ cli_app = typer.Typer()
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 
 
 cli_app.command(name="uninstall")(uninstall_model)
 
 runner = CliRunner()
+
+
+def _render(renderable) -> str:
+    """Renders a Rich renderable as plain text."""
+    console = Console(record=True, width=120, file=io.StringIO())
+    console.print(renderable)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -67,10 +76,27 @@ def test_uninstall_model_interactive_success(mock_rich_console, mock_uninstall_c
     mock_uninstall_cmd["uninstaller"].assert_called_once_with("dorsal/gpt-neo", scope="project")
 
     assert mock_rich_console.print.called
-    panel = mock_rich_console.print.call_args_list[-1].args[0]
-    assert "Successfully uninstalled" in panel.renderable
-    assert "dorsal-gpt-neo" in panel.renderable
-    assert "Uninstall Complete" in str(panel.title)
+    assert _render(mock_rich_console.print.call_args_list[-1].args[0]) == (
+        "Uninstall complete\n  Successfully uninstalled dorsal-gpt-neo\n"
+    )
+
+
+def test_uninstall_model_bordered(mock_rich_console, mock_uninstall_cmd):
+    """Tests that the result is drawn in a panel when borders are enabled."""
+    cli = typer.Typer()
+
+    @cli.callback()
+    def bordered_callback(ctx: typer.Context):
+        ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+
+    cli.command(name="uninstall")(uninstall_model)
+
+    result = runner.invoke(cli, ["uninstall", "dorsal/gpt-neo", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    output = _render(mock_rich_console.print.call_args_list[-1].args[0])
+    assert "╭─ Uninstall complete" in output
+    assert "│  Successfully uninstalled dorsal-gpt-neo" in output
 
 
 def test_uninstall_model_interactive_decline(mock_rich_console, mock_uninstall_cmd):
@@ -112,7 +138,7 @@ def test_uninstall_model_dorsal_error(mock_rich_console, mock_uninstall_cmd, moc
 
     assert mock_error_console.print.called
     output_str = str(mock_error_console.print.call_args.args[0])
-    assert "Uninstall Failed" in output_str
+    assert "Uninstall failed" in output_str
     assert "Package not installed" in output_str
 
 
@@ -126,7 +152,7 @@ def test_uninstall_model_unexpected_error(mock_rich_console, mock_uninstall_cmd,
 
     assert mock_error_console.print.called
     output_str = str(mock_error_console.print.call_args.args[0])
-    assert "Unexpected Error" in output_str
+    assert "Unexpected error" in output_str
     assert "Permission denied" in output_str
 
 

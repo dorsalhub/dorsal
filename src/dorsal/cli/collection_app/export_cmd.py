@@ -46,8 +46,11 @@ def export_dorsal_collection(
     """
     Export all file records from a remote collection to a local file.
     """
+    from rich.markup import escape
+
     from dorsal.api.collection import export_collection
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -58,7 +61,9 @@ def export_dorsal_collection(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette = ctx.obj["palette"]
+    icons = ctx.obj.get("icons", {})
 
     if output_dir:
         save_dir = output_dir
@@ -77,17 +82,15 @@ def export_dorsal_collection(
     output_file = save_dir / f"{collection_id}-{timestamp}.json.gz"
 
     if not json_output:
-        console.print(f"📦 Starting export of collection '[bold]{collection_id}[/]'.")
-        console.print(f"   Saving to: [{palette.get('primary_value')}]{output_file}[/]")
+        error_console.print(f"Exporting collection '[bold]{escape(collection_id)}[/]'")
 
-    progress_console = None if json_output else console
     start_time = time.perf_counter()
 
     try:
         export_collection(
             collection_id=collection_id,
             output_path=output_file,
-            console=progress_console,
+            console=error_console,
             palette=palette,
         )
 
@@ -102,7 +105,10 @@ def export_dorsal_collection(
             }
             print_json_output(summary, console)
         else:
-            console.print(f"\n[{palette.get('success')}]✅ Export complete in {duration:.2f}s.[/]")
+            console.print(
+                f"[{palette.get('success')}]{icons.get('success', '')}Export complete in {duration:.2f}s:[/] "
+                f"[{palette.get('primary_value')}]{escape(str(output_file))}[/]"
+            )
 
     except typer.Exit:
         raise

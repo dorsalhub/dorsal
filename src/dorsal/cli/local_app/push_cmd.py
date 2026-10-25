@@ -19,12 +19,8 @@ import pathlib
 import typer
 from typing import Annotated, Any, TYPE_CHECKING, cast
 
-from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
-from rich import box
 from rich.markup import escape
-from rich.console import Group
 
 from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.common.cli import (
@@ -43,10 +39,9 @@ from dorsal.common.exceptions import (
     PartialIndexingError,
     DorsalError,
 )
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
     from dorsal.file.dorsal_file import LocalFile
     from dorsal.file.collection.local import LocalFileCollection
 
@@ -218,9 +213,8 @@ def push_target(
             ]
         )
         if dir_flags_used:
-            console.print(
-                "⚠️ [yellow]Warning:[/] Directory-specific push flags are ignored when pushing a single file.",
-                style=palette.get("warning", "yellow"),
+            get_error_console().print(
+                f"[{palette.get('warning', 'yellow')}]Warning:[/] Directory-specific push flags are ignored when pushing a single file."
             )
 
         _process_file_push(
@@ -263,29 +257,29 @@ def _process_file_push(
     ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, ui_context, console
 ) -> None:
     error_console = get_error_console()
+    from rich.console import Group
+
+    from dorsal.cli.views.layout import key_values, message, section
     from dorsal.file.dorsal_file import LocalFile
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
     access_level_str = "public" if public else "private"
 
-    if not json_output:
-        console.print(
-            f"Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{path.name}[/] as a {access_level_str} record..."
-        )
-
     try:
-        local_file = LocalFile(
-            file_path=str(path),
-            use_cache=use_cache_value,
-            overwrite_cache=overwrite_cache,
-            follow_symlinks=resolve_links,
-        )
+        with error_console.status(
+            f"Preparing to push metadata for [{palette.get('primary_value', 'cyan')}]{escape(path.name)}[/] as a {access_level_str} record"
+        ):
+            local_file = LocalFile(
+                file_path=str(path),
+                use_cache=use_cache_value,
+                overwrite_cache=overwrite_cache,
+                follow_symlinks=resolve_links,
+            )
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
-        status_console = get_error_console() if json_output else console
-        with status_console.status("Pushing to DorsalHub..."):
+        with error_console.status("Pushing to DorsalHub..."):
             api_response = local_file.push(public=public, strict=strict)
 
         if json_output:
@@ -294,30 +288,36 @@ def _process_file_push(
 
         if api_response.results and api_response.success > 0:
             pushed_hash = api_response.results[0].hash
-            success_text = Text.assemble(
-                ("The file record was successfully pushed to DorsalHub.\n\n", palette.get("success", "bold green")),
-                ("SHA256 Hash: ", palette.get("key", "dim")),
-                (f"{pushed_hash}", palette.get("hash_value", "magenta")),
+            details = key_values(ui_context)
+            details.add("SHA-256", str(pushed_hash), style=palette.get("hash_value", "magenta"))
+            details.add(
+                "Access",
+                Text(
+                    access_level_str.capitalize(),
+                    style=palette.get(f"access_{access_level_str}", "default"),
+                ),
             )
-            panel_title, panel_border_style = "✅ Push Complete", palette.get("panel_border_success", "green")
+            body = Group(
+                Text("The file record was successfully pushed to DorsalHub.", style=palette.get("success", "green")),
+                details,
+            )
+            console.print(
+                section(
+                    f"{icons.get('success', '')}Push complete",
+                    body,
+                    ui_context,
+                    title_style=palette.get("panel_title_success", "bold green"),
+                    border_style=palette.get("panel_border_success", "green"),
+                )
+            )
         else:
             detail: str | None = "Unknown"
             if api_response.results and hasattr(api_response.results[0], "detail"):
                 if api_response.results[0].annotations:
                     detail = api_response.results[0].annotations[0].detail
 
-            success_text = Text(
-                f"The file could not be pushed to DorsalHub.\nReason: {detail}", style=palette.get("error", "bold red")
-            )
-            panel_title, panel_border_style = "❌ Push Failed", palette.get("panel_border_error", "red")
-
-        is_none_style = borders == get_borders("none")
-        if is_none_style:
-            console.print(Group(Text.from_markup(f"\n[{panel_border_style} bold]{panel_title}[/]"), success_text))
-        else:
-            console.print(
-                Panel(success_text, expand=False, title=panel_title, border_style=panel_border_style, box=borders)
-            )
+            failure_text = Text(f"The file could not be pushed to DorsalHub.\nReason: {detail}")
+            console.print(message(f"{icons.get('error', '')}Push failed", failure_text, ui_context, level="error"))
 
     except PartialIndexingError as e:
         if json_output:
@@ -364,25 +364,29 @@ def _process_dir_push(
     console,
 ) -> None:
     error_console = get_error_console()
+    from rich.console import Group
+
     from dorsal.common.exceptions import ExceedsApiLimitError
+    from dorsal.cli.views.layout import key_values, message, section, table
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
     progress_console = get_error_console() if json_output else console
 
     if create_collection and not collection_name:
         collection_name = path.name
         if not json_output:
-            console.print(
-                f"[{palette.get('info', 'dim')}]--name not provided. Defaulting to directory name: '[bold]{collection_name}[/]'[/]"
+            error_console.print(
+                f"[{palette.get('info', 'dim')}]--name not provided. Defaulting to directory name: '[bold]{escape(str(collection_name))}[/]'[/]"
             )
 
     if not json_output:
         action_verb = "publish" if create_collection else "push"
-        console.print(
-            f"Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
+        error_console.print(
+            f"Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]",
+            soft_wrap=True,
         )
 
     try:
@@ -407,7 +411,7 @@ def _process_dir_push(
                 unique_files = [f for f in collection if f.file_path not in skipped]
                 collection = LocalFileCollection(source=cast(list[LocalFile], unique_files), use_cache=use_cache_value)
                 if not json_output:
-                    console.print(f"[{palette.get('info', 'dim')}]Ignoring {len(skipped)} duplicate files.[/]")
+                    error_console.print(f"[{palette.get('info', 'dim')}]Ignoring {len(skipped)} duplicate files.[/]")
         elif duplicate_groups and not dry_run:
             _report_duplicate_files(path, duplicate_groups, json_output, ui_context, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
@@ -437,24 +441,19 @@ def _process_dir_push(
                     remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True), console
                 )
             else:
-                success_text = (
-                    f"✅ Successfully pushed {len(collection)} files and created collection.\n\n"
-                    f"[bold]URL:[/] [link={remote_collection.metadata.private_url}]{remote_collection.metadata.private_url}[/link]"
-                )
-                title_text = f"[{palette.get('panel_title_success', 'bold green')}]Publish Complete[/]"
-
-                is_none_style = borders == get_borders("none")
-                if is_none_style:
-                    console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup(success_text)))
-                else:
-                    success_panel = Panel(
-                        success_text,
-                        title=title_text,
+                url = str(remote_collection.metadata.private_url)
+                details = key_values(ui_context)
+                details.add("URL", Text(url, style=f"{palette.get('link', 'underline')} link {url}"))
+                body = Group(Text(f"Successfully pushed {len(collection)} files and created collection."), details)
+                console.print(
+                    section(
+                        f"{icons.get('success', '')}Publish complete",
+                        body,
+                        ui_context,
+                        title_style=palette.get("panel_title_success", "bold green"),
                         border_style=palette.get("panel_border_success", "green"),
-                        expand=False,
-                        box=borders,
                     )
-                    console.print(success_panel)
+                )
 
         if not create_collection:
             summary = collection.push(
@@ -493,31 +492,17 @@ def _process_dir_push(
             from dorsal.file.utils.size import human_filesize
 
             error_text = Text.from_markup(
-                f"[bold]Push failed: {len(e.excess)} file(s) exceed the API batch size limit.[/]\n\n"
+                f"[bold]Push failed: {len(e.excess)} file(s) exceed the API batch size limit.[/]\n"
                 "To push this directory anyway, run the command with the [bold]--force[/] flag.\n\n"
-                f"[{palette.get('warning', 'yellow')}]Oversized Records:[/]\n"
+                f"[{palette.get('warning', 'yellow')}]Oversized records:[/]"
             )
 
             for item in e.excess[:5]:
-                error_text.append(f"  - {item['path']} ({human_filesize(item['size'])})\n")
+                error_text.append(f"\n- {item['path']} ({human_filesize(item['size'])})")
             if len(e.excess) > 5:
-                error_text.append(f"  ... and {len(e.excess) - 5} more.\n")
+                error_text.append(f"\n… and {len(e.excess) - 5} more.")
 
-            title_text = f"[{palette.get('panel_title_error', 'bold red')}]Check Failed[/]"
-
-            is_none_style = borders == get_borders("none")
-            if is_none_style:
-                error_console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
-            else:
-                error_console.print(
-                    Panel(
-                        error_text,
-                        title=title_text,
-                        border_style=palette.get("panel_border_error", "red"),
-                        expand=False,
-                        box=borders,
-                    )
-                )
+            error_console.print(message(f"{icons.get('error', '')}Check failed", error_text, ui_context, level="error"))
         exit_cli(code=EXIT_CODE_ERROR)
 
     except PartialIndexingError as e:
@@ -532,18 +517,9 @@ def _process_dir_push(
             error_console.print(f"[{palette.get('error', 'bold red')}]Strict Mode Failed:[/] {e}")
             summary = e.summary
             if summary and (summary.get("failed", 0) > 0 or summary.get("errors") or summary.get("failures")):
-                failed_table = Table(
-                    title="Strict Integrity Failures",
-                    expand=True,
-                    header_style=palette.get("table_header", "bold"),
-                    style="red",
-                    box=borders,
-                )
+                failed_table = table(ui_context, title="Strict integrity failures")
 
-                if borders == get_borders("none"):
-                    failed_table.padding = (0, 1)
-
-                failed_table.add_column("Error Detail", style="red")
+                failed_table.add_column("Error detail", style=palette.get("error", "red"))
                 if "failures" in summary:
                     for failure in summary["failures"]:
                         failed_table.add_row(escape(str(failure)))
@@ -576,8 +552,10 @@ def _find_duplicate_groups(collection) -> list[tuple[str, list[str]]]:
 
 def _report_duplicate_files(path, duplicate_groups, json_output, ui_context, error_console) -> None:
     """Prints the duplicate-files error to stderr: JSON with `json_output`, otherwise a panel with the fixes."""
+    from dorsal.cli.views.layout import message
+
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     if json_output:
         error_payload: dict[str, Any] = {
@@ -592,70 +570,52 @@ def _report_duplicate_files(path, duplicate_groups, json_output, ui_context, err
         return
 
     command_color = palette.get("primary_value", "default")
-    error_text = Text.from_markup("[bold]Push failed because the directory contains duplicate files.[/]\n\n")
+    error_text = Text.from_markup("[bold]Push failed because the directory contains duplicate files.[/]\n")
     if duplicate_groups:
         max_groups = 5
         for _, paths in duplicate_groups[:max_groups]:
-            error_text.append(" = ".join(pathlib.Path(p).name for p in paths) + "\n")
+            error_text.append("\n" + " = ".join(pathlib.Path(p).name for p in paths))
         if len(duplicate_groups) > max_groups:
-            error_text.append(f"... and {len(duplicate_groups) - max_groups} more duplicate sets.\n")
+            error_text.append(f"\n… and {len(duplicate_groups) - max_groups} more duplicate sets.")
         error_text.append("\n")
     error_text.append_text(
         Text.from_markup(
-            "To get a summary of the duplicate files, run:\n"
+            "\nTo get a summary of the duplicate files, run:\n"
             f'[bold {command_color}]dorsal local duplicates "{escape(str(path))}"[/]\n\n'
             "To push this directory anyway (the first of each duplicate will be indexed), run:\n"
             f'[bold {command_color}]dorsal local push "{escape(str(path))}" --ignore-duplicates[/]'
         )
     )
-    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Duplicate Files Detected[/]"
-
-    if borders == get_borders("none"):
-        error_console.print(Group(Text.from_markup(f"\n{title_text}"), error_text))
-    else:
-        error_console.print(
-            Panel(
-                error_text,
-                title=title_text,
-                border_style=palette.get("panel_border_error", "red"),
-                expand=False,
-                box=borders,
-            )
-        )
+    error_console.print(
+        message(f"{icons.get('error', '')}Duplicate files detected", error_text, ui_context, level="error")
+    )
 
 
 def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:
+    from dorsal.cli.views.layout import message, table
     from dorsal.file.utils.size import human_filesize
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
     cache_info_str = f" ({files_from_cache} from cache)" if files_from_cache > 0 else ""
 
-    is_none_style = borders == get_borders("none")
-    dry_run_text = f"DRY RUN MODE: Would push {len(collection)} files."
-    if is_none_style:
-        console.print(f"\n[{palette.get('panel_border_warning', 'yellow')}]{dry_run_text}[/]")
-    else:
-        console.print(
-            Panel(
-                dry_run_text,
-                border_style=palette.get("panel_border_warning", "yellow"),
-                box=borders,
-            )
+    console.print(
+        message(
+            "Dry run",
+            f"Would push {len(collection)} file(s){cache_info_str}.",
+            ui_context,
+            level="warning",
+            padding=(0, 1),
         )
+    )
+    console.print()
 
-    console.print(f"🔎 Found {len(collection)} file(s) that would be pushed{cache_info_str}:")
-
-    scan_table = Table(box=borders, header_style=palette.get("table_header", "bold"))
-    if is_none_style:
-        scan_table.padding = (0, 1)
-
+    scan_table = table(ui_context)
     scan_table.add_column("Filename", style=palette.get("primary_value", "cyan"), no_wrap=True)
-    scan_table.add_column("Size")
-    scan_table.add_column("Media Type")
-    scan_table.add_column("Source", justify="center")
+    scan_table.add_column("Size", justify="right")
+    scan_table.add_column("Media type")
+    scan_table.add_column("Source")
 
     for file in collection:
         source_text, source_style = (
@@ -663,14 +623,20 @@ def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:
             if file._source == "cache"
             else ("Disk", palette.get("key", "dim"))
         )
-        scan_table.add_row(file.name, human_filesize(file.size), file.media_type, f"[{source_style}]{source_text}[/]")
+        scan_table.add_row(
+            Text(file.name), human_filesize(file.size), file.media_type, Text(source_text, style=source_style)
+        )
     console.print(scan_table)
 
 
 def _display_summary_panel(summary, public, ui_context, use_cache, collection, console):
+    from dorsal.cli.views.layout import key_values, section, table
+
     error_console = get_error_console()
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
+    success_style = palette.get("success", "green")
+    error_style = palette.get("error", "red")
 
     files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
     access_level_str, access_level_style = (
@@ -679,73 +645,53 @@ def _display_summary_panel(summary, public, ui_context, use_cache, collection, c
         else ("Private", palette.get("access_private", "default"))
     )
 
-    summary_table = Table.grid(expand=False, padding=(0, 2))
-    summary_table.add_column(justify="right", style=palette.get("key", "dim"))
-    summary_table.add_column(justify="left")
-    summary_table.add_row("Access Level:", Text(access_level_str, style=access_level_style))
-    summary_table.add_row("Files Scanned:", f"{summary.get('total_records', 0)} ({files_from_cache} from cache)")
-    summary_table.add_row(
-        "File Records Accepted:", Text(str(summary.get("success", 0)), style=palette.get("success", "green"))
-    )
+    details = key_values(ui_context)
+    details.add("Access level", Text(access_level_str, style=access_level_style))
+    details.add("Files scanned", f"{summary.get('total_records', 0)} ({files_from_cache} from cache)")
+    details.add("File records accepted", str(summary.get("success", 0)), style=success_style)
 
     batches = summary.get("batches", [])
     if len(batches) > 1:
         successful_batches = sum(1 for b in batches if b["status"] == "success")
-        summary_table.add_row()
-        summary_table.add_row("Batches Created:", str(len(batches)))
-        summary_table.add_row(
-            "Successful Batches:", Text(str(successful_batches), style=palette.get("success", "green"))
-        )
+        details.add("Batches created", str(len(batches)))
+        details.add("Successful batches", str(successful_batches), style=success_style)
         if failed_batches := len(batches) - successful_batches:
-            summary_table.add_row("Failed Batches:", Text(str(failed_batches), style=palette.get("error", "red")))
+            details.add("Failed batches", str(failed_batches), style=error_style)
 
     oversized = summary.get("oversized_records", [])
     if oversized:
-        summary_table.add_row()
-        summary_table.add_row("Oversized File Records:", str(len(oversized)))
+        oversized_kv = details.section("Oversized file records", str(len(oversized)))
 
         successful_oversized = sum(1 for r in oversized if r.get("status") == "success")
         if successful_oversized:
-            summary_table.add_row(
-                "  Successful:", Text(str(successful_oversized), style=palette.get("success", "green"))
-            )
+            oversized_kv.add("Successful", str(successful_oversized), style=success_style)
 
         failed_oversized = sum(1 for r in oversized if r.get("status") in ("failure", "partial_failure"))
         if failed_oversized:
-            summary_table.add_row("  Failed/Partial:", Text(str(failed_oversized), style=palette.get("error", "red")))
+            oversized_kv.add("Failed/partial", str(failed_oversized), style=error_style)
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title_success', 'bold green')}]Push Complete[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"\n{title_text}"), summary_table))
-    else:
-        console.print(
-            Panel(
-                summary_table,
-                title=title_text,
-                expand=False,
-                border_style=palette.get("panel_border_success", "green"),
-                box=borders,
-            )
+    console.print(
+        section(
+            f"{icons.get('success', '')}Push complete",
+            details,
+            ui_context,
+            title_style=palette.get("panel_title_success", "bold green"),
+            border_style=palette.get("panel_border_success", "green"),
         )
+    )
 
     if summary.get("failed", 0) > 0 or summary.get("errors"):
-        error_console.print(f"\n[{palette.get('error', 'red')}]⚠️ Some batches failed to process:[/]")
-        failed_table = Table(
-            title="Failed Batch Details", expand=True, header_style=palette.get("table_header", "bold"), box=borders
-        )
-        if is_none_style:
-            failed_table.padding = (0, 1)
-
+        error_console.print()
+        error_console.print(f"[{error_style}]{icons.get('warning', '')}Some batches failed to process:[/]")
+        failed_table = table(ui_context, title="Failed batch details", expand=True)
         failed_table.add_column("Batch #", style=palette.get("primary_value", "cyan"), ratio=15)
-        failed_table.add_column("Error Type", style=palette.get("warning", "yellow"), ratio=25)
-        failed_table.add_column("Error Message", ratio=60)
+        failed_table.add_column("Error type", style=palette.get("warning", "yellow"), ratio=25)
+        failed_table.add_column("Error message", ratio=60)
 
         for error in summary.get("errors", []):
             failed_table.add_row(
                 str(error.get("batch_index", "?")),
-                error.get("error_type", "Unknown"),
-                error.get("error_message", "No message"),
+                Text(str(error.get("error_type", "Unknown"))),
+                Text(str(error.get("error_message", "No message"))),
             )
         error_console.print(failed_table)

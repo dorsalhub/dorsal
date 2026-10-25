@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import json
 import pathlib
 import pytest
@@ -20,6 +21,7 @@ from unittest.mock import MagicMock, ANY
 from typer.testing import CliRunner
 
 from rich.box import ROUNDED
+from rich.console import Console
 import typer
 
 from dorsal.cli.model_app.run_model_cmd import run_model
@@ -244,7 +246,9 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker, tmp_
     )
     mock_run_deps["run_logic"].return_value = [mock_result]
 
-    mocker.patch("dorsal.api.adapters.export_record", return_value="1\n00:00:00 --> 00:00:01\nTranscribed string")
+    mocker.patch(
+        "dorsal.api.adapters.export_record", return_value="1\n00:00:00 --> 00:00:01\n[music] Transcribed string"
+    )
 
     monkeypatch.chdir(tmp_path)
     test_file = pathlib.Path("test.wav")
@@ -252,8 +256,9 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker, tmp_
     result = runner.invoke(cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt", "--no-save"])
 
     assert result.exit_code == 0
-    printed_text = mock_rich_console.print.call_args.args[0]
-    assert "Transcribed string" in printed_text
+    mock_rich_console.print.assert_not_called()
+    written = "".join(call.args[0] for call in mock_rich_console.file.write.call_args_list)
+    assert written == "1\n00:00:00 --> 00:00:01\n[music] Transcribed string"
 
 
 def test_run_model_export_missing_adapters(mock_run_deps, mocker, tmp_path, monkeypatch):
@@ -702,24 +707,28 @@ def test_run_model_batch_export_failed_row(mock_run_deps, mocker, tmp_path, monk
     assert result.exit_code == 0
 
 
-def test_run_model_borders_none_padding(mock_run_deps, tmp_path, monkeypatch):
-    """Covers applying padding to the table when borders are None."""
-    from dorsal.cli.themes.borders import get_borders
+def test_run_model_batch_table_borderless(mock_rich_console, mock_run_deps, tmp_path, monkeypatch):
+    """Tests the borderless batch results table: plain left-aligned columns with headers."""
+    monkeypatch.setitem(DUMMY_UI_CONTEXT, "borders", None)
+    monkeypatch.chdir(tmp_path)
+    test_dir = pathlib.Path("batch_dir")
+    test_dir.mkdir()
+    (test_dir / "1.pdf").touch()
+    (test_dir / "2.pdf").touch()
 
-    old_borders = DUMMY_UI_CONTEXT["borders"]
-    DUMMY_UI_CONTEXT["borders"] = get_borders("none")
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
+    assert result.exit_code == 0
 
-    try:
-        monkeypatch.chdir(tmp_path)
-        test_dir = pathlib.Path("batch_dir")
-        test_dir.mkdir()
-        (test_dir / "1.pdf").touch()
-        (test_dir / "2.pdf").touch()
+    console = Console(record=True, width=120, file=io.StringIO())
+    console.print(mock_rich_console.print.call_args.args[0])
+    lines = console.export_text().splitlines()
 
-        result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
-        assert result.exit_code == 0
-    finally:
-        DUMMY_UI_CONTEXT["borders"] = old_borders
+    assert lines[0] == "Results: dorsal/scanner"
+    assert lines[1] == "Input file  Status   JSON output"
+    assert sorted(lines[2:]) == [
+        "1.pdf       Success  batch_dir_batch.dorsal.json",
+        "2.pdf       Success  batch_dir_batch.dorsal.json",
+    ]
 
 
 def test_run_model_outer_typer_exit(mock_run_deps, mocker, tmp_path, monkeypatch):

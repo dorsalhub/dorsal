@@ -59,13 +59,13 @@ def prune_search_index(
             exit_cli()
 
         if pruned_count > 0:
-            message = f"✅ Prune complete. Removed {pruned_count} of {total_records} records."
+            message = f"Prune complete. Removed {pruned_count} of {total_records} records."
             style = palette.get("success", "green")
         else:
-            message = f"✅ Prune complete. No stale records found out of {total_records} scanned."
+            message = f"Prune complete. No stale records found out of {total_records} scanned."
             style = palette.get("info", "dim")
 
-        console.print(f"[{style}]{message}[/]")
+        console.print(f"[{style}]{ctx.obj.get('icons', {}).get('success', '')}{message}[/]")
 
     except typer.Exit:
         raise

@@ -15,7 +15,7 @@ import pytest
 import json
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -23,6 +23,17 @@ from dorsal.common.exceptions import DorsalClientError, NotFoundError
 
 runner = CliRunner()
 HASH_STRING = "sha256:123abc456def"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
+
+
+def _printed_text(mock_console) -> str:
+    return "".join(_render(call.args[0]) for call in mock_console.print.call_args_list if call.args)
 
 
 @pytest.fixture
@@ -65,9 +76,22 @@ def test_delete_record_with_yes_flag(mock_rich_console, mock_delete_cmd):
     # get_record should NOT be called in non-interactive mode
     mock_delete_cmd["get_record"].assert_not_called()
 
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Deletion Complete" in str(printed_object.title)
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert output.splitlines() == [
+        "Deletion complete",
+        "  1 record(s) permanently deleted.",
+        "  Removed 5 tag(s) and 2 annotation(s).",
+    ]
+
+
+def test_delete_record_with_yes_flag_bordered(mock_rich_console, mock_delete_cmd):
+    """With --borders rounded the completion notice is a panel."""
+    result = runner.invoke(app, ["--borders", "rounded", "hub", "delete", HASH_STRING, "--yes"])
+
+    assert result.exit_code == 0
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert output.startswith("╭─ Deletion complete ")
+    assert "1 record(s) permanently deleted." in output
 
 
 def test_delete_record_interactive_confirm(mock_rich_console, mock_delete_cmd):
@@ -79,10 +103,26 @@ def test_delete_record_interactive_confirm(mock_rich_console, mock_delete_cmd):
     mock_delete_cmd["create_panel"].assert_called_once()
     mock_delete_cmd["delete_record"].assert_called_once()
 
-    # The last thing printed should be the success panel
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Deletion Complete" in str(printed_object.title)
+    assert mock_delete_cmd["create_panel"].call_args.kwargs["title"] == "File record to be deleted"
+
+    output = _printed_text(mock_rich_console)
+    assert "Action summary\n" in output
+    assert f"For the hash {HASH_STRING} this operation will:" in output
+    assert "  - Delete both public and private records" in output
+    assert _render(mock_rich_console.print.call_args.args[0]).startswith("Deletion complete\n")
+    assert not any(ch in output for ch in "\U0001f50e\U0001f5d1\u2705")
+
+
+def test_delete_record_interactive_title_uses_file_name(mock_rich_console, mock_delete_cmd):
+    """The record shown for confirmation is titled with its file name."""
+    mock_delete_cmd["get_record"].return_value.model_dump.return_value = {
+        "annotations": {"file/base": {"record": {"name": "report.pdf"}}}
+    }
+
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING], input="y\n")
+
+    assert result.exit_code == 0
+    assert mock_delete_cmd["create_panel"].call_args.kwargs["title"] == "File record to be deleted: report.pdf"
 
 
 def test_delete_record_interactive_abort(mock_rich_console, mock_delete_cmd):
@@ -116,11 +156,20 @@ def test_delete_record_not_found(mock_rich_console, mock_delete_cmd, mock_error_
     result = runner.invoke(app, ["hub", "delete", HASH_STRING])  # No --yes flag
 
     assert result.exit_code != 0
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Error" in str(printed_object.title)
-    assert "Cannot delete" in str(printed_object.renderable)
-    assert "not found" in str(printed_object.renderable)
+    output = _render(mock_error_console.print.call_args.args[0])
+    assert output.startswith("Error: Cannot delete")
+    assert "not found in any of your accessible records" in output
+
+
+@pytest.mark.parametrize("scope, expected", [("public", "public records"), ("private", "your private records")])
+def test_delete_record_not_found_scope_wording(mock_rich_console, mock_delete_cmd, mock_error_console, scope, expected):
+    """The not-found message names the scope that was searched."""
+    mock_delete_cmd["get_record"].side_effect = NotFoundError("test")
+
+    result = runner.invoke(app, ["hub", "delete", HASH_STRING, "--record", scope])
+
+    assert result.exit_code != 0
+    assert f"not found in {expected}." in _render(mock_error_console.print.call_args.args[0])
 
 
 def test_delete_record_flag_conflict(mock_rich_console):

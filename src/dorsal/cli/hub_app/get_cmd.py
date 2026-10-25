@@ -18,10 +18,12 @@ import json
 import logging
 import pathlib
 
-from rich.box import Box
-from typing import Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Optional
 
 from dorsal.common import constants
+
+if TYPE_CHECKING:
+    from rich.box import Box
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,8 @@ def get_file_record(
     """
     Get a single file record from DorsalHub by its hash.
     """
+    from rich.markup import escape
+
     from dorsal.api import get_dorsal_file_record
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.common.cli import (
@@ -95,7 +99,7 @@ def get_file_record(
     error_console = get_error_console()
     palette: dict[str, str] = ctx.obj["palette"]
     icons: dict[str, str] = ctx.obj.get("icons", {})
-    borders: Box | None = ctx.obj.get("borders")
+    borders: "Box | None" = ctx.obj.get("borders")
 
     if private and public:
         exit_cli(
@@ -108,10 +112,10 @@ def get_file_record(
             save = True
         else:
             if not output_path.is_dir():
-                console.print(
-                    f"Warning --output path '{output_path}' was specified with an unknown extension."
-                    f" Please use -s (for .json) or specify a .json file.",
-                    style=palette.get("warning", "yellow"),
+                error_console.print(
+                    f"[{palette.get('warning', 'yellow')}]{icons.get('warning', '')}Warning:[/] --output path "
+                    f"'{escape(str(output_path))}' was specified with an unknown extension."
+                    f" Please use -s (for .json) or specify a .json file."
                 )
 
     public_scope = None
@@ -123,13 +127,11 @@ def get_file_record(
         public_scope = True
         search_type_str = " public "
 
-    if not json_output:
-        console.print(
-            f"Checking DorsalHub for{search_type_str}file record with hash [{palette['primary_value']}]{hash_string}[/]"
-        )
-
     try:
-        file_record = get_dorsal_file_record(hash_string=hash_string, public=public_scope, mode="pydantic")
+        with error_console.status(
+            f"Checking DorsalHub for{search_type_str}file record [{palette['primary_value']}]{escape(hash_string)}[/]"
+        ):
+            file_record = get_dorsal_file_record(hash_string=hash_string, public=public_scope, mode="pydantic")
 
         is_private = False
         if public_scope is not None:
@@ -143,10 +145,10 @@ def get_file_record(
         if json_output:
             print_raw_output(record_json_str, console)
         else:
-            if file_record.annotations:
-                title = f"File Record: {file_record.annotations.file_base.record.name}"
-            else:
-                title = "File Record"
+            file_name = None
+            if file_record.annotations and file_record.annotations.file_base:
+                file_name = file_record.annotations.file_base.record.name
+            title = escape(str(file_name)) if file_name else "File record"
 
             panel = create_file_info_panel(
                 record_dict=record_dict,
@@ -165,6 +167,7 @@ def get_file_record(
                 hash_string=hash_string,
                 palette=palette,
                 json_to_stdout=json_output,
+                icons=icons,
             )
 
     except typer.Exit:
@@ -179,7 +182,7 @@ def get_file_record(
             print_json_output(error_payload, error_console)
             exit_cli(code=EXIT_CODE_ERROR)
         else:
-            error_console.print(f"\n[{palette['warning']}]⚠️ Not Found:[/] {e.message}")
+            error_console.print(f"[{palette['warning']}]{icons.get('warning', '')}Not found:[/] {escape(e.message)}")
             exit_cli(code=EXIT_CODE_ERROR)
     except DorsalOfflineError:
         raise
@@ -212,8 +215,11 @@ def _save_json_report(
     hash_string: str,
     palette: dict,
     json_to_stdout: bool,
+    icons: dict[str, str] | None = None,
 ):
     """Saves the fetched record to a JSON file."""
+    from rich.markup import escape
+
     from dorsal.common.cli import (
         get_rich_console,
         EXIT_CODE_ERROR,
@@ -223,6 +229,7 @@ def _save_json_report(
 
     console = get_rich_console()
     error_console = get_error_console()
+    icons = icons or {}
 
     final_path = _get_final_path(hash_string, output_path, ".json")
 
@@ -232,12 +239,17 @@ def _save_json_report(
             fp.write(record_json_str)
 
         status_console = error_console if json_to_stdout else console
-        status_console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
+        if not json_to_stdout:
+            status_console.print()
+        status_console.print(
+            f"{icons.get('success', '')}JSON record saved to: [{palette.get('primary_value')}]{escape(str(final_path))}[/]"
+        )
     except IOError as err:
         logger.error(f"Failed to save get report: {err}")
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {err}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
         error_console.print(
-            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+            f"[{palette.get('warning', 'yellow')}]{icons.get('warning', '')}Warning:[/] Could not save JSON report "
+            f"to {escape(str(final_path))}. Error: {escape(str(e))}"
         )

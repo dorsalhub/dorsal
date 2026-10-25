@@ -79,9 +79,12 @@ def get_index_record(
     )
     from dorsal.api.search import search_local
     from dorsal.session import get_shared_index
+    from rich.markup import escape
+
     from dorsal.cli.views.file import create_file_info_panel
 
     console = get_rich_console()
+    error_console = get_error_console()
     palette = ctx.obj["palette"]
     icons = ctx.obj["icons"]
     borders = ctx.obj["borders"]
@@ -91,42 +94,39 @@ def get_index_record(
             save = True
         else:
             if not output_path.is_dir():
-                console.print(
-                    f"Warning --output path '{output_path}' was specified with an unknown extension."
-                    f" Please use -s (for .json) or specify a .json file.",
-                    style=palette.get("warning", "yellow"),
+                error_console.print(
+                    f"[{palette.get('warning', 'yellow')}]Warning:[/] --output path '{escape(str(output_path))}' was specified"
+                    " with an unknown extension. Please use -s (for .json) or specify a .json file."
                 )
 
-    index = get_shared_index()
     record = None
 
-    if not json_output:
-        console.print(
-            f"Checking local index for record matching: [{palette.get('primary_value', 'cyan')}]{identifier}[/]"
-        )
+    with error_console.status(
+        f"Checking local index for record matching: [{palette.get('primary_value', 'cyan')}]{escape(identifier)}[/]"
+    ):
+        index = get_shared_index()
 
-    if os.path.isabs(identifier) or os.path.exists(identifier):
-        path_str = str(pathlib.Path(identifier).resolve())
-        record = index.get_record(path=path_str)
+        if os.path.isabs(identifier) or os.path.exists(identifier):
+            path_str = str(pathlib.Path(identifier).resolve())
+            record = index.get_record(path=path_str)
 
-    if not record and len(identifier) in (16, 32, 40, 64) and all(c in string.hexdigits for c in identifier):
-        query = f"record_id:{identifier.lower()}" if len(identifier) == 16 else identifier
-        results = search_local([query], index=index, limit=1)
-        if results:
-            record = results[0]
+        if not record and len(identifier) in (16, 32, 40, 64) and all(c in string.hexdigits for c in identifier):
+            query = f"record_id:{identifier.lower()}" if len(identifier) == 16 else identifier
+            results = search_local([query], index=index, limit=1)
+            if results:
+                record = results[0]
 
     if not record:
-        error_console = get_error_console()
         if json_output:
             print_json_output(
                 {"success": False, "error": "Not Found", "detail": "No local records found."}, error_console
             )
             exit_cli(code=EXIT_CODE_ERROR)
-        error_console.print(f"\n[{palette.get('warning', 'yellow')}]Not Found:[/] No local records found.")
+        error_console.print(f"[{palette.get('warning', 'yellow')}]Not found:[/] No local records found.")
         if len(identifier) == 64:
             hub_cmd = f"dorsal hub get {identifier}"
             error_console.print(
-                f"\n[{palette.get('info', 'dim')}]Tip: To search DorsalHub:[/] [{palette.get('primary_value', 'cyan')}]{hub_cmd}[/]"
+                f"[{palette.get('info', 'dim')}]Tip: To search DorsalHub:[/] [{palette.get('primary_value', 'cyan')}]{hub_cmd}[/]"
             )
         exit_cli(code=EXIT_CODE_ERROR)
 
@@ -154,7 +154,7 @@ def get_index_record(
         print_raw_output(record_json_str, console)
     else:
         base_record = record_dict.get("annotations", {}).get("file/base", {})
-        title = f"File Record: {record.name or 'Unknown'}"
+        title = escape(record.name or "Unknown")
         is_private = base_record.get("private", False)
         panel = create_file_info_panel(
             record_dict=record_dict,
@@ -166,7 +166,6 @@ def get_index_record(
             source="cache",
         )
 
-        console.print()
         console.print(panel)
 
     if save:
@@ -208,6 +207,8 @@ def _save_json_report(
         get_error_console,
     )
 
+    from rich.markup import escape
+
     console = get_rich_console()
     error_console = get_error_console()
 
@@ -219,12 +220,16 @@ def _save_json_report(
             fp.write(record_json_str)
 
         status_console = error_console if json_to_stdout else console
-        status_console.print(f"\n✅ JSON record saved to: [{palette.get('primary_value')}]{final_path}[/]")
+        status_console.print(
+            f"JSON record saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]",
+            soft_wrap=True,
+        )
     except IOError as err:
         logger.error(f"Failed to save get report: {err}")
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error writing to file: {err}")
     except Exception as e:
         logger.error(f"Failed to save JSON report: {e}")
         error_console.print(
-            f"⚠️ Could not save JSON report to {final_path}. Error: {e}", style=palette.get("warning", "yellow")
+            f"[{palette.get('warning', 'yellow')}]Warning:[/] Could not save JSON report to {escape(str(final_path))}."
+            f" Error: {escape(str(e))}"
         )

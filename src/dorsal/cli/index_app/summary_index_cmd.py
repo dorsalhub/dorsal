@@ -16,13 +16,6 @@ import logging
 import typer
 from typing import Annotated, TYPE_CHECKING
 
-from rich.console import Group
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-
-from dorsal.cli.themes.borders import get_borders
-
 if TYPE_CHECKING:
     from dorsal.cli.themes import UIContext
 
@@ -46,7 +39,10 @@ def show_index_summary(
     """
     from datetime import datetime
     from rich.columns import Columns
+    from rich.console import Group
+    from rich.text import Text
     from dorsal.api.index import summary as get_index_summary
+    from dorsal.cli.views.layout import Trimmed, heading, is_borderless, key_values, section, table
     from dorsal.common.cli import (
         get_rich_console,
         exit_cli,
@@ -59,7 +55,6 @@ def show_index_summary(
     ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
     icons = ui_context["icons"]
-    borders = ui_context["borders"]
 
     try:
         summary = get_index_summary(verbose=verbose, limit=limit)
@@ -79,101 +74,83 @@ def show_index_summary(
             else "N/A"
         )
 
-        summary_table = Table.grid(expand=False, padding=(0, 1))
-        summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=24)
-        summary_table.add_column(justify="left", style=palette.get("primary_value", "default"))
-
-        summary_table.add_row("Index Path:", str(summary.get("database_path", "N/A")))
-        summary_table.add_row("Index Size:", f"{summary.get('total_records', 0):,} Records")
-        summary_table.add_row("Record Cache Size:", human_filesize(summary.get("record_cache_size_bytes", 0)))
-        summary_table.add_row("Search Index Size:", human_filesize(summary.get("search_index_size_bytes", 0)))
+        summary_table = key_values(ui_context)
+        summary_table.add("Index path", str(summary.get("database_path", "N/A")))
+        summary_table.add("Index size", f"{summary.get('total_records', 0):,} records")
+        summary_table.add("Record cache size", human_filesize(summary.get("record_cache_size_bytes", 0)))
+        summary_table.add("Search index size", human_filesize(summary.get("search_index_size_bytes", 0)))
 
         if verbose:
-            summary_table.add_row("Total DB Size:", human_filesize(summary.get("database_size_bytes", 0)))
-            summary_table.add_row("Full-Text Index:", f"{summary.get('fts_indexed_records', 0):,} Records")
-            summary_table.add_row("Index Created:", created_dt)
-            summary_table.add_row("Last Modified:", modified_dt)
-            summary_table.add_row("Tracked File Data:", human_filesize(summary.get("total_tracked_file_bytes", 0)))
+            summary_table.add("Total DB size", human_filesize(summary.get("database_size_bytes", 0)))
+            summary_table.add("Full-text index", f"{summary.get('fts_indexed_records', 0):,} records")
+            summary_table.add("Index created", created_dt)
+            summary_table.add("Last modified", modified_dt)
+            summary_table.add("Tracked file data", human_filesize(summary.get("total_tracked_file_bytes", 0)))
 
-            summary_table.add_row("Avg Index Record Size:", human_filesize(summary.get("avg_record_size_bytes", 0)))
-            summary_table.add_row("Max Index Record Size:", human_filesize(summary.get("max_record_size_bytes", 0)))
+            summary_table.add("Avg index record size", human_filesize(summary.get("avg_record_size_bytes", 0)))
+            summary_table.add("Max index record size", human_filesize(summary.get("max_record_size_bytes", 0)))
 
-            summary_table.add_row("Unique Files (Hash):", f"{summary.get('unique_files_by_hash', 0):,}")
-            summary_table.add_row("Duplicate Files:", f"{summary.get('duplicate_files_detected', 0):,}")
+            summary_table.add("Unique files (hash)", f"{summary.get('unique_files_by_hash', 0):,}")
+            summary_table.add("Duplicate files", f"{summary.get('duplicate_files_detected', 0):,}")
 
             oldest_ts = summary.get("oldest_record_timestamp")
             if oldest_ts:
-                summary_table.add_row("Oldest Tracked File:", datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d"))
+                summary_table.add("Oldest tracked file", datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d"))
             newest_ts = summary.get("newest_record_timestamp")
             if newest_ts:
-                summary_table.add_row("Newest Tracked File:", datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d"))
+                summary_table.add("Newest tracked file", datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d"))
 
             comp_mode = summary.get("compression_mode", "None")
             comp_level = summary.get("compression_level")
             comp_str = f"{comp_mode} (Level {comp_level})" if comp_level else comp_mode
-            summary_table.add_row("Compression Config:", comp_str)
+            summary_table.add("Compression config", comp_str)
 
             comp_ratio = summary.get("compression_ratio_sample")
             if comp_ratio:
-                summary_table.add_row("Compression Ratio:", f"{comp_ratio:.2f}x")
+                summary_table.add("Compression ratio", f"{comp_ratio:.2f}x")
             else:
-                summary_table.add_row("Compressed Records:", f"{summary.get('compressed_records', 0):,}")
+                summary_table.add("Compressed records", f"{summary.get('compressed_records', 0):,}")
 
-            summary_table.add_row("Hash Only Records:", f"{summary.get('hash_only_records', 0):,}")
-            summary_table.add_row("Indexed Attributes:", f"{summary.get('indexed_attributes', 0):,}")
+            summary_table.add("Hash-only records", f"{summary.get('hash_only_records', 0):,}")
+            summary_table.add("Indexed attributes", f"{summary.get('indexed_attributes', 0):,}")
 
-        is_none_style = borders == get_borders("none")
-        title_text = f"[{palette.get('panel_title', 'bold white')}]{icons.get('search', '')}Index Summary[/]"
-
-        if is_none_style:
-            console.print(Group(Text.from_markup(f"{title_text}\n"), summary_table))
-        else:
-            console.print(
-                Panel(
-                    summary_table,
-                    title=title_text,
-                    border_style=palette.get("panel_border", "default"),
-                    box=borders,
-                    expand=False,
-                )
-            )
+        title_text = f"{icons.get('search', '')}Index summary"
+        console.print(section(title_text, summary_table, ui_context))
 
         if verbose:
+            borderless = is_borderless(ui_context)
 
-            def build_dist_table(title: str, data: dict, limit: int | None = None):
-                t = Table(
-                    title=f"[{palette.get('panel_title', 'bold white')}]{title}[/]",
-                    show_header=False,
-                    box=borders,
-                    expand=False,
-                )
-                t.add_column("Type", style=palette.get("key", "dim"))
+            def build_dist_table(title: str, key_header: str, data: dict, limit: int | None = None):
+                t = table(ui_context, title=None if borderless else title, expand=False)
+                t.add_column(key_header, style=palette.get("key", "dim"))
                 t.add_column("Count", justify="right", style=palette.get("primary_value", "default"))
                 for k, v in list(data.items())[:limit]:
-                    t.add_row(str(k), f"{v:,}")
+                    t.add_row(Text(str(k)), f"{v:,}")
+                if borderless:
+                    return Group(heading(title, palette.get("section_title", "bold")), t)
                 return t
 
             dist_tables = []
 
             top_exts = summary.get("top_extensions", {})
             if top_exts:
-                dist_tables.append(build_dist_table("Top Extensions", top_exts, limit=limit))
+                dist_tables.append(build_dist_table("Top extensions", "Extension", top_exts, limit=limit))
 
             top_media = summary.get("top_media_types", {})
             if top_media:
-                dist_tables.append(build_dist_table("Top Media Types", top_media, limit=limit))
+                dist_tables.append(build_dist_table("Top media types", "Media type", top_media, limit=limit))
 
             top_schemas = summary.get("top_schemas", {})
             if top_schemas:
-                dist_tables.append(build_dist_table("Top Schemas", top_schemas, limit=limit))
+                dist_tables.append(build_dist_table("Top schemas", "Schema", top_schemas, limit=limit))
 
             top_attrs = summary.get("top_attribute_keys", {})
             if top_attrs:
-                dist_tables.append(build_dist_table("Top Attributes", top_attrs, limit=limit))
+                dist_tables.append(build_dist_table("Top attributes", "Attribute", top_attrs, limit=limit))
 
             if dist_tables:
                 console.print()
-                console.print(Columns(dist_tables, padding=(0, 2)))
+                console.print(Trimmed(Columns(dist_tables, padding=(0, 4 if borderless else 2))))
 
     except typer.Exit:
         raise

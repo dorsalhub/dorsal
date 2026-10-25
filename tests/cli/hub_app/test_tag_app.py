@@ -16,7 +16,7 @@ import pytest
 import json
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 from dorsal.cli import app
 from dorsal.common.exceptions import (
@@ -33,6 +33,17 @@ from dorsal.common.exceptions import (
 runner = CliRunner()
 HASH_STRING = "sha256:123abc456def"
 TAG_ID = "tag_xyz789"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
+
+
+def _error_output(mock_error_console) -> str:
+    return _render(mock_error_console.print.call_args.args[0])
 
 
 @pytest.fixture
@@ -62,7 +73,9 @@ def test_add_tag_success_private(mock_rich_console, mock_tag_app_cmds):
 
     assert result.exit_code == 0
     mock_tag_app_cmds["add_tag"].assert_called_once_with(hash_string=HASH_STRING, name="key", value="val", public=False)
-    assert "Successfully added tag" in mock_rich_console.print.call_args.args[0]
+    mock_rich_console.print.assert_called_once()
+    printed = mock_rich_console.print.call_args.args[0]
+    assert printed.plain == "Successfully added tag 'key:val'."
 
 
 def test_add_tag_success_public(mock_rich_console, mock_tag_app_cmds):
@@ -86,7 +99,7 @@ def test_add_tag_success_public(mock_rich_console, mock_tag_app_cmds):
     mock_tag_app_cmds["add_tag"].assert_called_once_with(hash_string=HASH_STRING, name="key", value="val", public=True)
 
 
-def test_add_label_success(mock_rich_console, mock_tag_app_cmds):
+def test_add_label_success(mock_rich_console, mock_error_console, mock_tag_app_cmds):
     """Tests adding a simple label using the shorthand argument."""
 
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "urgent"])
@@ -96,7 +109,8 @@ def test_add_label_success(mock_rich_console, mock_tag_app_cmds):
     mock_tag_app_cmds["add_label"].assert_called_once_with(hash_string=HASH_STRING, label="urgent")
 
     mock_tag_app_cmds["add_tag"].assert_not_called()
-    assert "(label)" in mock_rich_console.print.call_args_list[0].args[0]
+    assert "(label)" in str(mock_error_console.status.call_args.args[0])
+    assert mock_rich_console.print.call_count == 1
 
 
 def test_add_label_error_public(mock_rich_console, mock_tag_app_cmds, mock_error_console):
@@ -109,9 +123,9 @@ def test_add_label_error_public(mock_rich_console, mock_tag_app_cmds, mock_error
     mock_tag_app_cmds["add_label"].assert_not_called()
     mock_tag_app_cmds["add_tag"].assert_not_called()
 
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Simple labels must be PRIVATE" in str(printed_object.renderable)
+    printed_object = _error_output(mock_error_console)
+    assert printed_object.startswith("Error: ")
+    assert "Simple labels must be PRIVATE" in printed_object
 
 
 def test_add_label_error_ambiguous(mock_rich_console, mock_tag_app_cmds, mock_error_console):
@@ -122,8 +136,8 @@ def test_add_label_error_ambiguous(mock_rich_console, mock_tag_app_cmds, mock_er
     assert result.exit_code == 1
     mock_tag_app_cmds["add_label"].assert_not_called()
 
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert "Ambiguous Request" in str(printed_object.renderable)
+    printed_object = _error_output(mock_error_console)
+    assert "Ambiguous Request" in printed_object
 
 
 def test_add_tag_missing_args(mock_rich_console, mock_tag_app_cmds, mock_error_console):
@@ -132,8 +146,8 @@ def test_add_tag_missing_args(mock_rich_console, mock_tag_app_cmds, mock_error_c
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING])
 
     assert result.exit_code == 1
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert "Missing Arguments" in str(printed_object.renderable)
+    printed_object = _error_output(mock_error_console)
+    assert "Missing Arguments" in printed_object
 
 
 def test_add_tag_json_output(mock_rich_console, mock_tag_app_cmds):
@@ -155,9 +169,9 @@ def test_add_tag_not_found_error(mock_rich_console, mock_tag_app_cmds, mock_erro
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
 
     assert result.exit_code != 0
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Cannot add tag: No file record found" in str(printed_object.renderable)
+    printed_object = _error_output(mock_error_console)
+    assert printed_object.startswith("Error: ")
+    assert "Cannot add tag: No file record found" in printed_object
 
 
 def test_remove_tag_success(mock_rich_console, mock_tag_app_cmds):
@@ -166,7 +180,16 @@ def test_remove_tag_success(mock_rich_console, mock_tag_app_cmds):
 
     assert result.exit_code == 0
     mock_tag_app_cmds["remove_tag"].assert_called_once_with(hash_string=HASH_STRING, tag_id=TAG_ID)
-    assert "Successfully removed tag" in mock_rich_console.print.call_args.args[0]
+    mock_rich_console.print.assert_called_once()
+    assert mock_rich_console.print.call_args.args[0].plain == f"Successfully removed tag '{TAG_ID}'."
+
+
+def test_remove_tag_success_with_emoji_icons(mock_rich_console, mock_tag_app_cmds):
+    """Users who opt into emoji icons still see a status icon."""
+    result = runner.invoke(app, ["--icons", "emoji", "hub", "tag", "rm", HASH_STRING, "--tag-id", TAG_ID])
+
+    assert result.exit_code == 0
+    assert mock_rich_console.print.call_args.args[0].plain.startswith("\u2705 Successfully removed tag")
 
 
 def test_remove_tag_json_output(mock_rich_console, mock_tag_app_cmds):
@@ -188,16 +211,16 @@ def test_remove_tag_not_found_error(mock_rich_console, mock_tag_app_cmds, mock_e
     result = runner.invoke(app, ["hub", "tag", "rm", HASH_STRING, "--tag-id", TAG_ID])
 
     assert result.exit_code != 0
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Could not find a file with that hash" in str(printed_object.renderable)
+    printed_object = _error_output(mock_error_console)
+    assert printed_object.startswith("Error: ")
+    assert "Could not find a file with that hash" in printed_object
 
 
 def test_add_tag_forbidden_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
     mock_tag_app_cmds["add_tag"].side_effect = ForbiddenError("Permission denied.")
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
     assert result.exit_code != 0
-    assert "Cannot add tag. Permission denied." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "Cannot add tag. Permission denied." in _error_output(mock_error_console)
 
 
 def test_add_tag_bad_request_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
@@ -205,14 +228,14 @@ def test_add_tag_bad_request_error(mock_rich_console, mock_tag_app_cmds, mock_er
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
 
     assert result.exit_code != 0
-    assert "The server rejected the tag 'k:v'." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "The server rejected the tag 'k:v'." in _error_output(mock_error_console)
 
 
 def test_add_tag_duplicate_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
     mock_tag_app_cmds["add_tag"].side_effect = DuplicateTagError("Tag already exists.")
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
     assert result.exit_code != 0
-    assert "Invalid Tag: Tag already exists." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "Invalid Tag: Tag already exists." in _error_output(mock_error_console)
 
 
 def test_add_tag_offline_error(mock_tag_app_cmds):
@@ -233,16 +256,14 @@ def test_add_tag_client_error(mock_rich_console, mock_tag_app_cmds, mock_error_c
     mock_tag_app_cmds["add_tag"].side_effect = DorsalClientError("Connection reset.")
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
     assert result.exit_code != 0
-    assert "API Error: Connection reset." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "API Error: Connection reset." in _error_output(mock_error_console)
 
 
 def test_add_tag_generic_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
     mock_tag_app_cmds["add_tag"].side_effect = Exception("System meltdown.")
     result = runner.invoke(app, ["hub", "tag", "add", HASH_STRING, "--name", "k", "--value", "v"])
     assert result.exit_code != 0
-    assert "An unexpected error occurred: System meltdown." in str(
-        mock_error_console.print.call_args.args[0].renderable
-    )
+    assert "An unexpected error occurred: System meltdown." in _error_output(mock_error_console)
 
 
 def test_remove_tag_value_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
@@ -250,7 +271,7 @@ def test_remove_tag_value_error(mock_rich_console, mock_tag_app_cmds, mock_error
     mock_tag_app_cmds["remove_tag"].side_effect = ValueError("Malformed tag ID.")
     result = runner.invoke(app, ["hub", "tag", "rm", HASH_STRING, "--tag-id", TAG_ID])
     assert result.exit_code != 0
-    assert "Invalid Request: Malformed tag ID." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "Invalid Request: Malformed tag ID." in _error_output(mock_error_console)
 
 
 def test_remove_tag_offline_error(mock_tag_app_cmds):
@@ -269,13 +290,11 @@ def test_remove_tag_client_error(mock_rich_console, mock_tag_app_cmds, mock_erro
     mock_tag_app_cmds["remove_tag"].side_effect = DorsalClientError("Gateway timeout.")
     result = runner.invoke(app, ["hub", "tag", "rm", HASH_STRING, "--tag-id", TAG_ID])
     assert result.exit_code != 0
-    assert "API Error: Gateway timeout." in str(mock_error_console.print.call_args.args[0].renderable)
+    assert "API Error: Gateway timeout." in _error_output(mock_error_console)
 
 
 def test_remove_tag_generic_error(mock_rich_console, mock_tag_app_cmds, mock_error_console):
     mock_tag_app_cmds["remove_tag"].side_effect = Exception("Database locked.")
     result = runner.invoke(app, ["hub", "tag", "rm", HASH_STRING, "--tag-id", TAG_ID])
     assert result.exit_code != 0
-    assert "An unexpected error occurred: Database locked." in str(
-        mock_error_console.print.call_args.args[0].renderable
-    )
+    assert "An unexpected error occurred: Database locked." in _error_output(mock_error_console)

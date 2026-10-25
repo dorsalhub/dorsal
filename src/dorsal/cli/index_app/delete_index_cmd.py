@@ -54,7 +54,8 @@ def delete_search_index(
             index.clear()
             clear_shared_index()
 
-        success_msg = f"[{palette.get('success', 'green')}]✅ Search Index cleared successfully.[/]"
+        success_icon = ctx.obj.get("icons", {}).get("success", "")
+        success_msg = f"[{palette.get('success', 'green')}]{success_icon}Search index cleared successfully.[/]"
         console.print(success_msg)
 
     except typer.Abort:

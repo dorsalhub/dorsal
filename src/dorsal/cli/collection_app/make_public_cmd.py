@@ -13,15 +13,12 @@
 # limitations under the License.
 
 import logging
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 import json
 import typer
-from rich.panel import Panel
-from rich.console import Group
-from rich.text import Text
 
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +35,12 @@ def make_public(
     Makes a remote collection public.
     """
     from dorsal.api.collection import make_collection_public as api_make_public
+    from rich.console import Group
+    from rich.text import Text
+
+    from dorsal.cli.views.layout import key_values, section
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         handle_error,
@@ -48,32 +50,30 @@ def make_public(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError, ConflictError
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     try:
-        status_message = f"Updating collection '[bold]{collection_id}[/]'..." if not json_output else ""
-        with console.status(status_message):
+        with get_error_console().status(f"Updating collection '[bold]{collection_id}[/]'"):
             response = api_make_public(collection_id=collection_id)
 
         if json_output:
             print_raw_output(response.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
         else:
-            title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
-            message_text = f"✅ Collection is now public.\n\n[dim]URL:[/] {response.location_url}"
-
-            if borders == get_borders("none"):
-                console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup(message_text)))
-            else:
-                success_panel = Panel(
-                    Text.from_markup(message_text),
-                    title=title_text,
+            body = Group(
+                Text("Collection is now public."),
+                key_values(ui_context, [("URL", str(response.location_url))]),
+            )
+            console.print(
+                section(
+                    f"{icons.get('success', '')}Update complete",
+                    body,
+                    ui_context,
+                    title_style=palette.get("panel_title_success", "bold green"),
                     border_style=palette.get("panel_border_success", "green"),
-                    expand=False,
-                    box=borders,
                 )
-                console.print(success_panel)
+            )
 
     except ConflictError as e:
         handle_error(ui_context, e.message, json_output)

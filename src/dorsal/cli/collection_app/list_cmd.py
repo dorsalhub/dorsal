@@ -16,14 +16,11 @@ import logging
 from typing import Annotated, TYPE_CHECKING
 
 import typer
-from rich.table import Table
 from rich.text import Text
 from rich.console import Group
 
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
-
 if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
     from dorsal.client.validators import CollectionsResponse
 
 
@@ -46,7 +43,9 @@ def list_dorsal_collections(
     Lists all available collections on DorsalHub.
     """
     from dorsal.api.collection import list_collections
+    from dorsal.cli.views.layout import is_borderless, table as themed_table
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -56,15 +55,12 @@ def list_dorsal_collections(
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
-
-    if not json_output:
-        console.print(f"🔎 Fetching collections from DorsalHub (page {page})...")
 
     try:
-        response: "CollectionsResponse" = list_collections(page=page, per_page=per_page, mode="pydantic")
+        with get_error_console().status(f"Fetching collections from DorsalHub (page {page})"):
+            response: "CollectionsResponse" = list_collections(page=page, per_page=per_page, mode="pydantic")
         logger.debug("PAGINATION OBJECT BEFORE DUMP: %s", response.pagination.model_dump())
         raw_dump = response.model_dump(by_alias=True, exclude_none=True)
         logger.debug("MANUAL DUMP OF PAGINATION: %s", raw_dump.get("pagination"))
@@ -74,27 +70,19 @@ def list_dorsal_collections(
             exit_cli()
 
         if not response.records:
-            console.print(f"\n[{palette.get('info', 'dim')}]No collections found.[/]")
+            console.print(f"[{palette.get('info', 'dim')}]No collections found.[/]")
             exit_cli()
 
-        title_text: str | None = "DorsalHub Collections"
-        if borders == get_borders("none"):
-            title_text = None
-
-        table = Table(
-            title=title_text,
-            header_style=palette.get("table_header", "bold blue"),
-            expand=True if console.width < 115 else False,
-            box=borders,
+        table = themed_table(
+            ui_context,
+            title="DorsalHub collections",
+            expand=console.width < 115 and not is_borderless(ui_context),
             row_styles=["", palette.get("table_row_alt", "dim")],
         )
 
-        if borders == get_borders("none"):
-            table.padding = (0, 1)
-
         if console.width < 115:
-            table.add_column("Collection (Name / ID)", ratio=1, overflow="fold")
-            table.add_column("Details (Files / Size)", justify="right", width=35)
+            table.add_column("Collection (name / ID)", ratio=1, overflow="fold")
+            table.add_column("Details (files / size)", justify="right", width=35)
 
             for collection in response.records:
                 access_str = "Private" if collection.is_private else "Public"
@@ -127,9 +115,9 @@ def list_dorsal_collections(
                 overflow="ellipsis",
             )
             table.add_column("Files", justify="right")
-            table.add_column("Total Size", justify="right")
+            table.add_column("Total size", justify="right")
             table.add_column("Access")
-            table.add_column("Last Modified", justify="right")
+            table.add_column("Last modified", justify="right")
 
             for collection in response.records:
                 access_str = "Private" if collection.is_private else "Public"

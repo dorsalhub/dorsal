@@ -15,17 +15,16 @@
 import logging
 import typer
 import pathlib
-from typing import Annotated, List, Literal
+from typing import TYPE_CHECKING, Annotated, List, Literal
 
-from rich.panel import Panel
-from rich.table import Table
+
 from rich.text import Text
 from rich.markup import escape
-from rich.console import Group
 
 from dorsal.common.literals import MiB
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 
 logger = logging.getLogger(__name__)
@@ -86,7 +85,6 @@ def hash_target(
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     if use_cache and skip_cache:
         exit_cli(
@@ -146,9 +144,9 @@ def hash_target(
         return exit_cli()
 
     if file_hashes:
-        hash_grid = Table.grid(padding=(0, 2))
-        hash_grid.add_column(justify="right", style=palette.get("key", "dim"))
-        hash_grid.add_column(justify="left")
+        from dorsal.cli.views.layout import key_values, section
+
+        hashes_kv = key_values(ui_context)
 
         for hash_function, hash_val in file_hashes.items():
             if hash_function == "TLSH" and hash_val is None and show_all:
@@ -168,20 +166,6 @@ def hash_target(
                 display_value = "The 'py-tlsh' package is not installed"
                 value_style = palette.get("info", "dim")
 
-            hash_grid.add_row(f"{hash_function}:", Text(str(display_value), style=value_style))
+            hashes_kv.add(hash_function, str(display_value), style=value_style)
 
-        is_none_style = borders == get_borders("none")
-        title_text = f"[{palette.get('panel_title', 'bold')}]Hashes for {escape(path.name)}[/]"
-
-        if is_none_style:
-            console.print(Group(Text.from_markup(f"{title_text}\n"), hash_grid))
-        else:
-            console.print(
-                Panel(
-                    hash_grid,
-                    title=title_text,
-                    expand=False,
-                    border_style=palette.get("panel_border", "blue"),
-                    box=borders,
-                )
-            )
+        console.print(section(f"Hashes for {escape(path.name)}", hashes_kv, ui_context))

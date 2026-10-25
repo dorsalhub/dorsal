@@ -20,13 +20,13 @@ from typing import Any, NoReturn, Sequence, TYPE_CHECKING
 import typer
 from typer.core import TyperCommand
 
-from rich.console import Console, Group
-from rich.panel import Panel
+from rich.console import Console
 from rich.text import Text
 from dorsal.common.exceptions import AuthError
 
 if TYPE_CHECKING:
     import typer._click as _click
+    from rich.console import RenderableType
     from dorsal.cli.themes import UIContext
 
 
@@ -131,39 +131,23 @@ def determine_use_cache_value(use_cache: bool, skip_cache: bool) -> bool:
 
 
 def handle_error(ui_context: "UIContext", message: str, json_output: bool):
-    """Prints an error (as JSON with `json_output`, otherwise as a panel) to stderr and exits with an error code."""
-    from dorsal.cli.themes.borders import get_borders
+    """Prints an error (as JSON with `json_output`, otherwise as text) to stderr and exits with an error code."""
+    from dorsal.cli.views.layout import message as format_message
 
     console = get_error_console()
-    palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     if json_output:
         print_json_output({"error": True, "detail": message}, console)
     else:
-        title_text = f"[{palette.get('panel_title_error', 'bold red')}]Error[/]"
-
-        if borders == get_borders("none"):
-            console.print(Group(Text.from_markup(f"\n{title_text}"), Text(message, justify="left")))
-        else:
-            panel = Panel(
-                Text(message, justify="left"),
-                title=title_text,
-                border_style=palette.get("panel_border_error", "red"),
-                expand=False,
-                padding=(1, 2),
-                box=borders,
-            )
-            console.print(panel)
+        console.print(format_message("Error", Text(message), ui_context, level="error"))
     exit_cli(code=EXIT_CODE_ERROR)
 
 
 def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext") -> None:
     """Handler for AuthError. Pass the stderr console (`get_error_console()`)."""
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.views.layout import section
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     icons = ui_context.get("icons", {})
 
     if "--json" in sys.argv:
@@ -187,33 +171,24 @@ def handle_auth_error(err: AuthError, console: Console, ui_context: "UIContext")
         (" environment variable.", "default"),
     )
 
-    title_text = (
-        f"[{palette.get('panel_title_info', 'bold cyan')}]{icons.get('warning', '⚠️ ')}Authentication Required[/]"
-    )
-
-    if borders == get_borders("none"):
-        console.print(Group(Text.from_markup(f"\n{title_text}"), message))
-    else:
-        console.print(
-            Panel(
-                message,
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border_info", "cyan"),
-                box=borders,
-                padding=(1, 2),
-            )
+    console.print(
+        section(
+            f"{icons.get('warning', '')}Authentication required",
+            message,
+            ui_context,
+            title_style=palette.get("panel_title_info", "bold cyan"),
+            border_style=palette.get("panel_border_info", "cyan"),
         )
+    )
 
 
 def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"):
     """
     Centralized handler for DorsalOfflineError. Pass the stderr console (`get_error_console()`).
     """
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.views.layout import section
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     icons = ui_context.get("icons", {})
 
     if "--json" in sys.argv:
@@ -235,23 +210,15 @@ def handle_offline_error(e: Exception, console: Console, ui_context: "UIContext"
         (" environment variable.", "default"),
     )
 
-    title_text = (
-        f"[{palette.get('panel_title_warning', 'bold yellow')}]{icons.get('warning', '⚠️ ')}Dorsal API Access Blocked[/]"
-    )
-
-    if borders == get_borders("none"):
-        console.print(Group(Text.from_markup(f"\n{title_text}"), message))
-    else:
-        console.print(
-            Panel(
-                message,
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border_warning", "yellow"),
-                box=borders,
-                padding=(1, 2),
-            )
+    console.print(
+        section(
+            f"{icons.get('warning', '')}DorsalHub access blocked",
+            message,
+            ui_context,
+            title_style=palette.get("panel_title_warning", "bold yellow"),
+            border_style=palette.get("panel_border_warning", "yellow"),
         )
+    )
 
 
 def parse_cli_options(options: Sequence[str] | None, palette: dict[str, str]) -> dict[str, Any]:
@@ -360,31 +327,30 @@ class DynamicHelpCommand(TyperCommand):
 
                 ui_context = get_ui_theme()
 
-            extra_help = self.get_dynamic_renderable(target_val, ui_context)
+            from rich import box
+
+            help_context = dict(ui_context)
+            help_context["borders"] = box.ROUNDED
+            extra_help = self.get_dynamic_renderable(target_val, help_context)
             if extra_help:
                 console = get_rich_console()
                 console.print()
                 console.print(extra_help)
 
 
-def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any]) -> Panel | None:
-    """Renders a Rich Panel for model help data returned by get_model_help."""
-    from rich.panel import Panel
-    from rich.table import Table
+def render_model_help_panel(help_info: dict[str, Any], ui_context: "UIContext") -> "RenderableType":
+    """Renders model help data returned by get_model_help."""
     from rich.console import Group
-    from rich.text import Text
+    from rich.table import Table
 
-    palette = ui_context.get("palette", {})
-    borders = ui_context.get("borders", "rounded")
+    from dorsal.cli.views.layout import is_borderless, message, section, table
+
+    palette = ui_context["palette"]
     status = help_info.get("status")
 
     if status == "error":
-        return Panel(
-            help_info.get("error", "Unknown error"),
-            title="[bold yellow]Model Resolution Failed[/]",
-            border_style="yellow",
-            expand=False,
-            box=borders,
+        return message(
+            "Model resolution failed", help_info.get("error", "Unknown error"), ui_context, level="warning", padding=0
         )
 
     if status == "not_installed":
@@ -392,50 +358,46 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
         pkg = help_info["package_name"]
 
         if "/" in target:
-            return Panel(
+            body = (
                 f"Model [bold cyan]{target}[/] (package: [bold]{pkg}[/]) is not installed.\n"
-                f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options.",
-                title=f"Model: {target}",
-                border_style="cyan",
-                box=borders,
-                expand=False,
+                f"Run [bold]dorsal model install {target}[/] to install it and view its runtime options."
             )
         else:
-            return Panel(
+            body = (
                 f"Model [bold cyan]{target}[/] is not installed.\n"
-                f"To install a model from DorsalHub, use its full model ID in [bold]organization/project[/] format, e.g. [bold]dorsalhub/whisper[/]",
-                title=f"Model: {target}",
-                border_style="cyan",
-                box=borders,
-                expand=False,
+                f"To install a model from DorsalHub, use its full model ID in [bold]organization/project[/] format, e.g. [bold]dorsalhub/whisper[/]"
             )
+        return message(f"Model: {target}", body, ui_context, level="info", padding=0)
 
     if status == "config_error":
-        return Panel(
-            f"Failed to load configuration for '{help_info['package_name']}': {help_info.get('error')}",
-            title="[bold red]Configuration Error[/]",
-            border_style="red",
-            box=borders,
-            expand=False,
+        return message(
+            "Configuration error",
+            Text(f"Failed to load configuration for '{help_info['package_name']}': {help_info.get('error')}"),
+            ui_context,
+            level="error",
+            padding=0,
         )
 
     options = help_info.get("options", {})
     model_class = help_info.get("model_class", "UnknownClass")
 
     if not options:
-        return Panel(
+        return message(
+            f"Model: {help_info['package_name']}",
             f"The model [bold]{model_class}[/] does not define any default options.",
-            title=f"Model: {help_info['package_name']}",
-            border_style="green",
-            box=borders,
-            expand=False,
+            ui_context,
+            level="success",
+            padding=0,
         )
 
-    table = Table(show_header=True, header_style="bold", box=None, expand=True)
-    table.add_column("Option", style=palette.get("primary_value", "cyan"), width=20)
-    table.add_column("Type", style="green", width=10)
-    table.add_column("Default", style="magenta", width=15)
-    table.add_column("Description", style="default")
+    if is_borderless(ui_context):
+        options_table = table(ui_context, show_header=True, header_style="bold")
+    else:
+        options_table = Table(show_header=True, header_style="bold", box=None, expand=True)
+    options_table.add_column("Option", style=palette.get("primary_value", "cyan"), width=20)
+    options_table.add_column("Type", style="green", width=10)
+    options_table.add_column("Default", style="magenta", width=15)
+    options_table.add_column("Description", style="default")
 
     type_ui_mapping = {
         "str": "String",
@@ -458,25 +420,22 @@ def render_model_help_panel(help_info: dict[str, Any], ui_context: dict[str, Any
         else:
             default_str = str(default_val)
 
-        table.add_row(opt_key, display_type, default_str, opt_data.get("help", "No description provided."))
+        options_table.add_row(opt_key, display_type, default_str, opt_data.get("help", "No description provided."))
 
     footer = Text("\nPass model options via --opt.", style="dim")
 
-    return Panel(
-        Group(table, footer),
-        title=f"Model Options: {model_class}",
-        title_align="left",
+    return section(
+        f"Model options: {model_class}",
+        Group(options_table, footer),
+        ui_context,
         border_style=palette.get("panel_border_info", "green"),
-        padding=(1, 2),
-        box=borders,
-        expand=False,
     )
 
 
 class ModelHelpCommand(DynamicHelpCommand):
     target_param_name = "target"
 
-    def get_dynamic_renderable(self, target: str, ui_context: dict) -> Any | None:
+    def get_dynamic_renderable(self, target: str, ui_context: "UIContext") -> Any | None:
         from dorsal.api.model import get_model_help
 
         help_info = get_model_help(target=target)

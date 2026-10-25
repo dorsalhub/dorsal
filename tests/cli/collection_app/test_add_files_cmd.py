@@ -18,7 +18,7 @@ import json
 import pytest
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -26,6 +26,13 @@ from dorsal.common.exceptions import DorsalClientError
 
 runner = CliRunner()
 COLLECTION_ID = "col_abc123"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 class StdinSimulator(io.StringIO):
@@ -80,10 +87,22 @@ def test_add_files_with_hash_options(mock_rich_console, mock_add_files_cmd):
     called_hashes = mock_add_files_cmd["add_files"].call_args.kwargs["hashes"]
     assert sorted(called_hashes) == sorted(hashes_to_add)
 
-    # Check for the success panel
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Update Complete" in str(printed_object.title)
+    lines = _render(mock_rich_console.print.call_args.args[0]).splitlines()
+    assert lines[0] == "Update complete"
+    assert lines[1].split() == ["Added", "2"]
+    assert lines[2].split() == ["Duplicates", "ignored", "1"]
+    assert lines[1].index("2") == lines[2].index("1")
+    assert all(line.startswith("  ") and line == line.rstrip() for line in lines[1:])
+
+
+def test_add_files_bordered(mock_rich_console, mock_add_files_cmd):
+    """With --borders rounded the result is a panel."""
+    result = runner.invoke(app, ["--borders", "rounded", "collection", "add-files", COLLECTION_ID, "--hash", "h1"])
+
+    assert result.exit_code == 0
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert output.startswith("╭─ Update complete ")
+    assert "Added" in output
 
 
 def test_add_files_from_stdin(mock_rich_console, mock_add_files_cmd, mocker):
@@ -141,8 +160,6 @@ def test_add_files_with_invalid_count(mock_rich_console, mock_add_files_cmd):
         collection_id=COLLECTION_ID, hydrate=False, mode="pydantic"
     )
 
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    panel_text = str(printed_object.renderable)
-    assert "Not Added: 1" in panel_text
-    assert "Note: Files can only be added" in panel_text
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert any(line.split() == ["Not", "added", "1"] for line in output.splitlines())
+    assert "Note: Files can only be added" in output

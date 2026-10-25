@@ -97,11 +97,11 @@ def parse_adapter(
             file_path=file_path, schema_id=schema_id, source_format=source_format, **parsed_options
         )
     except DorsalError as e:
-        error_console.print(f"[{palette.get('error', 'bold red')}]Parse Failed:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Parse failed:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         logger.exception("Unexpected error during parsing.")
-        error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     final_payload = {
@@ -120,7 +120,7 @@ def parse_adapter(
             save_path.write_text(json.dumps(final_payload, indent=2, ensure_ascii=False), encoding="utf-8")
             saved_path_msg = str(save_path.resolve())
         except Exception as e:
-            error_console.print(f"\n[{palette.get('error', 'bold red')}]Failed to write output file:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Failed to write output file:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
     print_json_output(final_payload, console)

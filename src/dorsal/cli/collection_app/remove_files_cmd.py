@@ -18,11 +18,6 @@ import json
 from typing import Annotated, Optional, List, TYPE_CHECKING
 
 import typer
-from rich.panel import Panel
-from rich.console import Group
-from rich.text import Text
-
-from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.cli.themes import UIContext
@@ -38,7 +33,7 @@ def _get_hashes(hash_list: Optional[List[str]], from_stdin: bool, json_output: b
             stdin_hashes = {line.strip() for line in sys.stdin if line.strip()}
             all_hashes.update(stdin_hashes)
         elif not json_output:
-            console.print("[warning]--from-stdin flag was used, but no input was received.[/warning]")
+            console.print("[yellow]Warning:[/] --from-stdin flag was used, but no input was received.")
 
     if not all_hashes:
         from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR
@@ -78,7 +73,9 @@ def remove_files(
     Remove one or more files from a remote collection by their hash.
     """
     from dorsal.api.collection import remove_files_from_collection
+    from dorsal.cli.views.layout import key_values, section
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -87,19 +84,17 @@ def remove_files(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
-    final_hash_list = _get_hashes(hash_list, from_stdin, json_output, console)
+    final_hash_list = _get_hashes(hash_list, from_stdin, json_output, error_console)
 
     try:
-        if not json_output:
-            with console.status(
-                f"Removing {len(final_hash_list)} file(s) from collection '[bold]{collection_id}[/]'..."
-            ):
-                response = remove_files_from_collection(collection_id=collection_id, hashes=final_hash_list)
-        else:
+        with error_console.status(
+            f"Removing {len(final_hash_list)} file(s) from collection '[bold]{collection_id}[/]'"
+        ):
             response = remove_files_from_collection(collection_id=collection_id, hashes=final_hash_list)
 
     except ValueError as e:
@@ -118,26 +113,17 @@ def remove_files(
         print_raw_output(response.model_dump_json(indent=2), console)
         exit_cli()
 
-    output_text = Text()
-    output_text.append("✅ Operation complete.\n", style=palette.get("success", "green"))
-    output_text.append(f"Removed: {response.removed_count}\n")
-
+    counts = key_values(ui_context)
+    counts.add("Removed", str(response.removed_count))
     if response.not_found_count > 0:
-        output_text.append(
-            f"Not Found (ignored): {response.not_found_count}",
-            style=palette.get("info", "dim"),
-        )
+        counts.add("Not found (ignored)", str(response.not_found_count), style=palette.get("info", "dim"))
 
-    title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
-
-    if borders == get_borders("none"):
-        console.print(Group("", output_text))
-    else:
-        success_panel = Panel(
-            output_text,
-            title=title_text,
+    console.print(
+        section(
+            f"{icons.get('success', '')}Update complete",
+            counts,
+            ui_context,
+            title_style=palette.get("panel_title_success", "bold green"),
             border_style=palette.get("panel_border_success", "green"),
-            expand=False,
-            box=borders,
         )
-        console.print(success_panel)
+    )

@@ -61,8 +61,7 @@ def test_get_record_success_default(mock_rich_console, mock_get_cmd):
     mock_get_cmd["create_file_info_panel"].assert_called_once()
     mock_get_cmd["save_get_report"].assert_not_called()
 
-    # Check that the status message and panel were printed
-    assert mock_rich_console.print.call_count == 2
+    assert mock_rich_console.print.call_count == 1
     assert isinstance(mock_rich_console.print.call_args.args[0], Panel)
 
 
@@ -105,7 +104,9 @@ def test_get_record_not_found_panel(mock_rich_console, mock_get_cmd, mock_error_
     result = runner.invoke(app, ["hub", "get", HASH_STRING])
 
     assert result.exit_code == 1
-    assert "Not Found" in mock_error_console.print.call_args.args[0]
+    printed = mock_error_console.print.call_args.args[0]
+    assert "Not found:" in printed
+    assert not printed.startswith("\n")
 
 
 def test_get_record_not_found_json(mock_rich_console, mock_get_cmd, mock_error_console):
@@ -160,3 +161,37 @@ def test_save_json_report_confirmation_to_stderr_with_json(mock_rich_console, mo
     assert out.read_text(encoding="utf-8") == "{}"
     mock_rich_console.print.assert_not_called()
     assert "JSON record saved to" in str(mock_error_console.print.call_args.args[0])
+
+
+def test_get_record_title_is_file_name(mock_rich_console, mock_get_cmd):
+    """The record is titled with the file name alone."""
+    record = mock_get_cmd["get_dorsal_file_record"].return_value
+    record.annotations.file_base.record.name = "report[bold].pdf"
+    record.annotations.file_base.private = False
+
+    result = runner.invoke(app, ["hub", "get", HASH_STRING])
+
+    assert result.exit_code == 0
+    assert mock_get_cmd["create_file_info_panel"].call_args.kwargs["title"] == "report\\[bold].pdf"
+
+
+def test_get_record_unknown_output_extension_warns_on_stderr(mock_rich_console, mock_error_console, mock_get_cmd):
+    """An --output path with an unknown extension is warned about on stderr."""
+    result = runner.invoke(app, ["hub", "get", HASH_STRING, "--output", "record.txt"])
+
+    assert result.exit_code == 0
+    warnings = [str(call.args[0]) for call in mock_error_console.print.call_args_list]
+    assert any("Warning:" in w and "unknown extension" in w for w in warnings)
+
+
+def test_save_json_report_confirmation_without_emoji(mock_rich_console, mock_error_console, tmp_path):
+    out = tmp_path / "r.json"
+
+    get_cmd._save_json_report(
+        record_json_str="{}", output_path=out, hash_string=HASH_STRING, palette={}, json_to_stdout=False
+    )
+
+    printed = [str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args]
+    assert any(p.startswith("JSON record saved to") for p in printed)
+    assert not any("\u2705" in p for p in printed)
+    mock_error_console.print.assert_not_called()

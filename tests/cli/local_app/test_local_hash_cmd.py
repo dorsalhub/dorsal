@@ -14,11 +14,10 @@
 
 import os
 import json
-from unittest.mock import MagicMock, patch
+import pathlib
 
 import pytest
 from typer.testing import CliRunner
-from rich.panel import Panel
 
 
 from dorsal.cli import app
@@ -55,8 +54,8 @@ def mock_hash_cmd(mocker):
     return mock_hash_reader
 
 
-def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd):
-    """Tests the default case with no flags, expecting a Rich Panel."""
+def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd, rendered):
+    """Tests the default case with no flags, expecting a headed list of hashes."""
     result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH])
 
     assert result.exit_code == 0
@@ -70,8 +69,20 @@ def test_hash_all_hashes_table_output(mock_rich_console, mock_hash_cmd):
         "MD5",
         "DORSAL",
     }
-    panel_output = mock_rich_console.print.call_args.args[0]
-    assert isinstance(panel_output, Panel)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines[0] == f"Hashes for {pathlib.Path(TEST_FILE_PATH).name}"
+    assert "  SHA-256  sha256_hash_value" in lines
+    assert all(line == line.rstrip() for line in lines)
+
+
+def test_hash_all_hashes_bordered(mock_rich_console, mock_hash_cmd, rendered):
+    """Tests that `--borders rounded` draws the hashes in a panel."""
+    result = runner.invoke(app, ["--borders", "rounded", "local", "hash", TEST_FILE_PATH])
+
+    assert result.exit_code == 0
+    text = rendered(mock_rich_console)
+    assert text.startswith("╭─ Hashes for")
+    assert "│  SHA-256  sha256_hash_value" in text
 
 
 def test_hash_single_hash_plain_output(mock_rich_console, mock_hash_cmd):
@@ -132,19 +143,13 @@ def test_hash_quickhash_too_small_single(mock_rich_console, mock_hash_cmd):
     assert "10MiB minimum" in info_message
 
 
-@patch("rich.table.Table.grid")
-def test_hash_quickhash_too_small_table(mock_table_grid, mock_rich_console, mock_hash_cmd):
-    """Tests the info message within the table when all hashes are requested."""
-    mock_table = MagicMock()
-    mock_table_grid.return_value = mock_table
+def test_hash_quickhash_too_small_table(mock_rich_console, mock_hash_cmd, rendered):
+    """Tests the info message within the list when all hashes are requested."""
     mock_hash_cmd.return_value = {**MOCK_HASHES, "QUICK": None}
 
     result = runner.invoke(app, ["local", "hash", TEST_FILE_PATH])
 
     assert result.exit_code == 0
-    all_rows_text = ""
-    for call in mock_table.add_row.call_args_list:
-        all_rows_text += " ".join(str(arg) for arg in call.args)
-
-    assert "File size below 10MiB minimum" in all_rows_text
-    assert "sha256_hash_value" in all_rows_text
+    text = rendered(mock_rich_console)
+    assert "QUICK    File size below 10MiB minimum" in text
+    assert "sha256_hash_value" in text

@@ -2982,9 +2982,9 @@ class DorsalClient:
             try:
                 print(f"Starting export for {collection_id}...")
                 client.export_collection(collection_id, output_file)
-                print(f"✅ Export successful. File saved to {output_file}")
+                print(f"Export successful. File saved to {output_file}")
             except Exception as e:
-                print(f"❌ Export failed: {e}")
+                print(f"Export failed: {e}")
             ```
 
         Args:

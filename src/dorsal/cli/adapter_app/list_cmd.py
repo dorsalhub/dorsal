@@ -35,11 +35,14 @@ def list_adapters(
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
     from dorsal.api.adapters import get_supported_formats
     from dorsal.common.exceptions import DorsalError
-    from rich.table import Table
+    from rich.text import Text
+    from dorsal.cli.themes import get_ui_theme
+    from dorsal.cli.views.layout import table as themed_table
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj.get("palette", {}) if ctx.obj else {}
+    ui_context = ctx.obj or get_ui_theme()
+    palette = ui_context["palette"]
 
     try:
         formats = get_supported_formats(schema_id)
@@ -51,14 +54,15 @@ def list_adapters(
         error_console.print(f"[{palette.get('warning', 'bold yellow')}]No formats found for schema '{schema_id}'.[/]")
         exit_cli(code=0)
 
-    table = Table(
-        title=f"[{palette.get('panel_title', 'bold')}]Supported Formats for '{schema_id}'[/]",
-        header_style=palette.get("table_header", "bold blue"),
+    table = themed_table(
+        ui_context,
+        title=f"Supported formats for '{schema_id}'",
+        title_style=palette.get("panel_title", "bold"),
     )
-    table.add_column("Format")
+    table.add_column("Format", style=palette.get("primary_value", "cyan"))
     table.add_column("Description")
 
     for fmt, desc in formats:
-        table.add_row(f"[{palette.get('primary_value', 'cyan')}]{fmt}[/]", desc)
+        table.add_row(Text(fmt), Text(desc))
 
     console.print(table)

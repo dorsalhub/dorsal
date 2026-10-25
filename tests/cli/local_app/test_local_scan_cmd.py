@@ -22,9 +22,7 @@ from unittest.mock import MagicMock, ANY, patch
 import pytest
 import typer
 from typer.testing import CliRunner
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.table import Table
+from rich.console import Console
 
 from dorsal.cli import app
 
@@ -48,7 +46,11 @@ def mock_error_console(mocker):
 
 
 def _printed_text(console) -> str:
-    return "".join(str(c.args[0]) for c in console.print.call_args_list)
+    width = console.width if isinstance(console.width, int) else 400
+    out = Console(file=io.StringIO(), width=width, color_system=None)
+    for c in console.print.call_args_list:
+        out.print(*c.args, **{k: v for k, v in c.kwargs.items() if k in ("style", "soft_wrap")})
+    return out.file.getvalue()
 
 
 @pytest.fixture
@@ -185,9 +187,29 @@ def test_scan_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
     assert result.exit_code == 0
     mock_dir_deps["collection_class"].assert_called_once()
 
-    print_calls = mock_rich_console.print.call_args_list
-    # Assert that either a Panel or Group was used for the summary
-    assert any(isinstance(call.args[0], (Panel, Group, Table)) for call in print_calls)
+    lines = _printed_text(mock_rich_console).splitlines()
+    assert lines[0].startswith("Found and processed 2 file(s) in")
+    assert lines[1] == ""
+    assert lines[2] == "Directory scan summary"
+    assert lines[3] == "  Total files           2"
+    summary_end = lines.index("", 3)
+    assert lines[summary_end + 1] == "File scan details"
+    assert lines[summary_end + 2].split() == ["Filename", "Size", "Media", "type", "Record", "ID", "Modified", "date"]
+    assert all(line == line.rstrip() for line in lines)
+    assert "╭" not in "\n".join(lines)
+
+
+def test_scan_dir_bordered(mock_rich_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    result = runner.invoke(app, ["--borders", "rounded", "local", "scan", str(target)])
+
+    assert result.exit_code == 0
+    text = _printed_text(mock_rich_console)
+    assert "╭─ Directory scan summary" in text
+    assert "│ Filename" in text
+    assert max(len(line) for line in text.splitlines()) <= 120
 
 
 def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):
@@ -221,9 +243,9 @@ def test_scan_dir_sort_case_insensitive(mock_rich_console, mock_dir_deps, tmp_pa
     result = runner.invoke(app, ["local", "scan", str(target), *args])
 
     assert result.exit_code == 0
-    tables = [c.args[0] for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Table)]
-    names = list(tables[0].columns[0].cells)
-    assert names == ["file2.txt", "file1.txt"]
+    lines = _printed_text(mock_rich_console).splitlines()
+    header = next(i for i, line in enumerate(lines) if line.startswith("Filename"))
+    assert [line.split()[0] for line in lines[header + 1 : header + 3]] == ["file2.txt", "file1.txt"]
 
 
 @pytest.mark.parametrize("limit", ["0", "-1"])
@@ -372,8 +394,7 @@ def test_scan_dir_json_warnings_go_to_stderr(mock_rich_console, mock_error_conso
 
     assert mock_rich_console.print.call_count == 1
     json.loads(mock_rich_console.print.call_args.args[0])
-    panels = [c.args[0] for c in mock_error_console.print.call_args_list if isinstance(c.args[0], Panel)]
-    assert any("This is a mock warning" in str(p.renderable) for p in panels)
+    assert "Warning: This is a mock warning" in _printed_text(mock_error_console)
 
 
 def test_scan_dir_json_progress_goes_to_stderr(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
@@ -391,8 +412,8 @@ def test_scan_dir_json_skips_tables(mock_rich_console, mock_error_console, mock_
 
     runner.invoke(app, ["local", "scan", str(target), "--json"])
 
-    printed = [c.args[0] for c in mock_rich_console.print.call_args_list]
-    assert not any(isinstance(p, (Panel, Group, Table)) for p in printed)
+    assert mock_rich_console.print.call_count == 1
+    json.loads(mock_rich_console.print.call_args.args[0])
     mock_dir_deps["collection_instance"].info.assert_not_called()
 
 
@@ -430,15 +451,12 @@ def test_scan_dir_warnings(mock_rich_console, mock_error_console, mock_dir_deps,
     target = tmp_path / "test_dir"
     target.mkdir()
 
-    mock_dir_deps["collection_instance"].warnings = ["This is a mock warning"]
+    mock_dir_deps["collection_instance"].warnings = ["This is a mock warning", "[bold]Second[/] warning"]
     runner.invoke(app, ["local", "scan", str(target)])
 
-    def warning_panels(console):
-        panels = [call.args[0] for call in console.print.call_args_list if isinstance(call.args[0], Panel)]
-        return [p for p in panels if "This is a mock warning" in str(p.renderable)]
-
-    assert warning_panels(mock_error_console)
-    assert not warning_panels(mock_rich_console)
+    stderr_lines = _printed_text(mock_error_console).splitlines()
+    assert stderr_lines == ["Warnings", "  - This is a mock warning", "  - [bold]Second[/] warning"]
+    assert "mock warning" not in _printed_text(mock_rich_console)
 
 
 def test_scan_dir_save_json_success_and_error(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path):
@@ -503,8 +521,7 @@ def test_scan_dir_limit_message(mock_rich_console, mock_dir_deps, tmp_path):
 
     runner.invoke(app, ["local", "scan", str(target), "--limit", "1"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Showing first 1 of 2 files" in printed_text
+    assert "Showing first 1 of 2 files" in _printed_text(mock_rich_console)
 
 
 def test_scan_output_trailing_separator_creates_directory(mock_rich_console, mock_dir_deps, tmp_path):
@@ -562,15 +579,16 @@ def test_scan_template_is_deprecated(mock_rich_console, mock_error_console, mock
     assert "--template has no effect" not in _printed_text(mock_rich_console)
 
 
-def test_scan_file_name_markup_is_escaped(mock_rich_console, mock_file_deps, tmp_path):
+def test_scan_file_name_markup_is_escaped(mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
     target = tmp_path / "[bold]x[red].txt"
     target.touch()
     mock_file_deps["local_file_class"].return_value.name = "[bold]x[red].txt"
 
     runner.invoke(app, ["local", "scan", str(target)])
 
-    assert r"\[bold]x\[red].txt" in _printed_text(mock_rich_console)
-    assert r"File Record: \[bold]x\[red].txt" in mock_file_deps["create_panel"].call_args.kwargs["title"]
+    assert r"\[bold]x\[red].txt" in mock_error_console.status.call_args.args[0]
+    assert mock_file_deps["create_panel"].call_args.kwargs["title"] == r"\[bold]x\[red].txt"
+    mock_rich_console.print.assert_called_once_with(mock_file_deps["create_panel"].return_value)
 
 
 @pytest.mark.parametrize(
@@ -636,24 +654,32 @@ def _render(renderable_fn, width=80) -> str:
 
 def test_file_table_escapes_names_and_truncates(mock_dir_deps):
     from dorsal.cli.local_app import scan_cmd
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.themes import get_ui_theme
 
     collection = mock_dir_deps["collection_instance"]
     files = list(collection.__iter__.return_value)
     files[0].name = "[bold]x[/] " + "long " * 40 + ".txt"
     collection.__iter__.return_value = iter(files)
 
-    out = _render(lambda c: scan_cmd._print_file_details_table(collection, {}, {}, get_borders(), 20, "name", "asc", c))
+    for borders in ("none", "rounded"):
+        collection.__iter__.return_value = iter(files)
+        ui_context = get_ui_theme(border_override=borders)
+        out = _render(
+            lambda c, ui_context=ui_context: scan_cmd._print_file_details_table(
+                collection, ui_context, 20, "name", "asc", c
+            )
+        )
 
-    name_lines = [line for line in out.splitlines() if "[bold]x[/]" in line]
-    assert len(name_lines) == 1
-    assert "…" in name_lines[0]
-    assert sum("long" in line for line in out.splitlines()) == 1
+        name_lines = [line for line in out.splitlines() if "[bold]x[/]" in line]
+        assert len(name_lines) == 1
+        assert "…" in name_lines[0]
+        assert sum("long" in line for line in out.splitlines()) == 1
+        assert max(len(line) for line in out.splitlines()) <= 80
 
 
 def test_summary_panel_has_no_trailing_blank_line():
     from dorsal.cli.local_app import scan_cmd
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.themes import get_ui_theme
 
     info = {
         "overall": {
@@ -665,10 +691,17 @@ def test_summary_panel_has_no_trailing_blank_line():
         "by_type": [],
     }
 
-    out = _render(lambda c: scan_cmd._print_directory_summary_panel(info, {}, get_borders(), c))
+    out = _render(lambda c: scan_cmd._print_directory_summary_panel(info, get_ui_theme(border_override="rounded"), c))
 
     lines = out.splitlines()
-    assert "Media Types: 0" in lines[-3]
+    assert lines[-3].strip("│ ") == "Media types           0"
     assert lines[-2].strip("│ ") == ""
     assert "(\\[a].txt)" not in out
     assert "([a].txt)" in out
+
+    out = _render(lambda c: scan_cmd._print_directory_summary_panel(info, get_ui_theme(border_override="none"), c))
+
+    lines = out.splitlines()
+    assert lines[0] == "Directory scan summary"
+    assert lines[-1] == "  Media types           0"
+    assert lines[1] == "  Total files           1"

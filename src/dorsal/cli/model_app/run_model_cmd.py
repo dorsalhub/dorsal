@@ -138,6 +138,7 @@ def run_model(
 
     from dorsal.common.exceptions import DorsalError, AuthError
     from dorsal.common.cli import (
+        print_raw_output,
         EXIT_CODE_ERROR,
         exit_cli,
         get_rich_console,
@@ -151,9 +152,8 @@ def run_model(
     from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
     from dorsal.cli.themes import UIContext
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.views.layout import table as themed_table
     from rich.logging import RichHandler
-    from rich.table import Table
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -170,7 +170,6 @@ def run_model(
 
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     icons = ui_context.get("icons", {})
 
     logging.getLogger().handlers[0] = RichHandler(console=error_console, markup=True)
@@ -398,27 +397,24 @@ def run_model(
 
     if export_format and not is_batch and no_save:
         for _, text in export_files_to_save:
-            console.print(text, end="")
+            print_raw_output(text, console, end="")
     elif json_output:
         print_json_output(final_json_data, console)
     else:
         if is_batch:
-            table = Table(
-                title=f"[{palette.get('panel_title', 'bold')}]{icons.get('info', '')}Results: {target}[/]",
-                header_style=palette.get("table_header", "bold blue"),
-                box=borders,
+            table = themed_table(
+                ui_context,
+                title=f"{icons.get('info', '')}Results: {target}",
+                title_style=palette.get("panel_title", "bold"),
             )
 
-            if borders == get_borders("none"):
-                table.padding = (0, 1)
-
-            table.add_column("Input File")
+            table.add_column("Input file")
             table.add_column("Status")
 
             if not no_save:
-                table.add_column("JSON Output")
+                table.add_column("JSON output")
                 if export_format:
-                    table.add_column(f"{export_format.upper()} Output")
+                    table.add_column(f"{export_format.upper()} output")
 
             display_results = results_data[:max_length]
             hidden_count = len(results_data) - max_length

@@ -15,11 +15,8 @@
 import os
 import typer
 from rich.console import Group, RenderableType
-from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
-from rich.box import Box
-from typing import Dict, Annotated, Optional
+from typing import Annotated, Optional
 
 from dorsal.cli.themes import UIContext
 
@@ -56,12 +53,11 @@ def show_config(
     from dorsal.common.cli import get_rich_console, print_json_output
     from dorsal.common.config import load_config
     from dorsal.api.config import get_config_summary
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.views.layout import key_values, section
 
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     config_data = get_config_summary()
 
@@ -71,14 +67,17 @@ def show_config(
 
     raw_config, _ = load_config()
     ui_cfg = raw_config.get("ui", {})
-    active_theme = ui_cfg.get("theme", "default")
-    active_icons = ui_cfg.get("icons", "emoji")
-    active_borders = ui_cfg.get("borders", "rounded")
+    configured = (ui_cfg.get("theme", "default"), ui_cfg.get("icons", "none"), ui_cfg.get("borders", "none"))
+    effective = (
+        ui_context.get("theme_name", configured[0]),
+        ui_context.get("icons_name", configured[1]),
+        ui_context.get("borders_name", configured[2]),
+    )
 
     if config_data["api_key_set"]:
         status_text = Text(f"Set (from {config_data['api_key_source']})", style=palette.get("success", "green"))
     else:
-        status_text = Text("Not Set", style=palette.get("warning", "yellow"))
+        status_text = Text("Not set", style=palette.get("warning", "yellow"))
 
     user_text = (
         Text(config_data["logged_in_user"], style=palette.get("primary_value", "default"))
@@ -86,91 +85,62 @@ def show_config(
         else Text("N/A (run 'dorsal auth login')", style=palette.get("info", "dim"))
     )
 
-    config_table = Table.grid(expand=True, padding=(0, 2))
-    config_table.add_column(justify="right", style=palette.get("key", "dim"), width=22)
-    config_table.add_column()
-
-    config_table.add_row("Current Theme:", Text(active_theme, style=palette.get("primary_value", "default")))
-    config_table.add_row("Current Icons:", Text(active_icons, style=palette.get("primary_value", "default")))
-    config_table.add_row("Current Borders:", Text(active_borders, style=palette.get("primary_value", "default")))
-    config_table.add_row("Logged-In User:", user_text)
-    config_table.add_row("API Key Status:", status_text)
-    config_table.add_row("API URL:", Text(config_data["api_url"], style=palette.get("primary_value", "default")))
-    config_table.add_row(
-        "Reports Path:", Text(config_data["reports_path"], style=palette.get("primary_value", "default"))
-    )
-    config_table.add_row(
-        "Active Config File:", Text(config_data["active_config_path"], style=palette.get("primary_value", "default"))
-    )
-    config_table.add_row(
-        "Global Config File:", Text(config_data["global_config_path"], style=palette.get("primary_value", "default"))
-    )
+    config_table = key_values(ui_context)
+    for label, active, in_file in zip(
+        ("Current theme", "Current icons", "Current borders"), effective, configured, strict=True
+    ):
+        value = Text(active, style=palette.get("primary_value", "default"))
+        if active != in_file:
+            value.append(f"  (config file: {in_file})", style=palette.get("info", "dim"))
+        config_table.add(label, value)
+    config_table.add("Logged-in user", user_text)
+    config_table.add("API key status", status_text)
+    config_table.add("API URL", config_data["api_url"])
+    config_table.add("Reports path", config_data["reports_path"])
+    config_table.add("Active config file", config_data["active_config_path"])
+    config_table.add("Global config file", config_data["global_config_path"])
     if config_data["index_compression_enabled"]:
-        config_table.add_row(
-            "Index Compression:",
-            Text(
-                f"{config_data['index_compression_mode']} (Level {config_data['index_compression_level']})",
-                style=palette.get("primary_value", "cyan"),
-            ),
+        config_table.add(
+            "Index compression",
+            f"{config_data['index_compression_mode']} (Level {config_data['index_compression_level']})",
         )
     else:
-        config_table.add_row("Index Compression: Not Enabled")
+        config_table.add("Index compression", "Not enabled")
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title', 'bold')}]Dorsal Configuration[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"{title_text}\n"), config_table))
-    else:
-        console.print(
-            Panel(
-                config_table,
-                title=title_text,
-                border_style=palette.get("panel_border", "default"),
-                box=borders,
-                expand=False,
-            )
-        )
-
-    console.print("\n[dim]For more detail on the pipeline config, run:[/]")
+    console.print(section("Dorsal configuration", config_table, ui_context))
+    console.print()
+    console.print("[dim]For more detail on the pipeline config, run:[/]")
     console.print("[dim]  dorsal config pipeline show[/]")
 
 
-def _create_theme_preview_panel(theme_name: str, palette: dict[str, str], borders: Box) -> RenderableType:
-    from dorsal.cli.themes.borders import get_borders
+def _create_theme_preview_panel(
+    theme_name: str, theme_palette: dict[str, str], ui_context: UIContext
+) -> RenderableType:
+    from dorsal.cli.views.layout import KeyValues, section
 
-    border_style = palette.get("panel_border_alt", palette.get("panel_border", "default"))
-    title_style = palette.get("panel_title_alt", palette.get("panel_title", "default"))
-
-    preview_grid = Table.grid(padding=(0, 2))
-    preview_grid.add_column(style=palette.get("key", "dim"), width=12)
-    preview_grid.add_column()
-    preview_grid.add_row("Key:", Text("Primary Value", style=palette.get("primary_value", "default")))
-    preview_grid.add_row("Hash:", Text("a1b2c3d4e5f62a3b4c...", style=palette.get("hash_value", "default")))
-
-    public_tag_text = Text.assemble(
-        ("public_tag", palette.get("tag_public", "default")),
-        (" (public)", palette.get("tag_subtext", "default")),
+    preview = KeyValues(
+        key_style=theme_palette.get("key", "dim"), value_style=theme_palette.get("primary_value", "default")
     )
-    private_tag_text = Text.assemble(
-        ("private_tag", palette.get("tag_private", "default")),
-        (" (private)", palette.get("tag_subtext", "default")),
+    preview.add("Key", "Primary value")
+    preview.add("Hash", "a1b2c3d4e5f62a3b4c...", style=theme_palette.get("hash_value", "default"))
+    preview.add(
+        "Tags",
+        Text.assemble(
+            ("public_tag", theme_palette.get("tag_public", "default")),
+            (" (public)", theme_palette.get("tag_subtext", "default")),
+            "\n",
+            ("private_tag", theme_palette.get("tag_private", "default")),
+            (" (private)", theme_palette.get("tag_subtext", "default")),
+        ),
     )
-    preview_grid.add_row("Tags:", public_tag_text)
-    preview_grid.add_row("", private_tag_text)
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{title_style}]{theme_name}[/]"
-
-    if is_none_style:
-        return Group(Text.from_markup(f"{title_text}\n"), preview_grid)
-
-    return Panel(
-        preview_grid,
-        title=title_text,
-        border_style=border_style,
-        box=borders,
-        expand=False,
+    return section(
+        theme_name,
+        preview,
+        ui_context,
+        title_style=theme_palette.get("panel_title_alt", theme_palette.get("panel_title", "default")),
+        border_style=theme_palette.get("panel_border_alt", theme_palette.get("panel_border", "default")),
+        padding=(0, 1),
     )
 
 
@@ -178,28 +148,31 @@ def _create_theme_preview_panel(theme_name: str, palette: dict[str, str], border
 def list_themes(ctx: typer.Context):
     """Lists all available built-in and custom color themes."""
     from dorsal.common.cli import get_rich_console
-    from dorsal.cli.themes.palettes import BUILT_IN_PALETTES, _load_custom_palettes
-    from dorsal.cli.themes.borders import get_borders
+    from dorsal.cli.themes.palettes import BUILT_IN_PALETTES, DEFAULT_PALETTE, _load_custom_palettes
+    from dorsal.cli.views.layout import heading, is_borderless, section
 
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    section_style = palette.get("section_title", "bold")
+    borderless = is_borderless(ui_context)
 
-    renderables: list[RenderableType] = [Text.from_markup(f"[{palette.get('panel_title')}]🎨 Available Themes[/]")]
-    renderables.append(Text.from_markup(f"\n[{palette.get('section_title')}]Built-in Themes[/]"))
+    def theme_group(title: str, palettes: dict[str, dict[str, str]]) -> list[RenderableType]:
+        previews: list[RenderableType] = []
+        for name, theme_palette in palettes.items():
+            if previews:
+                previews.append(Text(""))
+            previews.append(_create_theme_preview_panel(name, {**DEFAULT_PALETTE, **theme_palette}, ui_context))
+        if borderless:
+            return [section(title, Group(Text(""), *previews), ui_context, title_style=section_style)]
+        return [heading(title, section_style), *previews]
 
-    for name, theme_palette in BUILT_IN_PALETTES.items():
-        renderables.append(_create_theme_preview_panel(name, theme_palette, borders))
+    renderables = theme_group("Built-in themes", BUILT_IN_PALETTES)
 
     custom = _load_custom_palettes()
     if custom:
         renderables.append(Text(""))
-        renderables.append(
-            Text.from_markup(f"[{palette.get('section_title')}]Custom Themes[/] (from ~/.dorsal/palettes.json)")
-        )
-        for name, theme_palette in custom.items():
-            renderables.append(_create_theme_preview_panel(name, theme_palette, borders))
+        renderables.extend(theme_group("Custom themes [dim](from ~/.dorsal/palettes.json)[/]", custom))
 
     command_color = palette.get("primary_value", "default")
     renderables.append(
@@ -209,22 +182,10 @@ def list_themes(ctx: typer.Context):
         )
     )
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title')}]Theme Configuration[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"{title_text}\n"), *renderables))
+    if borderless:
+        console.print(Group(*renderables))
     else:
-        console.print(
-            Panel(
-                Group(*renderables),
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border", "blue"),
-                box=borders,
-                padding=(1, 2),
-            )
-        )
+        console.print(section("Available themes", Group(*renderables), ui_context))
 
 
 @theme_app.command(name="set")
@@ -232,10 +193,10 @@ def set_ui_preferences(
     ctx: typer.Context,
     theme_name: Annotated[Optional[str], typer.Argument(help="The name of the color theme to set.")] = None,
     icons: Annotated[
-        Optional[str], typer.Option("--icons", help="The icon style to set (e.g., emoji, ascii, none).")
+        Optional[str], typer.Option("--icons", help="The icon style to set (e.g., none, emoji, ascii).")
     ] = None,
     borders: Annotated[
-        Optional[str], typer.Option("--borders", help="The border style to set (e.g., rounded, heavy, ascii, none).")
+        Optional[str], typer.Option("--borders", help="The border style to set (e.g., none, rounded, heavy, ascii).")
     ] = None,
     global_scope: Annotated[
         bool,
@@ -255,6 +216,7 @@ def set_ui_preferences(
     from dorsal.cli.themes.palettes import BUILT_IN_PALETTES, _load_custom_palettes
     from dorsal.cli.themes.icons import ICON_SETS
     from dorsal.cli.themes.borders import BORDER_SETS
+    from dorsal.cli.views.layout import key_values, section
 
     console = get_rich_console()
     error_console = get_error_console()
@@ -262,7 +224,7 @@ def set_ui_preferences(
     palette = ui_context["palette"]
 
     if not theme_name and not icons and not borders:
-        console.print(
+        error_console.print(
             f"[{palette.get('warning', 'yellow')}]No UI preferences provided to set. Provide a theme name or use --icons / --borders.[/]"
         )
         exit_cli(code=EXIT_CODE_ERROR)
@@ -292,19 +254,16 @@ def set_ui_preferences(
     try:
         write_ui_config(theme=theme_name, icons=icons, borders=borders, scope=scope)
 
-        updates = []
-        if theme_name:
-            updates.append(f"Theme: [bold {palette.get('primary_value', 'cyan')}]{theme_name}[/]")
-        if icons:
-            updates.append(f"Icons: [bold {palette.get('primary_value', 'cyan')}]{icons}[/]")
-        if borders:
-            updates.append(f"Borders: [bold {palette.get('primary_value', 'cyan')}]{borders}[/]")
-
-        success_message = Text.from_markup(
-            f"[{palette.get('success', 'green')}]✅ UI preferences updated in {scope} config:[/]\n  "
-            + "\n  ".join(updates)
+        updates = key_values(ui_context, [("Theme", theme_name), ("Icons", icons), ("Borders", borders)])
+        console.print(
+            section(
+                f"{ui_context['icons'].get('success', '')}UI preferences updated in {scope} config",
+                updates,
+                ui_context,
+                title_style=palette.get("success", "green"),
+                border_style=palette.get("panel_border_success", "green"),
+            )
         )
-        console.print(success_message)
     except OSError as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Error saving configuration: {e}")
 
@@ -332,10 +291,10 @@ def _handle_pipeline_action(target: str, func_index, func_name, action_desc: str
             func_name(name=target)
             console.print(f"[green]Successfully {action_desc} model '{target}'.[/]")
         except Exception as e:
-            error_console.print(f"[red]Error: {e} [/]")
+            error_console.print(f"[red]Error:[/] {e}")
             exit_cli(EXIT_CODE_ERROR)
     except Exception as e:
-        error_console.print(f"[red]Error: {e} [/]")
+        error_console.print(f"[red]Error:[/] {e}")
         exit_cli(EXIT_CODE_ERROR)
 
 
@@ -353,10 +312,12 @@ def show_pipeline(
     from dorsal.common.cli import get_rich_console, print_json_output
     from dorsal.api.config import show_model_pipeline
 
+    from dorsal.cli.views.layout import message, table
+
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     summary = show_model_pipeline()
 
@@ -365,49 +326,43 @@ def show_pipeline(
         raise typer.Exit()
 
     if not summary:
-        console.print(
-            Panel("The pipeline is currently empty.", title="Pipeline", border_style=palette["warning"], box=borders)
-        )
+        console.print(message("Pipeline", "The pipeline is currently empty.", ui_context, level="warning"))
         return
 
-    table = Table(expand=True, box=borders, padding=(0, 2))
-    table.add_column("Idx", justify="right", style="dim")
-    table.add_column("Status", justify="left", width=10)
-    table.add_column("Model Name", style="bold")
-    table.add_column("Module", style="dim")
-    table.add_column("Schema ID", style="cyan")
-    table.add_column("Dependencies", style="dim")
+    pipeline_table = table(
+        ui_context,
+        title="Annotation model pipeline",
+        caption=f"Total models: {len(summary)}",
+        caption_justify="left",
+        caption_style=palette.get("info", "dim"),
+    )
+    pipeline_table.add_column("Idx", justify="right", style="dim")
+    pipeline_table.add_column("Status", justify="left")
+    pipeline_table.add_column("Model name", style="bold")
+    pipeline_table.add_column("Module", style="dim")
+    pipeline_table.add_column("Schema ID", style="cyan")
+    pipeline_table.add_column("Dependencies", style="dim")
 
     for step in summary:
-        status = "✅ Active"
-        name = step["name"]
+        status = f"[{palette.get('success', 'green')}]{icons.get('success', '')}Active[/]"
+        name = Text(step["name"])
 
         if step["status"] == "Deactivated":
-            status = "❌ Off"
+            status = f"[{palette.get('error', 'red')}]{icons.get('error', '')}Off[/]"
         elif step["status"] == "Base (Locked)":
-            status = "[dim]🔒 Default[/]"
-            name = f"[dim]{step['name']}[/]"
+            status = "[dim]Default[/]"
+            name.stylize("dim")
 
-        table.add_row(str(step["index"]), status, name, step["module"], step["schema_id"], str(step["dependencies"]))
-
-    from dorsal.cli.themes.borders import get_borders
-
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title')}]Annotation Model Pipeline[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"{title_text}\n[dim]Total Models: {len(summary)}[/]\n"), table))
-    else:
-        console.print(
-            Panel(
-                table,
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border", "blue"),
-                box=borders,
-                subtitle=f"Total Models: {len(summary)}",
-            )
+        pipeline_table.add_row(
+            str(step["index"]),
+            status,
+            name,
+            Text(step["module"]),
+            Text(step["schema_id"]),
+            Text(str(step["dependencies"])),
         )
+
+    console.print(pipeline_table)
 
 
 @pipeline_app.command(name="remove")
@@ -459,7 +414,7 @@ def check_pipeline(
     steps = get_model_pipeline(scope="effective")
     broken_indices = []
 
-    with console.status("Checking pipeline integrity..."):
+    with error_console.status("Checking pipeline integrity..."):
         for i, step in enumerate(steps):
             if i == 0:
                 continue
@@ -473,12 +428,14 @@ def check_pipeline(
                 broken_indices.append((i, step.annotation_model.name, str(e)))
 
     if not broken_indices:
-        console.print(f"[{palette.get('success', 'green')}]✓ All pipeline models are importable.[/]")
+        console.print(
+            f"[{palette.get('success', 'green')}]{ui_context['icons'].get('success', '')}All pipeline models are importable.[/]"
+        )
         raise typer.Exit()
 
     console.print(f"[{palette.get('error', 'red')}]Found {len(broken_indices)} broken models:[/]")
     for idx, name, err in broken_indices:
-        console.print(f"  • Index {idx}: [bold]{name}[/] - {err}")
+        console.print(f"  - Index {idx}: [bold]{name}[/] - {err}")
 
     if fix:
         for idx, name, _ in reversed(broken_indices):

@@ -144,5 +144,5 @@ def test_install_model_install_failure(mock_rich_console, mock_install_cmd):
 
     assert result.exit_code != 0
     assert mock_rich_console.print.called
-    assert "Install Failed" in str(mock_rich_console.print.call_args[0][0])
+    assert "Install failed" in str(mock_rich_console.print.call_args[0][0])
     assert "Pip failed" in str(mock_rich_console.print.call_args[0][0])

@@ -80,8 +80,16 @@ def test_show_collection_success_default(mock_rich_console, mock_show_collection
     mock_show_collection_cmd["view"].assert_called_once()
 
     assert mock_rich_console.print.call_count == 3
-    assert isinstance(mock_rich_console.print.call_args_list[1].args[0], Panel)
-    assert isinstance(mock_rich_console.print.call_args_list[2].args[0], Table)
+    assert isinstance(mock_rich_console.print.call_args_list[0].args[0], Panel)
+    assert mock_rich_console.print.call_args_list[1].args == ()
+    table = mock_rich_console.print.call_args_list[2].args[0]
+    assert isinstance(table, Table)
+    from rich.console import Console
+
+    console = Console(width=120)
+    with console.capture() as capture:
+        console.print(table)
+    assert capture.get().splitlines()[0] == "Files in collection"
 
 
 def test_show_collection_meta_only(mock_rich_console, mock_show_collection_cmd):
@@ -91,7 +99,7 @@ def test_show_collection_meta_only(mock_rich_console, mock_show_collection_cmd):
     assert result.exit_code == 0
     assert mock_show_collection_cmd["get_collection"].call_args.kwargs["per_page"] == 0
 
-    assert mock_rich_console.print.call_count == 2
+    assert mock_rich_console.print.call_count == 1
     assert isinstance(mock_rich_console.print.call_args.args[0], Panel)
 
 
@@ -103,7 +111,7 @@ def test_show_collection_no_files(mock_rich_console, mock_show_collection_cmd):
     result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
 
     assert result.exit_code == 0
-    assert mock_rich_console.print.call_count == 3
+    assert mock_rich_console.print.call_count == 2
     assert "Collection contains no files" in mock_rich_console.print.call_args.args[0]
 
 
@@ -154,12 +162,11 @@ def test_show_collection_narrow_console(mock_rich_console, mock_show_collection_
 
     assert result.exit_code == 0
 
-    # The printed table is the 3rd print call (1: Fetching msg, 2: Metadata Panel, 3: File Table)
     printed_table = mock_rich_console.print.call_args_list[2].args[0]
 
     assert isinstance(printed_table, Table)
     assert len(printed_table.columns) == 2
-    assert printed_table.columns[0].header == "File Details (Name / Hash)"
+    assert printed_table.columns[0].header == "File details (name / hash)"
 
 
 def test_show_collection_pagination_has_next(mock_rich_console, mock_show_collection_cmd):
@@ -216,3 +223,38 @@ def test_show_collection_pagination_last_page_zero_records(mock_rich_console, mo
 
     # Clean up the page_count modification
     MOCK_API_RESPONSE.pagination.page_count = 1
+
+
+def test_show_collection_borderless_output(mock_rich_console, mocker):
+    """Rendered for real, borderless output has a metadata section, one blank line and a plain file table."""
+    from rich.console import Console
+
+    MOCK_API_RESPONSE.files = [mock_file]
+    MOCK_API_RESPONSE.collection.file_count = 1
+    MOCK_API_RESPONSE.pagination.page_count = 1
+    collection = MOCK_API_RESPONSE.collection
+    collection.collection_id = COLLECTION_ID
+    collection.name = "Research"
+    collection.description = None
+    collection.total_size = 1048576
+    collection.is_private = True
+    collection.date_modified = None
+    mocker.patch("dorsal.api.collection.get_collection", return_value=MOCK_API_RESPONSE)
+
+    result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
+    assert result.exit_code == 0
+
+    console = Console(width=120)
+    with console.capture() as capture:
+        for call in mock_rich_console.print.call_args_list:
+            console.print(*call.args)
+    lines = capture.get().splitlines()
+
+    assert lines[0] == "Collection metadata"
+    assert lines[1].startswith("  ID ")
+    blank = lines.index("")
+    assert lines[blank + 1] == "Files in collection"
+    assert lines[blank + 2].startswith("Name ")
+    assert "research_paper.pdf" in lines[blank + 3]
+    assert all(line == line.rstrip() for line in lines)
+    assert not any(ch in "".join(lines) for ch in "│─╭╰")

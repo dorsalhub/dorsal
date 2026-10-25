@@ -41,17 +41,16 @@ def set_index_compression_cmd(
     )
     from dorsal.api.config import set_compression
     from dorsal.cli.themes import UIContext
+    from dorsal.cli.views.layout import key_values, section
 
     console = get_rich_console()
     error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     if mode is None and level is None:
         from dorsal.api.config import get_config_summary
-        from rich.panel import Panel
-        from rich.table import Table
         from rich.text import Text
 
         config_data = get_config_summary()
@@ -60,30 +59,19 @@ def set_index_compression_cmd(
         current_mode = config_data.get("index_compression_mode", "zlib")
         current_level = config_data.get("index_compression_level", 6)
 
-        table = Table.grid(expand=False, padding=(0, 1))
-        table.add_column(justify="right", style=palette.get("key", "dim"))
-        table.add_column(justify="left", style=palette.get("primary_value", "cyan"))
+        settings = key_values(ui_context)
 
         if is_compressed:
             status_text = Text("Enabled", style=palette.get("success", "green"))
         else:
-            status_text = Text("Not Enabled", style=palette.get("warning", "yellow"))
+            status_text = Text("Not enabled", style=palette.get("warning", "yellow"))
 
-        table.add_row("Status:", status_text)
+        settings.add("Status", status_text)
         if is_compressed:
-            table.add_row("Mode:", current_mode)
-            table.add_row("Level:", str(current_level))
+            settings.add("Mode", str(current_mode))
+            settings.add("Level", str(current_level))
 
-        console.print(
-            Panel(
-                table,
-                title=f"[{palette.get('panel_title', 'bold')}]Index Compression Settings[/]",
-                border_style=palette.get("panel_border", "blue"),
-                box=borders,
-                expand=False,
-                padding=(0, 1),
-            )
-        )
+        console.print(section("Index compression settings", settings, ui_context, padding=(0, 1)))
 
         console.print(ctx.get_help())
         raise typer.Exit()
@@ -95,15 +83,21 @@ def set_index_compression_cmd(
 
         set_compression(mode=safe_mode, level=level, scope=scope)
 
-        updates = []
+        updates = key_values(ui_context, value_style=f"bold {palette.get('primary_value', 'cyan')}")
         if safe_mode:
-            updates.append(f"Algorithm: [bold {palette.get('primary_value', 'cyan')}]{safe_mode}[/]")
+            updates.add("Algorithm", safe_mode)
         if level is not None:
-            updates.append(f"Level: [bold {palette.get('primary_value', 'cyan')}]{level}[/]")
+            updates.add("Level", str(level))
 
         console.print(
-            f"[{palette.get('success', 'green')}]✅ Index compression settings updated in {scope} config:[/]\n  "
-            + "\n  ".join(updates)
+            section(
+                f"{icons.get('success', '')}Index compression settings updated in {scope} config",
+                updates,
+                ui_context,
+                title_style=palette.get("success", "green"),
+                border_style=palette.get("panel_border_success", "green"),
+                padding=(0, 1),
+            )
         )
 
         console.print(
@@ -113,7 +107,7 @@ def set_index_compression_cmd(
         )
 
     except ValueError as e:
-        error_console.print(f"[{palette.get('error', 'red')}]Validation Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'red')}]Validation error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"Failed to save settings: {e}")

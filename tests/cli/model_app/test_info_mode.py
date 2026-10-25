@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 from unittest.mock import MagicMock
 import pytest
 
 import typer
 from typer.testing import CliRunner
 from rich.box import ROUNDED
+from rich.console import Console
 
 from dorsal.cli.model_app.info_model_cmd import info_model
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
@@ -37,6 +39,13 @@ def main_callback(ctx: typer.Context):
 cli_app.command(name="info")(info_model)
 
 runner = CliRunner()
+
+
+def _render(renderable) -> str:
+    """Renders a Rich renderable as plain text."""
+    console = Console(record=True, width=120, file=io.StringIO())
+    console.print(renderable)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -94,14 +103,31 @@ def test_info_model_basic_success(mock_rich_console, mock_info_cmd):
 
     assert mock_rich_console.print.called
 
-    panel = mock_rich_console.print.call_args_list[0].args[0]
-    rendered_text = str(panel.renderable)
+    rendered_text = _render(mock_rich_console.print.call_args_list[0].args[0])
 
-    assert "dorsalhub/receipt-scanner (v1.2.0)" in rendered_text
-    assert "Extracts data from receipts." in rendered_text
-    assert "https://dorsalhub.com/receipt-scanner" in rendered_text
-    assert "https://github.com/dorsalhub/receipt-scanner" in rendered_text
-    assert "dorsal model run dorsalhub/receipt-scanner ./path/to/file" in rendered_text
+    assert rendered_text.startswith("╭─ Model info: dorsalhub/receipt-scanner")
+    assert "│ ID           dorsalhub/receipt-scanner (v1.2.0)" in rendered_text
+    assert "│ Description  Extracts data from receipts." in rendered_text
+    assert "│ URL          https://dorsalhub.com/receipt-scanner" in rendered_text
+    assert "│ Source code  https://github.com/dorsalhub/receipt-scanner" in rendered_text
+    assert "│ Usage        dorsal model run dorsalhub/receipt-scanner ./path/to/file" in rendered_text
+
+
+def test_info_model_borderless(mocker, mock_rich_console, mock_info_cmd):
+    """Tests that borderless output is a heading with left-aligned, indented details."""
+    mocker.patch.dict(DUMMY_UI_CONTEXT, {"borders": None})
+
+    result = runner.invoke(cli_app, ["info", "dorsalhub/receipt-scanner"])
+
+    assert result.exit_code == 0, result.output
+    assert _render(mock_rich_console.print.call_args_list[0].args[0]) == (
+        "Model info: dorsalhub/receipt-scanner\n"
+        "  ID           dorsalhub/receipt-scanner (v1.2.0)\n"
+        "  Description  Extracts data from receipts.\n"
+        "  URL          https://dorsalhub.com/receipt-scanner\n"
+        "  Source code  https://github.com/dorsalhub/receipt-scanner\n"
+        "  Usage        dorsal model run dorsalhub/receipt-scanner ./path/to/file\n"
+    )
 
 
 def test_info_model_resolution_error(mock_rich_console, mock_info_cmd, mock_error_console):
@@ -131,8 +157,7 @@ def test_info_model_fallback_description(mock_rich_console, mock_info_cmd):
 
     assert result.exit_code == 0
 
-    panel = mock_rich_console.print.call_args_list[0].args[0]
-    rendered_text = str(panel.renderable)
+    rendered_text = _render(mock_rich_console.print.call_args_list[0].args[0])
 
     assert "ReceiptScanner default fallback description" in rendered_text
 

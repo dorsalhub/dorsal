@@ -18,16 +18,6 @@ import logging
 import datetime
 from typing import Annotated, Literal, Optional, cast
 
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    MofNCompleteColumn,
-    TimeRemainingColumn,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -62,9 +52,20 @@ def export_index_cmd(
     """
     Exports the full contents of the local dorsal index to a file.
     """
+    from rich.markup import escape
+
     from dorsal.common.cli import get_rich_console, exit_cli, EXIT_CODE_ERROR
     from dorsal.common import constants
     from dorsal.api.index import export
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+        TimeRemainingColumn,
+    )
 
     console = get_rich_console()
 
@@ -131,8 +132,10 @@ def export_index_cmd(
                 progress_callback=_progress_cb,
             )
 
+        success_icon = ctx.obj.get("icons", {}).get("success", "")
         console.print(
-            f"\n[{palette.get('success', 'green')}]✅ Successfully exported {count:,} records to '{output_path}'[/]"
+            f"[{palette.get('success', 'green')}]{success_icon}Successfully exported {count:,} records to '{escape(str(output_path))}'[/]",
+            soft_wrap=True,
         )
 
     except (IOError, ValueError) as e:

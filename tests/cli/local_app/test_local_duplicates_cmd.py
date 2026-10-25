@@ -14,10 +14,10 @@
 
 import pytest
 import json
+import re
 import pathlib
 from typer.testing import CliRunner
 from unittest.mock import MagicMock, call
-from rich.panel import Panel
 
 
 from dorsal.cli import app
@@ -64,14 +64,23 @@ def mock_duplicates_cmd(mocker):
     }
 
 
-def test_duplicates_dir_success_panel_output(mock_rich_console, mock_duplicates_cmd):
-    """Tests the default `local duplicates` command, expecting Rich Panel output."""
+def test_duplicates_dir_success_panel_output(mock_rich_console, mock_error_console, mock_duplicates_cmd, rendered):
+    """Tests the default `local duplicates` command renders each set borderless, without emoji."""
     result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
 
-    printed_items = [call.args[0] for call in mock_rich_console.print.call_args_list]
-    assert any(isinstance(item, Panel) for item in printed_items), "No Rich Panel was printed."
+    text = rendered(mock_rich_console)
+    lines = text.splitlines()
+    assert "Duplicate set 1 of 1  10.0 KB each" in lines
+    assert "  SHA256 hash_val_1" in lines
+    assert f"  {TEST_DATA_DIR}/file_a.txt" in lines
+    assert "Found 1 set(s) of duplicate files (5 hashes from cache)" in text
+    assert "Searching for duplicate files" not in text
+    assert "Searching for duplicate files" in rendered(mock_error_console)
+    assert not re.search("[\u2600-\u27bf\U0001f000-\U0001faff\ufe0f]", text)
+    assert all(line == line.rstrip() for line in lines)
+    assert not text.startswith("\n")
 
     mock_duplicates_cmd["find_duplicates"].assert_called_once()
     mock_duplicates_cmd["save_report"].assert_not_called()
@@ -103,7 +112,7 @@ def test_duplicates_dir_json_output(mock_rich_console, mock_duplicates_cmd):
     mock_duplicates_cmd["save_report"].assert_not_called()
 
 
-def test_duplicates_dir_limit_output(mock_rich_console, mock_duplicates_cmd):
+def test_duplicates_dir_limit_output(mock_rich_console, mock_duplicates_cmd, rendered):
     """Tests that the --limit flag correctly limits the number of printed panels."""
     multi_result = {
         **MOCK_DUPLICATES_RESULT,
@@ -125,11 +134,11 @@ def test_duplicates_dir_limit_output(mock_rich_console, mock_duplicates_cmd):
     result = runner.invoke(app, ["local", "duplicates", TEST_DATA_DIR, "--limit", "1"])
 
     assert result.exit_code == 0, f"CLI exited with error: {result.output}"
-    printed_panels = [item for item in mock_rich_console.print.call_args_list if isinstance(item.args[0], Panel)]
-    assert len(printed_panels) == 1
-
-    all_printed_text = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
-    assert "Displaying the" in all_printed_text and "1" in all_printed_text
+    text = rendered(mock_rich_console)
+    assert "Duplicate set 1 of 2" in text
+    assert "Duplicate set 2 of 2" not in text
+    assert "Displaying the 1 largest duplicate sets." in text
+    assert "… and 1 more sets." in text
 
 
 def test_duplicates_dir_exception_handling(mock_rich_console, mock_duplicates_cmd):

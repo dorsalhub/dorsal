@@ -46,6 +46,6 @@ ICON_SETS = {
 }
 
 
-def get_icons(name: str = "emoji") -> dict[str, str]:
-    """Returns the requested icon set, falling back to 'emoji' if not found."""
-    return ICON_SETS.get(name, ICON_SETS["emoji"])
+def get_icons(name: str = "none") -> dict[str, str]:
+    """Returns the requested icon set, falling back to 'none' if not found."""
+    return ICON_SETS.get(name, ICON_SETS["none"])

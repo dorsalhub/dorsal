@@ -54,11 +54,11 @@ email = ""
 # Choose the visual theme. (e.g., "default", "dark", "light")
 theme = "default"
 
-# Choose the icon style. ("emoji", "ascii", "none")
-icons = "emoji"
+# Choose the icon style. ("none", "emoji", "ascii")
+icons = "none"
 
-# Choose the panel border style. ("rounded", "heavy", "ascii", "double", "square", "minimal", "markdown", "none")
-borders = "rounded"
+# Choose the border style. ("none", "rounded", "heavy", "ascii", "double", "square", "minimal", "markdown")
+borders = "none"
 
 # -----------------------------------------------------------------------------
 #  HTML report options

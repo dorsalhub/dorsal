@@ -15,11 +15,12 @@
 import pathlib
 import logging
 import json
-from typing import Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Optional
 
 import typer
 
-from dorsal.cli.themes import UIContext
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ def get_annotation(
     if json_output and export_format:
         raise typer.BadParameter("You cannot use --json and --export at the same time for standard output.")
 
+    from rich.markup import escape
+
     from dorsal.api.file import get_file_annotation
     from dorsal.common.cli import (
         DummyContext,
@@ -86,7 +89,7 @@ def get_annotation(
     console = get_rich_console()
     error_console = get_error_console()
 
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
 
     parsed_export_options = parse_cli_options(options=export_options, palette=palette) if export_options else {}
@@ -97,7 +100,7 @@ def get_annotation(
         with (
             DummyContext()
             if is_stdout_raw
-            else console.status(f"[{palette.get('info', 'dim')}]Downloading annotation...[/]")
+            else error_console.status(f"[{palette.get('info', 'dim')}]Downloading annotation[/]")
         ):
             if json_output:
                 data_str = get_file_annotation(annotation_id, mode="json")
@@ -141,13 +144,11 @@ def get_annotation(
                 data_str = json.dumps(dump_dict, indent=2, ensure_ascii=False)
 
             save_path.write_text(data_str, encoding="utf-8")
-            error_console.print(
-                f"[{palette.get('info', 'dim')}]Output saved successfully:\n  ↳ {save_path.resolve()}[/]"
-            )
+            error_console.print(f"[{palette.get('info', 'dim')}]Output saved to {escape(str(save_path.resolve()))}[/]")
 
             if not (json_output or export_format):
                 panel = create_model_result_panel(
-                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", ui_context=ui_context
+                    result=hydrated, title=schema_id, file_name=annotation_id, ui_context=ui_context
                 )
                 console.print(panel)
 
@@ -156,7 +157,7 @@ def get_annotation(
                 print_raw_output(data_str, console, end="" if export_format else "\n")
             else:
                 panel = create_model_result_panel(
-                    result=hydrated, title=schema_id, file_name=f"ID: {annotation_id}", ui_context=ui_context
+                    result=hydrated, title=schema_id, file_name=annotation_id, ui_context=ui_context
                 )
                 console.print(panel)
 

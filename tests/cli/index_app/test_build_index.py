@@ -50,7 +50,7 @@ def mock_build_index_cmd(mocker):
     }
 
 
-def test_build_index_default(mock_rich_console, mock_build_index_cmd):
+def test_build_index_default(mock_rich_console, mock_build_index_cmd, rendered):
     """Tests the default behavior of building the index (shallow scan)."""
     result = runner.invoke(app, ["index", "build", TEST_DATA_DIR])
 
@@ -59,11 +59,11 @@ def test_build_index_default(mock_rich_console, mock_build_index_cmd):
 
     assert mock_build_index_cmd["collection_class"].call_args.kwargs.get("calculate_hashes") is False
 
-    all_printed_text = " ".join([call.args[0] for call in mock_rich_console.print.call_args_list if call.args])
+    lines = rendered(mock_rich_console).splitlines()
 
-    assert "Search Index updated successfully" in all_printed_text
-    assert "Loaded from index: 10" in all_printed_text
-    assert "Newly added to index: 5" in all_printed_text
+    assert lines[0] == "Search index updated successfully"
+    assert "  Loaded from index      10" in lines
+    assert "  Newly added to index   5" in lines
 
 
 def test_build_index_deep(mock_rich_console, mock_build_index_cmd):

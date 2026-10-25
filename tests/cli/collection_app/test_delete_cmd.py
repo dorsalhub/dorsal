@@ -40,9 +40,10 @@ def test_delete_collection_with_yes_flag(mock_rich_console, mock_delete_collecti
     assert result.exit_code == 0
     mock_delete_collection_cmd.assert_called_once_with(collection_id=COLLECTION_ID)
 
-    # The command prints a status message, then the success message
-    success_msg = mock_rich_console.print.call_args_list[1].args[0]
+    mock_rich_console.print.assert_called_once()
+    success_msg = mock_rich_console.print.call_args.args[0]
     assert f"Collection '{COLLECTION_ID}' was successfully deleted" in success_msg
+    assert not success_msg.startswith("\n")
 
 
 def test_delete_collection_with_confirmation_yes(mock_rich_console, mock_delete_collection_cmd):
@@ -52,7 +53,7 @@ def test_delete_collection_with_confirmation_yes(mock_rich_console, mock_delete_
     assert result.exit_code == 0
     mock_delete_collection_cmd.assert_called_once()
 
-    success_msg = mock_rich_console.print.call_args_list[1].args[0]
+    success_msg = mock_rich_console.print.call_args.args[0]
     assert f"Collection '{COLLECTION_ID}' was successfully deleted" in success_msg
 
 

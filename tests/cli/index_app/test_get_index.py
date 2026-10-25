@@ -217,7 +217,7 @@ def test_get_index_output_dir(mock_get_index_cmd):
     assert len(saved_files) == 1
 
 
-def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cmd):
+def test_get_index_output_extension_warning(mock_rich_console, mock_error_console, mock_get_index_cmd, rendered):
     """Tests the warning generated when a non-JSON extension is provided without the save flag."""
     weird_out = mock_get_index_cmd["tmp_path"] / "report.txt"
     path_id = mock_get_index_cmd["path_id"]
@@ -225,8 +225,8 @@ def test_get_index_output_extension_warning(mock_rich_console, mock_get_index_cm
 
     assert result.exit_code == 0
 
-    all_output = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
-    assert "unknown extension" in all_output
+    assert "Warning: --output path" in rendered(mock_error_console, width=400)
+    assert "unknown extension" not in rendered(mock_rich_console)
 
 
 def test_get_index_save_ioerror(mock_get_index_cmd, mocker):

@@ -17,6 +17,8 @@ from typing import Annotated, Literal
 
 import typer
 
+from dorsal.cli.themes import UIContext
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +38,8 @@ def uninstall_model(
     This removes the model from your dorsal.toml configuration and uninstalls
     the underlying pip package.
     """
-    from rich.panel import Panel
     from rich.prompt import Confirm
+    from rich.text import Text
     from dorsal.common.exceptions import DorsalError
     from dorsal.common.cli import (
         exit_cli,
@@ -47,21 +49,23 @@ def uninstall_model(
     )
 
     from dorsal.api.model import prepare_model_target, uninstall_model as api_uninstall_model
+    from dorsal.cli.views.layout import section
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
     scope: Literal["global", "project"] = "global" if global_install else "project"
 
     resolution = prepare_model_target(target)
 
     if resolution.strategy == "error":
-        error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {resolution.error_message}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall failed:[/] {resolution.error_message}")
         exit_cli(code=EXIT_CODE_ERROR)
 
     if resolution.strategy == "pipeline":
         error_console.print(
-            f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] "
+            f"[{palette.get('error', 'bold red')}]Uninstall failed:[/] "
             f"Target '{target}' is a built-in core model. Use 'dorsal config pipeline remove' instead of uninstalling."
         )
         exit_cli(code=EXIT_CODE_ERROR)
@@ -78,25 +82,26 @@ def uninstall_model(
 
     status_color = palette.get("primary_value", "bold cyan")
 
-    with console.status(f"Uninstalling [{status_color}]{target}[/]..."):
+    with error_console.status(f"Uninstalling [{status_color}]{target}[/]..."):
         try:
             package_name = api_uninstall_model(target, scope=scope)
 
         except DorsalError as e:
-            error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall Failed:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Uninstall failed:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
         except Exception as e:
             logger.exception("Unexpected error during uninstall")
-            error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+            error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected error:[/] {e}")
             exit_cli(code=EXIT_CODE_ERROR)
 
     success_color = palette.get("primary_value", "cyan")
 
     console.print(
-        Panel(
-            f"Successfully uninstalled [{success_color}]{package_name}[/]",
-            title=f"[{palette.get('panel_title_success', 'bold green')}]🗑️ Uninstall Complete[/]",
+        section(
+            f"{ui_context['icons'].get('success', '')}Uninstall complete",
+            Text.from_markup(f"Successfully uninstalled [{success_color}]{package_name}[/]"),
+            ui_context,
+            title_style=palette.get("panel_title_success", "bold green"),
             border_style=palette.get("panel_border_success", "green"),
-            expand=False,
         )
     )

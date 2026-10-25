@@ -16,7 +16,7 @@ import pytest
 import json
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -24,6 +24,13 @@ from dorsal.common.exceptions import DorsalClientError
 
 runner = CliRunner()
 COLLECTION_ID = "col_abc123"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 @pytest.fixture
@@ -68,9 +75,9 @@ def test_remove_files_with_hash_options(mock_rich_console, mock_remove_files_cmd
     assert sorted(called_hashes) == sorted(hashes_to_remove)
 
     # Check for the success panel
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Update Complete" in str(printed_object.title)
+    lines = _render(mock_rich_console.print.call_args.args[0]).splitlines()
+    assert lines[0] == "Update complete"
+    assert lines[1].startswith("  Removed ")
 
 
 def test_remove_files_from_stdin(mock_rich_console, mock_remove_files_cmd, mocker):
@@ -123,10 +130,10 @@ def test_remove_files_with_not_found_count(mock_rich_console, mock_remove_files_
     result = runner.invoke(app, ["collection", "remove-files", COLLECTION_ID, "--hash", "hash1"])
 
     assert result.exit_code == 0
-    printed_object = mock_rich_console.print.call_args.args[0]
-    panel_text = str(printed_object.renderable)
-    assert "Removed: 2" in panel_text
-    assert "Not Found (ignored): 1" in panel_text
+    lines = _render(mock_rich_console.print.call_args.args[0]).splitlines()
+    assert lines[1].split() == ["Removed", "2"]
+    assert lines[2].split() == ["Not", "found", "(ignored)", "1"]
+    assert lines[1].index("2") == lines[2].index("1")
 
 
 def test_remove_files_api_error(mock_remove_files_cmd):

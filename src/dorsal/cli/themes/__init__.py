@@ -13,20 +13,23 @@
 # limitations under the License.
 
 import os
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 from rich.box import Box
 
 
 from dorsal.common.constants import get_truthy_envvar
 from dorsal.cli.themes.palettes import get_palette
-from dorsal.cli.themes.icons import get_icons
-from dorsal.cli.themes.borders import get_borders
+from dorsal.cli.themes.icons import ICON_SETS, get_icons
+from dorsal.cli.themes.borders import BORDER_SETS, get_borders
 
 
 class UIContext(TypedDict):
     palette: dict[str, str]
     icons: dict[str, str]
-    borders: Box
+    borders: Box | None
+    theme_name: NotRequired[str]
+    icons_name: NotRequired[str]
+    borders_name: NotRequired[str]
 
 
 def get_ui_theme(
@@ -48,12 +51,15 @@ def get_ui_theme(
     if get_truthy_envvar("NO_EMOJI", strict=True):
         icon_name = "none"
     else:
-        icon_name = icon_override or os.getenv("DORSAL_ICONS") or ui_config.get("icons", "emoji")
+        icon_name = icon_override or os.getenv("DORSAL_ICONS") or ui_config.get("icons", "none")
 
-    border_name = border_override or os.getenv("DORSAL_BORDERS") or ui_config.get("borders", "rounded")
+    border_name = border_override or os.getenv("DORSAL_BORDERS") or ui_config.get("borders", "none")
 
     return {
         "palette": get_palette(theme_name),
         "icons": get_icons(icon_name),
         "borders": get_borders(border_name),
+        "theme_name": theme_name,
+        "icons_name": icon_name if icon_name in ICON_SETS else "none",
+        "borders_name": border_name if border_name in BORDER_SETS else "none",
     }

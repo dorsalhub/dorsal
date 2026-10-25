@@ -39,6 +39,8 @@ def delete_collection(
     """
     Permanently deletes a collection from DorsalHub.
     """
+    from rich.markup import escape
+
     from dorsal.api.collection import delete_collection
     from dorsal.common.cli import (
         get_rich_console,
@@ -53,22 +55,25 @@ def delete_collection(
     error_console = get_error_console()
 
     palette = ctx.obj["palette"]
+    icons = ctx.obj.get("icons", {})
 
-    if not json_output:
-        if not yes:
-            typer.confirm(
-                f"Are you sure you want to permanently delete collection '{collection_id}'?",
-                abort=True,
-            )
-        console.print(f"🗑️  Deleting collection '[bold]{collection_id}[/]'...")
+    if not json_output and not yes:
+        typer.confirm(
+            f"Are you sure you want to permanently delete collection '{collection_id}'?",
+            abort=True,
+        )
 
     try:
-        delete_collection(collection_id=collection_id)
+        with error_console.status(f"Deleting collection '[bold]{escape(collection_id)}[/]'"):
+            delete_collection(collection_id=collection_id)
 
         if json_output:
             print_json_output({"success": True, "collection_id": collection_id, "deleted": True}, console)
         else:
-            console.print(f"\n[{palette.get('success')}]✅ Collection '{collection_id}' was successfully deleted.[/]")
+            console.print(
+                f"[{palette.get('success')}]{icons.get('success', '')}Collection '{escape(collection_id)}' "
+                "was successfully deleted.[/]"
+            )
     except DorsalOfflineError:
         raise
     except AuthError:

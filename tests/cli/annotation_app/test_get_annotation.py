@@ -65,7 +65,7 @@ def test_get_annotation_success(mock_rich_console, mock_get_deps):
     assert result.exit_code == 0
     mock_get_deps["api_get"].assert_called_with("uuid-1234", mode="pydantic")
     mock_get_deps["panel"].assert_called_once_with(
-        result=mock_result, title="AudioTranscription", file_name="ID: uuid-1234", ui_context=DUMMY_UI_CONTEXT
+        result=mock_result, title="AudioTranscription", file_name="uuid-1234", ui_context=DUMMY_UI_CONTEXT
     )
     assert mock_rich_console.print.called
 
@@ -244,6 +244,10 @@ def test_get_annotation_output_file_standard(tmp_path, mock_get_deps, mock_rich_
     saved_data = json.loads(out_file.read_text(encoding="utf-8"))
     assert saved_data["id"] == "uuid-1234"
     assert mock_rich_console.print.called
+    saved_msg = str(mock_get_deps["error_console"].print.call_args.args[0])
+    assert "Output saved to " in saved_msg
+    assert "\n" not in saved_msg
+    mock_get_deps["error_console"].status.assert_called_once()
 
 
 def test_get_annotation_output_dir_json(tmp_path, mock_get_deps):

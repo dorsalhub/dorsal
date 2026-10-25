@@ -18,17 +18,14 @@ import time
 import pathlib
 import datetime
 import re
-from typing import Annotated, Literal, Optional
+from typing import TYPE_CHECKING, Annotated, Literal, Optional
 
-from rich.panel import Panel
-from rich.table import Table
 from rich.markup import escape
-from rich.console import Group
 from rich.text import Text
 import typer
 
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +160,14 @@ def duplicates_target(
         exit_cli,
         determine_use_cache_value,
         print_json_output,
+        get_error_console,
     )
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     progress_console = None if json_output else console
 
@@ -185,10 +184,9 @@ def duplicates_target(
             save = True
         else:
             if not output_path.is_dir():
-                console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
-                    f" Please use -s (for .json) or specify a .json file.",
-                    style=palette.get("warning", "yellow"),
+                error_console.print(
+                    f"[{palette.get('warning', 'yellow')}]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
+                    f" Please use -s (for .json) or specify a .json file."
                 )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
@@ -207,17 +205,19 @@ def duplicates_target(
         mode = "sha256"
 
     if not json_output:
-        console.print(f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
+        error_console.print(
+            f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]", soft_wrap=True
+        )
         if mode == "quick":
-            console.print(
-                f"[{palette['info']}]Mode: Quick Hash. Results are based on file sampling and may contain rare false positives.[/]"
+            error_console.print(
+                f"[{palette['info']}]Mode: Quick hash. Results are based on file sampling and may contain rare false positives.[/]"
             )
         elif mode == "sha256":
-            console.print(
-                f"[{palette['info']}]Mode: Secure Hash. All files will be fully read for maximum accuracy.[/]"
+            error_console.print(
+                f"[{palette['info']}]Mode: Secure hash. All files will be fully read for maximum accuracy.[/]"
             )
         else:
-            console.print(f"[{palette['info']}]Mode: Hybrid. Using fast scan with secure verification.[/]")
+            error_console.print(f"[{palette['info']}]Mode: Hybrid. Using fast scan with secure verification.[/]")
 
     try:
         results = find_duplicates(
@@ -246,8 +246,12 @@ def duplicates_target(
             exit_cli()
 
         if not results or not results.get("duplicate_sets"):
-            console.print(f"\n[{palette['success']}]✅ No duplicate files found in {duration:.3f} seconds.[/]")
+            console.print(
+                f"[{palette['success']}]{icons.get('success', '')}No duplicate files found in {duration:.3f} seconds.[/]"
+            )
             exit_cli()
+
+        from dorsal.cli.views.layout import section
 
         total_sets = results["total_sets"]
         hashes_from_cache = results.get("hashes_from_cache", 0)
@@ -257,64 +261,43 @@ def duplicates_target(
             else ""
         )
         console.print(
-            f"\n⚠️ Found [{palette['warning']}]{total_sets}[/] set(s) of duplicate files{cache_info_str} in {duration:.3f} seconds."
+            f"{icons.get('warning', '')}Found [{palette['warning']}]{total_sets}[/] set(s) of duplicate files{cache_info_str} in {duration:.3f} seconds."
         )
 
         if total_sets > 0 and limit > 0:
-            console.print(f"\nDisplaying the {min(limit, total_sets)} largest duplicate sets.")
+            console.print(f"Displaying the {min(limit, total_sets)} largest duplicate sets.")
 
         sets_to_display = results["duplicate_sets"][:limit]
-
-        is_none_style = borders == get_borders("none")
 
         for i, dupe_set in enumerate(sets_to_display):
             size_str = dupe_set["file_size"]
             hash_str = dupe_set.get("hash", "N/A")
             hash_type = dupe_set.get("hash_type", "N/A").upper()
 
-            title_base = f"Duplicate Set {i + 1} of {total_sets}"
-            size_info = f"Size: [{palette['success']}]{size_str}[/] (each)"
-            title_text = f"{title_base} | {size_info}"
+            title = Text.assemble(
+                (f"Duplicate set {i + 1} of {total_sets}", palette.get("panel_title", "bold")),
+                ("  ", ""),
+                (str(size_str), palette["success"]),
+                (" each", palette.get("info", "dim")),
+            )
 
-            hash_info_body = f"[{palette['info']}]{hash_type}: {hash_str}[/]"
-
-            paths_table = Table.grid(padding=(0, 1, 0, 3))
-            paths_table.add_column(style=palette["primary_value"])
-
+            lines = [Text(f"{hash_type} {hash_str}", style=palette["info"])]
             for p in dupe_set["paths"]:
                 path_obj = pathlib.Path(p)
-                path_display = f"📄 {escape(p)}"
-
+                path_line = Text(p, style=palette["primary_value"])
                 if path_obj.is_symlink():
                     try:
-                        target = path_obj.readlink()
-                        path_display += f" [dim italic]→ {escape(str(target))}[/]"
+                        path_line.append(f" → {path_obj.readlink()}", style="dim italic")
                     except OSError:
-                        path_display += " [dim italic](symlink)[/]"
+                        path_line.append(" (symlink)", style="dim italic")
+                lines.append(path_line)
 
-                paths_table.add_row(path_display)
-
-            content_grid = Table.grid(padding=(0, 0, 1, 0))
-            content_grid.add_row(hash_info_body)
-            content_grid.add_row(paths_table)
-
-            if is_none_style:
-                console.print(
-                    Group(Text.from_markup(f"\n[{palette.get('panel_title', 'bold')}]{title_text}[/]"), content_grid)
-                )
-            else:
-                console.print(
-                    Panel(
-                        content_grid,
-                        title=title_text,
-                        expand=False,
-                        border_style=palette["panel_border"],
-                        box=borders,
-                    )
-                )
+            console.print()
+            console.print(section(title, Text("\n").join(lines), ui_context, padding=(0, 1)))
 
         if total_sets > limit and limit > 0:
-            console.print(f"\n... and {total_sets - limit} more sets.")
+            console.print()
+            console.print(Text(f"… and {total_sets - limit} more sets.", style=palette.get("info", "dim")))
 
         if save:
             _save_duplicates_report(
@@ -380,9 +363,11 @@ def _save_duplicates_report(
 
         if not json_output:
             console.print(
-                f"[{palette['success']}]✅ Full JSON report saved to:[/] [{palette['primary_value']}]{save_path}[/]"
+                f"[{palette['success']}]Full JSON report saved to:[/] [{palette['primary_value']}]{escape(str(save_path))}[/]"
             )
     except IOError as e:
         logger.error(f"Failed to save duplicates report: {e}")
         if not json_output:
-            error_console.print(f"\n[{palette['error']}]Warning:[/] Could not save report to {save_path}. Error: {e}")
+            error_console.print(
+                f"[{palette['warning']}]Warning:[/] Could not save report to {escape(str(save_path))}. Error: {escape(str(e))}"
+            )

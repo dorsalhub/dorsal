@@ -17,7 +17,6 @@ import os
 
 import pytest
 from typer.testing import CliRunner
-from rich.panel import Panel
 
 
 from dorsal.cli import app
@@ -63,7 +62,8 @@ def test_identify_success_quick_mode(command, mock_rich_console, mock_identify_c
     )
     # Verify the panel was created and printed
     mock_identify_cmd["create_panel"].assert_called_once()
-    mock_rich_console.print.assert_called_with(mock_identify_cmd["create_panel"].return_value)
+    assert mock_identify_cmd["create_panel"].call_args.kwargs["title"] == "File identified"
+    mock_rich_console.print.assert_called_once_with(mock_identify_cmd["create_panel"].return_value)
 
 
 def test_identify_success_secure_mode(mock_rich_console, mock_identify_cmd):
@@ -92,16 +92,18 @@ def test_identify_success_json_output(mock_rich_console, mock_identify_cmd):
     mock_identify_cmd["create_panel"].assert_not_called()
 
 
-def test_identify_not_found_panel_output(mock_rich_console, mock_identify_cmd, mock_error_console):
-    """Tests the 'Not Found' case with Rich Panel output."""
+def test_identify_not_found_panel_output(mock_rich_console, mock_identify_cmd, mock_error_console, rendered):
+    """Tests the 'Not found' case renders a headed message on stderr."""
     mock_identify_cmd["identify_file"].side_effect = NotFoundError("File not in database")
 
     result = runner.invoke(app, ["local", "identify", TEST_FILE_PATH])
 
     assert result.exit_code != 0
-    panel_output = mock_error_console.print.call_args.args[0]
-    assert isinstance(panel_output, Panel)
-    assert "Not Found" in str(panel_output.title)
+    lines = rendered(mock_error_console).splitlines()
+    assert lines[0] == "Not found"
+    assert lines[1] == "  This file has not been indexed to DorsalHub."
+    assert all(line == line.rstrip() for line in lines)
+    mock_rich_console.print.assert_not_called()
 
 
 def test_identify_not_found_json_output(mock_rich_console, mock_identify_cmd, mock_error_console):

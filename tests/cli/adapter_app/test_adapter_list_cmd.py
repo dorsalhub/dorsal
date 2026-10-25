@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import pytest
 import typer
+from rich.box import ROUNDED
+from rich.console import Console
 from unittest.mock import MagicMock
 from typer.testing import CliRunner
 
@@ -26,12 +29,19 @@ cli_app = typer.Typer()
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 
 
 cli_app.command(name="list")(list_adapters)
 
 runner = CliRunner()
+
+
+def _render(renderable) -> str:
+    """Renders a Rich renderable as plain text."""
+    console = Console(record=True, width=120, file=io.StringIO())
+    console.print(renderable)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -65,9 +75,30 @@ def test_list_basic_success(mock_list_deps):
 
     mock_list_deps["get_formats"].assert_called_once_with("open/audio-transcription")
 
-    table_call_arg = mock_list_deps["rich_console"].print.call_args.args[0]
-    assert type(table_call_arg).__name__ == "Table"
-    assert "Supported Formats for 'open/audio-transcription'" in str(table_call_arg.title)
+    assert _render(mock_list_deps["rich_console"].print.call_args.args[0]) == (
+        "Supported formats for 'open/audio-transcription'\n"
+        "Format  Description\n"
+        "srt     SubRip Text (.srt) - A widely used, plaintext subtitle format.\n"
+        "vtt     WebVTT (.vtt) - W3C standard web subtitle format.\n"
+    )
+
+
+def test_list_bordered(mock_list_deps):
+    """Tests that the formats table uses the theme's box when borders are enabled."""
+    mock_list_deps["get_formats"].return_value = [("srt", "SubRip")]
+    bordered_app = typer.Typer()
+
+    @bordered_app.callback()
+    def bordered_callback(ctx: typer.Context):
+        ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+
+    bordered_app.command(name="list")(list_adapters)
+
+    result = runner.invoke(bordered_app, ["list", "open/audio-transcription"])
+
+    assert result.exit_code == 0, result.output
+    output = _render(mock_list_deps["rich_console"].print.call_args.args[0])
+    assert "│ srt    │ SubRip      │" in output
 
 
 def test_list_empty_results(mock_list_deps):

@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
+import io
 import logging
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open
+from unittest.mock import mock_open
 from typer.testing import CliRunner
-from rich.console import Console, Group
-from rich.text import Text
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -51,6 +49,15 @@ def hello():
 
 runner = CliRunner()
 
+
+def _printed(mock_console) -> str:
+    """Renders everything printed to a mocked console as plain text."""
+    console = Console(record=True, width=120, file=io.StringIO())
+    for call in mock_console.print.call_args_list:
+        console.print(*call.args)
+    return console.export_text()
+
+
 MOCK_USER_INFO = {
     "user_id": "usr_12345",
     "name": "Test User",
@@ -67,9 +74,26 @@ def test_login_success(mocker, mock_rich_console, mock_auth_app):
     result = runner.invoke(app, ["auth", "login", "--apikey", "test-key-123"])
 
     assert result.exit_code == 0
-    final_message = str(mock_rich_console.print.call_args_list[3].args[0])
-    assert "Your API key has been saved to" in final_message
-    assert str(Path("/fake/path/dorsal.toml")) in final_message
+    output = _printed(mock_rich_console)
+    assert "Login successful\n  User ID         usr_12345\n" in output
+    assert "  Account status  active\n" in output
+    assert "Your API key has been saved to" in output
+    assert str(Path("/fake/path/dorsal.toml")) in output
+    assert "✅" not in output
+    assert "Action required" not in output
+
+
+def test_login_success_bordered(mocker, mock_rich_console, mock_auth_app):
+    """Tests that `auth login` draws a panel when borders are enabled."""
+    mocker.patch("dorsal.client.DorsalClient").return_value.verify_credentials.return_value = MOCK_USER_INFO
+    mocker.patch("dorsal.common.config.get_global_config_path", return_value=Path("/fake/path/dorsal.toml"))
+
+    result = runner.invoke(app, ["--borders", "rounded", "auth", "login", "--apikey", "test-key-123"])
+
+    assert result.exit_code == 0
+    output = _printed(mock_rich_console)
+    assert "╭─ Login successful" in output
+    assert "│  User ID         usr_12345" in output
 
 
 def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
@@ -89,17 +113,11 @@ def test_login_project_scope(mocker, mock_rich_console, mock_auth_app):
 
     mock_write.assert_called_with(api_key="pk_123", email="test@example.com", scope="project")
 
-    last_print_arg = mock_rich_console.print.call_args[0][0]
-    assert isinstance(last_print_arg, (Panel, Group))
-
-    output_text = (
-        str(last_print_arg.title) + str(last_print_arg.renderable)
-        if isinstance(last_print_arg, Panel)
-        else "".join(str(r) for r in last_print_arg.renderables)
-    )
-    assert "Action Required" in output_text
+    output_text = _printed(mock_rich_console)
+    assert "\nAction required\n  The file 'dorsal.toml' now contains your API key." in output_text
     assert "must not" in output_text
     assert "dorsal auth gitignore" in output_text
+    assert "🔒" not in output_text
 
 
 def test_logout_success(mocker, mock_rich_console, mock_auth_app):
@@ -114,8 +132,7 @@ def test_logout_success(mocker, mock_rich_console, mock_auth_app):
     result = runner.invoke(app, ["auth", "logout"])
 
     assert result.exit_code == 0
-    printed_text = mock_rich_console.print.call_args.args[0]
-    assert "✅ You have been successfully logged out." in str(printed_text)
+    assert _printed(mock_rich_console) == "You have been successfully logged out.\n"
 
 
 def test_logout_not_logged_in(mocker, mock_rich_console, mock_auth_app):
@@ -140,15 +157,9 @@ def test_logout_with_env_var_warning(mocker, mock_rich_console, mock_auth_app):
     result = runner.invoke(app, ["auth", "logout"])
 
     assert result.exit_code == 0
-    panel_output = mock_rich_console.print.call_args_list[0].args[0]
-    assert isinstance(panel_output, (Panel, Group))
-
-    output_text = (
-        str(panel_output.title) + str(panel_output.renderable)
-        if isinstance(panel_output, Panel)
-        else "".join(str(r) for r in panel_output.renderables)
-    )
-    assert "Environment Variable Active" in output_text
+    output_text = _printed(mock_rich_console)
+    assert output_text.startswith("Environment variable active\n  You are currently authenticated")
+    assert "No configuration files were changed." in output_text
 
 
 def test_whoami_success(mocker, mock_rich_console, mock_auth_app):
@@ -160,16 +171,14 @@ def test_whoami_success(mocker, mock_rich_console, mock_auth_app):
     result = runner.invoke(app, ["auth", "whoami"])
 
     assert result.exit_code == 0
-    panel_output = mock_rich_console.print.call_args_list[2].args[0]
-    assert isinstance(panel_output, (Panel, Group))
-
-    output_text = (
-        str(panel_output.title) + str(panel_output.renderable)
-        if isinstance(panel_output, Panel)
-        else "".join(str(r) for r in panel_output.renderables)
+    output_text = _printed(mock_rich_console)
+    assert output_text == (
+        "Authenticated user\n"
+        "  User ID         usr_12345\n"
+        "  Name            Test User\n"
+        "  Email           test@example.com\n"
+        "  Account status  active\n"
     )
-    assert "👤 Authenticated User" in output_text
-    assert "Test User" in output_text
 
 
 def test_whoami_json(mocker, mock_rich_console, mock_auth_app):
@@ -265,16 +274,9 @@ def test_gitignore_already_exists(mocker, mock_rich_console):
     result = runner.invoke(app, ["auth", "gitignore"])
 
     assert result.exit_code == 0
-    assert "already exists in .gitignore" in str(mock_rich_console.print.call_args_list[-2].args[0])
-
-    panel_output = mock_rich_console.print.call_args_list[-1].args[0]
-    assert isinstance(panel_output, (Panel, Group))
-    output_text = (
-        str(panel_output.title) + str(panel_output.renderable)
-        if isinstance(panel_output, Panel)
-        else "".join(str(r) for r in panel_output.renderables)
-    )
-    assert "File Still Tracked?" in output_text
+    output_text = _printed(mock_rich_console)
+    assert "Entry for 'dorsal.toml' already exists in .gitignore." in output_text
+    assert "\n\nFile still tracked?\n  Note: If Git is still tracking" in output_text
 
 
 def test_gitignore_add_success(mocker, mock_rich_console):

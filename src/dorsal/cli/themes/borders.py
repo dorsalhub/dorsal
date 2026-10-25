@@ -15,9 +15,7 @@
 from rich import box
 from rich.box import Box
 
-INVISIBLE_BOX = Box("    \n    \n    \n    \n    \n    \n    \n    \n")
-
-BORDER_SETS: dict[str, Box] = {
+BORDER_SETS: dict[str, Box | None] = {
     "rounded": box.ROUNDED,
     "heavy": box.HEAVY,
     "ascii": box.ASCII,
@@ -25,10 +23,10 @@ BORDER_SETS: dict[str, Box] = {
     "double": box.DOUBLE,
     "square": box.SQUARE,
     "markdown": box.MARKDOWN,
-    "none": INVISIBLE_BOX,
+    "none": None,
 }
 
 
-def get_borders(name: str = "rounded") -> Box:
-    """Returns the requested rich box style, falling back to ROUNDED if not found."""
-    return BORDER_SETS.get(name, box.ROUNDED)
+def get_borders(name: str = "none") -> Box | None:
+    """Returns the requested rich box style, or None (borderless) for "none" and unknown names."""
+    return BORDER_SETS.get(name)

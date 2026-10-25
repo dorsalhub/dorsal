@@ -29,7 +29,7 @@ cli_app = typer.Typer()
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 
 
 cli_app.command(name="parse")(parse_adapter)
@@ -159,7 +159,7 @@ def test_parse_cmd_missing_adapters(mock_parse_deps, mocker, tmp_path, monkeypat
 
     assert result.exit_code != 0
     error_msg = str(mock_parse_deps["error_console"].print.call_args.args[0])
-    assert "Parse Failed" in error_msg
+    assert "Parse failed" in error_msg
     assert "dorsalhub-adapters" in error_msg
 
 

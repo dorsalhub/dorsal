@@ -20,8 +20,6 @@ from unittest.mock import MagicMock, ANY
 import pytest
 import typer
 from typer.testing import CliRunner
-from rich.panel import Panel
-from rich.table import Table
 
 from dorsal.cli import app
 from dorsal.common.exceptions import (
@@ -126,7 +124,7 @@ def test_push_skip_overwrite_conflict(mock_exit_cli, tmp_path):
     )
 
 
-def test_push_file_default(mock_rich_console, mock_file_deps, tmp_path):
+def test_push_file_default(mock_rich_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
     result = runner.invoke(app, ["local", "push", str(target)])
@@ -134,18 +132,20 @@ def test_push_file_default(mock_rich_console, mock_file_deps, tmp_path):
     assert result.exit_code == 0
     mock_file_deps["local_file_instance"].push.assert_called_once_with(public=False, strict=False)
 
-    panel_output = mock_rich_console.print.call_args_list[-1].args[0]
-    assert isinstance(panel_output, Panel)
-    assert "Push Complete" in str(panel_output.title)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines[0] == "Push complete"
+    assert "  SHA-256  mock_pushed_hash" in lines
+    assert "  Access   Private" in lines
+    assert all(line == line.rstrip() for line in lines)
 
 
-def test_push_file_ignored_dir_flags(mock_rich_console, mock_file_deps, tmp_path):
+def test_push_file_ignored_dir_flags(mock_rich_console, mock_error_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
     runner.invoke(app, ["local", "push", str(target), "--recursive"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Directory-specific push flags are ignored" in printed_text
+    assert rendered(mock_error_console).startswith("Warning: Directory-specific push flags are ignored")
+    assert "Directory-specific" not in rendered(mock_rich_console)
 
 
 def test_push_file_json_output(mock_rich_console, mock_file_deps, mock_exit_cli, tmp_path):
@@ -159,7 +159,7 @@ def test_push_file_json_output(mock_rich_console, mock_file_deps, mock_exit_cli,
     mock_exit_cli.assert_called_once()
 
 
-def test_push_file_api_failure(mock_rich_console, mock_file_deps, tmp_path):
+def test_push_file_api_failure(mock_rich_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
 
@@ -169,9 +169,8 @@ def test_push_file_api_failure(mock_rich_console, mock_file_deps, tmp_path):
 
     runner.invoke(app, ["local", "push", str(target)])
 
-    panel_output = mock_rich_console.print.call_args_list[-1].args[0]
-    assert "Push Failed" in str(panel_output.title)
-    assert "File already indexed" in str(panel_output.renderable)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines == ["Push failed", "  The file could not be pushed to DorsalHub.", "  Reason: File already indexed"]
 
 
 def test_push_file_partial_indexing_error(
@@ -232,7 +231,7 @@ def test_push_file_auth_error_bubbles(mock_file_deps, tmp_path):
         runner.invoke(app, ["local", "push", str(target)], catch_exceptions=False)
 
 
-def test_push_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
+def test_push_dir_default(mock_rich_console, mock_dir_deps, tmp_path, rendered):
     target = tmp_path / "test_dir"
     target.mkdir()
     result = runner.invoke(app, ["local", "push", str(target)])
@@ -240,8 +239,9 @@ def test_push_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
     assert result.exit_code == 0
     mock_dir_deps["collection_instance"].push.assert_called_once()
 
-    print_calls = mock_rich_console.print.call_args_list
-    assert any(isinstance(call.args[0], Panel) and "Push Complete" in str(call.args[0].title) for call in print_calls)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines[0] == "Push complete"
+    assert "  File records accepted  2" in lines
 
 
 def test_push_dir_empty_graceful_exit(mock_dir_deps, mock_exit_cli, tmp_path):
@@ -271,7 +271,7 @@ def test_push_dir_ignore_duplicates(mock_dir_deps, tmp_path):
     assert mock_dir_deps["collection_class"].call_count == 2
 
 
-def test_push_dir_dry_run(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
+def test_push_dir_dry_run(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, rendered):
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -287,15 +287,17 @@ def test_push_dir_dry_run(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_p
     mock_file_disk.media_type = "text/plain"
     mock_file_disk._source = "disk"
 
-    mock_dir_deps["collection_instance"].__iter__.return_value = iter([mock_file_cache, mock_file_disk])
+    mock_dir_deps["collection_instance"].__iter__.side_effect = lambda: iter([mock_file_cache, mock_file_disk])
 
     runner.invoke(app, ["local", "push", str(target), "--dry-run"])
     mock_dir_deps["collection_instance"].push.assert_not_called()
     mock_exit_cli.assert_called_once()
 
-    print_calls = mock_rich_console.print.call_args_list
-    panels = [c.args[0] for c in print_calls if isinstance(c.args[0], Panel)]
-    assert any("DRY RUN MODE" in str(p.renderable) for p in panels)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines[0].startswith("Dry run: Would push 2 file(s)")
+    assert lines[1] == ""
+    assert lines[2].split() == ["Filename", "Size", "Media", "type", "Source"]
+    assert lines[3].split() == ["test.txt", "100", "B", "text/plain", "Cache"]
 
 
 def test_push_dir_create_collection_fallback_name(mock_rich_console, mock_dir_deps, tmp_path):
@@ -329,7 +331,7 @@ def test_push_dir_create_collection_too_large(mocker, mock_dir_deps, tmp_path):
 
 
 def test_push_dir_duplicate_error_handled(
-    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console
+    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console, rendered
 ):
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -341,10 +343,7 @@ def test_push_dir_duplicate_error_handled(
 
     runner.invoke(app, ["local", "push", str(target)])
     mock_exit_cli.assert_called()
-    panel_output = next(
-        call.args[0] for call in mock_error_console.print.call_args_list if isinstance(call.args[0], Panel)
-    )
-    assert "Duplicate Files Detected" in str(panel_output.title)
+    assert "Duplicate files detected\n" in rendered(mock_error_console)
 
     mock_rich_console.reset_mock()
     runner.invoke(app, ["local", "push", str(target), "--json"])
@@ -352,7 +351,9 @@ def test_push_dir_duplicate_error_handled(
     assert "Cannot process duplicate files" in json_str
 
 
-def test_push_dir_partial_indexing_error(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console):
+def test_push_dir_partial_indexing_error(
+    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console, rendered
+):
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -361,12 +362,13 @@ def test_push_dir_partial_indexing_error(mock_rich_console, mock_dir_deps, mock_
 
     runner.invoke(app, ["local", "push", str(target)])
     mock_exit_cli.assert_called()
-    tables = [call.args[0] for call in mock_error_console.print.call_args_list if isinstance(call.args[0], Table)]
-    assert "Strict Integrity Failures" in str(tables[0].title)
+    lines = rendered(mock_error_console).splitlines()
+    heading = lines.index("Strict integrity failures")
+    assert lines[heading + 1] == "Error detail"
 
 
 def test_push_dir_partial_indexing_error_no_failures_key(
-    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console
+    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console, rendered
 ):
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -374,8 +376,9 @@ def test_push_dir_partial_indexing_error_no_failures_key(
     mock_dir_deps["collection_instance"].push.side_effect = error
 
     runner.invoke(app, ["local", "push", str(target)])
-    tables = [call.args[0] for call in mock_error_console.print.call_args_list if isinstance(call.args[0], Table)]
-    assert "Strict Integrity Failures" in str(tables[0].title)
+    lines = rendered(mock_error_console).splitlines()
+    heading = lines.index("Strict integrity failures")
+    assert lines[heading + 1] == "Error detail"
 
 
 def test_push_dir_partial_indexing_error_json(
@@ -453,7 +456,7 @@ def test_push_exception_bubbling(mock_dir_deps, tmp_path):
         runner.invoke(app, ["local", "push", str(target)], catch_exceptions=False)
 
 
-def test_display_summary_panel_with_failures(mocker, mock_error_console):
+def test_display_summary_panel_with_failures(mocker, mock_error_console, rendered):
     mock_console = MagicMock()
     mocker.patch("dorsal.common.cli.get_rich_console", return_value=mock_console)
 
@@ -476,12 +479,15 @@ def test_display_summary_panel_with_failures(mocker, mock_error_console):
     _display_summary_panel(summary_data, True, mock_ui_context, False, mock_collection, mock_console)
 
     assert mock_console.print.call_count == 1
-    assert mock_error_console.print.call_count == 2
-    last_print_arg = mock_error_console.print.call_args_list[-1].args[0]
-    assert "Failed Batch Details" in str(last_print_arg.title)
+    lines = rendered(mock_error_console).splitlines()
+    assert lines[1] == "Some batches failed to process:"
+    assert "Failed batch details" in lines[2]
+    assert "Server exploded" in lines[-2]
 
 
-def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock_dir_deps, mock_exit_cli, tmp_path):
+def test_push_borderless_and_ui_coverage(
+    mock_rich_console, mock_error_console, mock_file_deps, mock_dir_deps, mock_exit_cli, tmp_path, rendered
+):
     """Cover the 'none' borders and other specific UI paths in push_cmd."""
     from dorsal.cli.themes.borders import get_borders
     from dorsal.cli.local_app.push_cmd import (
@@ -491,7 +497,6 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
         _display_summary_panel,
     )
     from dorsal.common.exceptions import PartialIndexingError
-    from rich.console import Group
 
     borderless_context = {"palette": {}, "borders": get_borders("none")}
     ctx = MagicMock()
@@ -642,8 +647,17 @@ def test_push_borderless_and_ui_coverage(mock_rich_console, mock_file_deps, mock
     summary = {"total_records": 1, "success": 0, "failed": 1, "errors": [{"batch_index": 0}]}
     _display_summary_panel(summary, False, borderless_context, False, mock_collection, console)
 
-    group_calls = [c for c in console.print.call_args_list if isinstance(c.args[0], Group)]
-    assert len(group_calls) > 0
+    stdout_text = rendered(console)
+    stderr_text = rendered(mock_error_console)
+    for heading in ("Push complete", "Push failed", "Publish complete"):
+        assert f"\n{heading}\n" in f"\n{stdout_text}"
+    assert "  URL  https://dorsal.hub/c/user/mock-collection" in stdout_text.splitlines()
+    assert "Dry run: Would push 1 file(s) (1 from cache)." in stdout_text
+    for heading in ("Duplicate files detected", "Check failed", "Strict integrity failures"):
+        assert f"\n{heading}\n" in stderr_text
+    for text in (stdout_text, stderr_text):
+        assert "╭" not in text
+        assert all(line == line.rstrip() for line in text.splitlines())
 
 
 def test_push_dir_force_flag_propagation(mock_rich_console, mock_dir_deps, tmp_path):
@@ -661,7 +675,7 @@ def test_push_dir_force_flag_propagation(mock_rich_console, mock_dir_deps, tmp_p
 
 
 def test_push_dir_exceeds_api_limit_error(
-    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console
+    mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path, mock_error_console, rendered
 ):
     """Test that ExceedsApiLimitError is caught and renders the check panel."""
     target = tmp_path / "test_dir"
@@ -681,20 +695,12 @@ def test_push_dir_exceeds_api_limit_error(
     runner.invoke(app, ["local", "push", str(target)])
     mock_exit_cli.assert_called()
 
-    panel_output = None
-    for call in mock_error_console.print.call_args_list:
-        if isinstance(call.args[0], Panel):
-            panel_output = call.args[0]
-            break
-
-    assert panel_output is not None
-    assert "Check Failed" in str(panel_output.title)
-
-    rendered_text = str(panel_output.renderable)
-    assert "exceed the API batch size limit" in rendered_text
-    assert "--force" in rendered_text
-    assert "huge1.pdf" in rendered_text
-    assert "and 1 more" in rendered_text
+    lines = rendered(mock_error_console).splitlines()
+    start = lines.index("Check failed")
+    assert "exceed the API batch size limit" in lines[start + 1]
+    assert "--force" in lines[start + 2]
+    assert "  - /fake/huge1.pdf (29 MiB)" in lines
+    assert lines[-1] == "  … and 1 more."
 
 
 def test_push_dir_exceeds_api_limit_error_json(
@@ -754,10 +760,10 @@ def test_display_summary_panel_with_oversized_records(mocker):
 
     rendered_text = capture.get()
 
-    assert "Push Complete" in rendered_text
-    assert "Oversized File Records" in rendered_text
-    assert "Successful" in rendered_text
-    assert "Failed/Partial" in rendered_text
+    assert "Push complete" in rendered_text
+    assert "│  Oversized file records  2" in rendered_text
+    assert "│    Successful      1" in rendered_text
+    assert "│    Failed/partial  1" in rendered_text
 
 
 @pytest.fixture
@@ -776,7 +782,7 @@ def test_push_file_json_spinner_goes_to_stderr(
 
     runner.invoke(app, ["local", "push", str(target), "--json"])
 
-    mock_error_console.status.assert_called_once()
+    mock_error_console.status.assert_called()
     mock_rich_console.status.assert_not_called()
     assert mock_rich_console.print.call_count == 1
     json.loads(mock_rich_console.print.call_args.args[0])
@@ -819,7 +825,7 @@ DUPLICATE_SPECS = [
 
 
 def test_push_dir_duplicates_rejected_before_sending(
-    mock_rich_console, mock_error_console, mock_dir_deps, mock_exit_cli, tmp_path
+    mock_rich_console, mock_error_console, mock_dir_deps, mock_exit_cli, tmp_path, rendered
 ):
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -829,12 +835,12 @@ def test_push_dir_duplicates_rejected_before_sending(
 
     assert result.exit_code == 1
     mock_dir_deps["collection_instance"].push.assert_not_called()
-    panel = next(c.args[0] for c in mock_error_console.print.call_args_list if isinstance(c.args[0], Panel))
-    assert "Duplicate Files Detected" in str(panel.title)
-    body = str(panel.renderable)
-    assert "a.pdf = a - Copy.pdf" in body
-    assert "b.txt = c.txt" in body
-    assert "--ignore-duplicates" in body
+    lines = rendered(mock_error_console).splitlines()
+    start = lines.index("Duplicate files detected")
+    assert lines[start + 1] == "  Push failed because the directory contains duplicate files."
+    assert "  a.pdf = a - Copy.pdf" in lines
+    assert "  b.txt = c.txt" in lines
+    assert lines[-1].endswith("--ignore-duplicates")
 
 
 def test_push_dir_duplicates_rejected_json(
@@ -857,7 +863,9 @@ def test_push_dir_duplicates_rejected_json(
     ]
 
 
-def test_push_dir_ignore_duplicates_keeps_first_file(mock_rich_console, mock_dir_deps, tmp_path):
+def test_push_dir_ignore_duplicates_keeps_first_file(
+    mock_rich_console, mock_error_console, mock_dir_deps, tmp_path, rendered
+):
     target = tmp_path / "test_dir"
     target.mkdir()
     files = _set_dir_files(mock_dir_deps, DUPLICATE_SPECS)
@@ -867,7 +875,7 @@ def test_push_dir_ignore_duplicates_keeps_first_file(mock_rich_console, mock_dir
     deduped = mock_dir_deps["collection_class"].call_args.kwargs["source"]
     assert [f.file_path for f in deduped] == ["/d/a.pdf", "/d/b.txt", "/d/u"]
     assert deduped == [files[0], files[2], files[4]]
-    assert "Ignoring 2 duplicate files" in "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
+    assert "Ignoring 2 duplicate files" in rendered(mock_error_console)
 
 
 def test_push_dir_dry_run_not_blocked_by_duplicates(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):

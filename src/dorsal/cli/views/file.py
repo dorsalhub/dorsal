@@ -13,141 +13,109 @@
 # limitations under the License.
 
 import datetime
-from typing import Any, Dict
+from typing import Any
 
-from rich import box
 from rich.box import Box
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 from rich.console import Group, RenderableType
-from rich.markup import escape
-from rich.rule import Rule
+from rich.text import Text
 
 from dorsal.cli.themes.icons import get_icons
-from dorsal.cli.themes.borders import get_borders
+from dorsal.cli.views.layout import KeyValues, heading, section
+
+CORE_ANNOTATION_NAMES = {
+    "file/pdf": "PDF",
+    "file/mediainfo": "MediaInfo",
+    "file/ebook": "Ebook",
+    "file/office": "Office",
+}
+
+ENVELOPE_KEYS = {
+    "source",
+    "private",
+    "schema_version",
+    "group",
+    "id",
+    "annotation_id",
+    "date_created",
+    "date_modified",
+    "file_hash",
+}
+
+INLINE_DICT_MAX_KEYS = 6
+INLINE_DICT_MAX_WIDTH = 60
 
 
-def _get_max_key_width(data: Dict, indent_level: int = 0, display_fields: set | None = None) -> int:
-    """Recursively calculates the maximum width needed for keys in a nested dict."""
-    max_width = 0
-    indent = "  " * indent_level
-    for key, value in data.items():
-        if key == "file_hash":
-            continue
-        if display_fields and key not in display_fields:
-            continue
-        key_width = len(f"{indent}{key}:")
-        if key_width > max_width:
-            max_width = key_width
+def _is_empty(value: Any) -> bool:
+    return value is None or (isinstance(value, (str, list, dict)) and not value)
 
-        if isinstance(value, dict):
-            nested_width = _get_max_key_width(value, indent_level + 1, display_fields=display_fields)
-            if nested_width > max_width:
-                max_width = nested_width
-    return max_width
+
+def _is_scalar(value: Any) -> bool:
+    return not isinstance(value, (dict, list))
+
+
+def _inline_dict(value: dict) -> str | None:
+    if len(value) > INLINE_DICT_MAX_KEYS or not all(_is_scalar(v) for v in value.values()):
+        return None
+    rendered = " ".join(f"{k}={v}" for k, v in value.items() if not _is_empty(v))
+    if not rendered or len(rendered) > INLINE_DICT_MAX_WIDTH:
+        return None
+    return rendered
 
 
 def _build_annotation_table(
-    key: str,
-    table: Table,
-    data: dict | list[dict],
-    level: int = 0,
-    is_stub: bool = False,
+    kv: KeyValues,
+    data: dict,
     display_fields: set | None = None,
     max_items: int = 3,
     preserve_whitespace: bool = False,
-):
-    """Recursive. Renders annotation stubs in a simplified format."""
-    indent = "  " * level
+) -> None:
+    """Adds the fields of an annotation record to `kv`, nesting dicts and lists of dicts."""
+    for key, value in data.items():
+        if key == "file_hash" or _is_empty(value):
+            continue
+        if display_fields and key not in display_fields:
+            continue
 
-    if isinstance(data, dict):
-        if is_stub:
-            source: dict = data.get("source", {})
-            source_type = source.get("type", "none")
-            source_id = source.get("id", "none")
-
-            table.add_row(f"{indent}Source:", f"{source_type} ({source_id})")
-            if date_mod := data.get("date_modified"):
-                dt_obj = datetime.datetime.fromisoformat(date_mod.replace("Z", "+00:00"))
-                table.add_row(f"{indent}Modified:", dt_obj.strftime("%Y-%m-%d %H:%M"))
-
-            annotation_id = data.get("id")
-            if annotation_id:
-                table.add_row(f"{indent}ID:", annotation_id)
-
-            if data.get("url") and data.get("id"):
-                file_hash = data["url"].split("/")[2]
-                anno_id = data["id"]
-                cta = f"dorsal hub annotation get {file_hash} {anno_id}"
-                table.add_row(f"{indent}To View:", Text(cta, style="cyan"))
-        else:
-            for dict_key, value in data.items():
-                if dict_key == "file_hash":
-                    continue
-
-                if display_fields and dict_key not in display_fields:
-                    continue
-
+        if isinstance(value, dict):
+            if display_fields:
+                value = {k: v for k, v in value.items() if k in display_fields}
                 if not value:
                     continue
+            inline = _inline_dict(value)
+            if inline is not None:
+                kv.add(key, inline)
+            else:
+                _build_annotation_table(
+                    kv.section(key), value, display_fields, max_items, preserve_whitespace=preserve_whitespace
+                )
 
-                if isinstance(value, str):
-                    if not preserve_whitespace:
-                        value = " ".join(value.split())
-
-                key_text = f"{indent}{dict_key}:"
-
-                if isinstance(value, dict):
-                    table.add_row(key_text, "")
-                    _build_annotation_table(
-                        dict_key, table, value, level + 1, is_stub, display_fields, max_items, preserve_whitespace
-                    )
-
-                elif isinstance(value, list):
-                    if all(not isinstance(item, (dict, list)) for item in value):
-                        display_list = value[:max_items]
-                        value_str = ", ".join(str(item) for item in display_list)
-                        if len(value) > max_items:
-                            value_str += f", ... (+{len(value) - max_items} more)"
-                        table.add_row(key_text, value_str)
-                    else:
-                        table.add_row(key_text, "")
-                        display_list = value[:max_items]
+        elif isinstance(value, list):
+            if len(value) == 1 and isinstance(value[0], dict):
+                _build_annotation_table(
+                    kv.section(key), value[0], display_fields, max_items, preserve_whitespace=preserve_whitespace
+                )
+            elif all(_is_scalar(item) for item in value):
+                value_str = ", ".join(str(item) for item in value[:max_items])
+                if len(value) > max_items:
+                    value_str += f", … (+{len(value) - max_items} more)"
+                kv.add(key, value_str)
+            else:
+                items = kv.items(key, f"{len(value)} items" if len(value) > 1 else None, style="dim")
+                for entry in value[:max_items]:
+                    if isinstance(entry, dict):
                         _build_annotation_table(
-                            dict_key,
-                            table,
-                            display_list,
-                            level + 1,
-                            is_stub,
-                            display_fields,
-                            max_items,
-                            preserve_whitespace,
+                            items.add(), entry, display_fields, max_items, preserve_whitespace=preserve_whitespace
                         )
-                        if len(value) > max_items:
-                            table.add_row(
-                                f"{indent}  ...",
-                                Text(f"[ {len(value) - max_items} more items hidden ]", style="dim italic"),
-                            )
+                    else:
+                        items.add().add("value", str(entry))
+                if len(value) > max_items:
+                    items.more(f"… {len(value) - max_items} more")
 
-                else:
-                    table.add_row(key_text, str(value))
+        elif isinstance(value, str):
+            kv.add(key, value if preserve_whitespace else " ".join(value.split()))
 
-    elif isinstance(data, list):
-        display_data = data[:max_items]
-        for item in display_data:
-            _build_annotation_table(
-                key,
-                table,
-                item,
-                level,
-                is_stub=is_stub,
-                display_fields=display_fields,
-                max_items=max_items,
-                preserve_whitespace=preserve_whitespace,
-            )
-        if len(data) > max_items:
-            table.add_row(f"{indent}...", Text(f"[ {len(data) - max_items} more items hidden ]", style="dim italic"))
+        else:
+            kv.add(key, str(value))
 
 
 def to_local_time(value: datetime.datetime) -> datetime.datetime:
@@ -156,6 +124,31 @@ def to_local_time(value: datetime.datetime) -> datetime.datetime:
         return value.astimezone()
     except (OSError, OverflowError, ValueError):
         return value
+
+
+def _annotation_title(schema_id: str) -> str:
+    if schema_id in CORE_ANNOTATION_NAMES:
+        return CORE_ANNOTATION_NAMES[schema_id]
+    if schema_id.startswith("file/"):
+        return schema_id.split("/", 1)[1].replace("_", " ").replace("-", " ").title()
+    return schema_id
+
+
+def _describe_source(source: Any) -> str | None:
+    if not isinstance(source, dict):
+        return None
+    src_id = source.get("id")
+    src_type = source.get("type")
+    if not src_id and not src_type:
+        return None
+    description = str(src_id or src_type)
+    if src_type and src_id and src_type != "Model":
+        description = f"{src_id} ({str(src_type).lower()})"
+    part = source.get("execution_part")
+    total_parts = source.get("execution_total_parts")
+    if part and total_parts:
+        description += f", part {part} of {total_parts}"
+    return description
 
 
 def create_file_info_panel(
@@ -170,56 +163,65 @@ def create_file_info_panel(
     icons: dict[str, str] | None = None,
     box_style: Box | None = None,
     preserve_whitespace: bool = False,
-) -> Panel | Group:
-    """
-    Creates a standardized rich Panel to display file information using a color palette.
+) -> RenderableType:
+    """Renders a file record: a panel when `box_style` is set, otherwise headed, indented sections.
+
+    `title` may contain Rich markup.
     """
     from dorsal.file.utils.size import human_filesize
     from dorsal.cli.views.mediainfo import MEDIAINFO_DISPLAY_FIELDS
 
     if icons is None:
-        icons = get_icons("emoji")
-    if box_style is None:
-        box_style = get_borders("rounded")
+        icons = get_icons()
 
-    if override_border_style:
-        border = override_border_style
-    else:
-        border = palette["panel_border_alt"] if private else palette["panel_border"]
-    if override_title_style:
-        panel_title_style = override_title_style
-    else:
-        panel_title_style = palette["panel_title_alt"] if private else palette["panel_title"]
+    border = override_border_style or (palette["panel_border_alt"] if private else palette["panel_border"])
+    title_style = override_title_style or (palette["panel_title_alt"] if private else palette["panel_title"])
     primary_color = palette["primary_value_alt"] if private else palette["primary_value"]
+    key_style = palette.get("key", "dim")
+    section_style = palette.get("section_title", "bold")
+    dim_style = palette.get("info", "dim")
 
-    display_title = title
-    if source == "cache":
-        display_title = f"{title} [{palette.get('info', 'dim')}](from cache)[/]"
+    def new_kv() -> KeyValues:
+        return KeyValues(key_style=key_style, value_style=primary_color)
 
-    access_text = None
-    if private:
-        access_text = Text("Private Record", style=palette["access_private"])
+    def add_section(name: str, body: RenderableType, suffix: str | None = None) -> None:
+        line = Text(name, style=section_style)
+        if suffix:
+            line.append(f"  {suffix}", style=dim_style)
+        renderables.append(section(line, body, borderless_ui))
+        renderables.append(Text(""))
 
+    borderless_ui: Any = {"palette": palette, "borders": None}
     renderables: list[RenderableType] = []
 
     local_info: dict[str, Any] = record_dict.get("local_filesystem", {})
-    record_id = local_info.get("local_record_id")
+    annotations: dict[str, Any] = record_dict.get("annotations", {})
+    base_info = (annotations.get("file/base") or {}).get("record", {})
+    all_hash_ids = base_info.get("all_hash_ids") or {}
 
-    if record_id:
-        renderables.append(
-            Text.from_markup(
-                f"[{palette.get('key', 'dim')}]Record ID:[/] [{palette.get('hash_value', 'magenta')}]{record_id}[/]"
-            )
-        )
-        renderables.append(Text(""))
-
-    has_any_hash = False
-    hashes_table = Table(box=None, show_header=False, padding=(0, 1))
-    hashes_table.add_column(style=palette["key"], justify="right", width=8)
-    hashes_table.add_column(style=palette["hash_value"])
-
-    base_record = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
-    all_hash_ids = base_record.get("all_hash_ids") or {}
+    file_kv = new_kv()
+    if private:
+        file_kv.add("Access", Text("Private", style=palette["access_private"]))
+    if local_info.get("local_record_id"):
+        file_kv.add("Record ID", str(local_info["local_record_id"]), style=palette.get("hash_value", "magenta"))
+    if local_info.get("is_symlink"):
+        file_kv.add("Type", Text("Symbolic link", style=f"{palette['primary_value']} italic"))
+        if local_info.get("full_path"):
+            file_kv.add("Link path", local_info["full_path"])
+        file_kv.add("Target", str(local_info.get("symlink_target", "Unknown")))
+    elif local_info.get("full_path"):
+        file_kv.add("Path", local_info["full_path"])
+    if local_info.get("date_modified"):
+        modified = to_local_time(datetime.datetime.fromisoformat(local_info["date_modified"]))
+        file_kv.add("Modified", modified.strftime("%Y-%m-%d %H:%M:%S"))
+    if base_info:
+        if base_info.get("name"):
+            file_kv.add("Name", str(base_info["name"]))
+        file_kv.add("Size", human_filesize(base_info.get("size", 0)))
+        if base_info.get("media_type"):
+            file_kv.add("Media type", str(base_info["media_type"]))
+    if file_kv:
+        add_section(f"{icons['file']}File", file_kv)
 
     hash_display_order = [
         ("SHA-256", record_dict.get("hash") or all_hash_ids.get("SHA-256")),
@@ -230,183 +232,91 @@ def create_file_info_panel(
         ("DORSAL", record_dict.get("validation_hash") or all_hash_ids.get("DORSAL")),
         ("TLSH", record_dict.get("similarity_hash") or all_hash_ids.get("TLSH")),
     ]
-
+    hashes_kv = new_kv()
     for label, val in hash_display_order:
         if val:
-            hashes_table.add_row(f"{label}:", str(val))
-            has_any_hash = True
-
-    if has_any_hash:
-        renderables.append(
-            Group(Text.from_markup(f"[{palette['section_title']}]{icons['key']}Hashes[/]"), hashes_table)
-        )
-        renderables.append(Text(""))
-
-    file_info_table = Table(box=None, show_header=False, padding=(0, 1))
-    file_info_table.add_column(style=palette["key"], justify="right", width=12)
-    file_info_table.add_column(style=primary_color)
-    base_info = record_dict.get("annotations", {}).get("file/base", {}).get("record", {})
-
-    if access_text:
-        file_info_table.add_row("Access:", access_text)
-
-    if local_info.get("is_symlink"):
-        link_style = f"{palette['primary_value']} italic"
-        target_style = palette["primary_value"]
-
-        file_info_table.add_row("Type:", Text("Symbolic Link", style=link_style))
-
-        if local_info.get("full_path"):
-            file_info_table.add_row("Link Path:", escape(local_info["full_path"]))
-
-        target = local_info.get("symlink_target", "Unknown")
-        file_info_table.add_row("Target:", Text(target, style=target_style))
-
-    elif local_info.get("full_path"):
-        file_info_table.add_row("Full Path:", escape(local_info["full_path"]))
-    if local_info.get("date_modified"):
-        file_info_table.add_row(
-            "Modified:",
-            to_local_time(datetime.datetime.fromisoformat(local_info["date_modified"])).strftime("%Y-%m-%d %H:%M:%S"),
-        )
-    if base_info:
-        file_info_table.add_row("Name:", base_info.get("name"))
-        file_info_table.add_row("Size:", human_filesize(base_info.get("size", 0)))
-        file_info_table.add_row("Media Type:", base_info.get("media_type"))
-    renderables.append(
-        Group(
-            Text.from_markup(f"[{palette['section_title']}]{icons['file']}File Info[/]"),
-            file_info_table,
-        )
-    )
-    renderables.append(Text(""))
+            hashes_kv.add(label, str(val), style=palette["hash_value"])
+    if hashes_kv:
+        add_section(f"{icons['key']}Hashes", hashes_kv)
 
     tags = record_dict.get("tags", [])
-    tags_table = Table(box=None, show_header=False, padding=(0, 2))
-    tags_table.add_column(style=palette["key"], justify="right")
-    tags_table.add_column()
     if tags:
+        tags_kv = new_kv()
         for tag in tags:
             tag_style = palette["tag_private"] if tag.get("private") else palette["tag_public"]
             tag_value = Text.assemble(
                 (f"{tag.get('value')} ", tag_style),
                 (f"({'private' if tag.get('private') else 'public'})", palette["tag_subtext"]),
             )
-            tag_id = tag.get("id")
-            if tag_id:
-                tag_value.append(f" [id: {tag_id}]", style=palette["tag_subtext"])
-            tags_table.add_row(f"{tag.get('name')}:", tag_value)
+            if tag.get("id"):
+                tag_value.append(f" [id: {tag['id']}]", style=palette["tag_subtext"])
+            tags_kv.add(str(tag.get("name")), tag_value)
+        add_section(f"{icons['tags']}Tags", tags_kv)
 
-        renderables.append(Group(Text.from_markup(f"[{palette['section_title']}]{icons['tags']}Tags[/]"), tags_table))
-        renderables.append(Text(""))
+    for key, value in annotations.items():
+        if key == "file/base" or value is None:
+            continue
 
-    annotations = record_dict.get("annotations", {})
-    if annotations:
-        for key, value in annotations.items():
-            if key == "file/base" or value is None:
-                continue
+        items_to_render = value if isinstance(value, list) else [value]
+        unwrapped_items: list[dict] = []
+        for item in items_to_render:
+            if isinstance(item, dict) and "annotations" in item and "record" not in item:
+                unwrapped_items.extend(i for i in item["annotations"] if isinstance(i, dict))
+            elif isinstance(item, dict):
+                unwrapped_items.append(item)
+        if not unwrapped_items:
+            continue
 
-            items_to_render = value if isinstance(value, list) else [value]
-            if not items_to_render:
-                continue
+        display_fields = MEDIAINFO_DISPLAY_FIELDS if key == "file/mediainfo" else None
+        single = len(unwrapped_items) == 1
+        core = key.startswith("file/")
+        bodies: list[RenderableType] = []
 
-            unwrapped_items = []
-            for item in items_to_render:
-                if isinstance(item, dict) and "annotations" in item and "record" not in item:
-                    unwrapped_items.extend(item["annotations"])
-                else:
-                    unwrapped_items.append(item)
-            items_to_render = unwrapped_items
+        for item in unwrapped_items:
+            item_kv = new_kv()
+            source_text = None if core else _describe_source(item.get("source"))
+            if not single and source_text:
+                item_kv.add("Source", source_text)
+            anno_id = item.get("annotation_id") or item.get("id")
+            if anno_id:
+                item_kv.add("ID", str(anno_id))
 
-            title_part = key.split("/")[-1]
-            anno_title = f"{title_part.replace('_', ' ').title()} Info"
-
-            renderables.append(
-                Text.from_markup(
-                    f"[{palette['section_title']}]{icons['info']}{anno_title}[/][{palette['key']}] → {key}[/]"
-                )
+            record_to_render = item.get("record", item)
+            filtered_record = {k: v for k, v in record_to_render.items() if k not in ENVELOPE_KEYS}
+            _build_annotation_table(
+                item_kv, filtered_record, display_fields=display_fields, preserve_whitespace=preserve_whitespace
             )
+            bodies.append(item_kv)
 
-            for i, item in enumerate(items_to_render):
-                if not isinstance(item, dict):
-                    continue
+        if not single:
+            suffix: str | None = f"{len(unwrapped_items)} records"
+        else:
+            suffix = None if core else _describe_source(unwrapped_items[0].get("source"))
+        body: RenderableType = bodies[0] if single else Group(*_join(bodies))
+        add_section(f"{icons['info']}{_annotation_title(key)}", body, suffix)
 
-                if i > 0:
-                    renderables.append(Rule(style=palette.get("info", "dim")))
+    if renderables:
+        renderables.pop()
 
-                record_to_render = item.get("record", item)
-                display_fields = MEDIAINFO_DISPLAY_FIELDS if key == "file/mediainfo" else None
-
-                envelope_keys = {
-                    "source",
-                    "private",
-                    "schema_version",
-                    "group",
-                    "id",
-                    "annotation_id",
-                    "date_created",
-                    "date_modified",
-                    "file_hash",
-                }
-                filtered_record = {k: v for k, v in record_to_render.items() if k not in envelope_keys}
-
-                max_width = _get_max_key_width(filtered_record, display_fields=display_fields)
-                if max_width < 7:
-                    max_width = 7
-
-                annotation_table = Table(box=None, show_header=False, padding=(0, 1))
-                annotation_table.add_column(style=palette["key"], justify="right", min_width=max_width + 2)
-                annotation_table.add_column(style=palette["primary_value"])
-
-                item_source = item.get("source", {})
-                if isinstance(item_source, dict):
-                    src_type = item_source.get("type", "Unknown")
-                    src_id = item_source.get("id", "Unknown")
-                    src_name = item_source.get("name")
-                    part = item_source.get("execution_part")
-                    total_parts = item_source.get("execution_total_parts")
-
-                    src_display = Text(f"{src_type} ({src_id})")
-                    if src_name:
-                        src_display.append(f" - {src_name}", style="italic")
-                    if part and total_parts:
-                        src_display.append(f" [Part {part} of {total_parts}]", style="dim italic")
-
-                    annotation_table.add_row("Source:", src_display)
-
-                anno_id = item.get("annotation_id") or item.get("id")
-                if anno_id:
-                    annotation_table.add_row("ID:", str(anno_id))
-
-                if filtered_record:
-                    _build_annotation_table(
-                        key=key,
-                        table=annotation_table,
-                        data=filtered_record,
-                        is_stub=False,
-                        display_fields=display_fields,
-                        preserve_whitespace=preserve_whitespace,
-                    )
-
-                renderables.append(annotation_table)
-
-            renderables.append(Text(""))
-
-    is_none_style = box_style == get_borders("none")
-
-    display_title = title
+    display_title = Text.from_markup(title, style=title_style)
     if source == "cache":
-        display_title = f"{title} [{palette.get('info', 'dim')}](from cache)[/]"
+        display_title.append(" (from cache)", style=dim_style)
 
-    if is_none_style:
-        tight_header = Text.from_markup(f"[{panel_title_style}]{display_title}[/]\n")
-        return Group(tight_header, *renderables)
+    if box_style is None:
+        return Group(display_title, Text(""), *renderables)
 
-    return Panel(
-        Group(*renderables, fit=True),
-        title=f"[{panel_title_style}]{display_title}[/]",
+    return section(
+        display_title,
+        Group(*renderables),
+        {"palette": palette, "icons": icons, "borders": box_style},
         border_style=border,
-        box=box_style if box_style is not None else box.ROUNDED,
-        expand=False,
-        padding=(1, 2),
     )
+
+
+def _join(bodies: list[RenderableType]) -> list[RenderableType]:
+    joined: list[RenderableType] = []
+    for i, body in enumerate(bodies):
+        if i:
+            joined.append(Text(""))
+        joined.append(body)
+    return joined
