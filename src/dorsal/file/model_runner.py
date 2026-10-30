@@ -23,6 +23,7 @@ import re
 import time
 from typing import Any, Callable, NamedTuple, Sequence, Type, TYPE_CHECKING, TypeVar, cast
 import uuid
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field, ConfigDict, TypeAdapter, ValidationInfo, field_validator
 
@@ -85,20 +86,40 @@ _SECRET_OPTION_SUFFIXES = (
     "credential",
     "credentials",
 )
-_OPTION_NAME_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+_OPTION_NAME_WORD = re.compile(r"[A-Z]{2,}s(?![a-z])|[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def _is_secret_word(word: str) -> bool:
+    return word in _SECRET_OPTION_WORDS or word.endswith(_SECRET_OPTION_SUFFIXES)
 
 
 def _is_secret_option(name: Any) -> bool:
     words = (word.lower() for word in _OPTION_NAME_WORD.findall(str(name)))
-    return any(word in _SECRET_OPTION_WORDS or word.endswith(_SECRET_OPTION_SUFFIXES) for word in words)
+    return any(_is_secret_word(word) or (word.endswith("s") and _is_secret_word(word[:-1])) for word in words)
 
 
-def _redact_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: "<redacted>" if _is_secret_option(key) else _redact_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return type(value)(_redact_value(item) for item in value)
-    return value
+def _redact_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
+    if not isinstance(value, (Mapping, list, tuple)):
+        return value
+    if id(value) in seen:
+        return "<recursive>"
+    seen = seen | {id(value)}
+    if isinstance(value, Mapping):
+        return {
+            key: "<redacted>" if _is_secret_option(key) else _redact_value(item, seen) for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_value(item, seen) for item in value]
+    return tuple(_redact_value(item, seen) for item in value)
+
+
+def _options_for_log(options: dict[str, Any]) -> Any:
+    if not options:
+        return "None"
+    try:
+        return _redact_value(options)
+    except Exception:
+        return "<options could not be shown>"
 
 
 def model_debug_timer(method):
@@ -744,11 +765,12 @@ class ModelRunner:
             expected_schema = self._get_schema_for_model(annotation_model)
             safe_options = self._coerce_options(options, expected_schema) if options else {}
 
-            logger.debug(
-                "Running model '%s' main method with safe options: %s",
-                model_name,
-                self._redact_options(safe_options) if safe_options else "None",
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Running model '%s' main method with safe options: %s",
+                    model_name,
+                    _options_for_log(safe_options),
+                )
 
             raw_model_output: Any = (
                 annotation_model_instance.main(**safe_options) if safe_options else annotation_model_instance.main()

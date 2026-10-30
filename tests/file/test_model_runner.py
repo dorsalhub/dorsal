@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import namedtuple
+from collections.abc import Mapping
 import functools
 import importlib
 import json
@@ -48,7 +50,14 @@ from dorsal.file.configs.model_runner import (
 )
 from dorsal.common.validators import JsonSchemaValidator, get_json_schema_validator
 
-from dorsal.file.model_runner import ModelRunner, run_model
+from dorsal.file.model_runner import (
+    ModelRunner,
+    _SECRET_OPTION_SUFFIXES,
+    _SECRET_OPTION_WORDS,
+    _is_secret_option,
+    _options_for_log,
+    run_model,
+)
 
 import logging
 
@@ -1525,7 +1534,7 @@ def test_redact_options_matches_secret_names_case_insensitively():
 
 
 def test_redact_options_matches_whole_words_only():
-    options = {"max_keypoints": 5, "keywords": ["a"], "keyframes": True, "max_tokens": 10, "sort_key": "name"}
+    options = {"max_keypoints": 5, "keywords": ["a"], "keyframes": True, "sort_key": "name"}
 
     assert ModelRunner._redact_options(options) == {**options, "sort_key": "<redacted>"}
 
@@ -1548,3 +1557,126 @@ def test_redact_options_covers_common_names_and_nested_values():
         "client": {"password": "<redacted>", "region": "eu"},
         "hosts": [{"token": "<redacted>"}],
     }
+
+
+@pytest.mark.parametrize("word", sorted(_SECRET_OPTION_WORDS | set(_SECRET_OPTION_SUFFIXES)))
+def test_every_secret_name_is_redacted_in_the_plural(word):
+    plural = f"{word}s"
+    camel = f"client{word.capitalize()}s"
+    upper = f"CLIENT_{word.upper()}S"
+    upper_stem = f"{word.upper()}s"
+    camel_upper_stem = f"client{word.upper()}s"
+    names = [plural, camel, upper, upper_stem, camel_upper_stem, f"x_{plural}"]
+
+    assert _is_secret_option(word)
+    assert _is_secret_option(word.upper())
+    assert ModelRunner._redact_options({name: "v" for name in names}) == {name: "<redacted>" for name in names}
+
+
+def test_common_plural_secret_names_are_redacted():
+    names = ["api_keys", "apiKeys", "API_KEYS", "passwords", "secrets", "access_tokens", "accessTokens", "max_tokens"]
+
+    assert ModelRunner._redact_options({name: "v" for name in names}) == {name: "<redacted>" for name in names}
+
+
+Size = namedtuple("Size", "w h")
+
+
+class NoIterableList(list):
+    def __init__(self) -> None:
+        super().__init__([{"password": "nested-secret"}, 2])
+
+
+class OptionEchoModel(AnnotationModel):
+    """A model that records the options it receives."""
+
+    id = "test/option-echo"
+    version = "1.0"
+    received: dict[str, Any] = {}
+
+    def main(self, **options: Any):
+        OptionEchoModel.received = options
+        return {"text": "ok"}
+
+
+@pytest.fixture
+def option_file(tmp_path):
+    path = tmp_path / "input.txt"
+    path.write_text("hello")
+    return str(path)
+
+
+def _cyclic_list() -> list:
+    value: list = [1]
+    value.append(value)
+    return value
+
+
+@pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO, logging.WARNING])
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(Size(1, 2), id="namedtuple"),
+        pytest.param(NoIterableList(), id="list-subclass-without-iterable-constructor"),
+        pytest.param({"inner": Size({"token": "t"}, [Size(3, 4)])}, id="nested-namedtuples"),
+        pytest.param(_cyclic_list(), id="cyclic-list"),
+    ],
+)
+def test_options_that_worked_in_0_12_0_still_reach_the_model(option_file, caplog, level, value):
+    caplog.set_level(level, logger="dorsal.file.model_runner")
+    OptionEchoModel.received = {}
+
+    results = run_model(OptionEchoModel, option_file, options={"size": value, "api_keys": ["k1"]})
+
+    assert len(results) == 1
+    assert results[0].error is None
+    assert results[0].records == [{"text": "ok"}]
+    assert OptionEchoModel.received["size"] is value
+    assert OptionEchoModel.received["api_keys"] == ["k1"]
+    assert type(OptionEchoModel.received["size"]) is type(value)
+    assert "k1" not in caplog.text
+    assert "nested-secret" not in caplog.text
+    if level == logging.DEBUG:
+        assert "Running model 'OptionEchoModel' main method with safe options" in caplog.text
+
+
+def test_redact_options_keeps_secrets_out_of_namedtuples_and_cycles():
+    value = _cyclic_list()
+
+    redacted = ModelRunner._redact_options(
+        {"size": Size({"password": "p"}, 2), "items": NoIterableList(), "cycle": value}
+    )
+
+    assert redacted == {
+        "size": ({"password": "<redacted>"}, 2),
+        "items": [{"password": "<redacted>"}, 2],
+        "cycle": [1, "<recursive>"],
+    }
+
+
+class BrokenMapping(Mapping):
+    def __getitem__(self, key: str) -> Any:
+        raise RuntimeError("broken")
+
+    def __iter__(self):
+        raise RuntimeError("broken")
+
+    def __len__(self) -> int:
+        return 1
+
+
+def test_options_that_cannot_be_redacted_are_not_logged():
+    assert _options_for_log({"thing": BrokenMapping()}) == "<options could not be shown>"
+    assert _options_for_log({}) == "None"
+
+
+@pytest.mark.parametrize("level", [logging.DEBUG, logging.WARNING])
+def test_options_that_cannot_be_redacted_still_reach_the_model(option_file, caplog, level):
+    caplog.set_level(level, logger="dorsal.file.model_runner")
+    OptionEchoModel.received = {}
+    value = BrokenMapping()
+
+    results = run_model(OptionEchoModel, option_file, options={"thing": value})
+
+    assert results[0].error is None
+    assert OptionEchoModel.received["thing"] is value

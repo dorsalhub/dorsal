@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
-
 import pytest
 
 IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
@@ -30,6 +28,11 @@ IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
             "NewFileTag",
             "FileUrl",
             "FileRecordDateTime",
+            "FileCoreValidationModel",
+            "MediaInfoValidationModel",
+            "OfficeDocumentValidationModel",
+            "PDFValidationModel",
+            "EbookValidationModel",
         ],
         "dorsal.file.sharding": ["reassemble_record", "build_annotation_or_annotationgroup"],
         "dorsal.common.validators": [
@@ -65,9 +68,14 @@ IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
     },
     "dorsal-worker": {
         "dorsal": ["DorsalClient", "LocalFile"],
+        "dorsal.client": ["DorsalClient"],
+        "dorsal.client.validators": ["FileIndexResponse", "IndexResult", "IndexResultAnnotation", "UrlStats"],
+        "dorsal.common": ["constants"],
+        "dorsal.common.exceptions": ["APIError", "InvalidTagError", "RateLimitError", "TaggingError"],
+        "dorsal.common.model": ["AnnotationModelSource"],
         "dorsal.file.utils.infer_mediatype": ["get_media_type"],
         "dorsal.file.permissions": ["is_permitted_public_media_type"],
-        "dorsal.common.exceptions": ["TaggingError"],
+        "dorsal.file.validators.file_record": ["Annotation", "AnnotationGroup"],
     },
     "FileSushi": {
         "dorsal.file.model_runner": ["run_model"],
@@ -76,6 +84,7 @@ IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
     "pdf-extractor": {
         "dorsal.file.preprocessing.pdf": ["extract_pdf_layout_per_mille", "ocr_extract_pdf_text"],
         "dorsal.common.model": ["AnnotationModel"],
+        "dorsal.testing": ["run_model"],
     },
     "dorsal-whisper": {
         "dorsal": ["AnnotationModel"],
@@ -99,6 +108,6 @@ CASES = [
 
 @pytest.mark.parametrize("module, name", CASES)
 def test_downstream_import_still_works(module, name):
-    imported = importlib.import_module(module)
+    imported = __import__(module, fromlist=[name])
 
     assert getattr(imported, name, None) is not None, f"{module}.{name} is gone"

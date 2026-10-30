@@ -42,6 +42,8 @@ def _run_fresh(code: str, tmp_path) -> subprocess.CompletedProcess:
         ("does_not_exist", "AttributeError: module 'dorsal.file.validators' has no attribute 'does_not_exist'"),
         ("ranking", "AttributeError: Open schema 'ranking' is not in schema version"),
         ("__wrapped__", "AttributeError"),
+        ("open_schema", "module"),
+        ("file_record", "AttributeError: module 'dorsal.file.validators' has no attribute 'file_record'"),
     ],
 )
 def test_attributes_resolve_in_a_fresh_interpreter(attribute, expected, tmp_path):
@@ -55,6 +57,8 @@ def test_attributes_resolve_in_a_fresh_interpreter(attribute, expected, tmp_path
         except AttributeError as err:
             print(f"AttributeError: {{err}}")
         else:
+            again = getattr(validators, {attribute!r})
+            assert again is value, "second access gave a different result"
             print(type(value).__name__)
         """,
         tmp_path,
@@ -78,3 +82,53 @@ def test_dir_works_in_a_fresh_interpreter(tmp_path):
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert result.stdout.strip() == "ok"
+
+
+def test_every_attribute_gives_the_same_result_on_first_and_later_access(tmp_path):
+    result = _run_fresh(
+        """
+        import importlib
+        import pkgutil
+        import sys
+
+        import dorsal.file
+        import dorsal.file.validators as validators
+
+        package_path = list(validators.__path__)
+        names = set(dir(validators)) | {info.name for info in pkgutil.iter_modules(package_path)} | {"nope"}
+
+
+        def fresh():
+            for module in [m for m in sys.modules if m == "dorsal.file.validators" or m.startswith("dorsal.file.validators.")]:
+                del sys.modules[module]
+            if hasattr(dorsal.file, "validators"):
+                delattr(dorsal.file, "validators")
+            return importlib.import_module("dorsal.file.validators")
+
+
+        def look(module, name):
+            try:
+                value = getattr(module, name)
+            except AttributeError as err:
+                return ("AttributeError", str(err))
+            if type(value).__name__ == "module":
+                return ("module", value.__name__)
+            return ("value", type(value).__name__)
+
+
+        mismatches = []
+        for name in sorted(names):
+            module = fresh()
+            first = look(module, name)
+            second = look(module, name)
+            if first != second:
+                mismatches.append((name, first, second))
+        print(len(names), mismatches)
+        """,
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    count, _, mismatches = result.stdout.strip().partition(" ")
+    assert int(count) > 30
+    assert mismatches == "[]"

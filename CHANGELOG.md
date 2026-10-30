@@ -7,9 +7,13 @@
   `extract_pdf_layout_pts` are in the page as a PDF viewer displays it: CropBox and `/Rotate` applied, top-left
   origin, as in PDF.js's viewport. The reported page width and height are the displayed size. Before, pages
   rotated by 90, 180 or 270 degrees, and pages whose CropBox or MediaBox does not start at 0,0, got boxes in the
-  unrotated, uncropped page, often clamped to `y` 0 and height 0. Unrotated pages whose visible box starts at 0,0
-  give exactly the same output as before, and token text and order are unchanged on every page. Text outside
-  the displayed page, such as in a cropped-away margin, is left out, and boxes are clipped to the page.
+  unrotated, uncropped page, often clamped to `y` 0 and height 0. Only pages with a `/Rotate` other than 0, or
+  whose visible box (CropBox and MediaBox intersected) does not start at 0,0, give different output, and only in
+  their boxes. Every other page gives exactly the same tokens, text, order, boxes and page size as 0.12.0, apart
+  from the sub-1 pt page sizes below. Token text and order are unchanged on every page, and no token is dropped:
+  text partly or wholly outside the displayed page, such as in a cropped-away margin, is kept, and its box is
+  mapped the same way, so in points it can be negative or larger than the page (`extract_pdf_layout_per_mille`
+  clamps each coordinate to 0-1000, as before).
 - A page smaller than 1 pt reports a width or height of 1, not 0, so `document-extraction` records built from it
   validate. Other page sizes are still whole points, as before.
 - `open/classification` labels and `open/regression` points are chunked at 10,000 items, the schemas' `maxItems`,
@@ -31,11 +35,14 @@
   accepts strings (OATS 0.7.0 and later), so `track_id=1, schema_version="0.8.0"` validates. Earlier versions
   keep the integer. `build_transcription_record` takes a keyword-only `schema_version` for the same purpose.
 - Reading an attribute of `dorsal.file.validators` in a fresh interpreter, before
-  `dorsal.file.validators.open_schema` was imported, recursed until `RecursionError`.
+  `dorsal.file.validators.open_schema` was imported, recursed until `RecursionError`. Every attribute, including
+  the `open_schema` submodule, now gives the same result on first access as on later access.
 - The debug log of a model's options redacts secret-looking values at any depth, such as pdf-extractor's
   `password`. An option is redacted when a word of its name is `key`, `token`, `auth`, `authorization`,
-  `bearer`, `cookie`, `pwd` or `credential(s)`, or ends in `password`, `passwd`, `passphrase`, `secret`, `token`,
-  `apikey`, `accesskey`, `privatekey`, `secretkey` or `credential(s)`. Names like `max_keypoints` are not.
+  `bearer`, `cookie`, `pwd` or `credential`, or ends in `password`, `passwd`, `passphrase`, `secret`, `token`,
+  `apikey`, `accesskey`, `privatekey`, `secretkey` or `credential`, in the singular or the plural (`api_keys`,
+  `passwords`, `access_tokens`, and so `max_tokens` too). Names like `max_keypoints` and `keywords` are not.
+  The log never changes a model run: the options passed to the model are untouched, whatever their type.
 
 ### Changed
 - `DorsalClient` no longer sleeps through a long rate limit. A 429 whose `Retry-After` is longer than 60 seconds

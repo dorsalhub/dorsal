@@ -41,6 +41,9 @@ def __getattr__(name: str) -> Any:
 
     open_schema = importlib.import_module(f"{__name__}.open_schema")
 
+    if name in globals():
+        return globals()[name]
+
     try:
         return getattr(open_schema, name)
     except AttributeError as err:
