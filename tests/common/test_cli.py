@@ -18,8 +18,9 @@ import sys
 import pytest
 from unittest.mock import ANY, patch, MagicMock
 
+from rich import box
+from rich.console import Console
 from rich.panel import Panel
-from rich.console import Group
 from typer.testing import CliRunner
 from unittest.mock import patch
 import typer
@@ -75,7 +76,7 @@ def test_print_json_output_is_valid_json_on_narrow_terminal():
         "when": datetime.datetime(2025, 1, 2, 3, 4, 5),
     }
     buffer = io.StringIO()
-    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+    console = Console(legacy_windows=False, file=buffer, width=20, force_terminal=True, color_system="truecolor")
 
     cli.print_json_output(data, console)
 
@@ -218,8 +219,8 @@ def mock_ui_context():
             "primary_value": "cyan",
             "text_default": "default",
         },
-        "borders": "rounded",
-        "icons": {"warning": "⚠️ ", "error": "❌ ", "lock": "🔒 "},
+        "borders": box.ROUNDED,
+        "icons": {"warning": "! ", "error": "x ", "lock": "# "},
     }
 
 
@@ -246,20 +247,33 @@ def test_handle_error_panel(mock_exit, mock_rich_console, mock_ui_context, mock_
 
 
 @patch("dorsal.common.cli.exit_cli")
-def test_handle_error_none_borders(mock_exit, mock_rich_console, mock_ui_context, mocker, mock_error_console):
-    """Tests that handle_error strips the Panel when borders are 'none'."""
+def test_handle_error_borderless(mock_exit, mock_rich_console, mock_ui_context, mock_error_console):
+    """Without borders, handle_error prints a single `Error: message` line."""
+    mock_ui_context["borders"] = None
 
-    class MatchAnyBorder:
-        def __eq__(self, other):
-            return True
-
-    mocker.patch("dorsal.cli.themes.borders.get_borders", return_value=MatchAnyBorder())
-
-    cli.handle_error(mock_ui_context, "Something broke.", json_output=False)
+    cli.handle_error(mock_ui_context, "Something [broke].", json_output=False)
 
     printed_obj = mock_error_console.print.call_args[0][0]
-    assert isinstance(printed_obj, Group)
+    console = Console(legacy_windows=False, width=80)
+    with console.capture() as capture:
+        console.print(printed_obj)
+    assert capture.get() == "Error: Something [broke].\n"
     mock_exit.assert_called_once_with(code=cli.EXIT_CODE_ERROR)
+
+
+@patch.object(sys, "argv", ["dorsal", "auth"])
+def test_handle_auth_error_borderless(mock_ui_context):
+    """Without borders, the auth error is a heading with the instructions indented under it."""
+    mock_ui_context["borders"] = None
+    console = Console(legacy_windows=False, width=80)
+
+    with console.capture() as capture:
+        cli.handle_auth_error(AuthError("Fake auth error"), console, mock_ui_context)
+
+    lines = capture.get().splitlines()
+    assert lines[0] == "! Authentication required"
+    assert lines[1] == "  You are not currently logged in."
+    assert all(line == line.rstrip() for line in lines)
 
 
 @patch.object(sys, "argv", ["dorsal", "auth", "--json"])
@@ -493,7 +507,7 @@ def test_render_model_help_panel_error(mock_ui_context):
 
     assert isinstance(panel, Panel)
     assert "Resolution failed" in str(panel.renderable)
-    assert "Model Resolution Failed" in str(panel.title)
+    assert "Model resolution failed" in str(panel.title)
 
 
 def test_render_model_help_panel_not_installed(mock_ui_context):
@@ -513,7 +527,7 @@ def test_render_model_help_panel_config_error(mock_ui_context):
     assert isinstance(panel, Panel)
     assert "Failed to load configuration for 'my-pkg'" in str(panel.renderable)
     assert "Invalid TOML" in str(panel.renderable)
-    assert "Configuration Error" in str(panel.title)
+    assert "Configuration error" in str(panel.title)
 
 
 def test_render_model_help_panel_success_no_options(mock_ui_context):
@@ -596,7 +610,7 @@ def test_print_raw_output_is_byte_exact(end):
 
     text = "col_a\tcol_b\t[bold]x[/]\t:smile:\n" + "word " * 100
     buffer = io.StringIO()
-    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+    console = Console(legacy_windows=False, file=buffer, width=20, force_terminal=True, color_system="truecolor")
 
     cli.print_raw_output(text, console, end=end)
 
@@ -607,3 +621,15 @@ def test_print_raw_output_defaults_to_shared_console(mock_rich_console):
     cli.print_raw_output("a\tb")
 
     mock_rich_console.file.write.assert_called_once_with("a\tb\n")
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_shared_consoles_use_richs_legacy_windows_detection(monkeypatch, legacy):
+    import rich.console
+
+    monkeypatch.setattr(rich.console, "detect_legacy_windows", lambda: legacy)
+    monkeypatch.setattr(cli, "_console_instance", None)
+    monkeypatch.setattr(cli, "_error_console_instance", None)
+
+    assert cli.get_rich_console().legacy_windows is legacy
+    assert cli.get_error_console().legacy_windows is legacy

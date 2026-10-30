@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import json
 import pathlib
 import pytest
 import typer
 from unittest.mock import MagicMock
+from rich.console import Console
 from typer.testing import CliRunner
 
 from dorsal.cli.adapter_app.export_cmd import export_adapter
@@ -29,12 +31,19 @@ cli_app = typer.Typer()
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 
 
 cli_app.command(name="export")(export_adapter)
 
 runner = CliRunner()
+
+
+def _render(renderable) -> str:
+    """Renders a Rich renderable as plain text."""
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
+    console.print(renderable)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -120,9 +129,14 @@ def test_export_batch_success(mock_rich_console, mock_export_deps, tmp_path, mon
     assert call_1_kwargs["output_path"].name == "test_file_1.md"
     assert call_2_kwargs["output_path"].name == "test_file_2.md"
 
-    table_call_arg = mock_rich_console.print.call_args.args[0]
-    assert type(table_call_arg).__name__ == "Table"
-    assert "Export Results" in str(table_call_arg.title)
+    output = _render(mock_rich_console.print.call_args.args[0])
+    header, table_lines = output.split("Input file", 1)
+    assert " ".join(header.split()) == "Export results: test_file.dorsal.json"
+    assert ("Input file" + table_lines).splitlines() == [
+        "Input file  Status   MD output",
+        "Record 1    Success  test_file_1.md",
+        "Record 2    Success  test_file_2.md",
+    ]
 
 
 def test_export_invalid_json(mock_export_deps, tmp_path, monkeypatch):
@@ -150,7 +164,7 @@ def test_export_validation_error(mock_export_deps, tmp_path, monkeypatch):
 
     assert result.exit_code != 0
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-    assert "Validation Error" in error_msg
+    assert "Validation error" in error_msg
     assert "Missing schema information" in error_msg
 
 
@@ -183,7 +197,7 @@ def test_export_adapter_runtime_error(mock_export_deps, tmp_path, monkeypatch):
 
     assert result.exit_code != 0
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-    assert "Export Failed for schema" in error_msg
+    assert "Export failed for schema" in error_msg
     assert "Format constraint violated" in error_msg
 
 
@@ -233,8 +247,12 @@ def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps, tm
     assert result.exit_code == 0
     assert mock_export_deps["export_file"].call_count == 2
 
-    table_call_arg = mock_rich_console.print.call_args.args[0]
-    assert type(table_call_arg).__name__ == "Table"
+    output = _render(mock_rich_console.print.call_args.args[0])
+    assert output.splitlines()[1:] == [
+        "Input file  Status                          MD output",
+        "Record 1    Success                         test_batch_1.md",
+        "Record 2    Error: Simulated batch failure  -",
+    ]
 
 
 def test_export_with_orig_file_path(mock_export_deps, tmp_path, monkeypatch):
@@ -272,7 +290,7 @@ def test_export_usage_error_no_format_or_output(mock_export_deps, tmp_path, monk
     assert result.exit_code != 0
 
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-    assert "Usage Error" in error_msg
+    assert "Usage error" in error_msg
     assert "target_format" in error_msg
 
 
@@ -322,5 +340,5 @@ def test_export_merge_failure(mocker, mock_export_deps, tmp_path, monkeypatch):
     assert result.exit_code != 0
 
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-    assert "Merge Error" in error_msg
+    assert "Merge error" in error_msg
     assert "Simulated merge explosion" in error_msg

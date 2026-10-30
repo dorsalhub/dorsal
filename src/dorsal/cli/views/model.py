@@ -17,17 +17,14 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from rich.console import Group, RenderableType
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.syntax import Syntax
 from rich.bar import Bar
-from rich.rule import Rule
 from rich.json import JSON
-from rich.box import Box
 
 from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
+from dorsal.cli.views.layout import key_values, section
 
 if TYPE_CHECKING:
     from dorsal.file.configs.model_runner import RunModelResult
@@ -36,11 +33,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _tight_panel(content: RenderableType, title: str, border_style: str, borders: Box, **kwargs) -> RenderableType:
-    """Helper to automatically strip Panel wrappers when borders are disabled."""
-    if borders == get_borders("none"):
-        return Group(Text.from_markup(f"{title}\n"), content)
-    return Panel(content, title=title, border_style=border_style, box=borders, **kwargs)
+def _sub_section(
+    title: str, content: RenderableType | str, ui_context: UIContext, level: str = "info"
+) -> RenderableType:
+    palette = ui_context["palette"]
+    return section(
+        title,
+        Text(content) if isinstance(content, str) else content,
+        ui_context,
+        title_style=palette.get("section_title", "bold"),
+        border_style=palette.get(f"panel_border_{level}", "dim"),
+        padding=(0, 1),
+        expand=True,
+    )
 
 
 def create_model_result_panel(
@@ -60,7 +65,6 @@ def create_model_result_panel(
     logger.debug(f"Result object type: {type(result).__name__}")
 
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     icons = ui_context["icons"]
 
     data: dict[str, Any] | None = None
@@ -93,11 +97,12 @@ def create_model_result_panel(
 
     if not data:
         logger.debug("No record data found in result. Returning Empty Result panel.")
-        return _tight_panel(
-            content=Text("No record data returned.", style=palette.get("error", "red")),
-            title=f"[{palette.get('panel_title_error', 'red')}]{icons.get('error', '')}Empty Result{group_info}[/]",
+        return section(
+            f"{icons.get('error', '')}Empty result{group_info}",
+            Text("No record data returned.", style=palette.get("error", "red")),
+            ui_context,
+            title_style=palette.get("panel_title_error", "red"),
             border_style=palette.get("panel_border_error", "red"),
-            borders=borders,
         )
 
     content: RenderableType
@@ -110,27 +115,18 @@ def create_model_result_panel(
     else:
         logger.debug(f"No specific renderer found for schema_id '{schema_id}'. Falling back to Raw JSON Output.")
         content = JSON.from_data(data)
-        schema_type = "Raw Output"
+        schema_type = "Raw output"
 
-    title_style = palette.get("panel_title_success", "green")
-    border_style = palette.get("panel_border_success", "green")
+    title_line = Text(title, style=palette.get("section_title", "bold"))
+    title_line.append(f"  {file_name}", style=palette.get("info", "dim"))
 
-    header = Table.grid(expand=True)
-    header.add_column(justify="left")
-    header.add_column(justify="right")
-    header.add_row(
-        Text(title, style=palette.get("section_title", "bold")), Text(f"{file_name}", style=palette.get("info", "dim"))
-    )
-
-    main_content = Group(header, Rule(style=palette.get("info", "dim")), Text(""), content)
-
-    logger.debug("Successfully constructed Panel layout.")
-    return _tight_panel(
-        content=main_content,
-        title=f"[{title_style}]{icons.get('info', '')}{schema_type} Result{group_info}[/]",
-        border_style=border_style,
-        borders=borders,
-        expand=False,
+    logger.debug("Successfully constructed result layout.")
+    return section(
+        f"{icons.get('info', '')}{schema_type} result{group_info}",
+        Group(title_line, Text(""), content),
+        ui_context,
+        title_style=palette.get("panel_title_success", "green"),
+        border_style=palette.get("panel_border_success", "green"),
     )
 
 
@@ -163,7 +159,6 @@ def _score_bar(score: float, palette: dict[str, str], width: int = 20) -> Bar:
 def _render_arxiv(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_arxiv")
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     title = data.get("title", "Untitled")
@@ -188,32 +183,23 @@ def _render_arxiv(data: dict[str, Any], ui_context: UIContext, max_length: int) 
 
     abstract = data.get("abstract", "")
     if abstract:
-        renderables.append(
-            _tight_panel(
-                content=abstract,
-                title=f"[{palette.get('panel_title_info', 'dim')}]Abstract[/]",
-                border_style=palette.get("panel_border_info", "dim"),
-                borders=borders,
-            )
-        )
+        renderables.append(_sub_section("Abstract", abstract, ui_context))
         renderables.append(Text(""))
 
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column(style=palette.get("primary_value", "default"))
+    grid = key_values(ui_context)
 
     if url := data.get("url"):
-        grid.add_row("URL", Text(url, style=palette.get("link", "underline")))
+        grid.add("URL", Text(url, style=palette.get("link", "underline")))
     if categories := data.get("categories"):
-        grid.add_row("Categories", ", ".join(categories))
+        grid.add("Categories", ", ".join(categories))
     if doi := data.get("doi"):
-        grid.add_row("DOI", doi)
+        grid.add("DOI", doi)
     if journal := data.get("journal_ref"):
-        grid.add_row("Journal", journal)
+        grid.add("Journal", journal)
     if license_str := data.get("license"):
-        grid.add_row("License", license_str)
+        grid.add("License", license_str)
 
-    if grid.row_count > 0:
+    if grid:
         renderables.append(grid)
 
     return Group(*renderables)
@@ -224,19 +210,17 @@ def _render_classification(data: dict[str, Any], ui_context: UIContext, max_leng
     palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column(style=palette.get("primary_value", "bold"))
+    grid = key_values(ui_context)
     if target := data.get("target"):
-        grid.add_row("Target:", str(target))
+        grid.add("Target", str(target))
     if producer := data.get("producer"):
-        grid.add_row("Producer:", str(producer))
-    if grid.row_count > 0:
+        grid.add("Producer", str(producer))
+    if grid:
         renderables.extend([grid, Text("")])
 
     labels = data.get("labels", [])
     if labels:
-        table = Table(box=None, padding=(0, 2), show_header=True)
+        table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
         table.add_column("Label", style=palette.get("table_header", "bold"))
         table.add_column("Score", justify="right", style=palette.get("primary_value", "cyan"))
         table.add_column("Confidence", width=20)
@@ -267,14 +251,12 @@ def _render_entity_extraction(data: dict[str, Any], ui_context: UIContext, max_l
     palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
-    info_grid = Table.grid(padding=(0, 2))
-    info_grid.add_column(style=palette.get("key", "dim"))
-    info_grid.add_column(style=palette.get("primary_value", "bold"))
+    info_grid = key_values(ui_context)
     if val := data.get("producer"):
-        info_grid.add_row("Producer:", str(val))
+        info_grid.add("Producer", str(val))
     if val := data.get("unit"):
-        info_grid.add_row("Unit:", str(val))
-    if info_grid.row_count > 0:
+        info_grid.add("Unit", str(val))
+    if info_grid:
         renderables.extend([info_grid, Text("")])
 
     entities = data.get("entities", [])
@@ -282,7 +264,7 @@ def _render_entity_extraction(data: dict[str, Any], ui_context: UIContext, max_l
         renderables.append(Text("No entities found.", style=palette.get("info", "dim")))
         return Group(*renderables)
 
-    table = Table(box=None, padding=(0, 2), show_header=True)
+    table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
     table.add_column("Label", style=palette.get("table_header", "bold"))
     table.add_column("Concept", style=palette.get("info", "dim"))
     table.add_column("Text", style=palette.get("primary_value", "cyan"))
@@ -308,18 +290,16 @@ def _render_object_detection(data: dict[str, Any], ui_context: UIContext, max_le
     palette = ui_context["palette"]
     renderables: list[RenderableType] = []
 
-    info_grid = Table.grid(padding=(0, 2))
-    info_grid.add_column(style=palette.get("key", "dim"))
-    info_grid.add_column(style=palette.get("primary_value", "bold"))
+    info_grid = key_values(ui_context)
     if val := data.get("producer"):
-        info_grid.add_row("Producer:", str(val))
+        info_grid.add("Producer", str(val))
     if val := data.get("unit"):
-        info_grid.add_row("Unit:", str(val))
-    if info_grid.row_count > 0:
+        info_grid.add("Unit", str(val))
+    if info_grid:
         renderables.extend([info_grid, Text("")])
 
     objects = data.get("objects", [])
-    table = Table(box=None, padding=(0, 2), show_header=True)
+    table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
     table.add_column("Label", style=palette.get("table_header", "bold"))
     table.add_column("Score", justify="right", style=palette.get("primary_value", "cyan"))
     table.add_column("Location", style=palette.get("primary_value", "cyan"))
@@ -339,24 +319,20 @@ def _render_object_detection(data: dict[str, Any], ui_context: UIContext, max_le
 
 def _render_embedding(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_embedding")
-    palette = ui_context["palette"]
-    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column(style=palette.get("primary_value", "bold"))
+    grid = key_values(ui_context)
 
     if model := data.get("model"):
-        grid.add_row("Model", str(model))
+        grid.add("Model", str(model))
     if target := data.get("target"):
-        grid.add_row("Target", str(target))
+        grid.add("Target", str(target))
 
     vector = data.get("vector")
     if isinstance(vector, list):
         dim = len(vector)
-        grid.add_row("Type", "Dense Array")
-        grid.add_row("Dimensions", str(dim))
+        grid.add("Type", "Dense Array")
+        grid.add("Dimensions", str(dim))
         vec_preview = "[" + ", ".join(f"{v:.4f}" for v in vector[:max_length])
         if dim > max_length:
             vec_preview += f", ... (+{dim - max_length} more)"
@@ -364,9 +340,9 @@ def _render_embedding(data: dict[str, Any], ui_context: UIContext, max_length: i
     elif isinstance(vector, dict):
         dim = vector.get("dimensions", "Unknown")
         indices = vector.get("indices", [])
-        grid.add_row("Type", "Sparse Object")
-        grid.add_row("Dimensions", str(dim))
-        grid.add_row("Non-zero Elements", str(len(indices)))
+        grid.add("Type", "Sparse Object")
+        grid.add("Dimensions", str(dim))
+        grid.add("Non-zero Elements", str(len(indices)))
         vec_preview = f"Indices: {indices[:max_length]}...\nValues: {vector.get('values', [])[:max_length]}..."
     else:
         vec_preview = "Unknown vector format."
@@ -375,12 +351,7 @@ def _render_embedding(data: dict[str, Any], ui_context: UIContext, max_length: i
         [
             grid,
             Text(""),
-            _tight_panel(
-                content=vec_preview,
-                title=f"[{palette.get('panel_title_info', 'dim')}]Vector Data[/]",
-                border_style=palette.get("panel_border_info", "dim"),
-                borders=borders,
-            ),
+            _sub_section("Vector Data", vec_preview, ui_context),
         ]
     )
 
@@ -390,12 +361,9 @@ def _render_embedding(data: dict[str, Any], ui_context: UIContext, max_length: i
 def _render_audio_transcription(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_audio_transcription")
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
-    info_grid = Table.grid(padding=(0, 2))
-    info_grid.add_column(style=palette.get("key", "dim"))
-    info_grid.add_column(style=palette.get("primary_value", "bold"))
+    info_grid = key_values(ui_context)
 
     for key, label in [
         ("track_id", "Track ID"),
@@ -404,27 +372,22 @@ def _render_audio_transcription(data: dict[str, Any], ui_context: UIContext, max
         ("duration", "Duration (s)"),
     ]:
         if val := data.get(key):
-            info_grid.add_row(f"{label}:", str(val))
+            info_grid.add(label, str(val))
 
-    if info_grid.row_count > 0:
+    if info_grid:
         renderables.extend([info_grid, Text("")])
 
     if full_text := data.get("text"):
         renderables.extend(
             [
-                _tight_panel(
-                    content=full_text,
-                    title=f"[{palette.get('panel_title_info', 'dim')}]Full Transcription[/]",
-                    border_style=palette.get("panel_border_info", "dim"),
-                    borders=borders,
-                ),
+                _sub_section("Full Transcription", full_text, ui_context),
                 Text(""),
             ]
         )
 
     segments = data.get("segments", [])
     if segments:
-        seg_table = Table(box=None, padding=(0, 1), show_header=True)
+        seg_table = Table(box=None, padding=(0, 1), pad_edge=False, show_header=True)
         seg_table.add_column("Time", style=palette.get("info", "dim"))
         seg_table.add_column("Speaker", style=palette.get("table_header", "bold"))
         seg_table.add_column("Text", style=palette.get("primary_value", "cyan"))
@@ -449,7 +412,6 @@ def _render_audio_transcription(data: dict[str, Any], ui_context: UIContext, max
 def _render_document_extraction(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_document_extraction")
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     blocks = data.get("blocks", [])
     stats: dict[str, int] = {}
     for b in blocks:
@@ -459,14 +421,12 @@ def _render_document_extraction(data: dict[str, Any], ui_context: UIContext, max
     summary = ", ".join(f"{k}: {v}" for k, v in stats.items())
     renderables: list[RenderableType] = []
 
-    info_grid = Table.grid(padding=(0, 2))
-    info_grid.add_column(style=palette.get("key", "dim"))
-    info_grid.add_column(style=palette.get("primary_value", "bold"))
+    info_grid = key_values(ui_context)
     for key, label in [("extraction_type", "Type"), ("producer", "Producer"), ("unit", "Unit")]:
         if val := data.get(key):
-            info_grid.add_row(f"{label}:", str(val))
+            info_grid.add(label, str(val))
 
-    if info_grid.row_count > 0:
+    if info_grid:
         renderables.append(info_grid)
 
     renderables.extend([Text(f"Summary: {summary}", style=palette.get("info", "dim")), Text("")])
@@ -474,11 +434,8 @@ def _render_document_extraction(data: dict[str, Any], ui_context: UIContext, max
     text_blocks = [b for b in blocks if b.get("text")]
     for b in text_blocks[:max_length]:
         renderables.append(
-            _tight_panel(
-                content=b.get("text", ""),
-                title=f"[{palette.get('panel_title_info', 'dim')}]Block {b.get('id', '')[:8]} (Page {b.get('page_number', '?')})[/]",
-                border_style=palette.get("panel_border_info", "dim"),
-                borders=borders,
+            _sub_section(
+                f"Block {b.get('id', '')[:8]} (Page {b.get('page_number', '?')})", b.get("text", ""), ui_context
             )
         )
 
@@ -491,7 +448,6 @@ def _render_document_extraction(data: dict[str, Any], ui_context: UIContext, max
 def _render_llm_output(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
     logger.debug("Executing _render_llm_output")
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
     renderables: list[RenderableType] = []
 
     renderables.append(Text(f"Model: {data.get('model', 'Unknown Model')}", style=palette.get("section_title", "bold")))
@@ -501,15 +457,7 @@ def _render_llm_output(data: dict[str, Any], ui_context: UIContext, max_length: 
     prompt = data.get("prompt", "")
     if len(prompt) > 200:
         prompt = prompt[:200] + "..."
-    renderables.append(
-        _tight_panel(
-            content=prompt,
-            title=f"[{palette.get('panel_title_info', 'dim')}]Input Prompt[/]",
-            border_style=palette.get("panel_border_info", "dim"),
-            borders=borders,
-            height=5,
-        )
-    )
+    renderables.append(_sub_section("Input Prompt", prompt, ui_context))
 
     response = data.get("response_data", "")
     response_render: RenderableType
@@ -518,29 +466,20 @@ def _render_llm_output(data: dict[str, Any], ui_context: UIContext, max_length: 
     else:
         response_render = Text(str(response))
 
-    renderables.append(
-        _tight_panel(
-            content=response_render,
-            title=f"[{palette.get('panel_title_success', 'bold green')}]Response[/]",
-            border_style=palette.get("panel_border_success", "green"),
-            borders=borders,
-        )
-    )
+    renderables.append(_sub_section("Response", response_render, ui_context, level="success"))
 
-    meta_grid = Table.grid(padding=(0, 2))
-    meta_grid.add_column(style=palette.get("key", "dim"))
-    meta_grid.add_column(style=palette.get("info", "dim"))
+    meta_grid = key_values(ui_context)
 
     if usage := data.get("generation_metadata", {}).get("usage"):
         stats = f"Tokens: {usage.get('total_tokens')} (Prompt: {usage.get('prompt_tokens')}, Compl: {usage.get('completion_tokens')})"
-        meta_grid.add_row("Usage:", stats)
+        meta_grid.add("Usage", stats)
 
     if params := data.get("generation_params", {}):
         param_str = ", ".join(f"{k}={v}" for k, v in params.items() if k in ("temperature", "top_p", "max_tokens"))
         if param_str:
-            meta_grid.add_row("Params:", param_str)
+            meta_grid.add("Params", param_str)
 
-    if meta_grid.row_count > 0:
+    if meta_grid:
         renderables.append(meta_grid)
 
     return Group(*renderables)
@@ -560,7 +499,7 @@ def _render_regression(data: dict[str, Any], ui_context: UIContext, max_length: 
         renderables.append(Text(f"Producer: {producer}", style=palette.get("info", "dim")))
     renderables.append(Text(""))
 
-    table = Table(box=None, padding=(0, 2), show_header=True)
+    table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
     table.add_column("Timestamp", style=palette.get("info", "dim"))
     table.add_column(f"Value ({unit})" if unit else "Value", style=palette.get("table_header", "bold"))
     table.add_column("Statistic", style=palette.get("primary_value", "cyan"))
@@ -594,19 +533,17 @@ def _render_geolocation(data: dict[str, Any], ui_context: UIContext, max_length:
     geo = data.get("geometry") or {}
     props = data.get("properties") or {}
 
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style=palette.get("key", "dim"))
-    grid.add_column(style=palette.get("primary_value", "cyan"))
+    grid = key_values(ui_context)
 
-    grid.add_row("Type", geo.get("type", "Null Geometry"))
+    grid.add("Type", geo.get("type", "Null Geometry"))
     if coords := geo.get("coordinates"):
         coord_str = str(coords)
-        grid.add_row("Coordinates", coord_str[:100] + "..." if len(coord_str) > 100 else coord_str)
+        grid.add("Coordinates", coord_str[:100] + "..." if len(coord_str) > 100 else coord_str)
 
     if props:
         renderables: list[RenderableType] = [
             grid,
-            Rule(style=palette.get("info", "dim")),
+            Text(""),
             Text("Properties", style=palette.get("section_title", "bold")),
         ]
 
@@ -636,7 +573,7 @@ def _render_generic(data: dict[str, Any], ui_context: UIContext, max_length: int
         renderables.append(Text(f"Producer: {producer}", style=palette.get("info", "dim")))
     renderables.append(Text(""))
 
-    table = Table(box=None, padding=(0, 2))
+    table = Table(box=None, padding=(0, 2), pad_edge=False)
     table.add_column("Key", style=palette.get("key", "dim"))
     table.add_column("Value", style=palette.get("primary_value", "cyan"))
 

@@ -17,6 +17,7 @@ import typer
 from unittest.mock import MagicMock
 from typer.testing import CliRunner
 from rich.box import ROUNDED
+from rich.console import Console
 from rich.table import Table
 
 from dorsal.cli.hub_app.annotation_app.list_annotations_cmd import list_annotations
@@ -35,6 +36,31 @@ def main_callback(ctx: typer.Context):
 
 cli_app.command(name="list")(list_annotations)
 runner = CliRunner()
+
+ONE_ANNOTATION = {
+    "AudioTranscription": [
+        {
+            "id": "anno-123",
+            "source": {"type": "Model", "id": "dorsalhub/whisper"},
+            "date_modified": "2026-02-20T10:00:00Z",
+        }
+    ]
+}
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(legacy_windows=False, width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
+
+
+def _printed_table(mock_console) -> Table:
+    tables = [
+        call.args[0] for call in mock_console.print.call_args_list if call.args and isinstance(call.args[0], Table)
+    ]
+    assert len(tables) == 1
+    return tables[0]
 
 
 @pytest.fixture
@@ -68,8 +94,12 @@ def test_list_annotations_success(mock_rich_console, mock_list_deps):
     assert result.exit_code == 0
     mock_list_deps["api_list"].assert_called_with("fakehash123", mode="dict")
 
-    calls = mock_rich_console.print.call_args_list
-    assert any("Found 1 annotation(s) for file" in str(call.args[0]) for call in calls)
+    output = _render(_printed_table(mock_rich_console))
+    assert output.splitlines()[0].strip() == "Found 1 annotation(s) for file fakehash123…"
+    assert "╭" in output
+    mock_list_deps["error_console"].status.assert_called_once()
+    hint = mock_rich_console.print.call_args.args[0]
+    assert hint.plain == "To view an annotation, run dorsal hub annotation get anno-123"
 
 
 def test_list_annotations_empty(mock_rich_console, mock_list_deps):
@@ -93,31 +123,24 @@ def test_list_annotations_api_error(mock_list_deps):
     assert "API Offline" in error_msg
 
 
-def test_list_annotations_narrow_console_and_borderless(mock_rich_console, mock_list_deps):
-    from dorsal.cli.themes.borders import get_borders
-
-    mock_rich_console.width = 110
-
+@pytest.mark.parametrize("width", [110, 160])
+def test_list_annotations_borderless(mock_rich_console, mock_list_deps, width):
+    """Borderless: a plain titled table with headers and no box characters or trailing whitespace."""
+    mock_rich_console.width = width
     original_border = DUMMY_UI_CONTEXT["borders"]
-    DUMMY_UI_CONTEXT["borders"] = get_borders("none")
+    DUMMY_UI_CONTEXT["borders"] = None
 
     try:
-        mock_list_deps["api_list"].return_value = {
-            "AudioTranscription": [
-                {
-                    "id": "anno-123",
-                    "source": {"type": "Model", "id": "dorsalhub/whisper"},
-                    "date_modified": "2026-02-20T10:00:00Z",
-                }
-            ]
-        }
+        mock_list_deps["api_list"].return_value = ONE_ANNOTATION
 
         result = runner.invoke(cli_app, ["list", "fakehash123"])
         assert result.exit_code == 0
 
-        tables = [call.args[0] for call in mock_rich_console.print.call_args_list if isinstance(call.args[0], Table)]
-        if tables:
-            assert tables[0].padding == (0, 1, 0, 1)
-
+        lines = _render(_printed_table(mock_rich_console), width=width).splitlines()
+        assert lines[0] == "Found 1 annotation(s) for file fakehash123…"
+        assert lines[1].startswith("Annotation (ID / schema)" if width < 115 else "Schema ")
+        assert any("anno-123" in line for line in lines)
+        assert all(line == line.rstrip() for line in lines)
+        assert not any(ch in "".join(lines) for ch in "│─╭╰")
     finally:
         DUMMY_UI_CONTEXT["borders"] = original_border

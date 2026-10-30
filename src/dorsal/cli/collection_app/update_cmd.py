@@ -16,12 +16,8 @@ import logging
 from typing import Annotated, Optional, TYPE_CHECKING
 
 import typer
-from rich.panel import Panel
-from rich.console import Group
 from rich.text import Text
 import json
-
-from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.cli.themes import UIContext
@@ -49,7 +45,9 @@ def update_collection(
     Update the name or description of a remote collection.
     """
     from dorsal.api.collection import update_collection as api_update_collection
+    from dorsal.cli.views.layout import message
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -59,13 +57,10 @@ def update_collection(
 
     console = get_rich_console()
     ui_context: "UIContext" = ctx.obj
-    palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
     try:
-        # Show a status spinner only for the interactive mode
-        status_message = f"Updating collection '[bold]{collection_id}[/]...'" if not json_output else ""
-        with console.status(status_message):
+        with get_error_console().status(f"Updating collection '[bold]{collection_id}[/]'"):
             updated_collection = api_update_collection(
                 collection_id=collection_id,
                 name=name,
@@ -90,17 +85,5 @@ def update_collection(
     if json_output:
         print_raw_output(updated_collection.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
     else:
-        title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
-        message_text = f"✅ Collection '[bold]{updated_collection.name}[/]' updated successfully."
-
-        if borders == get_borders("none"):
-            console.print(Text.from_markup(message_text))
-        else:
-            success_panel = Panel(
-                Text.from_markup(message_text),
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border_success", "green"),
-                box=borders,
-            )
-            console.print(success_panel)
+        body = Text.assemble("Collection '", (updated_collection.name, "bold"), "' updated successfully.")
+        console.print(message(f"{icons.get('success', '')}Update complete", body, ui_context, level="success"))

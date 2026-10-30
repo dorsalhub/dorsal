@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import pathlib
 from unittest.mock import MagicMock
 import pytest
 import typer
+from rich.console import Console
 from typer.testing import CliRunner
 
 from dorsal.cli.model_app.init_model_cmd import init_model
@@ -27,12 +29,19 @@ cli_app = typer.Typer()
 
 @cli_app.callback()
 def main_callback(ctx: typer.Context):
-    ctx.obj = {"palette": DEFAULT_PALETTE}
+    ctx.obj = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 
 
 cli_app.command(name="init")(init_model)
 
 runner = CliRunner()
+
+
+def _render(renderable) -> str:
+    """Renders a Rich renderable as plain text."""
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
+    console.print(renderable)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -65,10 +74,14 @@ def test_init_model_success_default_dir(mock_rich_console, mock_init_cmd):
     mock_init_cmd["create_project"].assert_called_once_with(name="Receipt Scanner", target_dir=None)
 
     assert mock_rich_console.print.called
-    panel = mock_rich_console.print.call_args.args[0]
-    assert "Created new model project" in panel.renderable
-    assert "receipt-scanner" in panel.renderable
-    assert "Model Initialized" in str(panel.title)
+    assert _render(mock_rich_console.print.call_args.args[0]) == (
+        "Model initialized\n"
+        "  Created new model project: receipt-scanner\n"
+        "\n"
+        "  To install it for testing:\n"
+        "    $ cd receipt-scanner\n"
+        "    $ dorsal model install .\n"
+    )
 
 
 def test_init_model_success_explicit_dir(mock_rich_console, mock_init_cmd, tmp_path, monkeypatch):
@@ -110,5 +123,5 @@ def test_init_model_unexpected_error(mock_rich_console, mock_init_cmd, mock_erro
 
     assert mock_error_console.print.called
     output_str = str(mock_error_console.print.call_args.args[0])
-    assert "Unexpected Error" in output_str
+    assert "Unexpected error" in output_str
     assert "Disk full" in output_str

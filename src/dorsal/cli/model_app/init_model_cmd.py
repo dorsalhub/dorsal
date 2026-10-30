@@ -39,7 +39,7 @@ def init_model(
     """
     Scaffold a new Annotation Model project in the current directory.
     """
-    from rich.panel import Panel
+    from rich.text import Text
     from dorsal.common.exceptions import DorsalError
     from dorsal.common.cli import (
         exit_cli,
@@ -49,24 +49,28 @@ def init_model(
     )
 
     from dorsal.api.model import init_model_project
+    from dorsal.cli.views.layout import section
 
     console = get_rich_console()
     error_console = get_error_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context = ctx.obj
+    palette: dict[str, str] = ui_context["palette"]
 
     try:
         result = init_model_project(name=name, target_dir=target_dir)
 
         console.print(
-            Panel(
-                f"Created new model project: [{palette.get('primary_value', 'cyan')}]{result.clean_name}[/]\n\n"
-                f"To install it for testing:\n"
-                f"  $ cd {result.clean_name}\n"
-                f"  $ dorsal model install .",
-                title="Model Initialized",
-                expand=False,
+            section(
+                "Model initialized",
+                Text.from_markup(
+                    f"Created new model project: [{palette.get('primary_value', 'cyan')}]{result.clean_name}[/]\n\n"
+                    f"To install it for testing:\n"
+                    f"  $ cd {result.clean_name}\n"
+                    f"  $ dorsal model install ."
+                ),
+                ui_context,
+                title_style=palette.get("panel_title_success", "bold green"),
                 border_style=palette.get("panel_border_success", "green"),
-                title_align="left",
             )
         )
 
@@ -75,5 +79,5 @@ def init_model(
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
         logger.exception("Unexpected error in model init")
-        error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
+        error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)

@@ -15,16 +15,19 @@
 import datetime
 from typing import Any
 
+from typing import TYPE_CHECKING
+
 from rich.console import Console, Group
-from rich.table import Table
 from rich.text import Text
 
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
 from dorsal.cli.views.file import to_local_time
+from dorsal.cli.views.layout import table as themed_table
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 
-def display_local_search_results(console: Console, response: Any, ui_context: UIContext) -> None:
+def display_local_search_results(console: Console, response: Any, ui_context: "UIContext") -> None:
     """
     Renders the local search results to the console, dynamically adjusting
     the layout based on the available terminal width.
@@ -33,24 +36,19 @@ def display_local_search_results(console: Console, response: Any, ui_context: UI
 
     palette = ui_context["palette"]
     icons = ui_context["icons"]
-    borders = ui_context["borders"]
 
     search_caption = (
-        "Dorsal Local Index search. For search syntax, visit:\n   https://docs.dorsalhub.com/reference/search-syntax/"
+        "Dorsal Local Index search. For search syntax, visit:\nhttps://docs.dorsalhub.com/reference/search-syntax/"
     )
-    title: str | None = f"{icons.get('search', '')}Local Search Results"
-    if borders == get_borders("none"):
-        title = None
 
-    table = Table(
-        title=title,
+    table = themed_table(
+        ui_context,
+        title=f"{icons.get('search', '')}Local search results",
         show_header=True,
-        header_style=palette.get("table_header", "bold blue"),
         caption=search_caption,
         caption_style="dim",
         caption_justify="left",
         expand=False,
-        box=borders,
         row_styles=["", palette.get("table_row_alt", "dim")],
     )
 
@@ -59,8 +57,8 @@ def display_local_search_results(console: Console, response: Any, ui_context: UI
     layout_breakpoint = 160 if has_any_hash else 100
 
     if console.width < layout_breakpoint:
-        table.add_column("File Details", ratio=1, overflow="fold")
-        table.add_column("Size / Type / Date", justify="right", width=22)
+        table.add_column("File details", ratio=1, overflow="fold")
+        table.add_column("Size / type / date", justify="right", width=22)
 
         for record in response.records:
             name_text = Text(record.name or "Unknown", style=palette.get("primary_value", ""))
@@ -84,14 +82,14 @@ def display_local_search_results(console: Console, response: Any, ui_context: UI
     else:
         table.add_column("Name", ratio=1, min_width=20, overflow="fold", vertical="middle")
         table.add_column("Size", justify="right", min_width=7, vertical="middle")
-        table.add_column("Media Type", min_width=10, vertical="middle")
+        table.add_column("Media type", min_width=10, vertical="middle")
         table.add_column("Record ID", style=palette.get("hash_value", "magenta"), min_width=16, vertical="middle")
 
-        table.add_column("Modified Date", style=palette.get("value", ""), min_width=19, no_wrap=True, vertical="middle")
+        table.add_column("Modified date", style=palette.get("value", ""), min_width=19, no_wrap=True, vertical="middle")
 
         if has_any_hash:
             table.add_column(
-                "SHA256 Hash",
+                "SHA256 hash",
                 no_wrap=True,
                 width=64,
                 vertical="middle",

@@ -55,7 +55,7 @@ def mock_export_collection_cmd(mocker):
     }
 
 
-def test_export_collection_default_path(mock_rich_console, mock_export_collection_cmd):
+def test_export_collection_default_path(mock_rich_console, mock_error_console, mock_export_collection_cmd):
     """Tests exporting with the default output path logic."""
     result = runner.invoke(app, ["collection", "export", COLLECTION_ID])
 
@@ -69,11 +69,14 @@ def test_export_collection_default_path(mock_rich_console, mock_export_collectio
     mock_export_collection_cmd["export_collection"].assert_called_once_with(
         collection_id=COLLECTION_ID,
         output_path=expected_file,
-        console=mock_rich_console,
+        console=mock_error_console,
         palette=ANY,
     )
-    all_printed_text = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list)
-    assert "Export complete" in all_printed_text
+    mock_rich_console.print.assert_called_once()
+    result_line = str(mock_rich_console.print.call_args.args[0])
+    assert "Export complete in " in result_line
+    assert not result_line.startswith("\n")
+    assert "Exporting collection" in str(mock_error_console.print.call_args_list[0].args[0])
 
 
 def test_export_collection_with_output_dir(mock_export_collection_cmd, tmp_path):
@@ -87,7 +90,7 @@ def test_export_collection_with_output_dir(mock_export_collection_cmd, tmp_path)
     assert mock_export_collection_cmd["export_collection"].call_args.kwargs["output_path"] == expected_file
 
 
-def test_export_collection_json_output(mock_rich_console, mock_export_collection_cmd):
+def test_export_collection_json_output(mock_rich_console, mock_error_console, mock_export_collection_cmd):
     """Tests a successful export with --json output."""
     expected_filename = f"{COLLECTION_ID}-20250101-120000.json.gz"
     expected_full_path_str = f"/tmp/dorsal/exports/{expected_filename}"
@@ -107,6 +110,7 @@ def test_export_collection_json_output(mock_rich_console, mock_export_collection
     assert data["output_path"] == expected_full_path_str
 
     assert expected_filename in data["output_path"]
+    assert mock_export_collection_cmd["export_collection"].call_args.kwargs["console"] is mock_error_console
 
 
 def test_export_collection_api_error(mock_export_collection_cmd):

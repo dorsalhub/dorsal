@@ -17,14 +17,13 @@ import sys
 import shutil
 from typing import Any, Dict, TYPE_CHECKING
 
-from rich.panel import Panel
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.prompt import Confirm
+from rich.style import Style
 from rich.text import Text
 import typer
 
 from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.api.model import ModelTargetResolution
@@ -40,6 +39,7 @@ def check_and_confirm_model_install(
     Renders security prompts using the structured intent payload from the API.
     """
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
+    from dorsal.cli.views.layout import key_values, section
 
     is_unverified = resolution.strategy == "local_path" or (
         resolution.strategy == "registry_id"
@@ -52,7 +52,6 @@ def check_and_confirm_model_install(
 
     error_console = get_error_console()
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     if "pipx" in sys.prefix:
         error_console.print(
@@ -60,7 +59,7 @@ def check_and_confirm_model_install(
             "The model will be available to the CLI, but NOT to external Python scripts.[/]"
         )
 
-    display_meta = {"Model": resolution.target, "Source": "Local Path"}
+    display_meta: Dict[str, str | Text] = {"Model": resolution.target, "Source": "Local path"}
     status_badge = f"[{palette.get('warning', 'bold yellow')}]Unverified[/]"
     border_style = palette.get("panel_border_warning", "yellow")
     link_style = palette.get("link", "blue underline")
@@ -76,34 +75,44 @@ def check_and_confirm_model_install(
             "Status": status_badge,
         }
         if meta.url:
-            display_meta["URL"] = f"[{link_style} link={meta.url}]{meta.url}[/]"
+            display_meta["URL"] = Text(meta.url, style=Style.parse(link_style) + Style(link=meta.url))
         display_meta["Description"] = meta.description or "No description provided."
 
         if meta.source_url:
             if not shutil.which("git"):
                 _handle_missing_git(ui_context)
-            display_meta["Source Code"] = f"[{link_style} link={meta.source_url}]{meta.source_url}[/]"
+            display_meta["Source code"] = Text(
+                meta.source_url, style=Style.parse(link_style) + Style(link=meta.source_url)
+            )
 
         if meta.published_date:
-            display_meta["Published"] = meta.published_date
+            display_meta["Published"] = str(meta.published_date)
 
-    msg_lines = []
-    for k, v in display_meta.items():
-        msg_lines.append(f"[{palette.get('key', 'dim')}]{k}:[/] {v}")
+    details = key_values(ui_context)
+    for key, value in display_meta.items():
+        details.add(key, Text.from_markup(value) if key == "Status" and isinstance(value, str) else value)
 
+    body: RenderableType = details
     if "Unverified" in status_badge:
-        msg_lines.append("\nYou are about to install executable code from an unverified source.")
-        msg_lines.append("Please review the source above before proceeding.")
-
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title_warning', 'bold yellow')}]Model Info[/]"
-
-    if is_none_style:
-        error_console.print(Group(Text.from_markup(f"\n{title_text}"), Text.from_markup("\n".join(msg_lines))))
-    else:
-        error_console.print(
-            Panel("\n".join(msg_lines), title=title_text, border_style=border_style, expand=False, box=borders)
+        body = Group(
+            details,
+            Text(""),
+            Text(
+                "You are about to install executable code from an unverified source.\n"
+                "Please review the source above before proceeding."
+            ),
         )
+
+    error_console.print(
+        section(
+            "Model info",
+            body,
+            ui_context,
+            title_style=palette.get("panel_title_warning", "bold yellow"),
+            border_style=border_style,
+            padding=(0, 1),
+        )
+    )
 
     if not Confirm.ask("Do you trust this source and want to proceed?", console=error_console):
         error_console.print(f"[{palette.get('error', 'bold red')}]Cancelled.[/]")
@@ -112,10 +121,10 @@ def check_and_confirm_model_install(
 
 def _handle_missing_git(ui_context: UIContext):
     from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_error_console
+    from dorsal.cli.views.layout import message as format_message
 
     error_console = get_error_console()
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
 
     message = Text.assemble(
         ("This model requires Git to install.\n\n", "default"),
@@ -126,21 +135,7 @@ def _handle_missing_git(ui_context: UIContext):
         ("https://git-scm.com/downloads", palette.get("link", "blue underline")),
     )
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title_error', 'bold red')}]Missing System Dependency[/]"
-
-    if is_none_style:
-        error_console.print(Group(Text.from_markup(f"\n{title_text}"), message))
-    else:
-        error_console.print(
-            Panel(
-                message,
-                expand=False,
-                title=title_text,
-                border_style=palette.get("panel_border_error", "red"),
-                box=borders,
-            )
-        )
+    error_console.print(format_message("Missing system dependency", message, ui_context, level="error", padding=(0, 1)))
     exit_cli(code=EXIT_CODE_ERROR)
 
 

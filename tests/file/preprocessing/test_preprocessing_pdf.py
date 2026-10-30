@@ -49,12 +49,15 @@ def dummy_pdf_path():
     return "dummy.pdf"
 
 
-def create_mock_page(width=100, height=200, rects=None):
+def create_mock_page(width=100, height=200, rects=None, rotation=0, origin=(0.0, 0.0)):
     """Helper to create a mock PDF page with specific geometry."""
     mock_page = Mock()
     mock_textpage = Mock()
 
     mock_page.get_size.return_value = (width, height)
+    mock_page.get_rotation.return_value = rotation
+    unrotated = (height, width) if rotation in (90, 270) else (width, height)
+    mock_page.get_bbox.return_value = (origin[0], origin[1], origin[0] + unrotated[0], origin[1] + unrotated[1])
     mock_page.get_textpage.return_value = mock_textpage
 
     if rects:

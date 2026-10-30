@@ -13,18 +13,32 @@
 # limitations under the License.
 
 import datetime
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
+
 import pytest
-from rich.panel import Panel
 from rich.box import ROUNDED
+from rich.console import Console
 
 from dorsal.cli.views.collection import collection_metadata
+
+PALETTE = {"key": "bold cyan", "primary_value": "green", "panel_title": "bold white", "panel_border": "blue"}
+
+
+def _render(renderable, width: int = 120) -> list[str]:
+    console = Console(legacy_windows=False, width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get().splitlines()
 
 
 @pytest.fixture
 def mock_ui_context():
-    palette = {"key": "bold cyan", "primary_value": "green", "panel_title": "bold white", "panel_border": "blue"}
-    return {"palette": palette, "borders": ROUNDED, "icons": {}}
+    return {"palette": PALETTE, "borders": ROUNDED, "icons": {}}
+
+
+@pytest.fixture
+def borderless_ui_context():
+    return {"palette": PALETTE, "borders": None, "icons": {}}
 
 
 @pytest.fixture
@@ -34,44 +48,60 @@ def mock_collection():
     col.name = "Test Collection"
     col.description = "A test description"
     col.file_count = 1000
-    col.total_size = 1024 * 1024 * 50  # 50MB
+    col.total_size = 1024 * 1024 * 50
     col.is_private = True
     col.date_modified = datetime.datetime(2025, 1, 1, 12, 0, 0)
     return col
 
 
-def test_collection_metadata_render_full(mock_collection, mock_ui_context):
-    """Test rendering with all fields present."""
+def test_collection_metadata_borderless(mock_collection, borderless_ui_context):
+    """Borderless: a heading, then left-aligned keys without colons, indented under it."""
+    lines = _render(collection_metadata(mock_collection, borderless_ui_context))
 
-    panel = collection_metadata(mock_collection, mock_ui_context)
+    assert lines[0] == "Collection metadata"
+    assert lines[1].startswith("  ID ")
+    assert lines[1].endswith("123-abc")
+    assert any(line.startswith("  Description ") and line.endswith("A test description") for line in lines)
+    assert any(line.startswith("  File count ") and line.endswith("1,000") for line in lines)
+    assert any(line.startswith("  Access ") and line.endswith("Private") for line in lines)
+    assert any(line.startswith("  Modified ") and line.endswith("2025-01-01 12:00:00") for line in lines)
+    assert all(line == line.rstrip() for line in lines)
+    assert not any(":" in line.split()[0] for line in lines if line.strip())
+    value_columns = {line.index(line.split()[-1]) for line in lines[1:] if len(line.split()) == 2}
+    assert len(value_columns) == 1
 
-    assert isinstance(panel, Panel)
-    assert "Collection Metadata" in panel.title
 
-    table = panel.renderable
+def test_collection_metadata_bordered(mock_collection, mock_ui_context):
+    """Bordered: the same rows inside a rounded panel titled "Collection metadata"."""
+    lines = _render(collection_metadata(mock_collection, mock_ui_context))
 
-    assert table.columns[0].style == "bold cyan"
+    assert lines[0].startswith("╭─ Collection metadata ")
+    assert lines[-1].startswith("╰")
+    assert any("Test Collection" in line for line in lines)
 
 
-def test_collection_metadata_no_description(mock_collection, mock_ui_context):
-    """Test rendering when description is None."""
+def test_collection_metadata_no_description(mock_collection, borderless_ui_context):
+    """The description row is left out when there is none."""
     mock_collection.description = None
 
-    panel = collection_metadata(mock_collection, mock_ui_context)
+    output = "\n".join(_render(collection_metadata(mock_collection, borderless_ui_context)))
 
-    assert isinstance(panel, Panel)
+    assert "Description" not in output
 
 
-def test_collection_metadata_no_date(mock_collection, mock_ui_context):
-    """Test rendering when date_modified is None."""
+def test_collection_metadata_no_date(mock_collection, borderless_ui_context):
+    """A missing modified date is shown as None."""
     mock_collection.date_modified = None
 
-    panel = collection_metadata(mock_collection, mock_ui_context)
-    assert isinstance(panel, Panel)
+    lines = _render(collection_metadata(mock_collection, borderless_ui_context))
+
+    assert any(line.startswith("  Modified ") and line.endswith("None") for line in lines)
 
 
-def test_collection_metadata_public(mock_collection, mock_ui_context):
-    """Test rendering for public collection."""
+def test_collection_metadata_public(mock_collection, borderless_ui_context):
+    """A public collection is shown as Public."""
     mock_collection.is_private = False
-    panel = collection_metadata(mock_collection, mock_ui_context)
-    assert isinstance(panel, Panel)
+
+    lines = _render(collection_metadata(mock_collection, borderless_ui_context))
+
+    assert any(line.startswith("  Access ") and line.endswith("Public") for line in lines)

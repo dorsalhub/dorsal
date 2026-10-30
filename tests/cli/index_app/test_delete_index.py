@@ -47,7 +47,7 @@ def test_delete_index_with_yes_flag(mock_rich_console, mock_delete_index_cmd):
     mock_delete_index_cmd["clear_shared_index"].assert_called_once()
 
     success_msg = mock_rich_console.print.call_args.args[0]
-    assert "Search Index cleared successfully" in success_msg
+    assert "Search index cleared successfully" in success_msg
 
 
 def test_delete_index_with_confirmation_yes(mock_rich_console, mock_delete_index_cmd):
@@ -59,7 +59,7 @@ def test_delete_index_with_confirmation_yes(mock_rich_console, mock_delete_index
     mock_delete_index_cmd["clear_shared_index"].assert_called_once()
 
     success_msg = mock_rich_console.print.call_args.args[0]
-    assert "Search Index cleared successfully" in success_msg
+    assert "Search index cleared successfully" in success_msg
 
 
 def test_delete_index_cancelled(mock_rich_console, mock_delete_index_cmd):

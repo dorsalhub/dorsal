@@ -18,14 +18,11 @@ import subprocess
 import shutil
 
 import typer
-from rich.console import Console, Group
-from rich.panel import Panel
+from rich.console import Console
 from rich.text import Text
-import os
 from typing import Annotated, Optional
 
 from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
 
 logger = logging.getLogger(__name__)
 
@@ -37,43 +34,27 @@ app = typer.Typer(
 
 
 def _display_user_info(user_info: dict, title: str, ui_context: UIContext, console: Console):
+    from dorsal.cli.views.layout import key_values, section
+
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
-
-    name = user_info.get("name", "N/A")
-    email = user_info.get("email", "N/A")
-    account_status = user_info.get("account_status", "N/A")
-    user_id = user_info.get("user_id", "N/A")
-
-    info_text = Text.assemble(
-        ("User ID:        ", palette["key"]),
-        (str(user_id), palette["primary_value"]),
-        "\n",
-        ("Name:           ", palette["key"]),
-        (name, palette["primary_value"]),
-        "\n",
-        ("Email:          ", palette["key"]),
-        (email, palette["primary_value"]),
-        "\n",
-        ("Account Status: ", palette["key"]),
-        (account_status, palette["primary_value"]),
+    info = key_values(
+        ui_context,
+        [
+            ("User ID", str(user_info.get("user_id", "N/A"))),
+            ("Name", str(user_info.get("name", "N/A"))),
+            ("Email", str(user_info.get("email", "N/A"))),
+            ("Account status", str(user_info.get("account_status", "N/A"))),
+        ],
     )
-
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette['panel_title_success']}]{title}[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"{title_text}"), info_text))
-    else:
-        panel = Panel(
-            info_text,
-            title=title_text,
+    console.print(
+        section(
+            title,
+            info,
+            ui_context,
+            title_style=palette["panel_title_success"],
             border_style=palette["panel_border_success"],
-            expand=False,
-            padding=(1, 2),
-            box=borders,
         )
-        console.print(panel)
+    )
 
 
 @app.command()
@@ -95,16 +76,16 @@ def login(
     from dorsal.common.auth import write_auth_config
     from dorsal.common.config import find_project_config_path, get_global_config_path, load_config
     from dorsal.common.exceptions import AuthError, DorsalOfflineError, NetworkError
-    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console
-    from dorsal.common import constants
+    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_error_console, get_rich_console
+    from dorsal.cli.views.layout import message
 
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     if not apikey:
-        console.print("🔑 Please enter your DorsalHub API key.")
+        console.print("Please enter your DorsalHub API key.")
         console.print("[dim]You can generate a key from your account settings page.[/dim]")
         apikey = typer.prompt("API Key", hide_input=True)
 
@@ -114,9 +95,9 @@ def login(
     try:
         from dorsal.client import DorsalClient
 
-        console.print(":key: Verifying key with DorsalHub...")
-        temp_client = DorsalClient(api_key=apikey)
-        user_info = temp_client.verify_credentials()
+        with get_error_console().status("Verifying key with DorsalHub..."):
+            temp_client = DorsalClient(api_key=apikey)
+            user_info = temp_client.verify_credentials()
 
         email = user_info.get("email")
         if is_project:
@@ -130,8 +111,9 @@ def login(
 
         clear_shared_dorsal_client()
 
-        console.print()
-        _display_user_info(user_info, title="✅ Login Successful", ui_context=ui_context, console=console)
+        _display_user_info(
+            user_info, title=f"{icons.get('success', '')}Login successful", ui_context=ui_context, console=console
+        )
 
         if is_project:
             project_config_path = find_project_config_path()
@@ -160,22 +142,11 @@ def login(
                 ("\n  dorsal auth gitignore", f"bold {palette['primary_value']}"),
             )
 
-            is_none_style = borders == get_borders("none")
-            title_text = f"[{palette['panel_title_warning']}]🔒 Action Required[/]"
-
-            if is_none_style:
-                console.print(Group(Text.from_markup(f"\n{title_text}"), security_warning_text))
-            else:
-                console.print(
-                    Panel(
-                        security_warning_text,
-                        title=title_text,
-                        border_style=palette["panel_border_warning"],
-                        expand=False,
-                        padding=(1, 2),
-                        box=borders,
-                    )
+            console.print(
+                message(
+                    f"{icons.get('warning', '')}Action required", security_warning_text, ui_context, level="warning"
                 )
+            )
 
         exit_cli()
     except DorsalOfflineError:
@@ -197,18 +168,13 @@ def logout(
     """
     from dorsal.session import clear_shared_dorsal_client
     from dorsal.common.auth import get_api_key_details, remove_api_key, APIKeySource
-    from dorsal.common.cli import (
-        EXIT_CODE_ERROR,
-        exit_cli,
-        get_rich_console,
-        get_error_console,
-    )
+    from dorsal.common.cli import EXIT_CODE_ERROR, exit_cli, get_rich_console
+    from dorsal.cli.views.layout import message
 
     console = get_rich_console()
-    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context["icons"]
 
     try:
         details = get_api_key_details()
@@ -223,20 +189,14 @@ def logout(
                 ("To complete the logout process for this session, please unset this environment variable.", "default"),
             )
 
-            is_none_style = borders == get_borders("none")
-            title_text = f"[{palette['panel_title_warning']}]Environment Variable Active[/]"
-
-            if is_none_style:
-                console.print(Group(Text.from_markup(f"\n{title_text}"), warning_message))
-            else:
-                console.print(
-                    Panel(
-                        warning_message,
-                        title=title_text,
-                        border_style=palette["panel_border_warning"],
-                        box=borders,
-                    )
+            console.print(
+                message(
+                    f"{icons.get('warning', '')}Environment variable active",
+                    warning_message,
+                    ui_context,
+                    level="warning",
                 )
+            )
             console.print("No configuration files were changed.")
             return exit_cli()
 
@@ -248,13 +208,12 @@ def logout(
         clear_shared_dorsal_client()
 
         if key_was_removed:
-            console.print(f"[{palette['success']}]✅ You have been successfully logged out.[/]")
+            console.print(f"[{palette['success']}]{icons.get('success', '')}You have been successfully logged out.[/]")
         else:
             console.print("You are not currently logged in (or the key could not be removed).")
         return exit_cli()
 
     except OSError as err:
-        error_console.print(f"[{palette['error']}]Error:[/] Could not modify config file. {err}")
         return exit_cli(code=EXIT_CODE_ERROR, message=f"Could not modify config file. {err}")
 
 
@@ -271,12 +230,13 @@ def gitignore(ctx: typer.Context):
     )
     from dorsal.common.config import get_project_level_config
     from dorsal.common import constants
+    from dorsal.cli.views.layout import message
 
     console = get_rich_console()
     error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context["icons"]
     logger.debug("--- Running 'dorsal auth gitignore' ---")
 
     if not shutil.which("git"):
@@ -324,7 +284,8 @@ def gitignore(ctx: typer.Context):
     if not auth_section_present:
         logger.debug("Config file found, but it contains no 'auth' section.")
         console.print(
-            f"[{palette['success']}]✅ Your '{config_filename}' file contains no 'auth' section.[/]", highlight=False
+            f"[{palette['success']}]{icons.get('success', '')}Your '{config_filename}' file contains no 'auth' section.[/]",
+            highlight=False,
         )
         console.print("It is safe to commit and share with your team. No changes made to .gitignore.")
         exit_cli()
@@ -351,29 +312,17 @@ def gitignore(ctx: typer.Context):
 
     if found_in_gitignore:
         logger.debug("Entry already exists. No action taken.")
-        console.print(f"[{palette['success']}]✅ Entry for '{config_filename}' already exists in .gitignore.[/]")
+        console.print(
+            f"[{palette['success']}]{icons.get('success', '')}Entry for '{config_filename}' already exists in .gitignore.[/]"
+        )
 
         note_text = Text.assemble(
             ("Note: If Git is still tracking this file, run the following command to stop tracking it:", "default"),
             (f"\n  git rm --cached {config_filename}", palette["primary_value"]),
         )
 
-        is_none_style = borders == get_borders("none")
-        title_text = f"[{palette['panel_title_info']}]File Still Tracked?[/]"
-
-        if is_none_style:
-            console.print(Group(Text.from_markup(f"\n{title_text}"), note_text))
-        else:
-            console.print(
-                Panel(
-                    note_text,
-                    title=title_text,
-                    border_style=palette["panel_border_info"],
-                    expand=False,
-                    padding=(1, 2),
-                    box=borders,
-                )
-            )
+        console.print()
+        console.print(message("File still tracked?", note_text, ui_context, level="info"))
         exit_cli()
 
     logger.debug("File is not in .gitignore. Asking for user consent.")
@@ -400,7 +349,9 @@ def gitignore(ctx: typer.Context):
             f.write(entry_to_add)
 
         logger.debug("Successfully wrote to .gitignore.")
-        console.print(f"[{palette['success']}]✅ Successfully added '/{config_filename}' to {gitignore_path}.[/]")
+        console.print(
+            f"[{palette['success']}]{icons.get('success', '')}Successfully added '/{config_filename}' to {gitignore_path}.[/]"
+        )
         exit_cli()
 
     except (OSError, subprocess.CalledProcessError) as e:
@@ -428,6 +379,7 @@ def whoami(
     from dorsal.common.cli import (
         EXIT_CODE_ERROR,
         exit_cli,
+        get_error_console,
         get_rich_console,
         print_json_output,
     )
@@ -439,18 +391,15 @@ def whoami(
     try:
         client = get_shared_dorsal_client()
 
-        if not json_output:
-            console.print("Verifying session with DorsalHub...")
-
-        user_info = client.verify_credentials()
+        with get_error_console().status("Verifying session with DorsalHub..."):
+            user_info = client.verify_credentials()
 
         if json_output:
             print_json_output(user_info, console)
         else:
-            console.print()
             _display_user_info(
                 user_info,
-                title="👤 Authenticated User",
+                title="Authenticated user",
                 ui_context=ui_context,
                 console=console,
             )

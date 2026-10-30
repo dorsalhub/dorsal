@@ -15,7 +15,7 @@
 import pytest
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
-from rich.panel import Panel
+from rich.console import Console
 
 
 from dorsal.cli import app
@@ -23,6 +23,13 @@ from dorsal.common.exceptions import DorsalClientError, ConflictError
 
 runner = CliRunner()
 COLLECTION_ID = "col_abc123"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(legacy_windows=False, width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 @pytest.fixture
@@ -45,11 +52,12 @@ def test_make_public_success(mock_rich_console, mock_make_public_cmd):
     mock_make_public_cmd.assert_called_once_with(collection_id=COLLECTION_ID)
 
     # Check that a success panel was printed
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Update Complete" in str(printed_object.title)
-    assert "Collection is now public" in str(printed_object.renderable)
-    assert mock_make_public_cmd.return_value.location_url in str(printed_object.renderable)
+    lines = _render(mock_rich_console.print.call_args.args[0]).splitlines()
+    assert lines == [
+        "Update complete",
+        "  Collection is now public.",
+        f"  URL  {mock_make_public_cmd.return_value.location_url}",
+    ]
 
 
 def test_make_public_conflict_error(mock_make_public_cmd):

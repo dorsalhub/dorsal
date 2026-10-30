@@ -17,6 +17,7 @@ import pytest
 import json
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
+from rich.console import Console
 from rich.table import Table
 
 from dorsal.cli import app
@@ -77,7 +78,10 @@ def test_search_index_default(mock_rich_console, mock_search_index_cmd):
 
     tables = [call.args[0] for call in mock_rich_console.print.call_args_list if isinstance(call.args[0], Table)]
     assert len(tables) == 1
-    assert "Local Search Results" in str(tables[0].title)
+    console = Console(legacy_windows=False, width=120)
+    with console.capture() as capture:
+        console.print(tables[0])
+    assert capture.get().splitlines()[0] == "Local search results"
 
 
 def test_search_index_json_output(mock_rich_console, mock_search_index_cmd):
@@ -111,13 +115,12 @@ def test_search_index_save_flag(mock_search_index_cmd):
     mock_search_index_cmd["save_results"].assert_called_once()
 
 
-def test_search_index_output_extension_warning(mock_rich_console, mock_search_index_cmd):
+def test_search_index_output_extension_warning(mock_rich_console, mock_error_console, mock_search_index_cmd, rendered):
     """Tests warning when --output has an unknown extension."""
     result = runner.invoke(app, ["index", "search", QUERY, "--output", "report.txt"])
 
     assert result.exit_code == 0
-    printed_text = "".join(str(call.args[0]) for call in mock_rich_console.print.call_args_list if call.args)
-    assert "unknown extension" in printed_text
+    assert "unknown extension" in rendered(mock_error_console, width=400)
 
 
 def test_search_index_exception_handling(mock_rich_console, mock_search_index_cmd):
@@ -165,6 +168,18 @@ def test_save_local_search_results_output_file(tmp_path, mock_rich_console):
 
     _save_local_search_results("test query", {}, palette, file_path, False)
     assert file_path.exists()
+
+
+def test_save_local_search_results_long_path_fits_console_width(tmp_path, mock_rich_console, rendered):
+    file_path = tmp_path / ("a-long-directory-name-" * 4) / "custom.json"
+    palette = {"success": "green", "primary_value": "blue"}
+
+    _save_local_search_results("test query", {}, palette, file_path, False)
+
+    lines = rendered(mock_rich_console, width=80).splitlines()
+    assert max(len(line) for line in lines) <= 80
+    assert lines[0] == "Full JSON report saved to:"
+    assert str(file_path) in "".join(lines)
 
 
 def test_save_local_search_results_default_path(tmp_path, mocker, mock_rich_console):

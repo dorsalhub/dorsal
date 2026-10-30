@@ -14,10 +14,10 @@
 
 import logging
 import typer
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
-from rich.panel import Panel
-from rich.table import Table
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,13 @@ def optimize_search_index(
         get_error_console,
         print_json_output,
     )
+    from dorsal.cli.views.layout import key_values, section
     from dorsal.file.utils.size import human_filesize
 
     console = get_rich_console()
-    palette: dict[str, str] = ctx.obj["palette"]
+    ui_context: UIContext = ctx.obj
+    palette = ui_context["palette"]
+    icons = ui_context.get("icons", {})
 
     try:
         status_console = get_error_console() if json_output else console
@@ -61,43 +64,25 @@ def optimize_search_index(
             print_json_output(results, console)
             exit_cli()
 
-        summary_table = Table.grid(expand=False)
-        summary_table.add_column(justify="right", style=palette.get("key", "dim"), width=35)
-        summary_table.add_column(justify="left", style=palette.get("primary_value", "default"))
-
-        summary_table.add_row("Records Removed:", f"{results.get('stale_records_removed', 0):,}")
-        summary_table.add_row(
-            "Records Reprocessed:",
-            f"{results.get('records_rewritten_for_compression', 0):,}",
-        )
-        summary_table.add_row()
-        summary_table.add_row(
-            "Size Before Optimization:",
-            human_filesize(results.get("size_before_bytes", 0)),
-        )
-        summary_table.add_row(
-            "Size After Optimization:",
-            human_filesize(results.get("size_after_bytes", 0)),
-        )
+        summary_table = key_values(ui_context)
+        summary_table.add("Records removed", f"{results.get('stale_records_removed', 0):,}")
+        summary_table.add("Records reprocessed", f"{results.get('records_rewritten_for_compression', 0):,}")
+        summary_table.add("Size before optimization", human_filesize(results.get("size_before_bytes", 0)))
+        summary_table.add("Size after optimization", human_filesize(results.get("size_after_bytes", 0)))
 
         reclaimed_bytes = results.get("size_reclaimed_bytes", 0)
         if reclaimed_bytes < 0:
-            summary_table.add_row(
-                "Index Size Increased:",
-                human_filesize(abs(reclaimed_bytes)),
-            )
+            summary_table.add("Index size increased", human_filesize(abs(reclaimed_bytes)))
         else:
-            summary_table.add_row(
-                "Index Size Decreased:",
-                human_filesize(reclaimed_bytes),
-            )
+            summary_table.add("Index size decreased", human_filesize(reclaimed_bytes))
 
         console.print(
-            Panel(
+            section(
+                f"{icons.get('success', '')}Index optimization complete",
                 summary_table,
-                title=f"[{palette.get('panel_title_success', 'bold green')}]✅ Index Optimization Complete[/]",
+                ui_context,
+                title_style=palette.get("panel_title_success", "bold green"),
                 border_style=palette.get("panel_border_success", "green"),
-                expand=False,
             )
         )
 

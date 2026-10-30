@@ -22,8 +22,6 @@ import pytest
 import typer
 from typer.testing import CliRunner
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
 from dorsal.cli import app
 
@@ -76,7 +74,7 @@ def mock_dir_deps(mocker):
     return mocker.patch("dorsal.api.file.get_directory_info", return_value=mock_dir_info_data)
 
 
-def test_info_file_success(mock_rich_console, mock_file_deps, tmp_path):
+def test_info_file_success(mock_rich_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.write_text("hello world")
 
@@ -85,8 +83,23 @@ def test_info_file_success(mock_rich_console, mock_file_deps, tmp_path):
     assert result.exit_code == 0
     mock_file_deps.assert_called_once()
 
-    print_calls = mock_rich_console.print.call_args_list
-    assert any(isinstance(c.args[0], Panel) and "File Summary" in str(c.args[0].title) for c in print_calls)
+    lines = rendered(mock_rich_console, width=400).splitlines()
+    assert lines[0] == f"File summary of {target}"
+    assert "  Filename       test.txt" in lines
+    assert "  Media type     text/plain" in lines
+    assert all(line == line.rstrip() for line in lines)
+
+
+def test_info_file_bordered(mock_rich_console, mock_file_deps, tmp_path, rendered):
+    target = tmp_path / "test.txt"
+    target.write_text("hello world")
+
+    result = runner.invoke(app, ["--borders", "rounded", "local", "info", str(target)])
+
+    assert result.exit_code == 0
+    text = rendered(mock_rich_console, width=400)
+    assert text.startswith("╭─ File summary of")
+    assert "│  Filename       test.txt" in text
 
 
 def test_info_file_json(mock_rich_console, mock_file_deps, mock_exit_cli, tmp_path):
@@ -102,17 +115,17 @@ def test_info_file_json(mock_rich_console, mock_file_deps, mock_exit_cli, tmp_pa
     assert data["size_bytes"] == 11
 
 
-def test_info_file_ignored_dir_flags(mock_rich_console, mock_file_deps, tmp_path):
+def test_info_file_ignored_dir_flags(mock_rich_console, mock_error_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
 
     runner.invoke(app, ["local", "info", str(target), "--recursive", "--media-type"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "Directory-specific flags" in printed_text
+    assert rendered(mock_error_console).startswith("Warning: Directory-specific flags")
+    assert "Directory-specific flags" not in rendered(mock_rich_console)
 
 
-def test_info_file_symlink(mock_rich_console, mock_file_deps, tmp_path):
+def test_info_file_symlink(mock_rich_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
     symlink_path = tmp_path / "link.txt"
@@ -120,17 +133,37 @@ def test_info_file_symlink(mock_rich_console, mock_file_deps, tmp_path):
 
     runner.invoke(app, ["local", "info", str(symlink_path)])
 
-    panels = [c.args[0] for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Panel)]
+    text = rendered(mock_rich_console, width=400)
+    assert f"  Symlink target  → {symlink_path.readlink()}" in text.splitlines()
+    assert os.path.samefile(symlink_path.readlink(), target)
 
-    console = Console(width=200)
-    with console.capture() as capture:
-        console.print(panels[0])
 
-    assert "test.txt" in capture.get()
+@pytest.mark.parametrize(
+    "link_target",
+    [
+        pathlib.PureWindowsPath("\\\\?\\C:\\Users\\runner\\AppData\\Local\\Temp\\test.txt"),
+        pathlib.PureWindowsPath("C:\\Users\\runner\\test.txt"),
+        pathlib.PurePosixPath("/private/var/folders/n6/T/test.txt"),
+        pathlib.PurePosixPath("../relative/test.txt"),
+    ],
+    ids=["windows-extended", "windows", "macos", "relative"],
+)
+def test_info_file_symlink_target_shown_as_read(
+    mocker, mock_rich_console, mock_file_deps, tmp_path, rendered, link_target
+):
+    target = tmp_path / "test.txt"
+    target.touch()
+    symlink_path = tmp_path / "link.txt"
+    symlink_path.symlink_to(target)
+    mocker.patch("pathlib.Path.readlink", return_value=link_target)
+
+    runner.invoke(app, ["local", "info", str(symlink_path)])
+
+    assert f"  Symlink target  → {link_target}" in rendered(mock_rich_console, width=400).splitlines()
 
 
 @patch("pathlib.Path.readlink")
-def test_info_file_symlink_broken(mock_readlink, mock_rich_console, mock_file_deps, tmp_path):
+def test_info_file_symlink_broken(mock_readlink, mock_rich_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
     symlink_path = tmp_path / "link.txt"
@@ -139,14 +172,7 @@ def test_info_file_symlink_broken(mock_readlink, mock_rich_console, mock_file_de
     mock_readlink.side_effect = OSError("Broken Link")
     runner.invoke(app, ["local", "info", str(symlink_path)])
 
-    panels = [c.args[0] for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Panel)]
-
-    # Render the panel to a string to inspect its contents
-    console = Console()
-    with console.capture() as capture:
-        console.print(panels[-1])
-
-    assert "(unreadable)" in capture.get()
+    assert "  Symlink target  (unreadable)" in rendered(mock_rich_console).splitlines()
 
 
 def test_info_file_error(mock_exit_cli, mock_file_deps, tmp_path):
@@ -160,7 +186,7 @@ def test_info_file_error(mock_exit_cli, mock_file_deps, tmp_path):
     assert "File locked" in mock_exit_cli.call_args.kwargs["message"]
 
 
-def test_info_dir_success(mock_rich_console, mock_dir_deps, tmp_path):
+def test_info_dir_success(mock_rich_console, mock_dir_deps, tmp_path, rendered):
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -169,8 +195,11 @@ def test_info_dir_success(mock_rich_console, mock_dir_deps, tmp_path):
     assert result.exit_code == 0
     mock_dir_deps.assert_called_once()
 
-    print_calls = mock_rich_console.print.call_args_list
-    assert any(isinstance(c.args[0], Panel) and "Directory Summary" in str(c.args[0].title) for c in print_calls)
+    lines = rendered(mock_rich_console, width=400).splitlines()
+    assert lines[0] == f"Directory summary of {target}"
+    assert "  Total file count      2" in lines
+    assert "  Largest file          file2.txt (2 KiB)" in lines
+    assert all(line == line.rstrip() for line in lines)
 
 
 def test_info_dir_json(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
@@ -185,17 +214,20 @@ def test_info_dir_json(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path
     assert data["overall"]["total_size"] == 2048
 
 
-def test_info_dir_media_type_table(mock_rich_console, mock_dir_deps, tmp_path):
+def test_info_dir_media_type_table(mock_rich_console, mock_dir_deps, tmp_path, rendered):
     target = tmp_path / "test_dir"
     target.mkdir()
 
     runner.invoke(app, ["local", "info", str(target), "--media-type"])
 
-    tables = [c.args[0] for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Table)]
-    assert any("Media Type Breakdown" in str(t.title) for t in tables)
+    lines = rendered(mock_rich_console, width=400).splitlines()
+    heading = lines.index("Media type breakdown")
+    assert lines[heading - 1] == ""
+    assert lines[heading + 1].split() == ["Media", "type", "Count", "Total", "size", "%", "of", "total"]
+    assert lines[heading + 2].split() == ["text/plain", "2", "2", "KiB", "100.00%"]
 
 
-def test_info_dir_empty(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_path):
+def test_info_dir_empty(mock_rich_console, mock_error_console, mock_dir_deps, mock_exit_cli, tmp_path, rendered):
     target = tmp_path / "test_dir"
     target.mkdir()
 
@@ -204,8 +236,8 @@ def test_info_dir_empty(mock_rich_console, mock_dir_deps, mock_exit_cli, tmp_pat
     runner.invoke(app, ["local", "info", str(target)])
 
     mock_exit_cli.assert_called_once()
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "No files found or accessible" in printed_text
+    assert "No files found or accessible" in rendered(mock_error_console)
+    mock_rich_console.print.assert_not_called()
 
 
 def test_info_dir_os_error(mock_exit_cli, mock_dir_deps, tmp_path):
@@ -265,11 +297,10 @@ def test_info_save_generic_error(mock_open, mock_json, mock_rich_console, mock_f
     assert "Not serializable" in printed_text
 
 
-def test_info_unknown_extension_warning(mock_rich_console, mock_file_deps, tmp_path):
+def test_info_unknown_extension_warning(mock_rich_console, mock_error_console, mock_file_deps, tmp_path, rendered):
     target = tmp_path / "test.txt"
     target.touch()
 
     runner.invoke(app, ["local", "info", str(target), "--output", "report.xml"])
 
-    printed_text = "".join(str(c.args[0]) for c in mock_rich_console.print.call_args_list)
-    assert "was specified with an unknown extension" in printed_text
+    assert "was specified with an unknown extension" in rendered(mock_error_console, width=400)

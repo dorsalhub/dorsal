@@ -13,13 +13,12 @@
 # limitations under the License.
 
 import typer
-from typing import Annotated, cast
+from typing import TYPE_CHECKING, Annotated, cast
 
-from rich.panel import Panel
 from rich.text import Text
 
-from dorsal.cli.themes import UIContext
 from dorsal.common.cli import (
+    get_error_console,
     get_rich_console,
     exit_cli,
     handle_error,
@@ -37,6 +36,9 @@ from dorsal.common.exceptions import (
     DuplicateTagError,
     TaggingError,
 )
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 tag_app = typer.Typer(
     name="tag",
@@ -72,8 +74,9 @@ def add_tag(
     from dorsal.api.file import add_tag_to_file, add_label_to_file
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
+    icons = ui_context.get("icons", {})
 
     is_public_tag = public
 
@@ -105,27 +108,27 @@ def add_tag(
             )
 
     try:
-        if not json_output:
-            tag_type_str = "public" if is_public_tag else "private"
-            display_val = f"'{value}' (label)" if label else f"'{name}:{value}'"
+        tag_type_str = "public" if is_public_tag else "private"
+        display_val = f"'{value}' (label)" if label else f"'{name}:{value}'"
+        status = Text.assemble(
+            f"Adding {tag_type_str} tag {display_val} to file ",
+            (hash_string, palette.get("hash_value", "magenta")),
+        )
 
-            console.print(
-                f"Adding {tag_type_str} tag {display_val} to file [{palette.get('hash_value', 'magenta')}]{hash_string}...[/]"
-            )
-
-        if label:
-            response = add_label_to_file(hash_string=hash_string, label=label)
-        else:
-            response = add_tag_to_file(
-                hash_string=hash_string, name=cast(str, name), value=cast(str, value), public=is_public_tag
-            )
+        with get_error_console().status(status):
+            if label:
+                response = add_label_to_file(hash_string=hash_string, label=label)
+            else:
+                response = add_tag_to_file(
+                    hash_string=hash_string, name=cast(str, name), value=cast(str, value), public=is_public_tag
+                )
 
         if json_output:
             print_raw_output(response.model_dump_json(indent=2), console)
         else:
             tag_style = palette.get("tag_public") if is_public_tag else palette.get("tag_private")
             success_message = Text.assemble(
-                ("✅ Successfully added tag '", palette.get("success", "green")),
+                (f"{icons.get('success', '')}Successfully added tag '", palette.get("success", "green")),
                 (f"{name}:{value}", f"bold {tag_style}"),
                 ("'.", palette.get("success", "green")),
             )
@@ -168,22 +171,25 @@ def remove_tag(
     from dorsal.api.file import remove_tag_from_file
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
+    icons = ui_context.get("icons", {})
 
     try:
-        if not json_output:
-            console.print(
-                f"🗑️  Removing tag [{palette.get('error', 'red')}]{tag_id}[/] from file [{palette.get('hash_value', 'magenta')}]{hash_string}...[/]"
-            )
-
-        remove_tag_from_file(hash_string=hash_string, tag_id=tag_id)
+        status = Text.assemble(
+            "Removing tag ",
+            (tag_id, palette.get("error", "red")),
+            " from file ",
+            (hash_string, palette.get("hash_value", "magenta")),
+        )
+        with get_error_console().status(status):
+            remove_tag_from_file(hash_string=hash_string, tag_id=tag_id)
 
         if json_output:
             print_json_output({"success": True, "detail": f"Tag '{tag_id}' removed."}, console)
         else:
             success_message = Text.assemble(
-                ("✅ Successfully removed tag '", palette.get("success", "green")),
+                (f"{icons.get('success', '')}Successfully removed tag '", palette.get("success", "green")),
                 (tag_id, f"bold {palette.get('error', 'red')}"),
                 ("'.", palette.get("success", "green")),
             )

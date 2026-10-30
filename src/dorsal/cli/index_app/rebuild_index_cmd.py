@@ -16,16 +16,6 @@ import logging
 import typer
 from typing import Annotated
 
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    MofNCompleteColumn,
-    TimeRemainingColumn,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +47,15 @@ def rebuild_index_cmd(
         print_json_output,
     )
     from dorsal.api.index import rebuild
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+        TimeRemainingColumn,
+    )
 
     console = get_rich_console()
     palette = ctx.obj["palette"]
@@ -90,8 +89,9 @@ def rebuild_index_cmd(
 
             count = rebuild(progress_callback=_progress_cb, batch_size=batch_size)
 
+        success_icon = ctx.obj.get("icons", {}).get("success", "")
         console.print(
-            f"\n[{palette.get('success', 'green')}]✅ Successfully rebuilt search indexes for {count:,} records.[/]"
+            f"[{palette.get('success', 'green')}]{success_icon}Successfully rebuilt search indexes for {count:,} records.[/]"
         )
 
     except typer.Exit:

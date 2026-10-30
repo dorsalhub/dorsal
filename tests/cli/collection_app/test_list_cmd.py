@@ -17,6 +17,7 @@ import json
 import datetime
 from typer.testing import CliRunner
 from unittest.mock import MagicMock
+from rich.console import Console
 from rich.table import Table
 
 
@@ -24,6 +25,13 @@ from dorsal.cli import app
 from dorsal.common.exceptions import DorsalClientError
 
 runner = CliRunner()
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(legacy_windows=False, width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
 
 
 mock_collection_record = MagicMock()
@@ -68,10 +76,10 @@ def test_list_collections_success_table_output(mock_rich_console, mock_list_coll
     assert result.exit_code == 0
     mock_list_collections_cmd.assert_called_once_with(page=1, per_page=25, mode="pydantic")
 
-    assert mock_rich_console.print.call_count == 2
+    assert mock_rich_console.print.call_count == 1
     printed_object = mock_rich_console.print.call_args.args[0]
     assert isinstance(printed_object, Table)
-    assert "DorsalHub Collections" in str(printed_object.title)
+    assert _render(printed_object).splitlines()[0] == "DorsalHub collections"
 
 
 def test_list_collections_with_pagination(mock_rich_console, mock_list_collections_cmd):
@@ -122,24 +130,33 @@ def test_list_collections_api_error(mock_list_collections_cmd):
     assert "API Error: Authentication failed" in result.output
 
 
-def test_list_collections_none_borders(mock_rich_console, mock_list_collections_cmd, mocker):
-    """Tests the table padding and title removal when borders are set to 'none'."""
+def test_list_collections_borderless_by_default(mock_rich_console, mock_list_collections_cmd):
+    """By default the table is plain: a title, headers, no box characters and no trailing whitespace."""
     mock_list_collections_cmd.return_value.records = [mock_collection_record]
-
-    class MatchAnyBorder:
-        def __eq__(self, other):
-            return True
-
-    mocker.patch("dorsal.cli.collection_app.list_cmd.get_borders", return_value=MatchAnyBorder())
 
     result = runner.invoke(app, ["collection", "list"])
 
     assert result.exit_code == 0
 
-    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+    lines = _render(mock_rich_console.print.call_args_list[0].args[0]).splitlines()
+    assert lines[0] == "DorsalHub collections"
+    assert lines[1].startswith("ID ")
+    assert "Total size" in lines[1]
+    assert lines[2].startswith("col_abc123 ")
+    assert all(line == line.rstrip() for line in lines)
+    assert not any(ch in "".join(lines) for ch in "│─╭╰")
 
-    assert printed_table.title is None
-    assert printed_table.padding == (0, 1, 0, 1)
+
+def test_list_collections_bordered(mock_rich_console, mock_list_collections_cmd):
+    """With --borders rounded the table is boxed."""
+    mock_list_collections_cmd.return_value.records = [mock_collection_record]
+
+    result = runner.invoke(app, ["--borders", "rounded", "collection", "list"])
+
+    assert result.exit_code == 0
+    output = _render(mock_rich_console.print.call_args_list[0].args[0])
+    assert "╭" in output
+    assert "col_abc123" in output
 
 
 def test_list_collections_narrow_console(mock_rich_console, mock_list_collections_cmd):
@@ -153,11 +170,11 @@ def test_list_collections_narrow_console(mock_rich_console, mock_list_collection
 
     assert result.exit_code == 0
 
-    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+    printed_table = mock_rich_console.print.call_args_list[0].args[0]
 
     assert len(printed_table.columns) == 2
-    assert printed_table.columns[0].header == "Collection (Name / ID)"
-    assert printed_table.columns[1].header == "Details (Files / Size)"
+    assert printed_table.columns[0].header == "Collection (name / ID)"
+    assert printed_table.columns[1].header == "Details (files / size)"
 
 
 def test_list_collections_fallback_values(mock_rich_console, mock_list_collections_cmd):
@@ -175,7 +192,7 @@ def test_list_collections_fallback_values(mock_rich_console, mock_list_collectio
 
     assert result.exit_code == 0
 
-    assert mock_rich_console.print.call_count == 2
+    assert mock_rich_console.print.call_count == 1
 
     import datetime
 

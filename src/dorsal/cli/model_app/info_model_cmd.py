@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import typer
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from dorsal.common.cli import (
     get_rich_console,
@@ -22,6 +22,9 @@ from dorsal.common.cli import (
     render_model_help_panel,
     get_error_console,
 )
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 
 def info_model(
@@ -35,14 +38,15 @@ def info_model(
     Display detailed information, metadata, and execution options for a specific model.
     """
     from dorsal.api.model import prepare_model_target, get_model_help
-    from rich.panel import Panel
+    from rich.style import Style
     from rich.text import Text
 
-    ui_context = ctx.obj
+    from dorsal.cli.views.layout import key_values, section
+
+    ui_context: UIContext = ctx.obj
     console = get_rich_console()
     error_console = get_error_console()
-    palette = ui_context.get("palette", {})
-    borders = ui_context.get("borders", "rounded")
+    palette = ui_context["palette"]
 
     resolution = prepare_model_target(target)
 
@@ -52,11 +56,10 @@ def info_model(
 
     help_info = get_model_help(target=target)
 
-    meta_lines = []
-
+    details = key_values(ui_context)
     model_id = help_info.get("model_id", target)
     version = help_info.get("model_version", "unknown")
-    meta_lines.append(f"[{palette.get('key', 'dim')}]ID:[/] {model_id} (v{version})")
+    details.add("ID", f"{model_id} (v{version})")
 
     description = None
     if resolution.metadata and resolution.metadata.description:
@@ -65,34 +68,28 @@ def info_model(
         description = help_info["class_description"]
 
     if description:
-        meta_lines.append(f"[{palette.get('key', 'dim')}]Description:[/] {description}")
+        details.add("Description", description)
 
+    link_style = Style.parse(palette.get("link", "blue underline"))
     if resolution.metadata:
         meta = resolution.metadata
         if meta.url:
-            meta_lines.append(
-                f"[{palette.get('key', 'dim')}]URL:[/] [{palette.get('link', 'blue underline')}]{meta.url}[/]"
-            )
-        if getattr(meta, "source_url", None):
-            meta_lines.append(
-                f"[{palette.get('key', 'dim')}]Source Code:[/] [{palette.get('link', 'blue underline')}]{meta.source_url}[/]"
-            )
+            details.add("URL", Text(meta.url, style=link_style + Style(link=meta.url)))
+        source_url = getattr(meta, "source_url", None)
+        if source_url:
+            details.add("Source code", Text(source_url, style=link_style + Style(link=source_url)))
 
-    meta_lines.append("")
-    quick_start_cmd = f"dorsal model run {target} ./path/to/file"
-    meta_lines.append(
-        f"[{palette.get('key', 'dim')}]Usage:[/] [{palette.get('primary_value', 'cyan')}]{quick_start_cmd}[/]"
+    details.add("Usage", f"dorsal model run {target} ./path/to/file", style=palette.get("primary_value", "cyan"))
+
+    console.print(
+        section(
+            f"Model info: {target}",
+            details,
+            ui_context,
+            border_style=palette.get("panel_border", "blue"),
+            padding=(0, 1),
+        )
     )
-
-    meta_panel = Panel(
-        "\n".join(meta_lines),
-        title=f"[{palette.get('panel_title', 'bold blue')}]Model Info: {target}[/]",
-        border_style=palette.get("panel_border", "blue"),
-        box=borders,
-        expand=False,
-    )
-
-    console.print(meta_panel)
 
     options_panel = render_model_help_panel(help_info, ui_context)
     if options_panel:

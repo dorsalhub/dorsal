@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, List
+import importlib
+from typing import TYPE_CHECKING, Any, List
 
 if TYPE_CHECKING:
     from dorsal.common.validators.json_schema import JsonSchemaValidator
@@ -29,17 +30,25 @@ if TYPE_CHECKING:
     regression: JsonSchemaValidator
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """
     Lazy-loads attributes from the 'open_schema' submodule.
     This ensures that simply importing 'dorsal.file.validators' is instant
     and does not trigger the heavy schema parsing machinery.
     """
-    from dorsal.file.validators import open_schema
+    if name.startswith("__"):
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+    open_schema = importlib.import_module(f"{__name__}.open_schema")
+
+    if name in globals():
+        return globals()[name]
 
     try:
         return getattr(open_schema, name)
     except AttributeError as err:
+        if name in open_schema.__all__:
+            raise
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'") from err
 
 
@@ -48,6 +57,6 @@ def __dir__() -> List[str]:
     Exposes the available validators to dir(), enabling autocomplete in
     interactive shells (IPython/Jupyter) and dynamic inspection.
     """
-    from dorsal.file.validators import open_schema
+    open_schema = importlib.import_module(f"{__name__}.open_schema")
 
     return sorted(list(globals().keys()) + list(open_schema.__all__))

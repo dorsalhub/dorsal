@@ -26,6 +26,7 @@ import logging
 import requests
 from requests.adapters import HTTPAdapter
 from tqdm import tqdm
+from urllib3.exceptions import InvalidHeader, MaxRetryError, ResponseError
 from urllib3.util.retry import Retry
 
 from dorsal.common import constants
@@ -119,6 +120,42 @@ SEARCH_PER_PAGE_MAX = 50
 
 
 class LoggingRetry(Retry):
+    """Retry policy for DorsalHub requests.
+
+    A 413, 429 or 503 whose Retry-After is longer than `max_retry_after` seconds is not retried, so the caller
+    gets the response (and its Retry-After) at once instead of the client sleeping until then.
+    A malformed Retry-After is ignored.
+    """
+
+    max_retry_after: float = constants.API_MAX_RETRY_AFTER
+
+    def get_retry_after(self, response):
+        try:
+            return super().get_retry_after(response)
+        except InvalidHeader:
+            return None
+
+    def increment(self, method=None, url=None, response=None, error=None, _pool=None, _stacktrace=None):
+        if (
+            response is not None
+            and response.status in self.RETRY_AFTER_STATUS_CODES
+            and self.respect_retry_after_header
+        ):
+            retry_after = self.get_retry_after(response)
+            if retry_after is not None and retry_after > self.max_retry_after:
+                logger.warning(
+                    "HTTP %d with Retry-After of %d seconds, longer than the %d seconds this client waits.",
+                    response.status,
+                    int(retry_after),
+                    int(self.max_retry_after),
+                )
+                raise MaxRetryError(
+                    _pool, url, ResponseError(f"{response.status} with Retry-After {int(retry_after)}s")
+                )
+        return super().increment(
+            method=method, url=url, response=response, error=error, _pool=_pool, _stacktrace=_stacktrace
+        )
+
     def sleep(self, response=None):
         if response and response.status == 429:
             retry_after = self.get_retry_after(response)
@@ -296,6 +333,7 @@ class DorsalClient:
                 504,
             ],  # 429 uses Retry-After header by default
             allowed_methods=["HEAD", "GET", "OPTIONS", "PUT", "DELETE"],
+            raise_on_status=False,
             backoff_factor=1,  # after retry no. 2, delay = {backoff factor} * (2 ** ({number of total retries} - 1)))
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -2944,9 +2982,9 @@ class DorsalClient:
             try:
                 print(f"Starting export for {collection_id}...")
                 client.export_collection(collection_id, output_file)
-                print(f"✅ Export successful. File saved to {output_file}")
+                print(f"Export successful. File saved to {output_file}")
             except Exception as e:
-                print(f"❌ Export failed: {e}")
+                print(f"Export failed: {e}")
             ```
 
         Args:

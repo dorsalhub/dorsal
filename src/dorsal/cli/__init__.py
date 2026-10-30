@@ -117,8 +117,10 @@ def main(
         help="Increase logging verbosity. -v for INFO, -vv for DEBUG.",
     ),
     theme: str = typer.Option(None, "--theme", help="Override the default color theme."),
-    icons: str = typer.Option(None, "--icons", help="Override the icon style (emoji, ascii, none)."),
-    borders: str = typer.Option(None, "--borders", help="Override panel borders (rounded, heavy, ascii, none)."),
+    icons: str = typer.Option(None, "--icons", help="Override the icon style (none, emoji, ascii)."),
+    borders: str = typer.Option(
+        None, "--borders", help="Border style (none, rounded, heavy, ascii, double, square, minimal, markdown)."
+    ),
 ):
     """
     Dorsal CLI: A tool for interacting with the Dorsal data platform.

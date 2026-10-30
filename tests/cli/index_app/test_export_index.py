@@ -64,6 +64,23 @@ def test_export_index_with_output_path_inferred_format(mock_export_index_cmd, tm
     )
 
 
+def test_export_index_long_path_fits_console_width(
+    mocker, mock_rich_console, mock_export_index_cmd, tmp_path, rendered
+):
+    mocker.patch("rich.progress.Progress")
+    output_dir = tmp_path / ("a-long-directory-name-" * 4)
+    output_dir.mkdir()
+    output_file = output_dir / "custom.json"
+
+    result = runner.invoke(app, ["index", "export", "--output", str(output_file)])
+
+    assert result.exit_code == 0
+    lines = rendered(mock_rich_console, width=80).splitlines()
+    assert max(len(line) for line in lines) <= 80
+    assert "Successfully exported 1,234 records to" in lines
+    assert f"'{output_file.resolve()}'" in "".join(lines)
+
+
 def test_export_index_with_format_override(mock_export_index_cmd, tmp_path):
     """Tests that the --format flag correctly overrides the file extension."""
     output_file = tmp_path / "my-index.data"

@@ -16,8 +16,8 @@ import pytest
 import json
 from typer.testing import CliRunner
 from unittest.mock import MagicMock, ANY
+from rich.console import Console
 from rich.table import Table
-from rich.panel import Panel
 
 
 from dorsal.cli import app
@@ -26,6 +26,19 @@ from dorsal.common.exceptions import AuthError, DorsalClientError, ForbiddenErro
 
 runner = CliRunner()
 QUERY = "extension:pdf"
+
+
+def _render(renderable, width: int = 120) -> str:
+    console = Console(legacy_windows=False, width=width)
+    with console.capture() as capture:
+        console.print(renderable)
+    return capture.get()
+
+
+def _printed_table(mock_console) -> Table:
+    tables = [call.args[0] for call in mock_console.print.call_args_list if isinstance(call.args[0], Table)]
+    assert len(tables) == 1
+    return tables[0]
 
 
 @pytest.fixture
@@ -77,8 +90,7 @@ def test_search_user_scope_default(command_path, mock_rich_console, mock_search_
     mock_search_cmd["global_search"].assert_not_called()
     mock_search_cmd["save_results"].assert_not_called()
 
-    printed_object = mock_rich_console.print.call_args_list[1].args[0]
-    assert isinstance(printed_object, Table)
+    assert isinstance(mock_rich_console.print.call_args_list[0].args[0], Table)
 
 
 def test_search_global_scope(mock_rich_console, mock_search_cmd):
@@ -123,9 +135,11 @@ def test_search_forbidden_error_premium_feature(mock_rich_console, mock_search_c
 
     assert result.exit_code == 0
 
-    printed_object = mock_error_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Upgrade Required" in str(printed_object.title)
+    output = _render(mock_error_console.print.call_args.args[0])
+    assert output.startswith("Upgrade required\n")
+    assert "premium feature" in output
+    assert "https://dorsalhub.com/pricing" in output
+    mock_rich_console.print.assert_not_called()
 
 
 def test_search_auto_save_with_json_output_path(mock_rich_console, mock_search_cmd):
@@ -137,21 +151,43 @@ def test_search_auto_save_with_json_output_path(mock_rich_console, mock_search_c
     mock_search_cmd["save_results"].assert_called_once()
 
 
-def test_search_none_style_borders(mock_rich_console, mock_search_cmd, mocker):
-    """Tests that the Table title is removed when border style is 'none'."""
-
-    class MatchAnyBorder:
-        def __eq__(self, other):
-            return True
-
-    mocker.patch("dorsal.cli.hub_app.remote_search.get_borders", return_value=MatchAnyBorder())
-
+def test_search_borderless_by_default(mock_rich_console, mock_search_cmd):
+    """By default the results are a plain titled table with no box characters or trailing whitespace."""
     result = runner.invoke(app, ["hub", "search", QUERY])
 
     assert result.exit_code == 0
 
-    printed_table = mock_rich_console.print.call_args_list[1].args[0]
-    assert printed_table.title is None
+    output = _render(_printed_table(mock_rich_console))
+    lines = output.splitlines()
+    assert lines[0] == "User search results"
+    assert lines[1].startswith("Name ")
+    assert "Media type" in lines[1]
+    assert "test.pdf" in output
+    assert not any(ch in output for ch in "│─╭╰")
+    assert all(line == line.rstrip() for line in lines)
+    assert "https://docs.dorsalhub.com/reference/search-syntax/" in output
+
+
+def test_search_bordered(mock_rich_console, mock_search_cmd):
+    """With --borders rounded the results table is boxed."""
+    result = runner.invoke(app, ["--borders", "rounded", "hub", "search", QUERY])
+
+    assert result.exit_code == 0
+
+    output = _render(_printed_table(mock_rich_console))
+    assert "User search results" in output.splitlines()[0]
+    assert "╭" in output
+    assert "test.pdf" in output
+
+
+def test_search_unknown_output_extension_warns_on_stderr(mock_rich_console, mock_error_console, mock_search_cmd):
+    """An --output path with an unknown extension is warned about on stderr."""
+    result = runner.invoke(app, ["hub", "search", QUERY, "--output", "results.txt"])
+
+    assert result.exit_code == 0
+    warnings = [str(call.args[0]) for call in mock_error_console.print.call_args_list]
+    assert any("Warning:" in w and "unknown extension" in w for w in warnings)
+    assert not any("unknown extension" in str(call.args[0]) for call in mock_rich_console.print.call_args_list)
 
 
 def test_search_narrow_console_and_missing_annotations(mock_rich_console, mock_search_cmd, caplog):
@@ -175,9 +211,9 @@ def test_search_narrow_console_and_missing_annotations(mock_rich_console, mock_s
 
     assert "Search result with hash bad_hash_narrow is missing base annotations, skipping." in caplog.text
 
-    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+    printed_table = _printed_table(mock_rich_console)
     assert len(printed_table.columns) == 2
-    assert printed_table.columns[0].header == "File Details (Name / Hash)"
+    assert printed_table.columns[0].header == "File details (name / hash)"
 
 
 def test_search_wide_console_missing_annotations(mock_rich_console, mock_search_cmd, caplog):
@@ -199,7 +235,7 @@ def test_search_wide_console_missing_annotations(mock_rich_console, mock_search_
     assert result.exit_code == 0
     assert "Search result with hash bad_hash_wide is missing base annotations, skipping." in caplog.text
 
-    printed_table = mock_rich_console.print.call_args_list[1].args[0]
+    printed_table = _printed_table(mock_rich_console)
     assert len(printed_table.columns) == 4
     assert printed_table.columns[0].header == "Name"
     assert len(printed_table.rows) == 0

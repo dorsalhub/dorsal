@@ -17,11 +17,8 @@ import sys
 from typing import Annotated, Optional, List, TYPE_CHECKING
 
 import typer
-from rich.panel import Panel
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
-
-from dorsal.cli.themes.borders import get_borders
 
 if TYPE_CHECKING:
     from dorsal.cli.themes import UIContext
@@ -37,7 +34,7 @@ def _get_hashes(hash_list: Optional[List[str]], from_stdin: bool, json_output: b
             stdin_hashes = {line.strip() for line in sys.stdin if line.strip()}
             all_hashes.update(stdin_hashes)
         elif not json_output:
-            console.print("[warning]--from-stdin flag was used, but no input was received.[/warning]")
+            console.print("[yellow]Warning:[/] --from-stdin flag was used, but no input was received.")
 
     if not all_hashes:
         from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR
@@ -81,7 +78,9 @@ def add_files(
     - Piping from another command: cat my_hashes.txt | dorsal collection add-files <id> --from-stdin
     """
     from dorsal.api.collection import add_files_to_collection, get_collection
+    from dorsal.cli.views.layout import key_values, section
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -90,17 +89,15 @@ def add_files(
     from dorsal.common.exceptions import AuthError, DorsalClientError, DorsalOfflineError
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
+    icons = ui_context.get("icons", {})
 
-    final_hash_list = _get_hashes(hash_list, from_stdin, json_output, console)
+    final_hash_list = _get_hashes(hash_list, from_stdin, json_output, error_console)
 
     try:
-        if not json_output:
-            with console.status(f"Adding {len(final_hash_list)} file(s) to collection '[bold]{collection_id}[/]'..."):
-                response = add_files_to_collection(collection_id=collection_id, hashes=final_hash_list)
-        else:
+        with error_console.status(f"Adding {len(final_hash_list)} file(s) to collection '[bold]{collection_id}[/]'"):
             response = add_files_to_collection(collection_id=collection_id, hashes=final_hash_list)
 
     except ValueError as e:
@@ -119,51 +116,39 @@ def add_files(
         print_raw_output(response.model_dump_json(indent=2), console)
         exit_cli()
 
-    output_text = Text()
-    output_text.append("✅ Operation complete.\n", style=palette.get("success", "green"))
-    output_text.append(f"Added: {response.added_count}\n")
-    output_text.append(f"Duplicates ignored: {response.duplicate_count}\n")
+    counts = key_values(ui_context)
+    counts.add("Added", str(response.added_count))
+    counts.add("Duplicates ignored", str(response.duplicate_count))
+    body: RenderableType = counts
 
     if response.invalid_count > 0:
-        output_text.append(
-            f"Not Added: {response.invalid_count}\n",
-            style=palette.get("error", "bold red"),
-        )
+        counts.add("Not added", str(response.invalid_count), style=palette.get("error", "bold red"))
         info_style = palette.get("info", "dim")
-        output_text.append("\n")
+        generic_note = "Note: Files can only be added to a collection if they match a public file record, or you have indexed them."
 
         try:
-            with console.status("Fetching collection details for context..."):
+            with error_console.status("Fetching collection details for context"):
                 collection_data = get_collection(collection_id=collection_id, hydrate=False, mode="pydantic")
                 is_public_collection = not collection_data.collection.is_private
 
             if is_public_collection:
-                output_text.append(
-                    "Note: This is a public collection, which means only hashes matching public file records can be added. "
-                    "Try pushing the file(s) with the --public flag first.",
-                    style=info_style,
+                note = (
+                    "Note: This is a public collection, which means only hashes matching public file records can be "
+                    "added. Try pushing the file(s) with the --public flag first."
                 )
             else:
-                output_text.append(
-                    "Note: Files can only be added to a collection if they match a public file record, or you have indexed them.",
-                    style=info_style,
-                )
+                note = generic_note
         except DorsalClientError:
-            output_text.append(
-                "Note: Files can only be added to a collection if they match a public file record, or you have indexed them.",
-                style=info_style,
-            )
+            note = generic_note
 
-    title_text = f"[{palette.get('panel_title_success', 'bold green')}]Update Complete[/]"
+        body = Group(counts, Text(""), Text(note, style=info_style))
 
-    if borders == get_borders("none"):
-        console.print(Group("", output_text))
-    else:
-        success_panel = Panel(
-            output_text,
-            title=title_text,
+    console.print(
+        section(
+            f"{icons.get('success', '')}Update complete",
+            body,
+            ui_context,
+            title_style=palette.get("panel_title_success", "bold green"),
             border_style=palette.get("panel_border_success", "green"),
-            expand=False,
-            box=borders,
         )
-        console.print(success_panel)
+    )

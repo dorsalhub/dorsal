@@ -18,8 +18,8 @@ import time
 
 import pytest
 from rich.console import Console
-from rich.table import Table
 from dorsal.cli.views.file import create_file_info_panel, _build_annotation_table
+from dorsal.cli.views.layout import KeyValues
 
 DUMMY_FILE_RECORD = {
     "hash": "a" * 64,
@@ -69,7 +69,7 @@ def test_create_file_info_panel_public(capsys):
         record_dict=DUMMY_FILE_RECORD, title="Test File", private=False, palette=DUMMY_PALETTE
     )
 
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -78,7 +78,7 @@ def test_create_file_info_panel_public(capsys):
     assert "test_file.txt" in output
     assert "apollo" in output
     assert "page_count" in output
-    assert "manual (user_1)" in output
+    assert "user_1 (manual)" in output
 
 
 def test_create_file_info_panel_private():
@@ -86,12 +86,13 @@ def test_create_file_info_panel_private():
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Private File", private=True, palette=DUMMY_PALETTE
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
     output = capture.get()
-    assert "Private Record" in output
+    assert "Access" in output
+    assert "Private" in output
 
     assert "Private File" in output
 
@@ -101,7 +102,7 @@ def test_create_file_info_panel_from_cache():
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Cached File", private=False, palette=DUMMY_PALETTE, source="cache"
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -118,134 +119,151 @@ def test_create_file_info_panel_minimal_data():
         private=None,
         palette=DUMMY_PALETTE,
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
     output = capture.get()
     assert "SHA-256" in output
 
 
-def _render_table_to_string(table: Table) -> str:
-    """Helper to render a Rich Table to a string for assertion."""
-    console = Console()
+def _render_kv(kv: KeyValues, width: int = 120) -> str:
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
-        console.print(table)
+        console.print(kv)
     return capture.get()
 
 
-def test_build_annotation_table_stub_full():
-    """Test stub rendering with all expected fields."""
-    table = Table()
-    table.add_column("Key")
-    table.add_column("Value")
-
-    stub_data = {
-        "source": {"type": "manual", "id": "user_42"},
-        "date_modified": "2024-05-20T14:30:00Z",
-        "id": "anno_123",
-        "url": "api/v1/somehash/annotations",
-    }
-
-    _build_annotation_table("test_key", table, stub_data, is_stub=True)
-    output = _render_table_to_string(table)
-
-    assert "manual (user_42)" in output
-    assert "2024-05-20 14:30" in output
-    assert "anno_123" in output
-    assert "dorsal hub annotation get somehash anno_123" in output
-
-
-def test_build_annotation_table_stub_minimal():
-    """Test stub rendering with missing optional fields."""
-    table = Table()
-    table.add_column("Key")
-    table.add_column("Value")
-
-    stub_data = {}
-
-    _build_annotation_table("test_key", table, stub_data, is_stub=True)
-    output = _render_table_to_string(table)
-
-    assert "none (none)" in output
-    assert "Modified" not in output
-    assert "To View" not in output
-
-
 def test_build_annotation_table_dict_logic():
-    """Test nested dicts, lists, skipped keys, and empty values."""
-    table = Table()
-    table.add_column("Key")
-    table.add_column("Value")
-
+    """Nested dicts, lists, skipped keys and empty values."""
+    kv = KeyValues()
     data = {
         "file_hash": "this_should_be_skipped",
         "empty_string": "",
         "none_value": None,
         "empty_list": [],
+        "zero": 0,
         "simple_key": "simple_value",
-        "nested_dict": {"inner_key": "inner_value"},
+        "nested_dict": {"inner_key": "inner_value", "deeper": {"leaf": [1, 2]}},
+        "small_dict": {"x": 1, "y": 2},
         "simple_list": [1, 2, "three"],
         "complex_list": [{"list_dict_key": "val1"}, {"list_dict_key2": "val2"}],
     }
 
-    _build_annotation_table("test_key", table, data, is_stub=False)
-    output = _render_table_to_string(table)
+    _build_annotation_table(kv, data)
+    lines = _render_kv(kv).splitlines()
 
-    assert "this_should_be_skipped" not in output
-    assert "empty_string" not in output
-    assert "none_value" not in output
-    assert "empty_list" not in output
+    assert lines == [
+        "zero          0",
+        "simple_key    simple_value",
+        "nested_dict",
+        "  inner_key  inner_value",
+        "  deeper",
+        "    leaf  1, 2",
+        "small_dict    x=1 y=2",
+        "simple_list   1, 2, three",
+        "complex_list  2 items",
+        "  - list_dict_key  val1",
+        "  - list_dict_key2  val2",
+    ]
 
-    assert "simple_key:" in output
-    assert "simple_value" in output
 
-    assert "nested_dict:" in output
-    assert "inner_key:" in output
-    assert "inner_value" in output
+def test_build_annotation_table_truncates_lists():
+    """Long lists show the first items and how many were left out."""
+    kv = KeyValues()
+    data = {"scalars": list(range(10)), "blocks": [{"id": i, "text": f"block {i}"} for i in range(5)]}
 
-    assert "simple_list:" in output
-    assert "1, 2, three" in output
+    _build_annotation_table(kv, data, max_items=2)
+    output = _render_kv(kv)
 
-    assert "complex_list:" in output
-    assert "list_dict_key:" in output
-    assert "val1" in output
-    assert "list_dict_key2:" in output
-    assert "val2" in output
+    assert "0, 1, … (+8 more)" in output
+    assert "blocks   5 items" in output
+    assert "  - id    0" in output
+    assert "    text  block 1" in output
+    assert "block 2" not in output
+    assert "  … 3 more" in output
+
+
+def test_build_annotation_table_single_item_list_is_a_section():
+    """A list holding one dict is shown as a nested section, without a `-` marker."""
+    kv = KeyValues()
+    _build_annotation_table(kv, {"Audio": [{"Format": "AC-3", "Channels": "2"}]})
+
+    assert _render_kv(kv).splitlines() == ["Audio", "  Format    AC-3", "  Channels  2"]
 
 
 def test_build_annotation_table_display_fields():
-    """Test that display_fields correctly filters out unwanted keys recursively."""
-    table = Table()
-    table.add_column("Key")
-    table.add_column("Value")
+    """`display_fields` filters keys at every level."""
+    kv = KeyValues()
+    data = {"keep_me": "yes", "drop_me": "no", "nested": {"keep_inner": "yes", "drop_inner": "no", "more": 1}}
 
-    data = {"keep_me": "yes", "drop_me": "no", "nested": {"keep_inner": "yes", "drop_inner": "no"}}
+    _build_annotation_table(kv, data, display_fields={"keep_me", "nested", "keep_inner"})
+    output = _render_kv(kv)
 
-    _build_annotation_table("test_key", table, data, is_stub=False, display_fields={"keep_me", "nested", "keep_inner"})
-    output = _render_table_to_string(table)
-
-    assert "keep_me:" in output
-    assert "drop_me:" not in output
-    assert "nested:" in output
-    assert "keep_inner:" in output
-    assert "drop_inner:" not in output
+    assert "keep_me" in output
+    assert "drop_me" not in output
+    assert "nested" in output
+    assert "keep_inner" in output
+    assert "drop_inner" not in output
 
 
-def test_build_annotation_table_list_root():
-    """Test when the root data passed in is a list instead of a dict."""
-    table = Table()
-    table.add_column("Key")
-    table.add_column("Value")
+def test_build_annotation_table_collapses_whitespace():
+    kv = KeyValues()
+    _build_annotation_table(kv, {"text": "a\n  b"})
+    assert "a b" in _render_kv(kv)
 
-    data = [{"root_list_item1": "valA"}, {"root_list_item2": "valB"}]
+    kv = KeyValues()
+    _build_annotation_table(kv, {"text": "a\nb"}, preserve_whitespace=True)
+    assert _render_kv(kv).splitlines() == ["text  a", "      b"]
 
-    _build_annotation_table("test_key", table, data, is_stub=False)
-    output = _render_table_to_string(table)
 
-    assert "root_list_item1:" in output
-    assert "valA" in output
-    assert "root_list_item2:" in output
-    assert "valB" in output
+def test_create_file_info_panel_borderless_layout():
+    """Borderless output has the title, headed sections with left-aligned keys, and no trailing whitespace."""
+    record = {
+        "local_filesystem": {"full_path": "/tmp/test_file.txt"},
+        "annotations": {
+            "file/base": {"record": {"name": "test_file.txt", "size": 1024, "media_type": "text/plain"}},
+            "file/pdf": {"source": {"type": "Model", "id": "dorsal/pdf"}, "record": {"page_count": 5}},
+            "open/classification": {"source": {"type": "Model", "id": "acme/cls"}, "record": {"labels": ["a"]}},
+        },
+    }
+
+    panel = create_file_info_panel(record_dict=record, title="test_file.txt", private=None, palette=DUMMY_PALETTE)
+    console = Console(legacy_windows=False, width=100)
+    with console.capture() as capture:
+        console.print(panel)
+    lines = capture.get().splitlines()
+
+    assert lines == [
+        "test_file.txt",
+        "",
+        "File",
+        "  Path        /tmp/test_file.txt",
+        "  Name        test_file.txt",
+        "  Size        1 KiB",
+        "  Media type  text/plain",
+        "",
+        "PDF",
+        "  page_count  5",
+        "",
+        "open/classification  acme/cls",
+        "  labels  a",
+    ]
+
+
+def test_create_file_info_panel_bordered():
+    """With a box style the record is drawn in a panel titled with `title`."""
+    from rich import box
+
+    panel = create_file_info_panel(
+        record_dict=DUMMY_FILE_RECORD, title="Boxed", private=False, palette=DUMMY_PALETTE, box_style=box.ROUNDED
+    )
+    console = Console(legacy_windows=False, width=120)
+    with console.capture() as capture:
+        console.print(panel)
+    output = capture.get()
+
+    assert output.startswith("╭─ Boxed ")
+    assert "│    Media type  text/plain" in output
 
 
 def test_create_file_info_panel_annotations_edge_cases():
@@ -275,7 +293,7 @@ def test_create_file_info_panel_annotations_edge_cases():
         record_dict=record_with_edge_cases, title="Edge Case File", private=False, palette=DUMMY_PALETTE
     )
 
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -284,8 +302,8 @@ def test_create_file_info_panel_annotations_edge_cases():
     assert "hidden_key" in output
     assert "hidden_value" in output
 
-    assert "SuperScan" in output
-    assert "Part 1 of 3" in output
+    assert "2 records" in output
+    assert "s1 (scanner), part 1 of 3" in output
 
     assert "first_item" in output
     assert "second_item" in output
@@ -300,7 +318,7 @@ def test_display_local_search_results_wide_console():
     from rich.console import Console
     from types import SimpleNamespace
 
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
 
     ts = 1700000000.0
     records = [
@@ -329,17 +347,23 @@ def test_display_local_search_results_wide_console():
         ),
     )
 
-    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
 
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
 
     output = capture.get()
 
-    assert "Media Type" in output
+    lines = output.splitlines()
+    assert lines[0] == "Local search results"
+    assert lines[1].startswith("Name ")
+    assert all(line == line.rstrip() for line in lines)
+    assert not any(ch in output for ch in "│─╭╰┃━")
+
+    assert "Media type" in output
     assert "Record ID" in output
-    assert "Modified Date" in output
-    assert "SHA256 Hash" in output
+    assert "Modified date" in output
+    assert "SHA256 hash" in output
 
     assert "file_with_hash.bin" in output
     assert "rec_1234567890" in output
@@ -358,7 +382,7 @@ def test_display_local_search_results_wide_console_no_hashes():
     from rich.console import Console
     from types import SimpleNamespace
 
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
 
     ts = 1700000000.0
     records = [
@@ -379,7 +403,7 @@ def test_display_local_search_results_wide_console_no_hashes():
         ),
     )
 
-    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
 
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
@@ -387,9 +411,41 @@ def test_display_local_search_results_wide_console_no_hashes():
     output = capture.get()
 
     assert "Record ID" in output
-    assert "Modified Date" in output
-    assert "SHA256 Hash" not in output
+    assert "Modified date" in output
+    assert "SHA256 hash" not in output
     assert "rec_0001" in output
+
+
+def test_display_local_search_results_bordered():
+    """With a border style set, the results are drawn as a boxed table under the title."""
+    from dorsal.cli.views.search import display_local_search_results
+    from dorsal.cli.themes.borders import get_borders
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(
+        name="boxed.txt",
+        size=1,
+        media_type="text/plain",
+        local_record_id="rec_0002",
+        modified_time=1700000000.0,
+        hash_sha256=None,
+    )
+    response = SimpleNamespace(
+        records=[record],
+        pagination=SimpleNamespace(
+            start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
+        ),
+    )
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("rounded")}
+    console = Console(legacy_windows=False, width=200)
+
+    with console.capture() as capture:
+        display_local_search_results(console, response, ui_context)
+
+    lines = capture.get().splitlines()
+    assert lines[0].strip() == "Local search results"
+    assert lines[1].startswith("╭")
+    assert any("boxed.txt" in line and "│" in line for line in lines)
 
 
 @pytest.fixture
@@ -429,8 +485,8 @@ def test_display_local_search_results_shows_local_time(utc_plus_9, width, expect
             start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
         ),
     )
-    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
-    console = Console(width=width)
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
+    console = Console(legacy_windows=False, width=width)
 
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
@@ -454,7 +510,7 @@ def test_create_file_info_panel_shows_local_time(utc_plus_9, date_modified):
     record_dict = {**DUMMY_FILE_RECORD, "local_filesystem": {"full_path": "/f.txt", "date_modified": value}}
 
     panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
     with console.capture() as capture:
         console.print(panel)
 
@@ -482,8 +538,8 @@ def _render_search_results(modified_time: float, width: int = 200) -> str:
             start_index=0, record_count=1, current_page=1, page_count=1, end_index=1, has_next=False
         ),
     )
-    ui_context = {"palette": DUMMY_PALETTE, "icons": {"search": "🔍"}, "borders": get_borders("none")}
-    console = Console(width=width)
+    ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
     return capture.get()
@@ -516,7 +572,7 @@ def test_create_file_info_panel_falls_back_to_utc(utc_plus_9):
     }
 
     panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
     with console.capture() as capture:
         console.print(panel)
 

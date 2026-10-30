@@ -92,7 +92,8 @@ def build_search_index(
 
     console = get_rich_console()
 
-    palette = ctx.obj["palette"]
+    ui_context = ctx.obj
+    palette = ui_context["palette"]
     progress_console = get_error_console() if json_output else console
 
     try:
@@ -148,10 +149,22 @@ def build_search_index(
             print_json_output(result, console)
             exit_cli()
 
-        console.print(f"[{palette.get('success', 'green')}]✅ Search Index updated successfully.[/]")
-        console.print(f"   - Total files processed: {len(collection)}")
-        console.print(f"   - Loaded from index: {files_from_index}")
-        console.print(f"   - Newly added to index: {files_from_disk}")
+        from dorsal.cli.views.layout import key_values, section
+
+        counts = key_values(ui_context)
+        counts.add("Total files processed", str(len(collection)))
+        counts.add("Loaded from index", str(files_from_index))
+        counts.add("Newly added to index", str(files_from_disk))
+        console.print(
+            section(
+                f"{ui_context.get('icons', {}).get('success', '')}Search index updated successfully",
+                counts,
+                ui_context,
+                title_style=palette.get("success", "green"),
+                border_style=palette.get("panel_border_success", "green"),
+                padding=(0, 1),
+            )
+        )
 
     except typer.Exit:
         raise

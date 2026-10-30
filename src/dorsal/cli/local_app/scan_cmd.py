@@ -24,9 +24,6 @@ import time
 from enum import Enum
 from typing import Annotated, Any, Optional, TYPE_CHECKING
 
-from rich.console import Group
-from rich.panel import Panel
-from rich.table import Table
 from rich.cells import cell_len
 from rich.markup import escape
 from rich.text import Text
@@ -222,11 +219,10 @@ def scan_target(
     if skip_cache and overwrite_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --skip-cache and --overwrite-cache cannot be used together.")
 
+    warning_prefix = f"[{palette.get('warning', 'yellow')}]Warning:[/]"
+
     if template is not None:
-        error_console.print(
-            "⚠️ [yellow]Warning:[/] --template has no effect: HTML reports are no longer generated.",
-            style=palette.get("warning", "yellow"),
-        )
+        error_console.print(f"{warning_prefix} --template has no effect: HTML reports are no longer generated.")
 
     output_path: Optional[pathlib.Path] = None
     output_is_dir = False
@@ -242,8 +238,7 @@ def scan_target(
                 csv = True
             else:
                 error_console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{escape(str(output_path))}' was specified, but no report type was requested.",
-                    style=palette.get("warning", "yellow"),
+                    f"{warning_prefix} --output path '{escape(str(output_path))}' was specified, but no report type was requested."
                 )
 
     use_cache_value = determine_use_cache_value(use_cache=use_cache, skip_cache=skip_cache)
@@ -251,8 +246,7 @@ def scan_target(
     if path.is_file():
         if csv or recursive or lazy:
             error_console.print(
-                "⚠️ [yellow]Warning:[/] Directory-specific flags (--csv, --recursive, --lazy) are ignored when scanning a single file.",
-                style=palette.get("warning", "yellow"),
+                f"{warning_prefix} Directory-specific flags (--csv, --recursive, --lazy) are ignored when scanning a single file."
             )
 
         _process_file_scan(
@@ -318,17 +312,15 @@ def _process_file_scan(
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
 
-    if not json_output:
-        console.print(f"📄 Scanning metadata for [{palette.get('primary_value', 'cyan')}]{escape(path.name)}[/]")
-
     try:
-        local_file = LocalFile(
-            file_path=str(path),
-            use_cache=use_cache_value,
-            overwrite_cache=overwrite_cache,
-            follow_symlinks=resolve_links,
-            calculate_hashes=calculate_hashes,
-        )
+        with get_error_console().status(f"Scanning [{palette.get('primary_value', 'cyan')}]{escape(path.name)}[/]"):
+            local_file = LocalFile(
+                file_path=str(path),
+                use_cache=use_cache_value,
+                overwrite_cache=overwrite_cache,
+                follow_symlinks=resolve_links,
+                calculate_hashes=calculate_hashes,
+            )
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
         if "local_attributes" in record_dict:
@@ -353,7 +345,7 @@ def _process_file_scan(
         else:
             panel = create_file_info_panel(
                 record_dict=record_dict,
-                title=f"File Record: {escape(local_file.name or path.name)}",
+                title=escape(local_file.name or path.name),
                 palette=palette,
                 icons=icons,
                 box_style=borders,
@@ -396,6 +388,7 @@ def _process_dir_scan(
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
+    ui_context: Any = {"palette": palette, "icons": icons, "borders": borders}
     start_time = time.perf_counter()
     try:
         collection = LocalFileCollection(
@@ -431,27 +424,32 @@ def _process_dir_scan(
             f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
         )
 
+        from dorsal.cli.views.layout import Trimmed
+
         console.print(
-            f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+            Trimmed(
+                f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+            )
         )
 
     if collection.warnings:
-        get_error_console().print(
-            Panel(
-                "\n".join(f"- {escape(str(w))}" for w in collection.warnings),
-                title=f"[{palette.get('panel_title_warning', 'yellow')}]Warnings[/]",
-                border_style=palette.get("panel_border_warning", "yellow"),
-                title_align="left",
-                expand=False,
-            )
-        )
+        from dorsal.cli.views.layout import message
+
+        if len(collection.warnings) == 1:
+            warning_body = Text(str(collection.warnings[0]))
+        else:
+            warning_body = Text("\n").join(Text(f"- {w}") for w in collection.warnings)
+        title = "Warning" if len(collection.warnings) == 1 else "Warnings"
+        get_error_console().print(message(title, warning_body, ui_context, level="warning", padding=(0, 1)))
 
     if not collection:
         exit_cli()
 
     if not json_output:
-        _print_directory_summary_panel(collection_info, palette, borders, console)
-        _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console)
+        console.print()
+        _print_directory_summary_panel(collection_info, ui_context, console)
+        console.print()
+        _print_file_details_table(collection, ui_context, limit, sort_by, sort_order, console)
 
     if save:
         final_path = _get_final_path(path, output_path, output_is_dir, ".json", is_dir=True)
@@ -463,12 +461,12 @@ def _process_dir_scan(
             final_path.parent.mkdir(parents=True, exist_ok=True)
             collection.to_csv(str(final_path))
             status_console.print(
-                f"✅ CSV report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]"
+                f"CSV report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]"
             )
         except Exception as e:
             logger.error(f"Failed to save CSV report: {e}")
             get_error_console().print(
-                f"⚠️ Could not save CSV report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
+                f"[{palette.get('warning', 'yellow')}]Warning:[/] Could not save CSV report. Error: {escape(str(e))}"
             )
 
 
@@ -521,15 +519,16 @@ def _save_report_to_disk(path: pathlib.Path, content: str, doc_type: str, consol
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-        console.print(f"✅ {doc_type} report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
+        console.print(f"{doc_type} report saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]")
     except Exception as e:
         logger.error(f"Failed to save {doc_type} report: {e}")
         get_error_console().print(
-            f"⚠️ Could not save {doc_type} report. Error: {escape(str(e))}", style=palette.get("warning", "yellow")
+            f"[{palette.get('warning', 'yellow')}]Warning:[/] Could not save {doc_type} report. Error: {escape(str(e))}"
         )
 
 
-def _print_directory_summary_panel(collection_info: dict, palette, borders, console):
+def _print_directory_summary_panel(collection_info: dict, ui_context, console):
+    from dorsal.cli.views.layout import key_values, section
     from dorsal.file.utils.size import human_filesize
 
     overall, by_type = collection_info.get("overall", {}), collection_info.get("by_type", [])
@@ -538,42 +537,21 @@ def _print_directory_summary_panel(collection_info: dict, palette, borders, cons
     newest_str = f"{newest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({newest['path']})" if newest.get("path") else "N/A"
     oldest_str = f"{oldest['date'].strftime('%Y-%m-%d %H:%M:%S')} ({oldest['path']})" if oldest.get("path") else "N/A"
 
-    rows = [
-        ("          Total Files: ", str(overall.get("total_files", 0))),
-        ("           Total Size: ", human_filesize(overall.get("total_size", 0))),
-        (" Newest Modified File: ", newest_str),
-        (" Oldest Modified File: ", oldest_str),
-        ("          Media Types: ", str(len(by_type))),
-    ]
-    summary_text = Text(no_wrap=True)
-    for i, (label, val) in enumerate(rows):
-        summary_text.append(label, style=palette.get("key"))
-        summary_text.append(val, style=palette.get("value"))
-        if i < len(rows) - 1:
-            summary_text.append("\n")
+    summary = key_values(ui_context)
+    summary.add("Total files", str(overall.get("total_files", 0)))
+    summary.add("Total size", human_filesize(overall.get("total_size", 0)))
+    summary.add("Newest modified file", newest_str)
+    summary.add("Oldest modified file", oldest_str)
+    summary.add("Media types", str(len(by_type)))
 
-    is_none_style = borders == get_borders("none")
-    title_text = f"[{palette.get('panel_title') or 'bold'}]Directory Scan Summary[/]"
-
-    if is_none_style:
-        console.print(Group(Text.from_markup(f"{title_text}\n"), summary_text))
-    else:
-        console.print(
-            Panel(
-                summary_text,
-                title=f"[{palette.get('panel_title', 'bold default')}]Directory Scan Summary[/]",
-                border_style=palette.get("panel_border", "blue"),
-                box=borders,
-                title_align="left",
-                expand=False,
-                padding=(1, 2),
-            )
-        )
+    console.print(section("Directory scan summary", summary, ui_context))
 
 
-def _print_file_details_table(collection, palette, icons, borders, limit, sort_by, sort_order, console):
+def _print_file_details_table(collection, ui_context, limit, sort_by, sort_order, console):
+    from dorsal.cli.views.layout import is_borderless, table
     from dorsal.file.utils.size import human_filesize
 
+    palette = ui_context["palette"]
     sort_key_map = {
         "name": lambda f: f.name.lower(),
         "size": lambda f: f.size,
@@ -582,22 +560,9 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
     }
     sorted_files = sorted(list(collection), key=sort_key_map[sort_by], reverse=(sort_order == "desc"))
 
-    show_header = True
-    padding = (0, 1)
-    if borders == get_borders("none"):
-        show_header = False
-        padding = (0, 0)
+    details_table = table(ui_context, title="File scan details", expand=False)
 
-    table = Table(
-        title="File Scan Details",
-        show_header=show_header,
-        header_style=palette.get("table_header", "bold"),
-        box=borders,
-        padding=padding,
-        expand=False,
-    )
-
-    headers = ("Size", "Media Type", "Record ID", "Modified Date")
+    headers = ("Size", "Media type", "Record ID", "Modified date")
     rows = []
     for file in sorted_files[:limit]:
         path_obj, display_name = pathlib.Path(file.file_path), escape(file.name)
@@ -617,14 +582,13 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
             )
         )
 
-    pad = padding[1] * 2
     metadata_width = sum(
-        max([cell_len(h)] + [cell_len(str(r[i + 1])) for r in rows]) + pad for i, h in enumerate(headers)
+        max([cell_len(h)] + [cell_len(str(r[i + 1])) for r in rows]) + 2 for i, h in enumerate(headers)
     )
-    border_width = len(headers) + 2 if borders is not None else 0
-    filename_width = max(30, console.width - metadata_width - border_width - pad)
+    frame = 0 if is_borderless(ui_context) else len(headers) + 4
+    filename_width = max(30, console.width - metadata_width - frame)
 
-    table.add_column(
+    details_table.add_column(
         "Filename",
         style=palette.get("primary_value", "cyan"),
         min_width=30,
@@ -632,15 +596,15 @@ def _print_file_details_table(collection, palette, icons, borders, limit, sort_b
         no_wrap=True,
         overflow="ellipsis",
     )
-    table.add_column(headers[0], justify="right", style=palette.get("value"))
-    table.add_column(headers[1], style=palette.get("value"))
-    table.add_column(headers[2], style=palette.get("hash_value", "magenta"))
-    table.add_column(headers[3], style=palette.get("value"))
+    details_table.add_column(headers[0], justify="right", style=palette.get("value"))
+    details_table.add_column(headers[1], style=palette.get("value"))
+    details_table.add_column(headers[2], style=palette.get("hash_value", "magenta"))
+    details_table.add_column(headers[3], style=palette.get("value"))
 
     for row in rows:
-        table.add_row(*row)
+        details_table.add_row(*row)
 
-    console.print(table)
+    console.print(details_table)
     if len(collection) > limit:
         console.print(
             f"[{palette.get('info', 'dim')}]Showing first {limit} of {len(collection)} files. Use --limit to show more or save the full report.[/]"

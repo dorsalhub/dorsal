@@ -20,9 +20,7 @@ import re
 from typing import Annotated, Optional
 
 import typer
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+from rich.markup import escape
 
 from dorsal.common import constants
 
@@ -40,6 +38,7 @@ def _save_local_search_results(
     Saves a page of local search results to a timestamped JSON file.
     Matches the behavior of remote_search._save_search_results.
     """
+    from dorsal.cli.views.layout import Trimmed
     from dorsal.common.cli import get_rich_console, get_error_console
 
     console = get_rich_console()
@@ -82,10 +81,14 @@ def _save_local_search_results(
 
         if not json_to_stdout:
             console.print(
-                f"[{palette['success']}]✅ Full JSON report saved to:[/] [{palette['primary_value']}]{filepath}[/]"
+                Trimmed(
+                    f"[{palette['success']}]Full JSON report saved to:[/] [{palette['primary_value']}]{escape(str(filepath))}[/]"
+                )
             )
     except IOError as e:
-        error_console.print(f"[{palette['error']}]Warning:[/] Could not save JSON report. Error: {e}")
+        error_console.print(
+            f"[{palette.get('warning', 'yellow')}]Warning:[/] Could not save JSON report. Error: {escape(str(e))}"
+        )
 
 
 def search_index_cmd(
@@ -180,6 +183,7 @@ def search_index_cmd(
     """
     from dorsal.common.cli import (
         get_rich_console,
+        get_error_console,
         exit_cli,
         EXIT_CODE_ERROR,
         print_json_output,
@@ -189,6 +193,7 @@ def search_index_cmd(
     from dorsal.cli.themes import UIContext
 
     console = get_rich_console()
+    error_console = get_error_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
 
@@ -200,29 +205,26 @@ def search_index_cmd(
             save = True
         else:
             if not output_path.is_dir():
-                console.print(
-                    f"⚠️ [yellow]Warning:[/] --output path '{output_path}' was specified with an unknown extension."
-                    f" Please use -s (for .json) or specify a .json file.",
-                    style=palette.get("warning", "yellow"),
+                error_console.print(
+                    f"[{palette.get('warning', 'yellow')}]Warning:[/] --output path '{escape(str(output_path))}' was"
+                    " specified with an unknown extension. Please use -s (for .json) or specify a .json file."
                 )
 
     try:
-        if not json_output:
-            console.print(
-                f"Checking [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{display_query}'[/]"
-            )
-
         sort_desc = sort_order.lower() == "desc"
 
-        response = search_local_paginated(
-            query=query_list,
-            or_logic=or_logic,
-            page=page,
-            per_page=per_page,
-            sort_by=sort_by,
-            sort_desc=sort_desc,
-            deep=deep,
-        )
+        with error_console.status(
+            f"Checking [{palette['primary_value']}]index[/] for records matching: [{palette['success']}]'{escape(display_query)}'[/]"
+        ):
+            response = search_local_paginated(
+                query=query_list,
+                or_logic=or_logic,
+                page=page,
+                per_page=per_page,
+                sort_by=sort_by,
+                sort_desc=sort_desc,
+                deep=deep,
+            )
 
         response_dict = response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -231,7 +233,7 @@ def search_index_cmd(
             exit_cli()
 
         if not response.records:
-            console.print(f"\n[{palette['warning']}]No records found matching your criteria.[/]")
+            console.print(f"[{palette['warning']}]No records found matching your criteria.[/]")
             exit_cli()
 
         display_local_search_results(console=console, response=response, ui_context=ui_context)

@@ -12,19 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import io
 import pytest
 import typer
-from unittest.mock import MagicMock
 
 from rich.box import ROUNDED
-from rich.panel import Panel
+from rich.console import Console
 
 from dorsal.cli.model_app.checks import check_and_confirm_model_install
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
 from dorsal.api.model import ModelTargetResolution, ModelMetadata
 
 DUMMY_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": ROUNDED}
+BORDERLESS_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
+
+
+def _printed(mock_console) -> str:
+    """Renders everything printed to a mocked console as plain text."""
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
+    for call in mock_console.print.call_args_list:
+        console.print(*call.args)
+    return console.export_text()
 
 
 @pytest.fixture
@@ -67,8 +75,10 @@ def test_check_install_unverified_warning(mock_rich_console, mock_checks_deps):
 
     check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
 
-    panel = mock_rich_console.print.call_args.args[0]
-    assert "Unverified" in panel.renderable
+    output = _printed(mock_rich_console)
+    assert "╭─ Model info" in output
+    assert "│ Model        user/experimental-model" in output
+    assert "│ Status       Unverified" in output
 
 
 def test_check_install_local_path_warning(mock_rich_console, mock_checks_deps):
@@ -78,11 +88,16 @@ def test_check_install_local_path_warning(mock_rich_console, mock_checks_deps):
         strategy="local_path",
     )
 
-    check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
+    check_and_confirm_model_install(res, BORDERLESS_UI_CONTEXT)
 
-    panel = mock_rich_console.print.call_args.args[0]
-    assert "unverified source" in panel.renderable
-    assert "Local Path" in panel.renderable
+    assert _printed(mock_rich_console) == (
+        "Model info\n"
+        "  Model   ./my-local-model\n"
+        "  Source  Local path\n"
+        "\n"
+        "  You are about to install executable code from an unverified source.\n"
+        "  Please review the source above before proceeding.\n"
+    )
 
 
 def test_check_install_skip_via_flags(mock_rich_console, mock_checks_deps):
@@ -111,14 +126,11 @@ def test_check_install_missing_git_dependency(mock_rich_console, mock_checks_dep
     )
 
     with pytest.raises(typer.Exit):
-        check_and_confirm_model_install(res, DUMMY_UI_CONTEXT)
+        check_and_confirm_model_install(res, BORDERLESS_UI_CONTEXT)
 
-    panel_calls = [c for c in mock_rich_console.print.call_args_list if isinstance(c.args[0], Panel)]
-    assert len(panel_calls) > 0, "Missing System Dependency Panel was never printed"
-
-    panel = panel_calls[0].args[0]
-    assert "Missing System Dependency" in str(panel.title)
-    assert "requires Git to install" in str(panel.renderable)
+    output = _printed(mock_rich_console)
+    assert output.startswith("Missing system dependency\n  This model requires Git to install.\n")
+    assert "  https://git-scm.com/downloads\n" in output
 
 
 def test_check_install_user_cancels(mock_rich_console, mock_checks_deps):

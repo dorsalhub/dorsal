@@ -15,7 +15,6 @@
 import pytest
 import json
 from typer.testing import CliRunner
-from rich.panel import Panel
 
 from dorsal.cli import app
 
@@ -38,16 +37,17 @@ def mock_optimize_index_cmd(mocker):
     return {"optimize": mock_optimize}
 
 
-def test_optimize_index_panel_output(mock_rich_console, mock_optimize_index_cmd):
-    """Tests the default command, expecting a Rich Panel summary."""
+def test_optimize_index_panel_output(mock_rich_console, mock_optimize_index_cmd, rendered):
+    """Tests the default command, expecting a headed summary."""
     result = runner.invoke(app, ["index", "optimize"])
 
     assert result.exit_code == 0
     mock_optimize_index_cmd["optimize"].assert_called_once()
 
-    printed_object = mock_rich_console.print.call_args.args[0]
-    assert isinstance(printed_object, Panel)
-    assert "Index Optimization Complete" in str(printed_object.title)
+    lines = rendered(mock_rich_console).splitlines()
+    assert lines[0] == "Index optimization complete"
+    assert lines[1].startswith("  Records removed")
+    assert all(line == line.rstrip() for line in lines)
 
 
 def test_optimize_index_json_output(mock_rich_console, mock_optimize_index_cmd):

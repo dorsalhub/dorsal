@@ -16,15 +16,11 @@ import logging
 from typing import Annotated, TYPE_CHECKING
 
 import typer
-from rich.panel import Panel
-from rich.table import Table
 from rich.console import Group
 from rich.text import Text
 
-from dorsal.cli.themes import UIContext
-from dorsal.cli.themes.borders import get_borders
-
 if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
     from dorsal.file.validators.collection import (
         SingleCollectionResponse,
         HydratedSingleCollectionResponse,
@@ -60,7 +56,11 @@ def show_collection(
     Note: the order of records will always be by date added.
     """
     from dorsal.api.collection import get_collection
+    from rich.markup import escape
+
+    from dorsal.cli.views.layout import is_borderless, table as themed_table
     from dorsal.common.cli import (
+        get_error_console,
         get_rich_console,
         exit_cli,
         EXIT_CODE_ERROR,
@@ -71,34 +71,33 @@ def show_collection(
     from dorsal.cli.views.collection import collection_metadata
 
     console = get_rich_console()
-    ui_context: UIContext = ctx.obj
+    ui_context: "UIContext" = ctx.obj
     palette = ui_context["palette"]
-    borders = ui_context["borders"]
-
-    if not json_output:
-        console.print(f"🔎 Fetching collection '[bold]{collection_id}[/]'...")
 
     response: "HydratedSingleCollectionResponse | SingleCollectionResponse"
 
     try:
+        fetch_status = get_error_console().status(f"Fetching collection '[bold]{escape(collection_id)}[/]'")
         if json_output:
-            response = get_collection(
-                collection_id=collection_id,
-                hydrate=True,
-                page=page,
-                per_page=0 if meta_only else per_page,
-                mode="pydantic",
-            )
+            with fetch_status:
+                response = get_collection(
+                    collection_id=collection_id,
+                    hydrate=True,
+                    page=page,
+                    per_page=0 if meta_only else per_page,
+                    mode="pydantic",
+                )
             print_raw_output(response.model_dump_json(indent=2, by_alias=True, exclude_none=True), console)
             return exit_cli()
         else:
-            response = get_collection(
-                collection_id=collection_id,
-                hydrate=False,
-                page=page,
-                per_page=0 if meta_only else per_page,
-                mode="pydantic",
-            )
+            with fetch_status:
+                response = get_collection(
+                    collection_id=collection_id,
+                    hydrate=False,
+                    page=page,
+                    per_page=0 if meta_only else per_page,
+                    mode="pydantic",
+                )
 
         panel_or_group = collection_metadata(response.collection, ui_context)
         console.print(panel_or_group)
@@ -107,25 +106,16 @@ def show_collection(
             exit_cli()
 
         if response.files:
-            title_text: str | None = "Files in Collection"
-            if borders == get_borders("none"):
-                title_text = None
-                console.print(f"\n[{palette.get('panel_title', 'bold')}]Files in Collection[/]")
-
-            file_table = Table(
-                title=title_text,
-                header_style=palette.get("table_header", "bold blue"),
-                expand=True if console.width < 115 else False,
-                box=borders,
+            file_table = themed_table(
+                ui_context,
+                title="Files in collection",
+                expand=console.width < 115 and not is_borderless(ui_context),
                 row_styles=["", palette.get("table_row_alt", "dim")],
             )
 
-            if borders == get_borders("none"):
-                file_table.padding = (0, 1)
-
             if console.width < 115:
-                file_table.add_column("File Details (Name / Hash)", ratio=1, overflow="fold")
-                file_table.add_column("Size / Type", justify="right", width=20)
+                file_table.add_column("File details (name / hash)", ratio=1, overflow="fold")
+                file_table.add_column("Size / type", justify="right", width=20)
 
                 for file in response.files:
                     name_text = Text(file.name or "Unknown", style=palette.get("primary_value", "cyan"))
@@ -140,9 +130,9 @@ def show_collection(
             else:
                 file_table.add_column("Name", no_wrap=True, max_width=70, overflow="ellipsis", vertical="middle")
                 file_table.add_column("Size", justify="right", vertical="middle")
-                file_table.add_column("Media Type", vertical="middle")
+                file_table.add_column("Media type", vertical="middle")
                 file_table.add_column(
-                    "SHA256 Hash", style=palette.get("hash_value", "magenta"), no_wrap=True, vertical="middle"
+                    "SHA256 hash", style=palette.get("hash_value", "magenta"), no_wrap=True, vertical="middle"
                 )
 
                 for file in response.files:
@@ -150,6 +140,7 @@ def show_collection(
                         file.name or "Unknown", human_filesize(file.size or 0), file.media_type or "Unknown", file.hash
                     )
 
+            console.print()
             console.print(file_table)
 
             pagination = response.pagination
