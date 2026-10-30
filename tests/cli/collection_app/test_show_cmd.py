@@ -86,7 +86,7 @@ def test_show_collection_success_default(mock_rich_console, mock_show_collection
     assert isinstance(table, Table)
     from rich.console import Console
 
-    console = Console(width=120)
+    console = Console(legacy_windows=False, width=120)
     with console.capture() as capture:
         console.print(table)
     assert capture.get().splitlines()[0] == "Files in collection"
@@ -244,7 +244,7 @@ def test_show_collection_borderless_output(mock_rich_console, mocker):
     result = runner.invoke(app, ["collection", "show", COLLECTION_ID])
     assert result.exit_code == 0
 
-    console = Console(width=120)
+    console = Console(legacy_windows=False, width=120)
     with console.capture() as capture:
         for call in mock_rich_console.print.call_args_list:
             console.print(*call.args)

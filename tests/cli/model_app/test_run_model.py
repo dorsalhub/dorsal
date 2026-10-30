@@ -719,7 +719,7 @@ def test_run_model_batch_table_borderless(mock_rich_console, mock_run_deps, tmp_
     result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_dir)])
     assert result.exit_code == 0
 
-    console = Console(record=True, width=120, file=io.StringIO())
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
     console.print(mock_rich_console.print.call_args.args[0])
     lines = console.export_text().splitlines()
 

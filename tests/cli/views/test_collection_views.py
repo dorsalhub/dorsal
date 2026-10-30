@@ -25,7 +25,7 @@ PALETTE = {"key": "bold cyan", "primary_value": "green", "panel_title": "bold wh
 
 
 def _render(renderable, width: int = 120) -> list[str]:
-    console = Console(width=width)
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
         console.print(renderable)
     return capture.get().splitlines()

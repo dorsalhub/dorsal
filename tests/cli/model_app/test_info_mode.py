@@ -43,7 +43,7 @@ runner = CliRunner()
 
 def _render(renderable) -> str:
     """Renders a Rich renderable as plain text."""
-    console = Console(record=True, width=120, file=io.StringIO())
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
     console.print(renderable)
     return console.export_text()
 

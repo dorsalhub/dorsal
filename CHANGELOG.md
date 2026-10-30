@@ -50,7 +50,8 @@
   opt-in with `--borders rounded` (or `DORSAL_BORDERS`, or `borders` under `[ui]` in `dorsal.toml`), and emoji
   with `--icons emoji`. `--help` pages keep their borders. A global config created by an earlier version sets
   `borders = "rounded"` and `icons = "emoji"`; run `dorsal theme set --borders none --icons none --global` to
-  switch.
+  switch. On Windows, when the console doesn't have virtual terminal processing enabled or stdout is redirected,
+  Rich draws `rounded` and `heavy` borders with square corners, as in 0.12.0.
 - `dorsal scan` on a single file shows a spinner on stderr while scanning, instead of printing "Scanning metadata
   for ..." to stdout. Core annotations (`file/pdf`, `file/mediainfo`, ...) are headed by name alone (`PDF`,
   `MediaInfo`), like the base file info. Other annotations are headed by schema id, with the model that produced

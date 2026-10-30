@@ -205,8 +205,10 @@ def duplicates_target(
         mode = "sha256"
 
     if not json_output:
+        from dorsal.cli.views.layout import Trimmed
+
         error_console.print(
-            f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]", soft_wrap=True
+            Trimmed(f"Searching for duplicate files in [{palette['primary_value']}]{escape(str(path))}[/]")
         )
         if mode == "quick":
             error_console.print(

@@ -69,7 +69,7 @@ def test_create_file_info_panel_public(capsys):
         record_dict=DUMMY_FILE_RECORD, title="Test File", private=False, palette=DUMMY_PALETTE
     )
 
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -86,7 +86,7 @@ def test_create_file_info_panel_private():
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Private File", private=True, palette=DUMMY_PALETTE
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -102,7 +102,7 @@ def test_create_file_info_panel_from_cache():
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Cached File", private=False, palette=DUMMY_PALETTE, source="cache"
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -119,7 +119,7 @@ def test_create_file_info_panel_minimal_data():
         private=None,
         palette=DUMMY_PALETTE,
     )
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
     output = capture.get()
@@ -127,7 +127,7 @@ def test_create_file_info_panel_minimal_data():
 
 
 def _render_kv(kv: KeyValues, width: int = 120) -> str:
-    console = Console(width=width)
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
         console.print(kv)
     return capture.get()
@@ -228,7 +228,7 @@ def test_create_file_info_panel_borderless_layout():
     }
 
     panel = create_file_info_panel(record_dict=record, title="test_file.txt", private=None, palette=DUMMY_PALETTE)
-    console = Console(width=100)
+    console = Console(legacy_windows=False, width=100)
     with console.capture() as capture:
         console.print(panel)
     lines = capture.get().splitlines()
@@ -257,7 +257,7 @@ def test_create_file_info_panel_bordered():
     panel = create_file_info_panel(
         record_dict=DUMMY_FILE_RECORD, title="Boxed", private=False, palette=DUMMY_PALETTE, box_style=box.ROUNDED
     )
-    console = Console(width=120)
+    console = Console(legacy_windows=False, width=120)
     with console.capture() as capture:
         console.print(panel)
     output = capture.get()
@@ -293,7 +293,7 @@ def test_create_file_info_panel_annotations_edge_cases():
         record_dict=record_with_edge_cases, title="Edge Case File", private=False, palette=DUMMY_PALETTE
     )
 
-    console = Console()
+    console = Console(legacy_windows=False)
     with console.capture() as capture:
         console.print(panel)
 
@@ -318,7 +318,7 @@ def test_display_local_search_results_wide_console():
     from rich.console import Console
     from types import SimpleNamespace
 
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
 
     ts = 1700000000.0
     records = [
@@ -382,7 +382,7 @@ def test_display_local_search_results_wide_console_no_hashes():
     from rich.console import Console
     from types import SimpleNamespace
 
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
 
     ts = 1700000000.0
     records = [
@@ -437,7 +437,7 @@ def test_display_local_search_results_bordered():
         ),
     )
     ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("rounded")}
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
 
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
@@ -486,7 +486,7 @@ def test_display_local_search_results_shows_local_time(utc_plus_9, width, expect
         ),
     )
     ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
-    console = Console(width=width)
+    console = Console(legacy_windows=False, width=width)
 
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
@@ -510,7 +510,7 @@ def test_create_file_info_panel_shows_local_time(utc_plus_9, date_modified):
     record_dict = {**DUMMY_FILE_RECORD, "local_filesystem": {"full_path": "/f.txt", "date_modified": value}}
 
     panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
     with console.capture() as capture:
         console.print(panel)
 
@@ -539,7 +539,7 @@ def _render_search_results(modified_time: float, width: int = 200) -> str:
         ),
     )
     ui_context = {"palette": DUMMY_PALETTE, "icons": {}, "borders": get_borders("none")}
-    console = Console(width=width)
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
         display_local_search_results(console, response, ui_context)
     return capture.get()
@@ -572,7 +572,7 @@ def test_create_file_info_panel_falls_back_to_utc(utc_plus_9):
     }
 
     panel = create_file_info_panel(record_dict=record_dict, title="File", private=False, palette=DUMMY_PALETTE)
-    console = Console(width=200)
+    console = Console(legacy_windows=False, width=200)
     with console.capture() as capture:
         console.print(panel)
 

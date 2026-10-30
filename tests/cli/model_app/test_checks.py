@@ -29,7 +29,7 @@ BORDERLESS_UI_CONTEXT = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": Non
 
 def _printed(mock_console) -> str:
     """Renders everything printed to a mocked console as plain text."""
-    console = Console(record=True, width=120, file=io.StringIO())
+    console = Console(legacy_windows=False, record=True, width=120, file=io.StringIO())
     for call in mock_console.print.call_args_list:
         console.print(*call.args)
     return console.export_text()

@@ -29,7 +29,7 @@ QUERY = "extension:pdf"
 
 
 def _render(renderable, width: int = 120) -> str:
-    console = Console(width=width)
+    console = Console(legacy_windows=False, width=width)
     with console.capture() as capture:
         console.print(renderable)
     return capture.get()

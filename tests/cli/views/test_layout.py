@@ -24,14 +24,14 @@ from dorsal.cli.themes import get_ui_theme
 from dorsal.cli.themes.borders import get_borders
 from dorsal.cli.themes.icons import get_icons
 from dorsal.cli.themes.palettes import DEFAULT_PALETTE
-from dorsal.cli.views.layout import KeyValues, is_borderless, key_values, message, section, table
+from dorsal.cli.views.layout import KeyValues, Trimmed, is_borderless, key_values, message, section, table
 
 BORDERLESS: Any = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": None}
 ROUNDED: Any = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": box.ROUNDED}
 
 
-def _render(renderable, width: int = 80) -> list[str]:
-    console = Console(width=width)
+def _render(renderable, width: int = 80, legacy_windows: bool = False) -> list[str]:
+    console = Console(legacy_windows=legacy_windows, width=width)
     with console.capture() as capture:
         console.print(renderable)
     return capture.get().splitlines()
@@ -179,6 +179,37 @@ def test_table_bordered_uses_theme_box():
     assert t.box is box.ROUNDED
 
 
+BORDER_CORNERS = [
+    ("rounded", "╭", "┌"),
+    ("heavy", "┏", "┌"),
+    ("square", "┌", "┌"),
+    ("double", "╔", "╔"),
+    ("ascii", "+", "+"),
+]
+
+
+@pytest.mark.parametrize(("name", "corner", "legacy_corner"), BORDER_CORNERS)
+@pytest.mark.parametrize("legacy_windows", [False, True])
+def test_section_corners_follow_the_style_and_console(name, corner, legacy_windows, legacy_corner):
+    ui: Any = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": get_borders(name)}
+
+    first_line = _render(section("Summary", Text("body"), ui), legacy_windows=legacy_windows)[0]
+
+    assert first_line[0] == (legacy_corner if legacy_windows else corner)
+    assert " Summary " in first_line
+
+
+@pytest.mark.parametrize(("name", "corner", "legacy_corner"), BORDER_CORNERS)
+@pytest.mark.parametrize("legacy_windows", [False, True])
+def test_table_corners_follow_the_style_and_console(name, corner, legacy_windows, legacy_corner):
+    ui: Any = {"palette": DEFAULT_PALETTE, "icons": {}, "borders": get_borders(name)}
+    t = table(ui)
+    t.add_column("Name")
+    t.add_row("a")
+
+    assert _render(t, legacy_windows=legacy_windows)[0][0] == (legacy_corner if legacy_windows else corner)
+
+
 def test_table_borderless_title_set_later_is_a_heading():
     t = table(BORDERLESS)
     t.add_column("Name")
@@ -186,3 +217,14 @@ def test_table_borderless_title_set_later_is_a_heading():
     t.title = "A rather long title for a narrow table"
 
     assert _render(t) == ["A rather long title for a narrow table", "Name", "a"]
+
+
+def test_trimmed_str_wraps_to_width_without_trailing_whitespace():
+    path = "/" + "long-directory-name/" * 6 + "file.json"
+
+    lines = _render(Trimmed(f"Report saved to: [cyan]{path}[/]"), width=40)
+
+    assert lines[0] == "Report saved to:"
+    assert max(len(line) for line in lines) <= 40
+    assert all(line == line.rstrip() for line in lines)
+    assert "".join(lines[1:]) == path

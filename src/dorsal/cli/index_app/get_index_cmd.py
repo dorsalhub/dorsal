@@ -209,6 +209,8 @@ def _save_json_report(
 
     from rich.markup import escape
 
+    from dorsal.cli.views.layout import Trimmed
+
     console = get_rich_console()
     error_console = get_error_console()
 
@@ -221,8 +223,7 @@ def _save_json_report(
 
         status_console = error_console if json_to_stdout else console
         status_console.print(
-            f"JSON record saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]",
-            soft_wrap=True,
+            Trimmed(f"JSON record saved to: [{palette.get('primary_value', 'cyan')}]{escape(str(final_path))}[/]")
         )
     except IOError as err:
         logger.error(f"Failed to save get report: {err}")

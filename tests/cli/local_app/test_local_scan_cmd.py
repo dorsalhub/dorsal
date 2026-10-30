@@ -47,7 +47,7 @@ def mock_error_console(mocker):
 
 def _printed_text(console) -> str:
     width = console.width if isinstance(console.width, int) else 400
-    out = Console(file=io.StringIO(), width=width, color_system=None)
+    out = Console(legacy_windows=False, file=io.StringIO(), width=width, color_system=None)
     for c in console.print.call_args_list:
         out.print(*c.args, **{k: v for k, v in c.kwargs.items() if k in ("style", "soft_wrap")})
     return out.file.getvalue()
@@ -189,10 +189,11 @@ def test_scan_dir_default(mock_rich_console, mock_dir_deps, tmp_path):
 
     lines = _printed_text(mock_rich_console).splitlines()
     assert lines[0].startswith("Found and processed 2 file(s) in")
-    assert lines[1] == ""
-    assert lines[2] == "Directory scan summary"
-    assert lines[3] == "  Total files           2"
-    summary_end = lines.index("", 3)
+    status_end = lines.index("")
+    assert str(target) in "".join(lines[:status_end])
+    assert lines[status_end + 1] == "Directory scan summary"
+    assert lines[status_end + 2] == "  Total files           2"
+    summary_end = lines.index("", status_end + 1)
     assert lines[summary_end + 1] == "File scan details"
     assert lines[summary_end + 2].split() == ["Filename", "Size", "Media", "type", "Record", "ID", "Modified", "date"]
     assert all(line == line.rstrip() for line in lines)
@@ -210,6 +211,20 @@ def test_scan_dir_bordered(mock_rich_console, mock_dir_deps, tmp_path):
     assert "╭─ Directory scan summary" in text
     assert "│ Filename" in text
     assert max(len(line) for line in text.splitlines()) <= 120
+
+
+@pytest.mark.parametrize("borders", ["none", "rounded"])
+def test_scan_dir_long_path_fits_console_width(mock_rich_console, mock_dir_deps, tmp_path, borders):
+    target = tmp_path / ("a-long-directory-name-" * 4)
+    target.mkdir()
+
+    result = runner.invoke(app, ["--borders", borders, "local", "scan", str(target)])
+
+    assert result.exit_code == 0
+    lines = _printed_text(mock_rich_console).splitlines()
+    assert len(str(target)) > 120
+    assert max(len(line) for line in lines) <= 120
+    assert str(target) in "".join(lines)
 
 
 def test_scan_dir_csv_output(mock_rich_console, mock_dir_deps, tmp_path):
@@ -647,7 +662,7 @@ def test_get_final_path_output_file(tmp_path, output, suffix, expected):
 
 
 def _render(renderable_fn, width=80) -> str:
-    console = Console(file=io.StringIO(), width=width, color_system=None)
+    console = Console(legacy_windows=False, file=io.StringIO(), width=width, color_system=None)
     renderable_fn(console)
     return console.file.getvalue()
 

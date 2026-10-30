@@ -76,7 +76,7 @@ def test_print_json_output_is_valid_json_on_narrow_terminal():
         "when": datetime.datetime(2025, 1, 2, 3, 4, 5),
     }
     buffer = io.StringIO()
-    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+    console = Console(legacy_windows=False, file=buffer, width=20, force_terminal=True, color_system="truecolor")
 
     cli.print_json_output(data, console)
 
@@ -254,7 +254,7 @@ def test_handle_error_borderless(mock_exit, mock_rich_console, mock_ui_context, 
     cli.handle_error(mock_ui_context, "Something [broke].", json_output=False)
 
     printed_obj = mock_error_console.print.call_args[0][0]
-    console = Console(width=80)
+    console = Console(legacy_windows=False, width=80)
     with console.capture() as capture:
         console.print(printed_obj)
     assert capture.get() == "Error: Something [broke].\n"
@@ -265,7 +265,7 @@ def test_handle_error_borderless(mock_exit, mock_rich_console, mock_ui_context, 
 def test_handle_auth_error_borderless(mock_ui_context):
     """Without borders, the auth error is a heading with the instructions indented under it."""
     mock_ui_context["borders"] = None
-    console = Console(width=80)
+    console = Console(legacy_windows=False, width=80)
 
     with console.capture() as capture:
         cli.handle_auth_error(AuthError("Fake auth error"), console, mock_ui_context)
@@ -610,7 +610,7 @@ def test_print_raw_output_is_byte_exact(end):
 
     text = "col_a\tcol_b\t[bold]x[/]\t:smile:\n" + "word " * 100
     buffer = io.StringIO()
-    console = Console(file=buffer, width=20, force_terminal=True, color_system="truecolor")
+    console = Console(legacy_windows=False, file=buffer, width=20, force_terminal=True, color_system="truecolor")
 
     cli.print_raw_output(text, console, end=end)
 
@@ -621,3 +621,15 @@ def test_print_raw_output_defaults_to_shared_console(mock_rich_console):
     cli.print_raw_output("a\tb")
 
     mock_rich_console.file.write.assert_called_once_with("a\tb\n")
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_shared_consoles_use_richs_legacy_windows_detection(monkeypatch, legacy):
+    import rich.console
+
+    monkeypatch.setattr(rich.console, "detect_legacy_windows", lambda: legacy)
+    monkeypatch.setattr(cli, "_console_instance", None)
+    monkeypatch.setattr(cli, "_error_console_instance", None)
+
+    assert cli.get_rich_console().legacy_windows is legacy
+    assert cli.get_error_console().legacy_windows is legacy

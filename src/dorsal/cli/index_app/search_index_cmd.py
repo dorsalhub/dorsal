@@ -38,6 +38,7 @@ def _save_local_search_results(
     Saves a page of local search results to a timestamped JSON file.
     Matches the behavior of remote_search._save_search_results.
     """
+    from dorsal.cli.views.layout import Trimmed
     from dorsal.common.cli import get_rich_console, get_error_console
 
     console = get_rich_console()
@@ -80,8 +81,9 @@ def _save_local_search_results(
 
         if not json_to_stdout:
             console.print(
-                f"[{palette['success']}]Full JSON report saved to:[/] [{palette['primary_value']}]{escape(str(filepath))}[/]",
-                soft_wrap=True,
+                Trimmed(
+                    f"[{palette['success']}]Full JSON report saved to:[/] [{palette['primary_value']}]{escape(str(filepath))}[/]"
+                )
             )
     except IOError as e:
         error_console.print(

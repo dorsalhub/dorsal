@@ -86,6 +86,20 @@ def test_duplicates_dir_success_panel_output(mock_rich_console, mock_error_conso
     mock_duplicates_cmd["save_report"].assert_not_called()
 
 
+def test_duplicates_long_path_fits_console_width(
+    mock_rich_console, mock_error_console, mock_duplicates_cmd, tmp_path, rendered
+):
+    target = tmp_path / ("a-long-directory-name-" * 4)
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "duplicates", str(target)])
+
+    assert result.exit_code == 0
+    lines = rendered(mock_error_console, width=80).splitlines()
+    assert max(len(line) for line in lines) <= 80
+    assert str(target) in "".join(lines)
+
+
 def test_duplicates_dir_no_duplicates(mock_rich_console, mock_duplicates_cmd):
     """Tests the output when no duplicates are found."""
     mock_duplicates_cmd["find_duplicates"].return_value = {}

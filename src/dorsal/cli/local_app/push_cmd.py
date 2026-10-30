@@ -367,7 +367,7 @@ def _process_dir_push(
     from rich.console import Group
 
     from dorsal.common.exceptions import ExceedsApiLimitError
-    from dorsal.cli.views.layout import key_values, message, section, table
+    from dorsal.cli.views.layout import Trimmed, key_values, message, section, table
     from dorsal.file.collection.local import LocalFileCollection
     from dorsal.file.dorsal_file import LocalFile
 
@@ -385,8 +385,9 @@ def _process_dir_push(
     if not json_output:
         action_verb = "publish" if create_collection else "push"
         error_console.print(
-            f"Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]",
-            soft_wrap=True,
+            Trimmed(
+                f"Preparing to {action_verb} metadata from [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]"
+            )
         )
 
     try:

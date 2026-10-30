@@ -134,7 +134,32 @@ def test_info_file_symlink(mock_rich_console, mock_file_deps, tmp_path, rendered
     runner.invoke(app, ["local", "info", str(symlink_path)])
 
     text = rendered(mock_rich_console, width=400)
-    assert f"  Symlink target  → {target}" in text.splitlines()
+    assert f"  Symlink target  → {symlink_path.readlink()}" in text.splitlines()
+    assert os.path.samefile(symlink_path.readlink(), target)
+
+
+@pytest.mark.parametrize(
+    "link_target",
+    [
+        pathlib.PureWindowsPath("\\\\?\\C:\\Users\\runner\\AppData\\Local\\Temp\\test.txt"),
+        pathlib.PureWindowsPath("C:\\Users\\runner\\test.txt"),
+        pathlib.PurePosixPath("/private/var/folders/n6/T/test.txt"),
+        pathlib.PurePosixPath("../relative/test.txt"),
+    ],
+    ids=["windows-extended", "windows", "macos", "relative"],
+)
+def test_info_file_symlink_target_shown_as_read(
+    mocker, mock_rich_console, mock_file_deps, tmp_path, rendered, link_target
+):
+    target = tmp_path / "test.txt"
+    target.touch()
+    symlink_path = tmp_path / "link.txt"
+    symlink_path.symlink_to(target)
+    mocker.patch("pathlib.Path.readlink", return_value=link_target)
+
+    runner.invoke(app, ["local", "info", str(symlink_path)])
+
+    assert f"  Symlink target  → {link_target}" in rendered(mock_rich_console, width=400).splitlines()
 
 
 @patch("pathlib.Path.readlink")

@@ -35,7 +35,7 @@ def render_to_string(renderable) -> str:
     Renders a Rich object to a plain string to allow
     for text-based assertions on content.
     """
-    console = Console(width=100, file=io.StringIO(), color_system=None)
+    console = Console(legacy_windows=False, width=100, file=io.StringIO(), color_system=None)
     console.print(renderable)
     return console.file.getvalue()
 

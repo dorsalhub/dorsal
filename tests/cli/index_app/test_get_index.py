@@ -217,6 +217,21 @@ def test_get_index_output_dir(mock_get_index_cmd):
     assert len(saved_files) == 1
 
 
+def test_get_index_saved_long_path_fits_console_width(mock_rich_console, mock_get_index_cmd, rendered):
+    custom_dir = mock_get_index_cmd["tmp_path"] / ("a-long-directory-name-" * 4)
+    custom_dir.mkdir()
+    path_id = mock_get_index_cmd["path_id"]
+
+    result = runner.invoke(app, ["index", "get", path_id, "-s", "--output", str(custom_dir)])
+
+    assert result.exit_code == 0
+    lines = rendered(mock_rich_console, width=80).splitlines()
+    saved = next(custom_dir.glob("*.json"))
+    assert max(len(line) for line in lines) <= 80
+    assert "JSON record saved to:" in lines
+    assert f"JSON record saved to:{saved}" in "".join(lines)
+
+
 def test_get_index_output_extension_warning(mock_rich_console, mock_error_console, mock_get_index_cmd, rendered):
     """Tests the warning generated when a non-JSON extension is provided without the save flag."""
     weird_out = mock_get_index_cmd["tmp_path"] / "report.txt"
@@ -253,7 +268,7 @@ def test_get_index_save_generic_error(mock_rich_console, mock_get_index_cmd, moc
     assert "Could not save JSON report" in all_output
 
 
-def test_get_index_json_with_save(mock_rich_console, mock_error_console, mock_get_index_cmd):
+def test_get_index_json_with_save(mock_rich_console, mock_error_console, mock_get_index_cmd, rendered):
     """--json no longer exits before --save; the saved file matches stdout and the confirmation goes to stderr."""
     custom_out = mock_get_index_cmd["tmp_path"] / "record.json"
     path_id = mock_get_index_cmd["path_id"]
@@ -264,4 +279,4 @@ def test_get_index_json_with_save(mock_rich_console, mock_error_console, mock_ge
     stdout_data = json.loads(mock_rich_console.file.write.call_args.args[0])
     assert json.loads(custom_out.read_text(encoding="utf-8")) == stdout_data
     mock_rich_console.print.assert_not_called()
-    assert "JSON record saved to" in "".join(str(c.args[0]) for c in mock_error_console.print.call_args_list)
+    assert rendered(mock_error_console, width=400).startswith(f"JSON record saved to: {custom_out}")

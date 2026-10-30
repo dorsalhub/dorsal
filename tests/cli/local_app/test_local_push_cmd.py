@@ -244,6 +244,21 @@ def test_push_dir_default(mock_rich_console, mock_dir_deps, tmp_path, rendered):
     assert "  File records accepted  2" in lines
 
 
+def test_push_dir_long_path_fits_console_width(
+    mock_rich_console, mock_error_console, mock_dir_deps, tmp_path, rendered
+):
+    target = tmp_path / ("a-long-directory-name-" * 4)
+    target.mkdir()
+
+    result = runner.invoke(app, ["local", "push", str(target)])
+
+    assert result.exit_code == 0
+    lines = rendered(mock_error_console, width=80).splitlines()
+    assert lines[0].startswith("Preparing to push metadata from")
+    assert max(len(line) for line in lines) <= 80
+    assert str(target) in "".join(lines)
+
+
 def test_push_dir_empty_graceful_exit(mock_dir_deps, mock_exit_cli, tmp_path):
     target = tmp_path / "test_dir"
     target.mkdir()
@@ -754,7 +769,7 @@ def test_display_summary_panel_with_oversized_records(mocker):
 
     from rich.console import Console
 
-    test_console = Console(force_terminal=False)
+    test_console = Console(legacy_windows=False, force_terminal=False)
     with test_console.capture() as capture:
         test_console.print(panel_arg)
 

@@ -424,9 +424,12 @@ def _process_dir_scan(
             f" ([{palette.get('success', 'green')}]{files_from_cache} from cache[/])" if files_from_cache > 0 else ""
         )
 
+        from dorsal.cli.views.layout import Trimmed
+
         console.print(
-            f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds.",
-            soft_wrap=True,
+            Trimmed(
+                f"Found and processed [{palette.get('success', 'green')}]{len(collection)}[/] file(s) in [{palette.get('primary_value', 'cyan')}]{escape(str(path))}[/]{cache_info_str} in {duration:.3f} seconds."
+            )
         )
 
     if collection.warnings:

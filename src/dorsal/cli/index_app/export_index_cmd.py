@@ -132,10 +132,13 @@ def export_index_cmd(
                 progress_callback=_progress_cb,
             )
 
+        from dorsal.cli.views.layout import Trimmed
+
         success_icon = ctx.obj.get("icons", {}).get("success", "")
         console.print(
-            f"[{palette.get('success', 'green')}]{success_icon}Successfully exported {count:,} records to '{escape(str(output_path))}'[/]",
-            soft_wrap=True,
+            Trimmed(
+                f"[{palette.get('success', 'green')}]{success_icon}Successfully exported {count:,} records to '{escape(str(output_path))}'[/]"
+            )
         )
 
     except (IOError, ValueError) as e:
