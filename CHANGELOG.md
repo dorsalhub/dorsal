@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.1 (unreleased)
+## 0.12.1 (2026-10-30)
 
 ### Fixed
 - PDF layout boxes from `extract_pdf_layout_per_mille`, `extract_pdf_layout_normalized` and
