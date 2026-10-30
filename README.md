@@ -45,11 +45,13 @@ Dorsal provides configurable extraction and annotation pipelines for files.
 
 ## Installation
 
-Dorsal is available on pypi as `dorsalhub`.
+Dorsal is available on PyPI as `dorsalhub`.
 
 ```bash
 pip install dorsalhub
 ```
+
+On Linux and macOS, Dorsal also needs the `libmagic` and `mediainfo` system libraries (e.g. `apt install libmagic1 libmediainfo0v5` or `brew install libmagic media-info`).
 
 ## Authentication
 
@@ -70,45 +72,35 @@ Alternatively, set the `DORSAL_API_KEY` environment variable.
 Generate a metadata record for a file using the default extraction pipeline.
 
 ```bash
-dorsal file scan "docs/PDFSPEC.pdf"
+dorsal scan "docs/PDFSPEC.pdf"
 ```
 
 **Output:**
 
 ```text
-📄 Scanning metadata for PDFSPEC.pdf
-╭───────────────────────────────── File Record: PDFSPEC.pdf ─────────────────────────────────╮
-│                                                                                            │
-│    Hashes                                                                                  │
-│       SHA-256:  3383fb2ab568ca7019834d438f9a14b9d2ccaa2f37f319373848350005779368           │
-│        BLAKE3:  9abdfb32750a278d5ca550b876e94a72cd8eec82d0e506a127dfb94bd56ca4b2           │
-│          TLSH:  T13465D67BB4C61D6DF893CA46571C579B8B0D71533BAEA58604BDAF0AC6338029AC3F41   │
-│                                                                                            │
-│    File Info                                                                               │
-│     Full Path:  /mnt/c/testdata/PDFSPEC.pdf                                                │
-│      Modified:  2025-04-09 15:09:05                                                        │
-│          Name:  PDFSPEC.pdf                                                                │
-│          Size:  1 MiB                                                                      │
-│    Media Type:  application/pdf                                                            │
-│                                                                                            │
-│    Tags                                                                                    │
-│        No tags found.                                                                      │
-│                                                                                            │
-│    Pdf Info                                                                                │
-│            author:  Tim Bienz, Richard Cohn, James R. Meehan                               │
-│             title:  Portable Document Format Reference Manual (v 1.2)                      │
-│           creator:  FrameMaker 5.1.1                                                       │
-│          producer:  Acrobat Distiller 3.0 for Power Macintosh                              │
-│           subject:  Description of the PDF file format                                     │
-│          keywords:  Acrobat PDF                                                            │
-│           version:  1.2                                                                    │
-│        page_count:  394                                                                    │
-│     creation_date:  1996-11-12T03:08:43                                                    │
-│     modified_date:  1996-11-12T07:58:15                                                    │
-│                                                                                            │
-│                                                                                            │
-╰────────────────────────────────────────────────────────────────────────────────────────────╯
+PDFSPEC.pdf
+
+File
+  Path        docs/PDFSPEC.pdf
+  Modified    2025-04-09 15:09:05
+  Name        PDFSPEC.pdf
+  Size        1 MiB
+  Media type  application/pdf
+
+PDF
+  author         Tim Bienz, Richard Cohn, James R. Meehan
+  title          Portable Document Format Reference Manual (v 1.2)
+  creator        FrameMaker 5.1.1
+  producer       Acrobat Distiller 3.0 for Power Macintosh
+  subject        Description of the PDF file format
+  keywords       Acrobat PDF
+  version        1.2
+  page_count     394
+  creation_date  1996-11-12T03:08:43
+  modified_date  1996-11-12T07:58:15
 ```
+
+Add `--deep` to also compute the file's hashes.
 
 -----
 
@@ -117,7 +109,7 @@ dorsal file scan "docs/PDFSPEC.pdf"
 Sync the metadata record to DorsalHub. By default, this creates a **private** record visible only to you.
 
 ```bash
-dorsal file push "docs/PDFSPEC.pdf"
+dorsal push "docs/PDFSPEC.pdf"
 ```
 
 ### 3. Run Annotation Models
@@ -158,14 +150,14 @@ Outputs saved successfully:
 
 Dorsal has two companion libraries to handle data structure and interoperability:
 
-* **[Open Validation Schemas](https://github.com/dorsalhub/open-validation-schemas):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
+* **[OATS (Open Annotation Task Schemas)](https://oatschema.org):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
 
 * **[Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):** A bundled utility that converts between strictly validated JSON records and standard file formats.
 
 **Example: Parse a standard file into a validated JSON record:**
 
 ```bash
-$ dorsal adapter parse OSR_uk_000_0020_8k.srt audio-transcription
+$ dorsal adapter parse OSR_uk_000_0020_8k.srt open/audio-transcription
 ```
 
 **Example: List available export formats for a schema:**
@@ -194,7 +186,7 @@ You can currently export validated records into the following formats:
 - TSV (`.tsv`)
 - Plain Text (`.txt`)
 
-**Citation / Reference** ('dorsal/arxiv'):
+**Citation / Reference** (`dorsal/arxiv`):
 
 - BibTeX (`.bib`)
 - CSL-JSON (`.json`)
@@ -230,12 +222,12 @@ if lf.pdf:
 
 ```python
 # Add a simple key-value tag
-lf.add_private_tag(name="project_id", value=12345)
+lf.add_tag(name="project_id", value=12345)
 
 # Add a structured annotation (validates against the 'open/classification' schema)
-lf.add_classification(labels=[{"label": "urgent", "score": 1.0}], vocabulary=["urgent", "review"], private=True)
+lf.add_classification(labels=[{"label": "urgent", "score": 1.0}], vocabulary=["urgent", "review"])
 
-# Sync the enriched record to DorsalHub
+# Sync the enriched record to DorsalHub (private by default; pass public=True to share it)
 lf.push()
 ```
 
@@ -268,9 +260,9 @@ class HelloWord(AnnotationModel):
 
 
 # Validate the model
-result = run_model(annotation_model=HelloWord, file_path="./path/to/test/file.txt", schema_id="open/generic")
+results = run_model(annotation_model=HelloWord, file_path="./path/to/test/file.txt", schema_id="open/generic")
 
-assert not result.error
+assert not results[0].error
 ```
 
 You can add it to Dorsal's local file metadata extraction pipeline:
@@ -282,9 +274,7 @@ from helloword import HelloWord
 register_model(annotation_model=HelloWord, schema_id="open/generic")
 ```
 
------
-
-Now, each time you run `dorsal file scan` or `LocalFile()`, this model will execute automatically.
+Now, each time you run `dorsal scan` or `LocalFile()`, this model will execute automatically.
 
 -----
 
