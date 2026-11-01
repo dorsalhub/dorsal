@@ -64,7 +64,7 @@ def build_classification_record(
     vocabulary_url: str | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a valid 'open/classification' annotation record.
+    Builds a valid 'classification' annotation record.
 
     Args:
         labels: A list of simple strings (e.g., ["cat", "dog"]) or
@@ -74,7 +74,7 @@ def build_classification_record(
         vocabulary_url: Optional URL pointing to an external vocabulary.
 
     Returns:
-        A dictionary structured to match the 'open/classification' schema.
+        A dictionary structured to match the 'classification' schema.
     """
     processed_labels: list[ClassificationLabel] = []
     if not isinstance(labels, list):
@@ -120,7 +120,7 @@ def build_embedding_record(
     attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a valid 'open/embedding' annotation record.
+    Builds a valid 'embedding' annotation record.
 
     Args:
         vector: The embedding vector.
@@ -128,7 +128,7 @@ def build_embedding_record(
         attributes: Optional arbitrary metadata (max 16 items, flat).
 
     Returns:
-        A dictionary structured to match the 'open/embedding' schema.
+        A dictionary structured to match the 'embedding' schema.
     """
     record_data: dict[str, Any] = {
         "vector": vector,
@@ -156,7 +156,7 @@ def build_llm_output_record(
     generation_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a valid 'open/llm-output' annotation record.
+    Builds a valid 'llm-output' annotation record.
 
     Args:
         model: The ID or name of the generative model used.
@@ -169,7 +169,7 @@ def build_llm_output_record(
         generation_metadata: Optional dict of metadata returned by the API.
 
     Returns:
-        A dictionary structured to match the 'open/llm-output' schema.
+        A dictionary structured to match the 'llm-output' schema.
     """
     final_response_data: str
     if isinstance(response_data, dict):
@@ -215,7 +215,7 @@ def build_location_record(
     properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a valid 'open/geolocation' record for a simple Point.
+    Builds a valid 'geolocation' record for a simple Point.
 
     Args:
         longitude: The longitude coordinate.
@@ -229,7 +229,7 @@ def build_location_record(
                    Must not exceed 100 items.
 
     Returns:
-        A dictionary structured to match the 'open/geolocation' schema (GeoJSON Feature).
+        A dictionary structured to match the 'geolocation' schema (GeoJSON Feature).
     """
     feature_properties: dict[str, Any] = {}
     if timestamp is not None:
@@ -267,7 +267,7 @@ def build_transcription_record(
     schema_version: str | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a simple 'open/audio-transcription' record.
+    Builds a simple 'audio-transcription' record.
 
     Args:
         text: The full transcribed text.
@@ -277,7 +277,7 @@ def build_transcription_record(
             accepts strings (0.7.0 on), an integer `track_id` is written as a string.
 
     Returns:
-        A dictionary structured to match the 'open/audio-transcription' schema.
+        A dictionary structured to match the 'audio-transcription' schema.
     """
     record_data: dict[str, Any] = {
         "text": text,
@@ -314,14 +314,14 @@ def build_generic_record(
     description: str | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a valid 'open/generic' annotation record.
+    Builds a valid 'generic' annotation record.
 
     Args:
         data: A flat dictionary of key-value pairs.
         description: A description of the data (max 256 chars). Can be None.
 
     Returns:
-        A dictionary structured to match the 'open/generic' schema.
+        A dictionary structured to match the 'generic' schema.
     """
     if len(data) > 128:
         raise ValueError(f"The 'data' object cannot have more than 128 items. Got {len(data)}.")
@@ -384,7 +384,7 @@ def build_regression_point(
 
     Returns:
         dict[str, Any]: A dictionary representing a single regression point, ready
-        to be included in the `points` array of an `open/regression` record.
+        to be included in the `points` array of an `regression` record.
 
     Examples:
         **1. Basic Point**
@@ -446,7 +446,7 @@ def build_regression_record(
     attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Builds a full `open/regression` record from a list of point dictionaries.
+    Builds a full `regression` record from a list of point dictionaries.
 
     Use this function when you have manually constructed a list of points (e.g.
     using `build_regression_point` in a loop) and want to wrap them in the
@@ -464,7 +464,7 @@ def build_regression_record(
         attributes (dict, optional): Arbitrary metadata relevant to the entire record.
 
     Returns:
-        dict[str, Any]: A complete dictionary valid against the `open/regression` schema.
+        dict[str, Any]: A complete dictionary valid against the `regression` schema.
 
     Examples:
         **Constructing a Time-Series Record**
@@ -516,7 +516,7 @@ def build_single_point_regression_record(
     attributes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Convenience helper to build a full `open/regression` record containing exactly one point.
+    Convenience helper to build a full `regression` record containing exactly one point.
 
     This function abstracts away the `points` array structure for the common use case
     of a single scalar prediction or measurement. It combines arguments for both the
@@ -537,7 +537,7 @@ def build_single_point_regression_record(
         attributes (dict, optional): Attributes for the **point**.
 
     Returns:
-        dict[str, Any]: A complete dictionary valid against the `open/regression` schema,
+        dict[str, Any]: A complete dictionary valid against the `regression` schema,
         containing a single item in the `points` list.
 
     Examples:

@@ -34,7 +34,11 @@ from pydantic import (
 )
 
 import dorsal
-from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES, ANNOTATION_SCHEMA_LIMIT_STRICT
+from dorsal.common.constants import (
+    ANNOTATION_MAX_SIZE_BYTES,
+    ANNOTATION_SCHEMA_LIMIT_STRICT,
+    DENSE_EMBEDDING_MAX_VALUES,
+)
 from dorsal.common.exceptions import PydanticValidationError
 from dorsal.common.model import (
     AnnotationSource,
@@ -105,9 +109,20 @@ class Annotation(BaseModel):
 
         return record
 
+    @model_validator(mode="after")
+    def _validate_dense_embedding_size(self) -> Self:
+        """Rejects a dense `embedding` vector longer than the schema allows."""
+        if self.schema_id in ("embedding", "open/embedding") and self.record is not None:
+            vector = getattr(self.record, "vector", None)
+            if isinstance(vector, list) and len(vector) > DENSE_EMBEDDING_MAX_VALUES:
+                from dorsal.common.exceptions import EmbeddingTooLargeError
+
+                raise ValueError(str(EmbeddingTooLargeError(len(vector), DENSE_EMBEDDING_MAX_VALUES)))
+        return self
+
 
 class AnnotationXL(Annotation):
-    """An Annotation variant that bypasses the size limit check.
+    """An Annotation variant that bypasses the size limit checks.
 
     Used by `LocalFile.get_annotations`
     """
@@ -116,6 +131,10 @@ class AnnotationXL(Annotation):
     @classmethod
     def _validate_record_size(cls, record: GenericFileAnnotation | None) -> GenericFileAnnotation | None:
         return record
+
+    @model_validator(mode="after")
+    def _validate_dense_embedding_size(self) -> Self:
+        return self
 
 
 class ShardedAnnotation(Annotation):

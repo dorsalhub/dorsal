@@ -64,6 +64,7 @@ from dorsal.common.validators.datasets import (
     is_valid_dataset_id_or_schema_id,
 )
 from dorsal.file.integrity import normalize_record_privacy
+from dorsal.file.schemas import resolve_schema_id
 from dorsal.file.validators.common import validate_hex64
 from dorsal.file.utils.hashes import HashFunction, parse_validate_hash
 from dorsal.version import __version__
@@ -1797,6 +1798,7 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
         """
+        dataset_id = resolve_schema_id(dataset_id)
         if not dataset_id or not isinstance(dataset_id, str):
             raise ValueError("dataset_id must be a non-empty string.")
 
@@ -1909,6 +1911,7 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
         """
+        dataset_id = resolve_schema_id(dataset_id)
         if not dataset_id or not isinstance(dataset_id, str):
             raise ValueError("dataset_id must be a non-empty string.")
 
@@ -1987,7 +1990,7 @@ class DorsalClient:
 
         Args:
             dataset_id (str): The unique identifier of the dataset, in the
-                format "namespace/dataset-name" (e.g., "open/classification").
+                format "namespace/dataset-name" (e.g., "classification").
             api_key (str, optional): An API key to use for this specific request,
                 overriding the client's default. Defaults to None.
 
@@ -1999,6 +2002,7 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
         """
+        dataset_id = resolve_schema_id(dataset_id)
         logger.debug(
             "get_dataset_schema called for dataset_id: '%s'. API key provided: %s",
             dataset_id,
@@ -2110,6 +2114,7 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
         """
+        dataset_id = resolve_schema_id(dataset_id)
         logger.debug(
             "make_schema_validator called for dataset_id: '%s'. API key provided: %s",
             dataset_id,
@@ -3242,7 +3247,7 @@ class DorsalClient:
 
         Args:
             file_hash (str): The SHA-256 hash of the file to annotate.
-            schema_id (str): The target Schema (e.g., "open/entity-extraction").
+            schema_id (str): The target Schema (e.g., "entity-extraction").
             annotation (Annotation): The `dorsal.file.validators.file_record.Annotation`
                 object to add.
             overwrite (bool): If True, replaces an existing annotation from the
@@ -3261,6 +3266,7 @@ class DorsalClient:
             ForbiddenError: If you do not have permission to annotate the file.
             APIError: For any other unhandled API error.
         """
+        schema_id = resolve_schema_id(schema_id)
         from dorsal.client.validators import AnnotationIndexResult
         from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 

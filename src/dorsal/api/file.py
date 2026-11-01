@@ -60,6 +60,7 @@ from dorsal.file.utils.hashes import hash_string_validator
 from dorsal.file.utils import QuickHasher, get_quick_hash, get_sha256_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
 from dorsal.file.utils.size import get_filesize, human_filesize, parse_filesize
+from dorsal.file.schemas import resolve_schema_id
 from dorsal.session import get_shared_index, get_metadata_reader
 
 if TYPE_CHECKING:
@@ -2232,10 +2233,11 @@ def get_latest_file_annotation(
 
     Args:
         hash_string (str): The hash of the file record.
-        schema_id (str): The schema identifier (e.g., 'open/classification').
+        schema_id (str): The schema identifier (e.g., 'classification').
         mode (Literal["pydantic", "dict", "json"]): The desired return format.
         api_key (str, optional): An API key for this request.
     """
+    schema_id = resolve_schema_id(schema_id)
     if mode not in ("pydantic", "dict", "json"):
         raise ValueError(f"Invalid mode: '{mode}'.")
 
@@ -2286,6 +2288,7 @@ def get_file_annotations_summary(
     This returns unhydrated metadata (ID, source, dates). To get the full
     content of a specific annotation, pass its ID to `get_file_annotation`.
     """
+    schema_id = resolve_schema_id(schema_id)
     from dorsal.file.dorsal_file import DorsalFile
     from dorsal.session import get_shared_dorsal_client
     from dorsal.client import DorsalClient

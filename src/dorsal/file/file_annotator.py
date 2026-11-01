@@ -50,6 +50,7 @@ from dorsal.file.model_runner import ModelRunner
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult, resolve_pipeline_step_models
 from dorsal.file.linters import apply_linter
 from dorsal.file.sharding import build_annotation_or_annotationgroup, process_record_for_sharding
+from dorsal.file.schemas import resolve_schema_id
 from dorsal.file.validators.file_record import (
     Annotation,
     AnnotationGroup,
@@ -204,6 +205,8 @@ class FileAnnotator:
             AnnotationImportError: If the specified model or validator cannot be imported.
             AnnotationExecutionError: If the model fails to run or its output is invalid.
         """
+        if schema_id is not None:
+            schema_id = resolve_schema_id(schema_id)
         logger.debug("Annotating file '%s' using pipeline step.", file_path)
         if isinstance(pipeline_step, dict):
             try:
@@ -289,6 +292,7 @@ class FileAnnotator:
             AnnotationConfigurationError: If `schema_id` is not provided.
             AnnotationExecutionError: If the model fails to run.
         """
+        schema_id = resolve_schema_id(schema_id)
         logger.debug(
             "Annotating file '%s' with model '%s' for dataset '%s'.",
             file_path,
@@ -460,6 +464,7 @@ class FileAnnotator:
             AnnotationValidationError: If the payload fails validation.
             DataQualityError: If the payload fails post-validation data quality linting.
         """
+        schema_id = resolve_schema_id(schema_id)
         logger.debug("Creating manual annotation(s) for validation schema '%s'.", schema_id)
 
         if source_id is None:

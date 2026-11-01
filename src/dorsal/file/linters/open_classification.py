@@ -27,7 +27,7 @@ class _LinterLabelItem(BaseModel):
 
 class OpenClassificationLinter(BaseModel):
     """
-    A linter for valid 'open/classification' records.
+    A linter for valid 'classification' records.
 
     Enforces data quality rules:
 

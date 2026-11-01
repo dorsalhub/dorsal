@@ -329,12 +329,25 @@ class TestEmbeddingStrategy:
         record = {"other": "data"}
         assert self.strategy.split(record, limit=2) == [record]
 
-    def test_split_dense(self):
+    def test_split_dense_is_never_split(self):
         record = {"vector": [1, 2, 3, 4, 5]}
-        chunks = self.strategy.split(record, limit=2)
-        assert len(chunks) == 3
-        assert chunks[0]["vector"] == [1, 2]
-        assert chunks[2]["vector"] == [5]
+        assert self.strategy.split(record, limit=2) == [record]
+
+    def test_split_dense_over_schema_limit_raises(self):
+        from dorsal.common.constants import DENSE_EMBEDDING_MAX_VALUES
+        from dorsal.common.exceptions import EmbeddingTooLargeError
+
+        record = {"vector": [0.0] * (DENSE_EMBEDDING_MAX_VALUES + 1)}
+        with pytest.raises(EmbeddingTooLargeError, match="16,385 values, more than the limit of 16,384") as exc:
+            self.strategy.split(record, limit=100_000)
+        assert exc.value.limit == DENSE_EMBEDDING_MAX_VALUES
+        assert exc.value.size == DENSE_EMBEDDING_MAX_VALUES + 1
+
+    def test_split_dense_at_schema_limit(self):
+        from dorsal.common.constants import DENSE_EMBEDDING_MAX_VALUES
+
+        record = {"vector": [0.0] * DENSE_EMBEDDING_MAX_VALUES}
+        assert self.strategy.split(record, limit=100_000) == [record]
 
     def test_split_dense_under_limit(self):
         record = {"vector": [1, 2]}
@@ -359,14 +372,14 @@ class TestEmbeddingStrategy:
 
 class TestChunkingMainFunctions:
     def test_merge_chunked_records_empty_and_single(self):
-        assert merge_chunked_records([], "open/classification") == {}
+        assert merge_chunked_records([], "classification") == {}
 
         single_record = {"labels": ["A"]}
-        assert merge_chunked_records([single_record], "open/classification") == single_record
+        assert merge_chunked_records([single_record], "classification") == single_record
 
     def test_merge_chunked_records_with_valid_strategy(self):
         records = [{"labels": ["A"]}, {"labels": ["B"]}]
-        merged = merge_chunked_records(records, "open/classification")
+        merged = merge_chunked_records(records, "classification")
         assert merged == {"labels": ["A", "B"]}
 
     def test_merge_chunked_records_no_strategy(self, caplog):
@@ -383,17 +396,17 @@ class TestChunkingMainFunctions:
     def test_chunk_record_with_various_schemas(self):
 
         list_record = {"labels": ["A", "B", "C"]}
-        chunks = chunk_record(list_record, "open/classification")
+        chunks = chunk_record(list_record, "classification")
         assert len(chunks) == 2
         assert chunks[0]["labels"] == ["A", "B"]
 
         dict_record = {"data": {"k1": "v1", "k2": "v2", "k3": "v3"}}
-        chunks = chunk_record(dict_record, "open/generic")
+        chunks = chunk_record(dict_record, "generic")
         assert len(chunks) == 2
         assert len(chunks[0]["data"]) == 2
 
         str_record = {"response_data": "12345"}
-        chunks = chunk_record(str_record, "open/llm-output")
+        chunks = chunk_record(str_record, "llm-output")
         assert len(chunks) == 3
         assert chunks[0]["response_data"] == "12"
 

@@ -52,7 +52,7 @@ MODEL_CONFIG_TEMPLATE = """# Dorsal Model Configuration
 model_class = "{class_name}"
 
 # The schema which validates the model output
-schema_id = "open/generic"
+schema_id = "generic"
 schema_version = "{schema_version}"
 
 # --- DEPENDENCIES ---
@@ -123,7 +123,7 @@ def test_model_integration(tmp_path):
     result = run_model(
         annotation_model={class_name},
         file_path=str(dummy_file),
-        schema_id=config.get("schema_id", "open/generic"),
+        schema_id=config.get("schema_id", "generic"),
         schema_version=config.get("schema_version"),
         dependencies=config.get("dependencies"),
         options=config.get("options"),

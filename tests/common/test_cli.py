@@ -633,3 +633,24 @@ def test_shared_consoles_use_richs_legacy_windows_detection(monkeypatch, legacy)
 
     assert cli.get_rich_console().legacy_windows is legacy
     assert cli.get_error_console().legacy_windows is legacy
+
+
+def test_warn_if_deprecated_schema_id_wraps_without_trailing_spaces(mocker):
+    import io
+
+    from rich.console import Console
+
+    from dorsal.common.cli import warn_if_deprecated_schema_id
+
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=40, legacy_windows=False, color_system=None)
+    mocker.patch("dorsal.common.cli.get_error_console", return_value=console)
+
+    warn_if_deprecated_schema_id("open/document-extraction", {})
+    warn_if_deprecated_schema_id("document-extraction", {})
+    warn_if_deprecated_schema_id("my-org/open-thing", {})
+
+    text = buffer.getvalue()
+    assert " ".join(text.split()).startswith("Warning: The schema id 'open/document-extraction' is deprecated")
+    assert text.count("Warning:") == 1
+    assert all(line == line.rstrip() for line in text.splitlines())

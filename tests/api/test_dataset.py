@@ -112,17 +112,49 @@ def test_validate_dataset_records_with_schema_dict(mock_validate, mock_get_schem
     assert summary["invalid_records"] == 0
 
 
+@pytest.mark.parametrize("dataset_id", ["classification", "open/classification"])
 @patch("dorsal.api.dataset.get_open_schema_validator")
-def test_make_schema_validator_open_dataset(mock_get_open):
-    """Test that 'open/' prefix triggers the open schema validator."""
-    dataset_id = "open/arxiv"
+def test_make_schema_validator_open_dataset(mock_get_open, dataset_id):
+    """An OATS schema name, with or without the deprecated 'open/' prefix, uses the bundled validator."""
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
+
     mock_validator = MagicMock()
     mock_get_open.return_value = mock_validator
 
-    result = dataset_api.make_schema_validator(dataset_id)
+    if dataset_id.startswith("open/"):
+        with pytest.warns(DeprecationWarning, match="use 'classification'"):
+            result = dataset_api.make_schema_validator(dataset_id)
+    else:
+        result = dataset_api.make_schema_validator(dataset_id)
 
-    mock_get_open.assert_called_once_with("arxiv")
+    mock_get_open.assert_called_once_with("classification", version=OPEN_VALIDATION_SCHEMAS_VER)
     assert result == mock_validator
+
+
+@patch("dorsal.api.dataset.get_open_schema_validator")
+def test_make_schema_validator_open_dataset_with_version(mock_get_open):
+    dataset_api.make_schema_validator("ranking", schema_version="0.8.0")
+
+    mock_get_open.assert_called_once_with("ranking", version="0.8.0")
+
+
+def test_make_schema_validator_schema_missing_at_version():
+    with pytest.raises(ValueError, match="OATS schema 'ranking' is not available at version 0.5.0"):
+        dataset_api.make_schema_validator("ranking", schema_version="0.5.0")
+
+
+def test_make_schema_validator_version_for_non_oats_schema():
+    with pytest.raises(ValueError, match="applies only to OATS schemas"):
+        dataset_api.make_schema_validator("my-org/books", schema_version="0.8.0")
+
+
+def test_make_schema_validator_open_validator_raises_oatschema_error():
+    import oatschema
+
+    validator = dataset_api.make_schema_validator("classification")
+
+    with pytest.raises(oatschema.ValidationError):
+        validator.validate({"labels": "not-a-list"})
 
 
 @patch("dorsal.api.dataset.is_offline_mode")
@@ -196,16 +228,14 @@ def test_validate_records_validator_creation_error(mock_get_validator, mock_get_
 @patch("dorsal.api.dataset.get_dataset_schema")
 @patch("dorsal.api.dataset.get_json_schema_validator")
 def test_make_schema_validator_open_dataset_fallback(mock_get_validator, mock_get_schema, mock_get_open):
-    """Test that if open schema lookup fails, it falls back to standard schema fetching."""
+    """An 'open/' dataset that is not an OATS schema is fetched from DorsalHub."""
     dataset_id = "open/unknown-dataset"
-
-    mock_get_open.side_effect = ValueError("Unknown open schema")
 
     mock_get_schema.return_value = {"type": "object"}
     mock_get_validator.return_value = MagicMock()
 
     dataset_api.make_schema_validator(dataset_id)
 
-    mock_get_open.assert_called_once_with("unknown-dataset")
+    mock_get_open.assert_not_called()
 
     mock_get_schema.assert_called_once_with(dataset_id=dataset_id, api_key=None, client=None)

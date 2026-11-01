@@ -56,7 +56,7 @@ def mock_export_deps(mocker, mock_rich_console):
     mocker.patch("dorsal.common.cli.get_error_console", return_value=mock_error_console)
 
     mock_extract = mocker.patch("dorsal.cli.adapter_app.helpers.extract_records")
-    mock_extract.return_value = [("MockSchema", {"text": "Extracted string"}, None)]
+    mock_extract.return_value = [("MockSchema", {"text": "Extracted string"}, None, None)]
 
     mock_export_file = mocker.patch("dorsal.api.adapters.export_record_to_file")
     mock_export_file.return_value = "Mocked exported format content"
@@ -111,8 +111,8 @@ def test_export_batch_success(mock_rich_console, mock_export_deps, tmp_path, mon
     """Tests batch processing which should render a table instead of raw text."""
     monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
-        ("MockSchema", {"text": "Rec 1"}, None),
-        ("MockSchema", {"text": "Rec 2"}, None),
+        ("MockSchema", {"text": "Rec 1"}, None, None),
+        ("MockSchema", {"text": "Rec 2"}, None, None),
     ]
 
     test_file = pathlib.Path("test_file.dorsal.json")
@@ -168,11 +168,11 @@ def test_export_validation_error(mock_export_deps, tmp_path, monkeypatch):
     assert "Missing schema information" in error_msg
 
 
-def test_export_missing_adapters_package(mock_export_deps, tmp_path, monkeypatch):
-    """Tests graceful failure when the optional dorsalhub-adapters is missing."""
+def test_export_unsupported_format(mock_export_deps, tmp_path, monkeypatch):
+    """Tests graceful failure when no adapter exists for the format."""
     monkeypatch.chdir(tmp_path)
     mock_export_deps["export_file"].side_effect = DorsalError(
-        "Please pip install dorsalhub-adapters to enable exports."
+        "Failed to export record to srt: no adapters for schema 'my-org/schema'"
     )
 
     test_file = pathlib.Path("test.json")
@@ -182,7 +182,7 @@ def test_export_missing_adapters_package(mock_export_deps, tmp_path, monkeypatch
 
     assert result.exit_code != 0
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
-    assert "dorsalhub-adapters" in error_msg
+    assert "no adapters for schema" in error_msg
 
 
 def test_export_adapter_runtime_error(mock_export_deps, tmp_path, monkeypatch):
@@ -223,7 +223,66 @@ def test_export_schema_override_passed_down(mock_export_deps, tmp_path, monkeypa
 
     runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-id", "CustomSchema"])
 
-    mock_export_deps["extract"].assert_called_once_with({"dummy": "data"}, schema_override="CustomSchema")
+    mock_export_deps["extract"].assert_called_once_with(
+        {"dummy": "data"}, schema_override="CustomSchema", version_override=None
+    )
+
+
+def test_export_schema_version_passed_down(mock_export_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+
+    runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-version", "0.5.0"])
+
+    mock_export_deps["extract"].assert_called_once_with(
+        {"dummy": "data"}, schema_override=None, version_override="0.5.0"
+    )
+
+
+def test_export_uses_each_records_version(mock_export_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    mock_export_deps["extract"].return_value = [("audio-transcription", {"text": "Rec"}, None, "0.5.0")]
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt"])
+    assert result.exit_code == 0, result.output
+    assert mock_export_deps["export_file"].call_args.kwargs["schema_version"] == "0.5.0"
+
+    result = runner.invoke(cli_app, ["export", str(test_file), "srt", "--no-save"])
+    assert result.exit_code == 0, result.output
+    assert mock_export_deps["export_record"].call_args.kwargs["schema_version"] == "0.5.0"
+
+
+def test_export_warns_for_open_prefix(mock_export_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+
+    runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-id", "open/audio-transcription"])
+
+    printed = [
+        str(getattr(call.args[0], "renderable", call.args[0]))
+        for call in mock_export_deps["error_console"].print.call_args_list
+    ]
+    assert any(
+        "'open/audio-transcription' is deprecated" in line and "use 'audio-transcription'" in line for line in printed
+    )
+
+
+def test_export_does_not_warn_for_bare_name(mock_export_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.json")
+    test_file.write_text(json.dumps({"dummy": "data"}), encoding="utf-8")
+
+    runner.invoke(cli_app, ["export", str(test_file), "srt", "--schema-id", "audio-transcription"])
+
+    printed = [
+        str(getattr(call.args[0], "renderable", call.args[0]))
+        for call in mock_export_deps["error_console"].print.call_args_list
+    ]
+    assert not any("deprecated" in line for line in printed)
 
 
 def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps, tmp_path, monkeypatch):
@@ -233,8 +292,8 @@ def test_export_batch_with_adapter_error(mock_rich_console, mock_export_deps, tm
     """
     monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
-        ("MockSchema", {"text": "Rec 1"}, None),
-        ("MockSchema", {"text": "Rec 2"}, None),
+        ("MockSchema", {"text": "Rec 1"}, None, None),
+        ("MockSchema", {"text": "Rec 2"}, None, None),
     ]
 
     mock_export_deps["export_file"].side_effect = ["Mocked success content", Exception("Simulated batch failure")]
@@ -262,7 +321,7 @@ def test_export_with_orig_file_path(mock_export_deps, tmp_path, monkeypatch):
     """
     monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
-        ("MockSchema", {"text": "Rec"}, "internal_dir/my_custom_image_name.png")
+        ("MockSchema", {"text": "Rec"}, "internal_dir/my_custom_image_name.png", None)
     ]
 
     test_file = pathlib.Path("generic_wrapper.dorsal.json")
@@ -298,8 +357,8 @@ def test_export_merge_success(mocker, mock_export_deps, tmp_path, monkeypatch):
     """Tests that the --merge flag correctly condenses multiple records into one."""
     monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
-        ("MockSchema", {"part": 1}, "original_file.png"),
-        ("MockSchema", {"part": 2}, "original_file.png"),
+        ("MockSchema", {"part": 1}, "original_file.png", None),
+        ("MockSchema", {"part": 2}, "original_file.png", None),
     ]
 
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")
@@ -325,8 +384,8 @@ def test_export_merge_failure(mocker, mock_export_deps, tmp_path, monkeypatch):
     """Tests the try/except block if the merge process throws an exception."""
     monkeypatch.chdir(tmp_path)
     mock_export_deps["extract"].return_value = [
-        ("MockSchema", {"part": 1}, None),
-        ("MockSchema", {"part": 2}, None),
+        ("MockSchema", {"part": 1}, None, None),
+        ("MockSchema", {"part": 2}, None, None),
     ]
 
     mock_merge = mocker.patch("dorsal.file.chunking.merge_chunked_records")

@@ -121,7 +121,7 @@ def get_annotation(
                 record=record_dict,
                 schema_id=schema_id,
                 target_format=export_format,
-                **parsed_export_options,
+                **{"schema_version": getattr(hydrated, "schema_version", None), **parsed_export_options},
             )
 
         if output_path:

@@ -472,3 +472,44 @@ def _extract_file_office_document(rec: dict[str, Any]) -> tuple[list[str], list[
             fts.append(str(master))
 
     return fts, eav
+
+
+@registry.register("open/embedding")
+def _extract_embedding(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTuple]]:
+    fts: list[str] = []
+    eav: list[RawEAVTuple] = []
+    eav.append(("model", rec.get("model")))
+    eav.append(("target", rec.get("target")))
+    return fts, eav
+
+
+@registry.register("open/ranking")
+def _extract_ranking(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTuple]]:
+    fts: list[str] = []
+    eav: list[RawEAVTuple] = []
+    if "query" in rec:
+        fts.append(rec["query"])
+    for result in rec.get("results", []):
+        if isinstance(result, dict):
+            if "title" in result:
+                fts.append(result["title"])
+            if "text" in result:
+                fts.append(result["text"])
+    eav.append(("target", rec.get("target")))
+    eav.append(("collection", rec.get("collection")))
+    return fts, eav
+
+
+@registry.register("open/temporal-segmentation")
+def _extract_temporal_segmentation(rec: dict[str, Any]) -> tuple[list[str], list[RawEAVTuple]]:
+    fts: list[str] = []
+    eav: list[RawEAVTuple] = []
+    for segment in rec.get("segments", []):
+        if isinstance(segment, dict):
+            if "title" in segment:
+                fts.append(segment["title"])
+            if "description" in segment:
+                fts.append(segment["description"])
+            eav.append(("label", segment.get("label")))
+    eav.append(("track_id", rec.get("track_id")))
+    return fts, eav

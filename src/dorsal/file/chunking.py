@@ -16,6 +16,8 @@ import logging
 from functools import lru_cache
 from typing import Any, Protocol, runtime_checkable
 
+from dorsal.file.schemas import resolve_schema_id
+
 logger = logging.getLogger(__name__)
 
 # Follows open-validation-schemas
@@ -341,6 +343,16 @@ def merge_relations(records: list[dict[str, Any]]) -> list[Any] | None:
     return [relation for p in lists for relation in p]
 
 
+def check_dense_embedding(record: dict[str, Any]) -> None:
+    """Raise `EmbeddingTooLargeError` if `record` has a dense `vector` longer than DENSE_EMBEDDING_MAX_VALUES."""
+    from dorsal.common.constants import DENSE_EMBEDDING_MAX_VALUES
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    vector = record.get("vector")
+    if isinstance(vector, list) and len(vector) > DENSE_EMBEDDING_MAX_VALUES:
+        raise EmbeddingTooLargeError(len(vector), DENSE_EMBEDDING_MAX_VALUES)
+
+
 class EmbeddingStrategy:
     """Handles open/embedding."""
 
@@ -371,9 +383,8 @@ class EmbeddingStrategy:
             return [record]
 
         if isinstance(vec, list):
-            if len(vec) <= limit:
-                return [record]
-            return [{**record, "vector": vec[i : i + limit]} for i in range(0, len(vec), limit)]
+            check_dense_embedding(record)
+            return [record]
 
         elif isinstance(vec, dict):
             indices = vec.get("indices", [])
@@ -431,6 +442,7 @@ SPLIT_STRATEGY_REGISTRY: dict[str, SplitStrategy] = {
 
 def merge_chunked_records(records: list[dict[str, Any]], schema_id: str) -> dict[str, Any]:
     """Merges a list of schema-valid chunks into a single record."""
+    schema_id = resolve_schema_id(schema_id)
     if not records:
         return {}
     if len(records) == 1:
@@ -470,6 +482,7 @@ def _schema_max_items(schema_id: str, field: str, schema_version: str | None) ->
 
 def list_limit(schema_id: str, field: str, schema_version: str | None = None) -> int:
     """Returns the most items a chunk may hold in `field`: the schema's `maxItems`, capped at SPLIT_LIMIT_DEFAULT."""
+    schema_id = resolve_schema_id(schema_id)
     limit = _schema_max_items(schema_id, field, schema_version)
     if limit is None:
         limit = FALLBACK_LIST_LIMITS.get((schema_id, field), SPLIT_LIMIT_DEFAULT)
@@ -480,7 +493,11 @@ def chunk_record(record: dict[str, Any], schema_id: str, schema_version: str | N
     """Splits oversize record into valid chunks. Returns original if unsupported or small enough.
 
     List limits come from the schema at `schema_version` (default: OPEN_VALIDATION_SCHEMAS_VER).
+
+    Raises:
+        EmbeddingTooLargeError: An `embedding` record's dense vector is longer than DENSE_EMBEDDING_MAX_VALUES.
     """
+    schema_id = resolve_schema_id(schema_id)
     strategy = SPLIT_STRATEGY_REGISTRY.get(schema_id)
 
     if strategy is None:

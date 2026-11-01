@@ -33,6 +33,7 @@ from dorsal.common.exceptions import (
     DataQualityError,
     DependencyCheckError,
     DependencyNotMetError,
+    EmbeddingTooLargeError,
     ModelExecutionError,
     ModelImportError,
     ModelOutputValidationError,
@@ -143,6 +144,24 @@ def model_debug_timer(method):
         return method(instance, annotation_model, *method_args, **method_kwargs)
 
     return _impl
+
+
+_warned_pipeline_schema_ids: set[tuple[str, str]] = set()
+
+
+def _warn_deprecated_pipeline_schema_ids(pipeline: list[dict[str, Any]], source: Any) -> None:
+    """Log a warning, once per source and schema id, for each pipeline step using a deprecated `open/` schema id."""
+    from dorsal.file.schemas import deprecated_schema_id_message, is_deprecated_schema_id
+
+    for step in pipeline:
+        schema_id = step.get("schema_id") if isinstance(step, dict) else None
+        if not is_deprecated_schema_id(schema_id):
+            continue
+        key = (str(source), cast(str, schema_id))
+        if key in _warned_pipeline_schema_ids:
+            continue
+        _warned_pipeline_schema_ids.add(key)
+        logger.warning("Model pipeline (%s): %s", source, deprecated_schema_id_message(cast(str, schema_id)))
 
 
 class ModelRunner:
@@ -377,6 +396,7 @@ class ModelRunner:
             )
             return []
 
+        _warn_deprecated_pipeline_schema_ids(pipeline, source=self.pipeline_config_source)
         validated_pipeline: list[ModelRunnerPipelineStep] = []
         for i, step_config_dict in enumerate(pipeline):
             try:
@@ -745,9 +765,10 @@ class ModelRunner:
             A RunModelResult object containing the model's output or an error.
         """
         from dorsal.file.configs.model_runner import RunModelResult
-        from dorsal.file.schemas import normalize_schema_id
+        from dorsal.file.schemas import resolve_schema_id
 
-        schema_id = normalize_schema_id(schema_id)
+        if schema_id is not None:
+            schema_id = resolve_schema_id(schema_id, depth=2)
         model_name = annotation_model.__name__
 
         try:
@@ -857,13 +878,20 @@ class ModelRunner:
                         raise ModelRunnerConfigError(f"Unsupported validator type '{type(validation_model).__name__}'")
 
                 if validation_error_payload is not None and schema_id and validation_model:
-                    rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
-                        raw_model_output=raw_data,
-                        schema_id=schema_id,
-                        validation_model=validation_model,
-                        model_name=model_name,
-                        file_path=file_path,
-                    )
+                    try:
+                        rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
+                            raw_model_output=raw_data,
+                            schema_id=schema_id,
+                            validation_model=validation_model,
+                            model_name=model_name,
+                            file_path=file_path,
+                        )
+                    except EmbeddingTooLargeError as err:
+                        logger.warning("Validation failed for '%s': %s", model_name, err)
+                        rescued_data, rescue_errors = None, None
+                        validation_error_payload = [
+                            {"path": "vector", "validator": "maxItems", "error_message": str(err)}
+                        ]
                     if rescued_data is not None and rescue_errors is None:
                         validated_data = rescued_data
                         validation_error_payload = None
@@ -1463,10 +1491,11 @@ def run_model(
     Args:
         annotation_model: The custom AnnotationModel class you want to test (e.g., `ArchiveModel`).
         file_path: The absolute path to the file to test against.
-        schema_id: (Optional) The target schema ID (e.g., "open/generic").
-                   If this is an "open/" schema, the standard validator
+        schema_id: (Optional) The target schema ID (e.g., "generic").
+                   If this is an OATS schema, the standard validator
                    will be used automatically.
-        schema_version: (Optional) The version of the schema to validate against. If `None` uses the default.
+        schema_version: (Optional) The version of the OATS schema to validate against.
+                        Defaults to OPEN_VALIDATION_SCHEMAS_VER.
         validation_model: (Optional) A *custom* Pydantic model or
                           JsonSchemaValidator. This overrides the
                           automatic validator from 'schema_id'.
@@ -1478,9 +1507,10 @@ def run_model(
         A RunModelResult object containing your model's output or any errors.
 
     Raises:
-        ValueError: If 'schema_id' is an "open/" schema and a
+        ValueError: If 'schema_id' is an OATS schema and a
                     'validation_model' is also provided, as this
-                    is an ambiguous configuration.
+                    is an ambiguous configuration, or if the OATS schema
+                    is not available at 'schema_version'.
     """
     from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
     from dorsal.file.configs.model_runner import (
@@ -1489,12 +1519,13 @@ def run_model(
     )
     from dorsal.file.annotation_models.base import FileCoreAnnotationModel
 
-    from dorsal.file.schemas import OpenSchemaName, normalize_schema_id
+    from dorsal.file.schemas import OpenSchemaName, open_schema_name, resolve_schema_id
 
     from dorsal.file.validators.open_schema import get_open_schema_validator
     from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
 
-    schema_id = normalize_schema_id(schema_id)
+    if schema_id is not None:
+        schema_id = resolve_schema_id(schema_id)
     parsed_dependencies: list[ModelRunnerDependencyConfig] = []
     schema_version = schema_version if schema_version is not None else OPEN_VALIDATION_SCHEMAS_VER
     if dependencies:
@@ -1593,10 +1624,10 @@ def run_model(
 
         logger.info("All dependencies met.")
 
-    if validation_model and schema_id and schema_id.startswith("open/"):
+    if validation_model and schema_id and open_schema_name(schema_id) is not None:
         raise ValueError(
-            f"Ambiguous configuration: You cannot provide a custom 'validation_model' when using an 'open/' schema_id ('{schema_id}').\n"
-            f"The 'open/' schemas use a standard, built-in validator.\n"
+            f"Ambiguous configuration: You cannot provide a custom 'validation_model' when using an OATS schema_id ('{schema_id}').\n"
+            f"OATS schemas use a standard, built-in validator.\n"
             f"  - To test with the standard validator: Remove the 'validation_model' argument.\n"
             f"  - To test with your custom validator: Use a custom 'schema_id' (e.g., 'my-org/my-custom-schema') or set schema_id=None."
         )
@@ -1605,19 +1636,12 @@ def run_model(
 
     if effective_validator:
         logger.debug("Using explicitly provided 'validation_model'.")
-    elif schema_id and schema_id.startswith("open/"):
-        schema_name = schema_id.removeprefix("open/")
+    elif schema_id and (schema_name := open_schema_name(schema_id)) is not None:
         try:
-            effective_validator = get_open_schema_validator(
-                name=cast(OpenSchemaName, schema_name), version=schema_version
-            )
-            logger.debug("Resolved 'schema_id' (%s) to standard validator.", schema_id)
-        except (ValueError, TypeError, RuntimeError) as e:
-            logger.warning(
-                "Could not find a standard validator for 'schema_id' (%s): %s. Proceeding without validation.",
-                schema_id,
-                e,
-            )
+            effective_validator = get_open_schema_validator(name=schema_name, version=schema_version)
+        except RuntimeError as err:
+            raise ValueError(f"OATS schema '{schema_name}' is not available at version {schema_version}.") from err
+        logger.debug("Resolved 'schema_id' (%s) to standard validator.", schema_id)
 
     if annotation_model.__module__ == "__main__":
         logger.debug(

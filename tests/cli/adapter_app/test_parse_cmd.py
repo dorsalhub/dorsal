@@ -66,18 +66,20 @@ def test_parse_cmd_success(mock_parse_deps, tmp_path, monkeypatch):
     test_file = pathlib.Path("test.srt")
     test_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello world", encoding="utf-8")
 
-    result = runner.invoke(cli_app, ["parse", str(test_file), "open/audio-transcription", "--format", "srt"])
+    result = runner.invoke(cli_app, ["parse", str(test_file), "audio-transcription", "--format", "srt"])
 
     assert result.exit_code == 0
 
     mock_parse_deps["parse_api"].assert_called_once()
     kwargs = mock_parse_deps["parse_api"].call_args.kwargs
-    assert kwargs["schema_id"] == "open/audio-transcription"
+    assert kwargs["schema_id"] == "audio-transcription"
     assert kwargs["source_format"] == "srt"
+    assert kwargs["schema_version"] is None
 
     printed_json = mock_parse_deps["rich_console"].print.call_args.args[0]
     data = json.loads(printed_json)
-    assert data["schema_id"] == "open/audio-transcription"
+    assert data["schema_id"] == "audio-transcription"
+    assert data["schema_version"] == "0.8.0"
     assert data["record"]["text"] == "Hello world"
 
     expected_save_path = pathlib.Path.cwd() / "test.dorsal.json"
@@ -150,7 +152,7 @@ def test_parse_cmd_no_save_flag(mock_parse_deps, tmp_path, monkeypatch):
 def test_parse_cmd_missing_adapters(mock_parse_deps, mocker, tmp_path, monkeypatch):
     """Tests handling of an environment missing the adapters package."""
     monkeypatch.chdir(tmp_path)
-    mock_parse_deps["parse_api"].side_effect = DorsalError("Please pip install dorsalhub-adapters to enable exports.")
+    mock_parse_deps["parse_api"].side_effect = DorsalError("no adapters for schema 'my-org/schema'")
 
     test_file = pathlib.Path("test.srt")
     test_file.write_text("mock content", encoding="utf-8")
@@ -160,7 +162,7 @@ def test_parse_cmd_missing_adapters(mock_parse_deps, mocker, tmp_path, monkeypat
     assert result.exit_code != 0
     error_msg = str(mock_parse_deps["error_console"].print.call_args.args[0])
     assert "Parse failed" in error_msg
-    assert "dorsalhub-adapters" in error_msg
+    assert "no adapters for schema" in error_msg
 
 
 def test_parse_cmd_dorsal_error(mock_parse_deps, tmp_path, monkeypatch):
@@ -176,3 +178,51 @@ def test_parse_cmd_dorsal_error(mock_parse_deps, tmp_path, monkeypatch):
     assert result.exit_code != 0
     error_msg = str(mock_parse_deps["error_console"].print.call_args.args[0])
     assert "unsupported" in error_msg
+
+
+def test_parse_cmd_open_prefix_warns_and_stamps_bare_name(mock_parse_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.srt")
+    test_file.write_text("mock content", encoding="utf-8")
+
+    result = runner.invoke(
+        cli_app, ["parse", str(test_file), "open/audio-transcription", "--schema-version", "0.5.0", "--no-save"]
+    )
+
+    assert result.exit_code == 0
+    assert mock_parse_deps["parse_api"].call_args.kwargs["schema_version"] == "0.5.0"
+    data = json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])
+    assert data["schema_id"] == "audio-transcription"
+    assert data["schema_version"] == "0.5.0"
+    printed = [
+        str(getattr(call.args[0], "renderable", call.args[0]))
+        for call in mock_parse_deps["error_console"].print.call_args_list
+    ]
+    assert any("'open/audio-transcription' is deprecated" in line for line in printed)
+
+
+def test_parse_cmd_non_oats_schema_has_no_version(mock_parse_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("paper.md")
+    test_file.write_text("mock content", encoding="utf-8")
+
+    result = runner.invoke(cli_app, ["parse", str(test_file), "dorsal/arxiv", "--no-save"])
+
+    assert result.exit_code == 0
+    data = json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])
+    assert data["schema_id"] == "dorsal/arxiv"
+    assert "schema_version" not in data
+
+
+def test_parse_cmd_schema_version_as_an_option(mock_parse_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.srt")
+    test_file.write_text("mock content", encoding="utf-8")
+
+    result = runner.invoke(
+        cli_app, ["parse", str(test_file), "audio-transcription", "--opt", "schema_version=0.5.0", "--no-save"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert mock_parse_deps["parse_api"].call_args.kwargs["schema_version"] == "0.5.0"
+    assert json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])["schema_version"] == "0.5.0"

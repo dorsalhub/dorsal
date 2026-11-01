@@ -189,20 +189,31 @@ def test_validate_records_reports_keyword(simple_schema):
     [{"description": "x" * BIG}, {"data": {"k": "x" * BIG}, "producer": 7}, {"k" * BIG: 1}],
     ids=["maxLength", "type", "huge-key"],
 )
-def test_open_schema_errors_are_bounded(record, caplog):
+@pytest.mark.parametrize("override_dir", [False, True], ids=["oatschema", "override-dir"])
+def test_open_schema_errors_are_bounded(record, override_dir, caplog, monkeypatch, tmp_path):
     import logging
 
-    import jsonschema_rs
+    import oatschema
 
-    from dorsal.file.validators.open_schema import get_open_schema_validator
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
+    from dorsal.file.schemas import _load_schema_from_package
+    from dorsal.file.validators.open_schema import OpenSchemaValidator
 
-    validator = get_open_schema_validator("generic")
+    if override_dir:
+        (tmp_path / "generic.json").write_text(oatschema.get_schema("generic", mode="json"), encoding="utf-8")
+        monkeypatch.setenv("DORSAL_OPEN_VALIDATION_SCHEMAS_DIR", str(tmp_path))
+        _load_schema_from_package.cache_clear()
+    validator = OpenSchemaValidator("generic")
+    assert (validator.oats_validator is None) is override_dir
 
     assert not validator.is_valid(record)
 
-    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
+    with pytest.raises(oatschema.ValidationError) as exc_info:
         validator.validate(record)
     _assert_bounded_error(exc_info.value)
+    assert exc_info.value.schema_name == "generic"
+    assert exc_info.value.schema_version == OPEN_VALIDATION_SCHEMAS_VER
+    _load_schema_from_package.cache_clear()
 
     with caplog.at_level(logging.DEBUG):
         summary = json_schema_validate_records([record], validator)

@@ -170,6 +170,7 @@ def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps)
     """Covers successful export logic using the hydrated.record attribute."""
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.record = {"title": "Test Paper"}
     mock_get_deps["api_get"].return_value = mock_result
 
@@ -178,7 +179,9 @@ def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps)
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--export", "csl"])
 
     assert result.exit_code == 0
-    mock_export.assert_called_once_with(record={"title": "Test Paper"}, schema_id="Article", target_format="csl")
+    mock_export.assert_called_once_with(
+        record={"title": "Test Paper"}, schema_id="Article", target_format="csl", schema_version="0.5.0"
+    )
     mock_rich_console.file.write.assert_called_with("exported_csl_string")
 
 
@@ -187,6 +190,7 @@ def test_get_annotation_export_fallback_model_dump(mocker, mock_rich_console, mo
     mock_result = MagicMock()
     del mock_result.record
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.model_dump.return_value = {"record": {"title": "Fallback Data"}}
     mock_get_deps["api_get"].return_value = mock_result
 
@@ -195,7 +199,9 @@ def test_get_annotation_export_fallback_model_dump(mocker, mock_rich_console, mo
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--export", "csl"])
 
     assert result.exit_code == 0
-    mock_export.assert_called_once_with(record={"title": "Fallback Data"}, schema_id="Article", target_format="csl")
+    mock_export.assert_called_once_with(
+        record={"title": "Fallback Data"}, schema_id="Article", target_format="csl", schema_version="0.5.0"
+    )
 
 
 def test_get_annotation_export_missing_record(mock_get_deps):
@@ -232,6 +238,7 @@ def test_get_annotation_output_file_standard(tmp_path, mock_get_deps, mock_rich_
 
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.model_dump.return_value = {"id": "uuid-1234", "schema_id": "Article"}
     mock_get_deps["api_get"].return_value = mock_result
     mock_get_deps["panel"].return_value = "PanelOutput"
@@ -272,6 +279,7 @@ def test_get_annotation_output_dir_export(mocker, tmp_path, mock_get_deps):
 
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.record = {"title": "Test"}
     mock_get_deps["api_get"].return_value = mock_result
 

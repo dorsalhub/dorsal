@@ -45,7 +45,14 @@ def export_adapter(
         typer.Option(
             "--schema-id",
             "-s",
-            help="Explicitly pass the schema ID. Required if passing a raw record without a wrapper.",
+            help="Explicitly pass the schema ID (e.g. 'audio-transcription'). Required for a raw record without a wrapper.",
+        ),
+    ] = None,
+    schema_version: Annotated[
+        Optional[str],
+        typer.Option(
+            "--schema-version",
+            help="The schema version to validate against. Defaults to the version the JSON records, or the default.",
         ),
     ] = None,
     output_path: Annotated[
@@ -75,7 +82,14 @@ def export_adapter(
     """
     Export a Dorsal JSON result into a different format using an adapter.
     """
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console, print_raw_output
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+        print_raw_output,
+        warn_if_deprecated_schema_id,
+    )
     from dorsal.cli.adapter_app.helpers import extract_records
     from dorsal.api.adapters import export_record, export_record_to_file, get_format_extension
     from dorsal.cli.themes import get_ui_theme
@@ -85,6 +99,8 @@ def export_adapter(
     ui_context = ctx.obj or get_ui_theme()
     palette = ui_context["palette"]
 
+    warn_if_deprecated_schema_id(schema_id, palette)
+
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
@@ -92,7 +108,7 @@ def export_adapter(
         exit_cli(code=EXIT_CODE_ERROR)
 
     try:
-        records_to_process = extract_records(data, schema_override=schema_id)
+        records_to_process = extract_records(data, schema_override=schema_id, version_override=schema_version)
     except ValueError as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Validation error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
@@ -102,11 +118,12 @@ def export_adapter(
 
         base_schema = records_to_process[0][0]
         base_file_path = records_to_process[0][2]
+        base_version = records_to_process[0][3]
 
         try:
-            records_only = [record for _, record, _ in records_to_process]
+            records_only = [record for _, record, _, _ in records_to_process]
             merged_payload = merge_chunked_records(records_only, base_schema)
-            records_to_process = [(base_schema, merged_payload, base_file_path)]
+            records_to_process = [(base_schema, merged_payload, base_file_path, base_version)]
         except Exception as e:
             logger.exception("Failed to merge chunked records.")
             error_console.print(f"[{palette.get('error', 'bold red')}]Merge error:[/] {e}")
@@ -131,7 +148,7 @@ def export_adapter(
 
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
 
-    for i, (current_schema_id, record, orig_file_path) in enumerate(records_to_process):
+    for i, (current_schema_id, record, orig_file_path, record_version) in enumerate(records_to_process):
         # Generate base name correctly
         if orig_file_path:
             input_name = pathlib.Path(orig_file_path).name
@@ -157,7 +174,11 @@ def export_adapter(
         try:
             if no_save:
                 exported_text = export_record(
-                    record, current_schema_id, target_format=resolved_format, validate=not merge
+                    record,
+                    current_schema_id,
+                    target_format=resolved_format,
+                    schema_version=record_version,
+                    validate=not merge,
                 )
             else:
                 exported_text = export_record_to_file(
@@ -165,6 +186,7 @@ def export_adapter(
                     output_path=save_path,
                     schema_id=current_schema_id,
                     target_format=resolved_format,
+                    schema_version=record_version,
                     validate=not merge,
                 )
                 saved_paths_msg.append(str(save_path.resolve()))
