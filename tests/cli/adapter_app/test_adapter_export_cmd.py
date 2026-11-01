@@ -401,3 +401,44 @@ def test_export_merge_failure(mocker, mock_export_deps, tmp_path, monkeypatch):
     error_msg = str(mock_export_deps["error_console"].print.call_args.args[0])
     assert "Merge error" in error_msg
     assert "Simulated merge explosion" in error_msg
+
+
+def test_export_saved_unversioned_hub_annotation_validates_at_0_5_0(tmp_path, monkeypatch, mocker):
+    import io
+
+    from rich.console import Console
+
+    monkeypatch.chdir(tmp_path)
+    out = io.StringIO()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=Console(file=out, width=200))
+    mocker.patch("dorsal.common.cli.get_error_console", return_value=MagicMock())
+    record = {
+        "text": "Hello. Hi.",
+        "language": "eng",
+        "segments": [
+            {"text": "Hello.", "start_time": 0.0, "end_time": 1.0, "speaker": {"id": 1}},
+            {"text": "Hi.", "start_time": 1.0, "end_time": 2.0, "speaker": {"id": 2}},
+        ],
+    }
+    saved = {
+        "annotation_id": "abc",
+        "file_hash": "a" * 64,
+        "schema_id": "open/audio-transcription",
+        "schema_version": None,
+        "source": {"type": "Model", "id": "whisper"},
+        "record": record,
+        "user_id": 1,
+        "private": True,
+    }
+    hub_file = pathlib.Path("hub.json")
+    hub_file.write_text(json.dumps(saved), encoding="utf-8")
+
+    assert runner.invoke(cli_app, ["export", str(hub_file), "srt", "--no-save"]).exit_code == 0
+    assert "Hello." in out.getvalue()
+
+    result = runner.invoke(cli_app, ["export", str(hub_file), "srt", "--no-save", "--schema-version", "0.8.0"])
+    assert result.exit_code != 0
+
+    local_file = pathlib.Path("local.json")
+    local_file.write_text(json.dumps({"schema_id": "audio-transcription", "record": record}), encoding="utf-8")
+    assert runner.invoke(cli_app, ["export", str(local_file), "srt", "--no-save"]).exit_code != 0

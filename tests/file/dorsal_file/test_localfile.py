@@ -1689,7 +1689,18 @@ def test_add_annotation_rejects_dense_embedding_over_the_limit(annotatable_local
         )
 
 
-def test_add_annotation_force_still_rejects_dense_embedding_over_the_limit(annotatable_local_file):
-    with pytest.raises(Exception, match=DENSE_LIMIT_MESSAGE):
-        annotatable_local_file.add_annotation("embedding", {"vector": [0.0] * 16_385}, source="embedder", force=True)
+@pytest.mark.parametrize("schema_id", ["embedding", "oats/embedding"])
+def test_add_annotation_force_still_rejects_dense_embedding_over_the_limit(annotatable_local_file, schema_id):
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_annotation(schema_id, {"vector": [0.0] * 16_385}, source="embedder", force=True)
+    assert annotatable_local_file.get_annotations("embedding") == []
+
+
+def test_add_embedding_force_still_rejects_dense_vector_over_the_limit(annotatable_local_file):
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_embedding(vector=[0.0] * 16_385, model="m", force=True)
     assert annotatable_local_file.get_annotations("embedding") == []

@@ -205,6 +205,15 @@ def open_schema_name(schema_id: str | None) -> OpenSchemaName | None:
     return cast(OpenSchemaName, schema_id) if schema_id in OPEN_SCHEMA_NAME_MAP else None
 
 
+def hub_record_schema_version(schema_id: str | None, schema_version: str | None) -> str | None:
+    """Return the schema version of a record from DorsalHub, reading an unversioned OATS record as 0.5.0."""
+    from dorsal.common.constants import UNVERSIONED_HUB_RECORD_SCHEMA_VER
+
+    if schema_version is None and open_schema_name(schema_id) is not None:
+        return UNVERSIONED_HUB_RECORD_SCHEMA_VER
+    return schema_version
+
+
 def is_deprecated_schema_id(schema_id: object) -> bool:
     """Return True if `schema_id` names an OATS schema with the deprecated `open/` prefix."""
     return (
@@ -252,6 +261,7 @@ __all__ = [
     "OPEN_SCHEMA_PREFIX",
     "SCHEMA_ALIASES",
     "deprecated_schema_id_message",
+    "hub_record_schema_version",
     "is_deprecated_schema_id",
     "normalize_schema_id",
     "open_schema_name",

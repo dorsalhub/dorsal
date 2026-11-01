@@ -4,7 +4,9 @@
 
 ### Migrating from 0.12
 - **OATS 0.8.0 is the default** everywhere (was 0.5.0). Records keep the version stored with them or pinned by
-  their model; pass `schema_version="0.5.0"` to keep validating older records at 0.5.0.
+  their model. A DorsalHub annotation with no stored version is read as 0.5.0 by `dorsal hub annotation get --export`
+  and by `dorsal adapter export` on a saved annotation.
+  Elsewhere, pass `schema_version="0.5.0"` (`--schema-version 0.5.0`) to keep validating older records at 0.5.0.
 - **Schema ids:** use bare OATS names such as `document-extraction`, or the `oats/` form
   (`oats/document-extraction`). `open/document-extraction` still works but warns (`DeprecationWarning`, or a
   warning on stderr from the CLI and `dorsal.toml`) and will be removed. `arxiv` is accepted for `dorsal/arxiv`.
@@ -15,18 +17,22 @@
   instead of `jsonschema_rs.ValidationError`. Catch `ValueError` to handle both. Validators for other schemas
   are unchanged.
 - **Dense embeddings** over 16,384 values are rejected with an error naming the limit: `add_embedding`,
-  `add_annotation` and `chunk_record` raise `EmbeddingTooLargeError` (a `ValueError`), `run_model` returns it as
-  the result's error, and an `Annotation` holding one fails validation. `chunk_record` no longer splits dense
-  vectors. Reduce the dimensions or store a sparse vector.
-- **`dorsal.toml`:** `register_model` and `dorsal model install` write bare schema names, which Dorsal 0.12 and
-  earlier can't read. `ModelRunnerPipelineStep` dumps its `schema_id` as the bare name.
+  `add_annotation` (`force=True` included) and `chunk_record` raise `EmbeddingTooLargeError` (a `ValueError`),
+  `run_model` returns it as the result's error, and an `Annotation` with an `embedding` schema id holding one fails
+  validation. An `Annotation` with no `schema_id` isn't checked. `chunk_record` no longer splits dense vectors.
+  Reduce the dimensions or store a sparse vector.
+- **`dorsal.toml`:** `register_model` and `dorsal model install` write bare schema names. Dorsal 0.12 and earlier
+  reject them, and then every scan fails with "Invalid config for pipeline step", so don't share a `dorsal.toml`
+  (such as the global `~/.dorsal/dorsal.toml`) between 0.13 and an earlier version. `ModelRunnerPipelineStep`
+  dumps its `schema_id` as the bare name.
 - `run_model` raises `ValueError` when the OATS schema is not in the requested `schema_version`, instead of
   running without validation.
 
 ### Changed
 - Export output differs from `dorsalhub-adapters` 0.4.3 only by these fixes: TSV cells that would run as
   formulas start with `'`; YAML frontmatter values are quoted where needed; WebVTT and Markdown times round to
-  the millisecond; WebVTT cue text is escaped; hOCR `normalized` and `per_mille` boxes are scaled to the page;
+  the millisecond; parsing Markdown reads millisecond times and gives events to the segment that follows them;
+  WebVTT cue text is escaped; hOCR `normalized` and `per_mille` boxes are scaled to the page;
   hOCR names `oatschema-adapters` as its OCR system; theme CSS comments are renamed; HTML `gap_x`/`gap_y` work.
 - `dorsal adapter parse` writes the bare schema name and the `schema_version` it validated against.
 

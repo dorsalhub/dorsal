@@ -112,7 +112,9 @@ class Annotation(BaseModel):
     @model_validator(mode="after")
     def _validate_dense_embedding_size(self) -> Self:
         """Rejects a dense `embedding` vector longer than the schema allows."""
-        if self.schema_id in ("embedding", "open/embedding") and self.record is not None:
+        from dorsal.file.schemas import open_schema_name
+
+        if open_schema_name(self.schema_id) == "embedding" and self.record is not None:
             vector = getattr(self.record, "vector", None)
             if isinstance(vector, list) and len(vector) > DENSE_EMBEDDING_MAX_VALUES:
                 from dorsal.common.exceptions import EmbeddingTooLargeError

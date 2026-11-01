@@ -23,7 +23,7 @@ from uuid import uuid4
 from dorsal.common.constants import ANNOTATION_MAX_SIZE_BYTES
 from dorsal.common.exceptions import AnnotationExecutionError, PydanticValidationError
 from dorsal.file.utils.size import human_filesize, check_record_size
-from dorsal.file.schemas import resolve_schema_id
+from dorsal.file.schemas import open_schema_name, resolve_schema_id
 
 if TYPE_CHECKING:
     from dorsal.file.validators.file_record import (
@@ -436,6 +436,7 @@ def build_annotation_or_annotationgroup(
         AnnotationGroup: If the record was sharded.
 
     Raises:
+        EmbeddingTooLargeError: An `embedding` record's dense vector is longer than DENSE_EMBEDDING_MAX_VALUES.
         AnnotationExecutionError: If data parsing, sharding, or Pydantic instantiation fails.
     """
     schema_id = resolve_schema_id(schema_id)
@@ -446,6 +447,11 @@ def build_annotation_or_annotationgroup(
         CORE_MODEL_ANNOTATION_WRAPPERS,
         GenericFileAnnotation,
     )
+
+    if open_schema_name(schema_id) == "embedding":
+        from dorsal.file.chunking import check_dense_embedding
+
+        check_dense_embedding(record_data)
 
     try:
         chunks = process_record_for_sharding(schema_id, record_data)

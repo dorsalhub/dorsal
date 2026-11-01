@@ -104,7 +104,7 @@ def test_run_model_sparse_embedding_is_not_rejected(text_file):
     assert result.records
 
 
-@pytest.mark.parametrize("schema_id", ["embedding", "open/embedding"])
+@pytest.mark.parametrize("schema_id", ["embedding", "oats/embedding", "open/embedding"])
 def test_annotation_model_rejects_dense_embedding(schema_id):
     from dorsal.file.validators.file_record import Annotation, AnnotationXL
 
@@ -127,3 +127,29 @@ def test_annotation_model_accepts_other_schemas_and_sizes():
     Annotation.model_validate(
         {"record": {"vector": [0.0] * DENSE_EMBEDDING_MAX_VALUES}, "source": source, "schema_id": "open/embedding"}
     )
+
+
+def test_annotation_without_a_schema_id_is_not_checked():
+    from dorsal.file.validators.file_record import Annotation
+
+    annotation = Annotation.model_validate(
+        {"record": {"vector": [0.0] * (DENSE_EMBEDDING_MAX_VALUES + 1)}, "source": {"type": "Model", "id": "x"}}
+    )
+    assert annotation.schema_id is None
+
+
+@pytest.mark.parametrize("schema_id", ["embedding", "oats/embedding", "open/embedding"])
+def test_build_annotation_raises_the_limit_error(schema_id):
+    import warnings
+
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+    from dorsal.file.sharding import build_annotation_or_annotationgroup
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(EmbeddingTooLargeError, match=LIMIT_MESSAGE):
+            build_annotation_or_annotationgroup(
+                schema_id=schema_id,
+                record_data={"vector": [0.0] * (DENSE_EMBEDDING_MAX_VALUES + 1)},
+                source={"type": "Model", "id": "x"},
+            )

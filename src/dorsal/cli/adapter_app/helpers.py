@@ -21,6 +21,11 @@ def _version_of(*sources: Any) -> str | None:
             version = source.get("schema_version")
             if isinstance(version, str) and version:
                 return version
+    for source in sources:
+        if isinstance(source, dict) and "annotation_id" in source and "file_hash" in source:
+            from dorsal.file.schemas import hub_record_schema_version
+
+            return hub_record_schema_version(source.get("schema_id"), None)
     return None
 
 
@@ -32,6 +37,7 @@ def extract_records(
     Supports both legacy single 'record' outputs and new chunked 'records' arrays.
 
     The schema version is `version_override` if given, else the `schema_version` the payload records, else None.
+    An annotation downloaded from DorsalHub with no stored version is read as 0.5.0 for OATS schemas.
 
     Returns:
         A list of tuples containing (schema_id, record_dict, file_path, schema_version).

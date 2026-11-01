@@ -167,3 +167,26 @@ def test_extract_records_version_override_wins():
     assert (
         extract_records({"text": "A"}, schema_override="audio-transcription", version_override="0.6.0")[0][3] == "0.6.0"
     )
+
+
+HUB_ANNOTATION = {
+    "annotation_id": "abc",
+    "file_hash": "a" * 64,
+    "schema_id": "open/audio-transcription",
+    "schema_version": None,
+    "record": {"text": "A"},
+    "user_id": 1,
+}
+
+
+def test_extract_records_reads_an_unversioned_hub_annotation_as_0_5_0():
+    assert extract_records(HUB_ANNOTATION)[0][3] == "0.5.0"
+    assert extract_records({**HUB_ANNOTATION, "schema_version": "0.8.0"})[0][3] == "0.8.0"
+    assert extract_records(HUB_ANNOTATION, version_override="0.8.0")[0][3] == "0.8.0"
+    assert extract_records({"results": [HUB_ANNOTATION]})[0][3] == "0.5.0"
+
+
+def test_extract_records_unversioned_local_and_non_oats_records_keep_none():
+    local = {"schema_id": "open/audio-transcription", "schema_version": None, "record": {"text": "A"}}
+    assert extract_records(local)[0][3] is None
+    assert extract_records({**HUB_ANNOTATION, "schema_id": "dorsal/arxiv"})[0][3] is None

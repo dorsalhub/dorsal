@@ -85,6 +85,7 @@ def get_annotation(
     from dorsal.common.exceptions import NotFoundError, DorsalClientError
     from dorsal.cli.views.model import create_model_result_panel
     from dorsal.api.adapters import export_record, get_format_extension
+    from dorsal.file.schemas import hub_record_schema_version
 
     console = get_rich_console()
     error_console = get_error_console()
@@ -121,7 +122,12 @@ def get_annotation(
                 record=record_dict,
                 schema_id=schema_id,
                 target_format=export_format,
-                **{"schema_version": getattr(hydrated, "schema_version", None), **parsed_export_options},
+                **{
+                    "schema_version": hub_record_schema_version(
+                        getattr(hydrated, "schema_id", None), getattr(hydrated, "schema_version", None)
+                    ),
+                    **parsed_export_options,
+                },
             )
 
         if output_path:
