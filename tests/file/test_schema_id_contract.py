@@ -495,3 +495,44 @@ def test_file_annotator_accepts_bare_names():
             private=None,
         )
     assert annotations[0].schema_id == "open/generic"
+
+
+def test_schema_id_helpers_reject_non_strings():
+    assert open_schema_name(None) is None
+    assert open_schema_name(3) is None
+    assert is_deprecated_schema_id(None) is False
+
+
+def test_resolve_schema_id_with_a_shallow_stack_warns(monkeypatch):
+    import sys
+
+    from dorsal.file import schemas
+
+    def no_frame(depth=0):
+        raise ValueError("call stack is not deep enough")
+
+    monkeypatch.setattr(sys, "_getframe", no_frame)
+    with pytest.warns(DeprecationWarning):
+        schemas.resolve_schema_id("open/generic")
+
+
+def test_open_schema_validator_validate_passes_valid_records():
+    from dorsal.file.validators.open_schema import get_open_schema_validator
+
+    assert get_open_schema_validator("generic").validate(GENERIC_RECORD) is None
+
+
+@pytest.mark.parametrize("override", [None, "generic"])
+def test_file_annotator_pipeline_step_accepts_bare_names(override, text_file, mocker):
+    from dorsal.file.file_annotator import FILE_ANNOTATOR
+
+    execute = mocker.patch.object(FILE_ANNOTATOR, "_execute", side_effect=RuntimeError("stop"))
+    step = {"annotation_model": {"module": __name__, "name": "GenericModel"}, "schema_id": "generic"}
+    mocker.patch("dorsal.file.file_annotator.resolve_pipeline_step_models", return_value=(GenericModel, None))
+
+    with pytest.raises(RuntimeError, match="stop"):
+        FILE_ANNOTATOR.annotate_file_using_pipeline_step(
+            file_path=text_file, model_runner=MagicMock(), pipeline_step=step, schema_id=override, private=None
+        )
+
+    assert execute.call_args.kwargs["schema_id"] == "open/generic"

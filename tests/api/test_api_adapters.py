@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import json
 import warnings
 from unittest.mock import MagicMock, patch
 
@@ -492,3 +493,41 @@ def test_arxiv_does_not_shadow_oats_formats():
         for name, _ in oatschema_adapters.list_formats(schema):
             assert oatschema_adapters.get_adapter(schema, name).format_name == name
             assert not oatschema_adapters.get_adapter(schema, name).export.__module__.startswith("dorsal")
+
+
+def test_arxiv_validate_fetches_the_dataset_schema(mocker):
+    import jsonschema_rs
+
+    schema = {"type": "object", "required": ["arxiv_id"], "properties": {"arxiv_id": {"type": "string"}}}
+    get_schema = mocker.patch("dorsal.api.dataset.get_dataset_schema", return_value=schema)
+
+    assert export_record(ARXIV, "dorsal/arxiv", "md", validate=True)
+    get_schema.assert_called_once_with("dorsal/arxiv")
+
+    with pytest.raises(DorsalError) as exc_info:
+        export_record({"title": "No id"}, "dorsal/arxiv", "ris", validate=True)
+    assert isinstance(exc_info.value.__cause__, jsonschema_rs.ValidationError)
+
+
+def test_arxiv_md_parse_validates_and_rejects_empty_content(mocker):
+    mocker.patch("dorsal.api.dataset.get_dataset_schema", return_value={"type": "object"})
+
+    assert parse_file(export_record(ARXIV, "dorsal/arxiv", "md"), "dorsal/arxiv", "md", validate=True)["title"]
+    with pytest.raises(DorsalError, match="empty"):
+        parse_file("   ", "dorsal/arxiv", "md")
+
+
+def test_arxiv_csl_json_author_names():
+    record = {**ARXIV, "authors": ["Plato", "  ", "Ada King Lovelace"]}
+    authors = json.loads(export_record(record, "dorsal/arxiv", "csl-json"))[0]["author"]
+
+    assert authors == [{"family": "Plato"}, {}, {"family": "Lovelace", "given": "Ada King"}]
+
+
+@patch("dorsal.api.adapters._with_schema_version", side_effect=DorsalError("inner"))
+@patch("oatschema_adapters.get_adapter")
+def test_dorsal_errors_are_not_wrapped_twice(mock_get_adapter, _):
+    with pytest.raises(DorsalError, match="^inner$"):
+        export_record({}, "audio-transcription", "srt")
+    with pytest.raises(DorsalError, match="^inner$"):
+        parse_file("x", "audio-transcription", "srt")
