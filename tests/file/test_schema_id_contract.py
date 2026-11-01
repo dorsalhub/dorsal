@@ -536,3 +536,71 @@ def test_file_annotator_pipeline_step_accepts_bare_names(override, text_file, mo
         )
 
     assert execute.call_args.kwargs["schema_id"] == "open/generic"
+
+
+@pytest.mark.parametrize(
+    "schema_id, normalized, name",
+    [
+        ("oats/generic", "open/generic", "generic"),
+        ("oats/temporal-segmentation", "open/temporal-segmentation", "temporal-segmentation"),
+        ("arxiv", "dorsal/arxiv", None),
+        ("oats/arxiv", "oats/arxiv", None),
+        ("oats/my-schema", "oats/my-schema", None),
+    ],
+)
+def test_oats_prefix_and_aliases_resolve(schema_id, normalized, name, no_warnings):
+    assert normalize_schema_id(schema_id) == normalized
+    assert _public_function(schema_id) == normalized
+    assert open_schema_name(schema_id) == name
+    assert is_deprecated_schema_id(schema_id) is False
+
+
+def test_aliases_never_shadow_an_oats_schema():
+    from dorsal.file.schemas import SCHEMA_ALIASES
+
+    assert not set(SCHEMA_ALIASES) & get_args_oats()
+    for alias, target in SCHEMA_ALIASES.items():
+        assert "/" not in alias
+        assert "/" in target and open_schema_name(target) is None
+
+
+def get_args_oats():
+    from typing import get_args
+
+    return set(get_args(oatschema.SchemaName))
+
+
+def test_run_model_oats_prefix_is_identical(text_file, no_warnings):
+    bare = run_model_last(GenericModel, text_file, schema_id="generic")
+    prefixed = run_model_last(GenericModel, text_file, schema_id="oats/generic")
+
+    volatile = {"time_taken": True, "source": {"execution_id"}}
+    assert bare.model_dump(exclude=volatile) == prefixed.model_dump(exclude=volatile)
+
+
+def test_pipeline_step_accepts_oats_prefix_and_aliases():
+    from dorsal.file.configs.model_runner import ModelRunnerPipelineStep
+
+    oats = ModelRunnerPipelineStep.model_validate(_pipeline_step("oats/generic"))
+    assert oats == ModelRunnerPipelineStep.model_validate(_pipeline_step("generic"))
+    assert oats.model_dump(mode="json")["schema_id"] == "generic"
+
+    arxiv = ModelRunnerPipelineStep.model_validate(_pipeline_step("arxiv"))
+    assert arxiv.schema_id == "dorsal/arxiv"
+
+
+def test_get_open_schema_validator_accepts_oats_prefix(no_warnings):
+    from dorsal.file.validators.open_schema import get_open_schema_validator
+
+    assert get_open_schema_validator("oats/ranking") is get_open_schema_validator("ranking")
+
+
+def test_client_uses_the_alias_target(requests_mock, no_warnings):
+    from dorsal.client import DorsalClient
+
+    client = DorsalClient(api_key="x" * 40, base_url="https://api.example.com")
+    url = "https://api.example.com/v1/namespaces/dorsal/datasets/arxiv/schema"
+    requests_mock.get(url, json={"type": "object"})
+
+    assert client.get_dataset_schema("arxiv") == client.get_dataset_schema("dorsal/arxiv")
+    assert [request.url for request in requests_mock.request_history] == [url, url]

@@ -119,10 +119,10 @@ def parse_adapter(
         error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    from dorsal.file.schemas import open_schema_name
+    from dorsal.file.schemas import normalize_schema_id, open_schema_name
 
     final_payload: dict[str, Any] = {
-        "schema_id": open_schema_name(schema_id) or schema_id,
+        "schema_id": open_schema_name(schema_id) or normalize_schema_id(schema_id),
         "file_path": str(file_path.resolve()),
         "record": record_dict,
     }

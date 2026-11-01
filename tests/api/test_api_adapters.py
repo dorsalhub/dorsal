@@ -531,3 +531,26 @@ def test_dorsal_errors_are_not_wrapped_twice(mock_get_adapter, _):
         export_record({}, "audio-transcription", "srt")
     with pytest.raises(DorsalError, match="^inner$"):
         parse_file("x", "audio-transcription", "srt")
+
+
+@pytest.mark.parametrize(
+    "short, full, record, target_format",
+    [
+        ("oats/audio-transcription", "audio-transcription", TRANSCRIPTION, "srt"),
+        ("oats/document-extraction", "document-extraction", DOCUMENT, "html"),
+        ("arxiv", "dorsal/arxiv", ARXIV, "bibtex"),
+        ("arxiv", "dorsal/arxiv", ARXIV, "csl"),
+    ],
+)
+def test_oats_prefix_and_aliases_export_identically(short, full, record, target_format):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert export_record(record, short, target_format) == export_record(record, full, target_format)
+        assert get_supported_formats(short) == get_supported_formats(full)
+        assert get_format_extension(short, target_format) == get_format_extension(full, target_format)
+
+
+def test_arxiv_alias_parses_like_the_full_id():
+    content = export_record(ARXIV, "arxiv", "md")
+
+    assert parse_file(content, "arxiv", "md") == parse_file(content, "dorsal/arxiv", "md")

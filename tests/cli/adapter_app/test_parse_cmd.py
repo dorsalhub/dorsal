@@ -226,3 +226,23 @@ def test_parse_cmd_schema_version_as_an_option(mock_parse_deps, tmp_path, monkey
     assert result.exit_code == 0, result.output
     assert mock_parse_deps["parse_api"].call_args.kwargs["schema_version"] == "0.5.0"
     assert json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])["schema_version"] == "0.5.0"
+
+
+@pytest.mark.parametrize(
+    "schema_id, written", [("arxiv", "dorsal/arxiv"), ("oats/audio-transcription", "audio-transcription")]
+)
+def test_parse_cmd_writes_the_resolved_schema_id(mock_parse_deps, tmp_path, monkeypatch, schema_id, written):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("paper.md")
+    test_file.write_text("mock content", encoding="utf-8")
+
+    result = runner.invoke(cli_app, ["parse", str(test_file), schema_id, "--no-save"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])
+    assert data["schema_id"] == written
+    printed = [
+        str(getattr(call.args[0], "renderable", call.args[0]))
+        for call in mock_parse_deps["error_console"].print.call_args_list
+    ]
+    assert not any("deprecated" in line for line in printed)

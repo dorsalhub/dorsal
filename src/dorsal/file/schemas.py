@@ -26,6 +26,11 @@ from dorsal.common.constants import ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR, OPEN
 logger = logging.getLogger(__name__)
 
 OPEN_SCHEMA_PREFIX = "open/"
+OATS_SCHEMA_PREFIX = "oats/"
+
+SCHEMA_ALIASES: dict[str, str] = {
+    "arxiv": "dorsal/arxiv",
+}
 
 OPEN_SCHEMA_NAME_MAP = {
     "entity-extraction": "entity-extraction.json",
@@ -172,22 +177,32 @@ def open_schema_versions(name: OpenSchemaName) -> list[str]:
 
 
 def normalize_schema_id(schema_id: str | None) -> str | None:
-    """Return `schema_id` with a bare OATS schema name (e.g. `generic`) written as its dataset id (`open/generic`)."""
-    if not schema_id:
+    """
+    Return the dataset id for `schema_id`.
+
+    An OATS schema name, bare (`generic`) or with the `oats/` prefix (`oats/generic`), becomes its dataset id
+    (`open/generic`). An official alias in SCHEMA_ALIASES (`arxiv`) becomes the id it names (`dorsal/arxiv`).
+    Other ids are returned unchanged.
+    """
+    if not schema_id or not isinstance(schema_id, str):
         return schema_id
 
-    if schema_id in OPEN_SCHEMA_NAME_MAP:
-        return f"{OPEN_SCHEMA_PREFIX}{schema_id}"
+    name = open_schema_name(schema_id)
+    if name is not None:
+        return f"{OPEN_SCHEMA_PREFIX}{name}"
 
-    return schema_id
+    return SCHEMA_ALIASES.get(schema_id, schema_id)
 
 
 def open_schema_name(schema_id: str | None) -> OpenSchemaName | None:
-    """Return the OATS schema name for `schema_id` (`generic` or `open/generic`), or None if it is not one."""
+    """Return the OATS schema name for `schema_id` (`generic`, `oats/generic` or `open/generic`), or None."""
     if not isinstance(schema_id, str):
         return None
-    name = schema_id.removeprefix(OPEN_SCHEMA_PREFIX)
-    return cast(OpenSchemaName, name) if name in OPEN_SCHEMA_NAME_MAP else None
+    for prefix in (OATS_SCHEMA_PREFIX, OPEN_SCHEMA_PREFIX):
+        if schema_id.startswith(prefix):
+            schema_id = schema_id.removeprefix(prefix)
+            break
+    return cast(OpenSchemaName, schema_id) if schema_id in OPEN_SCHEMA_NAME_MAP else None
 
 
 def is_deprecated_schema_id(schema_id: object) -> bool:
@@ -220,9 +235,10 @@ def resolve_schema_id(schema_id: str, *, depth: int = 1) -> str:
     """
     Return the dataset id for a schema id given to a public function, warning if it uses the `open/` prefix.
 
-    A bare OATS schema name (`generic`) and its deprecated `open/` form (`open/generic`) both resolve to
-    `open/generic`; other ids are returned unchanged. The `DeprecationWarning` is emitted only when the public
-    function was called from outside Dorsal. `depth` is how many frames the public function is above this call.
+    `generic`, `oats/generic` and the deprecated `open/generic` all resolve to `open/generic`, and an official
+    alias such as `arxiv` resolves to `dorsal/arxiv`, as `normalize_schema_id` does. The `DeprecationWarning` is
+    emitted only when the public function was called from outside Dorsal. `depth` is how many frames the public
+    function is above this call.
     """
     if is_deprecated_schema_id(schema_id) and not _called_from_dorsal(depth + 1):
         warnings.warn(deprecated_schema_id_message(schema_id), DeprecationWarning, stacklevel=depth + 2)
@@ -232,7 +248,9 @@ def resolve_schema_id(schema_id: str, *, depth: int = 1) -> str:
 __all__ = [
     "get_open_schema",
     "OpenSchemaName",
+    "OATS_SCHEMA_PREFIX",
     "OPEN_SCHEMA_PREFIX",
+    "SCHEMA_ALIASES",
     "deprecated_schema_id_message",
     "is_deprecated_schema_id",
     "normalize_schema_id",

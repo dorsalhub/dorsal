@@ -5,8 +5,9 @@
 ### Migrating from 0.12
 - **OATS 0.8.0 is the default** everywhere (was 0.5.0). Records keep the version stored with them or pinned by
   their model; pass `schema_version="0.5.0"` to keep validating older records at 0.5.0.
-- **Schema ids:** use bare OATS names such as `document-extraction`. `open/document-extraction` still works but
-  warns (`DeprecationWarning`, or a warning on stderr from the CLI and `dorsal.toml`) and will be removed.
+- **Schema ids:** use bare OATS names such as `document-extraction`, or the `oats/` form
+  (`oats/document-extraction`). `open/document-extraction` still works but warns (`DeprecationWarning`, or a
+  warning on stderr from the CLI and `dorsal.toml`) and will be removed. `arxiv` is accepted for `dorsal/arxiv`.
 - **Exports use `oatschema-adapters`** instead of `dorsalhub-adapters`. Import adapters from `oatschema_adapters`
   with bare names; Dorsal's own `dorsal/arxiv` formats register with it on first use of `dorsal.api.adapters`.
   Format options are checked: an unknown one raises, and string values such as `"false"` are converted.
