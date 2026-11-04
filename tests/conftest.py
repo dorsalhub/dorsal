@@ -90,6 +90,7 @@ def isolate_filesystem_from_tests(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", lambda: test_home)
 
     monkeypatch.setattr(constants, "LOCAL_DORSAL_DIR", test_home / ".dorsal")
+    monkeypatch.setenv("NETRC", str(test_home / ".netrc"))
 
     fake_cwd = tmp_path / "test_project"
     fake_cwd.mkdir(exist_ok=True)

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0 (Unreleased)
+## 0.13.0 (2026-11-04)
 
 ### Migrating from 0.12
 - **OATS 0.8.0 is the default** everywhere (was 0.5.0). Records keep the version stored with them or pinned by
