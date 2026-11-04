@@ -600,3 +600,21 @@ def test_set_validation_hash_unexpected_exception(make_mock_record_datetime):
 
         assert "Unexpected error setting validation_hash: Unexpected mock failure" in str(excinfo.value)
         assert isinstance(excinfo.value.__cause__, TypeError)
+
+
+@pytest.mark.parametrize("method", ["get_annotations", "get_user_annotations", "get_latest_annotation"])
+def test_dorsal_file_bare_and_prefixed_schema_ids_are_identical(populated_dorsal_file, method):
+    import warnings
+
+    df = populated_dorsal_file
+    df.annotation_stubs = {"open/classification": df.annotation_stubs["open/test-schema"]}
+    kwargs = {"user_id": 100} if method == "get_user_annotations" else {}
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        bare = getattr(df, method)("classification", **kwargs)
+    with pytest.warns(DeprecationWarning, match="'open/classification' is deprecated"):
+        prefixed = getattr(df, method)("open/classification", **kwargs)
+
+    assert bare == prefixed
+    assert bare

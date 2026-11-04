@@ -108,7 +108,9 @@ def test_get_open_schema():
         get_open_schema("generic", version="0.5")
 
     with pytest.raises(FileNotFoundError):
-        get_open_schema("ranking")
+        get_open_schema("ranking", version="0.5.0")
+
+    assert schema_version_of(get_open_schema("ranking")) == OPEN_VALIDATION_SCHEMAS_VER
 
 
 def test_get_open_schema_integrity_error():
@@ -150,7 +152,18 @@ def test_get_open_schema_validator():
     with pytest.raises(AttributeError):
         open_schema_module.__getattr__("random_attribute")
 
-    assert not hasattr(open_schema_module, "ranking_validator")
+    assert open_schema_module.__getattr__("ranking_validator").schema_name == "ranking"
+    assert open_schema_module.__getattr__("temporal_segmentation_validator").schema_name == "temporal-segmentation"
+
+
+def test_default_validator_attribute_missing_at_default_version(monkeypatch):
+    open_schema_module._build_and_cache_validator.cache_clear()
+    monkeypatch.setattr(open_schema_module, "OPEN_VALIDATION_SCHEMAS_VER", "0.5.0")
+    try:
+        with pytest.raises(AttributeError, match="'ranking' is not in schema version 0.5.0"):
+            open_schema_module.__getattr__("ranking")
+    finally:
+        open_schema_module._build_and_cache_validator.cache_clear()
 
 
 def test_open_schema_names_match_oatschema():

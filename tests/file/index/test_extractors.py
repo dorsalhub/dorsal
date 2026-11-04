@@ -314,3 +314,38 @@ def test_registry_create_eav_tuple_none():
     result = test_reg.create_eav_tuple("test/schema", "some_key", None)
 
     assert result is None
+
+
+def test_extract_embedding():
+    fts, eav = registry.extract("open/embedding", {"model": "clip", "target": "image", "vector": [0.1, 0.2]})
+
+    assert fts == []
+    assert ("open/embedding", "model", "clip", None) in eav
+    assert ("open/embedding", "target", "image", None) in eav
+
+
+def test_extract_ranking():
+    rec = {
+        "query": "cats",
+        "target": "relevance",
+        "collection": "docs",
+        "results": [{"title": "Cats", "text": "About cats"}, {"id": "x"}, "bad"],
+    }
+    fts, eav = registry.extract("open/ranking", rec)
+
+    assert fts == ["cats", "Cats", "About cats"]
+    assert ("open/ranking", "collection", "docs", None) in eav
+    assert ("open/ranking", "target", "relevance", None) in eav
+
+
+def test_extract_temporal_segmentation():
+    rec = {
+        "track_id": "v1",
+        "segments": [{"label": "scene", "title": "Intro", "description": "Opening"}, {"label": "credits"}, 3],
+    }
+    fts, eav = registry.extract("open/temporal-segmentation", rec)
+
+    assert fts == ["Intro", "Opening"]
+    assert ("open/temporal-segmentation", "label", "scene", None) in eav
+    assert ("open/temporal-segmentation", "label", "credits", None) in eav
+    assert ("open/temporal-segmentation", "track_id", "v1", None) in eav

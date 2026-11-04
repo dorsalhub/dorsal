@@ -993,8 +993,7 @@ class TestRunModelWrapper:
 
     def test_run_model_open_schema_resolution(self, mock_fs, mocker):
         """
-        Test that providing an 'open/' schema_id automatically attempts to
-        resolve the standard validator.
+        Test that providing an OATS schema_id automatically resolves the standard validator.
         """
         mock_val = MagicMock(spec=JsonSchemaValidator)
         mock_val.schema = {"version": "1.0"}
@@ -1005,13 +1004,13 @@ class TestRunModelWrapper:
         run_model(
             MockSuccessAnnotationModel,
             "/test_file.txt",
-            schema_id="open/foobar",
+            schema_id="generic",
             schema_version=OPEN_VALIDATION_SCHEMAS_VER,
         )
 
         from dorsal.file.validators.open_schema import get_open_schema_validator
 
-        get_open_schema_validator.assert_called_with(name="foobar", version=OPEN_VALIDATION_SCHEMAS_VER)
+        get_open_schema_validator.assert_called_with(name="generic", version=OPEN_VALIDATION_SCHEMAS_VER)
 
     def test_run_model_base_failure_handling(self, mock_fs, mocker):
         """

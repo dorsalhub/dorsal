@@ -25,14 +25,20 @@ def list_adapters(
     schema_id: Annotated[
         str,
         typer.Argument(
-            help="The schema ID to list supported formats for (e.g., 'open/audio-transcription').",
+            help="The schema ID to list supported formats for (e.g., 'audio-transcription').",
         ),
     ],
 ):
     """
     List supported export formats for a given Dorsal schema.
     """
-    from dorsal.common.cli import exit_cli, EXIT_CODE_ERROR, get_rich_console, get_error_console
+    from dorsal.common.cli import (
+        exit_cli,
+        EXIT_CODE_ERROR,
+        get_rich_console,
+        get_error_console,
+        warn_if_deprecated_schema_id,
+    )
     from dorsal.api.adapters import get_supported_formats
     from dorsal.common.exceptions import DorsalError
     from rich.text import Text
@@ -44,6 +50,7 @@ def list_adapters(
     ui_context = ctx.obj or get_ui_theme()
     palette = ui_context["palette"]
 
+    warn_if_deprecated_schema_id(schema_id, palette)
     try:
         formats = get_supported_formats(schema_id)
     except DorsalError as e:

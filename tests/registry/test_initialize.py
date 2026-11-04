@@ -54,6 +54,10 @@ def test_create_project_success(tmp_path):
     assert f'name = "{expected_pkg_name}"' in pyproject_content
     assert f'description = "Dorsal model: {project_name}"' in pyproject_content
 
+    model_config = (project_root / "model_config.toml").read_text(encoding="utf-8")
+    assert 'schema_id = "generic"' in model_config
+    assert 'schema_version = "0.8.0"' in model_config
+
     model_content = (module_dir / "model.py").read_text(encoding="utf-8")
     assert "class MyCoolScanner(AnnotationModel):" in model_content
 

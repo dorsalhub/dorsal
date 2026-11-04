@@ -38,6 +38,10 @@ def run_model(
     debug: bool = True,
 ) -> list[RunModelResult]:
     """Test wrapper for dorsal.file.run_model."""
+    from dorsal.file.schemas import resolve_schema_id
+
+    if schema_id is not None:
+        schema_id = resolve_schema_id(schema_id)
     if annotation_model.__module__ == "__main__":
         import logging
 

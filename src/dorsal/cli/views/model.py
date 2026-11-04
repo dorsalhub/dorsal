@@ -589,6 +589,85 @@ def _render_generic(data: dict[str, Any], ui_context: UIContext, max_length: int
     return Group(*renderables)
 
 
+def _format_seconds(value: Any) -> str:
+    return f"{value:.2f}s" if isinstance(value, (int, float)) and not isinstance(value, bool) else "-"
+
+
+def _format_score(value: Any) -> str:
+    return f"{value:.4f}" if isinstance(value, (int, float)) and not isinstance(value, bool) else "-"
+
+
+def _render_ranking(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
+    logger.debug("Executing _render_ranking")
+    palette = ui_context["palette"]
+    results = data.get("results", [])
+
+    renderables: list[RenderableType] = [
+        Text(f"Ranking: {data.get('target', 'Unknown Target')}", style=palette.get("section_title", "bold"))
+    ]
+    if query := data.get("query"):
+        renderables.append(Text(f"Query: {query}", style=palette.get("info", "dim")))
+    if collection := data.get("collection"):
+        renderables.append(Text(f"Collection: {collection}", style=palette.get("info", "dim")))
+    if producer := data.get("producer"):
+        renderables.append(Text(f"Producer: {producer}", style=palette.get("info", "dim")))
+    renderables.append(Text(""))
+
+    table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
+    table.add_column("Rank", style=palette.get("info", "dim"))
+    table.add_column("Item", style=palette.get("primary_value", "cyan"))
+    table.add_column("Score", style=palette.get("table_header", "bold"))
+
+    for result in results[:max_length]:
+        if not isinstance(result, dict):
+            continue
+        item = result.get("title") or result.get("id") or result.get("text") or "-"
+        table.add_row(Text(str(result.get("rank", "-"))), Text(str(item)), Text(_format_score(result.get("score"))))
+
+    renderables.append(table)
+
+    if len(results) > max_length:
+        renderables.append(Text(f"... {len(results) - max_length} more results", style=palette.get("info", "dim")))
+
+    return Group(*renderables)
+
+
+def _render_temporal_segmentation(data: dict[str, Any], ui_context: UIContext, max_length: int) -> RenderableType:
+    logger.debug("Executing _render_temporal_segmentation")
+    palette = ui_context["palette"]
+    segments = data.get("segments", [])
+
+    renderables: list[RenderableType] = [Text("Temporal Segments", style=palette.get("section_title", "bold"))]
+    if producer := data.get("producer"):
+        renderables.append(Text(f"Producer: {producer}", style=palette.get("info", "dim")))
+    if (duration := data.get("duration")) is not None:
+        renderables.append(Text(f"Duration: {_format_seconds(duration)}", style=palette.get("info", "dim")))
+    renderables.append(Text(""))
+
+    table = Table(box=None, padding=(0, 2), pad_edge=False, show_header=True)
+    table.add_column("Start", style=palette.get("info", "dim"))
+    table.add_column("End", style=palette.get("info", "dim"))
+    table.add_column("Label", style=palette.get("table_header", "bold"))
+    table.add_column("Title", style=palette.get("primary_value", "cyan"))
+
+    for segment in segments[:max_length]:
+        if not isinstance(segment, dict):
+            continue
+        table.add_row(
+            Text(_format_seconds(segment.get("start_time"))),
+            Text(_format_seconds(segment.get("end_time"))),
+            Text(str(segment.get("label", "-"))),
+            Text(str(segment.get("title") or segment.get("description") or "")),
+        )
+
+    renderables.append(table)
+
+    if len(segments) > max_length:
+        renderables.append(Text(f"... {len(segments) - max_length} more segments", style=palette.get("info", "dim")))
+
+    return Group(*renderables)
+
+
 RENDERER_REGISTRY = {
     "dorsal/arxiv": (_render_arxiv, "ArXiv Record"),
     "open/audio-transcription": (_render_audio_transcription, "Audio Transcription"),
@@ -599,6 +678,8 @@ RENDERER_REGISTRY = {
     "open/geolocation": (_render_geolocation, "Geolocation"),
     "open/llm-output": (_render_llm_output, "LLM Output"),
     "open/object-detection": (_render_object_detection, "Object Detection"),
+    "open/ranking": (_render_ranking, "Ranking"),
     "open/regression": (_render_regression, "Regression"),
+    "open/temporal-segmentation": (_render_temporal_segmentation, "Temporal Segmentation"),
     "open/generic": (_render_generic, "Generic Data"),
 }

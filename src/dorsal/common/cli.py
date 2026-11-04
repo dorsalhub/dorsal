@@ -253,6 +253,20 @@ def parse_cli_options(options: Sequence[str] | None, palette: dict[str, str]) ->
     return result
 
 
+def warn_if_deprecated_schema_id(schema_id: str | None, palette: dict[str, str]) -> None:
+    """Print a warning to stderr if `schema_id`, given on the command line, uses the deprecated `open/` prefix."""
+    from dorsal.cli.views.layout import Trimmed
+    from dorsal.file.schemas import deprecated_schema_id_message, is_deprecated_schema_id
+
+    if schema_id is not None and is_deprecated_schema_id(schema_id):
+        get_error_console().print(
+            Trimmed(
+                f"[{palette.get('panel_title_warning', 'bold yellow')}]Warning:[/] {deprecated_schema_id_message(schema_id)}"
+            ),
+            highlight=False,
+        )
+
+
 class DummyContext:
     """A no-op context manager to suppress spinners when outputting raw JSON."""
 

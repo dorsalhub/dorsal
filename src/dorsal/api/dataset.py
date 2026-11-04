@@ -34,6 +34,7 @@ from dorsal.common.validators.json_schema import (
     json_schema_validate_records,
 )
 from dorsal.file.validators.open_schema import get_open_schema_validator
+from dorsal.file.schemas import open_schema_name, resolve_schema_id
 from dorsal.session import get_shared_dorsal_client
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ def get_dataset(dataset_id: str, api_key: str | None = None, client: DorsalClien
         NotFoundError: If no dataset with the specified ID is found.
         DorsalClientError: If the API call fails for any other reason.
     """
+    dataset_id = resolve_schema_id(dataset_id)
     logger.debug(
         "get_dataset called with id: '%s', api_key provided: %s",
         dataset_id,
@@ -154,6 +156,7 @@ def get_dataset_schema(dataset_id: str, api_key: str | None = None, client: Dors
                                 cannot be parsed into a valid `Dataset` object
                                 (propagated from `get_dataset`).
     """
+    dataset_id = resolve_schema_id(dataset_id)
     logger.debug(
         "Attempting to fetch schema for dataset_id: '%s'. API key used: %s",
         dataset_id,
@@ -189,7 +192,11 @@ def get_dataset_schema(dataset_id: str, api_key: str | None = None, client: Dors
 
 
 def make_schema_validator(
-    dataset_id: str, api_key: str | None = None, client: DorsalClient | None = None
+    dataset_id: str,
+    api_key: str | None = None,
+    client: DorsalClient | None = None,
+    *,
+    schema_version: str | None = None,
 ) -> JsonSchemaValidator:
     """Fetches a dataset's schema and returns a callable validator function.
 
@@ -214,16 +221,22 @@ def make_schema_validator(
 
         ```
 
+    An OATS schema name such as `"classification"` returns the bundled validator for that schema, without a
+    request, and its `validate` raises `oatschema.ValidationError`.
+
     Args:
-        dataset_id (str): Identifier for the dataset whose schema will be used.
+        dataset_id (str): Identifier for the dataset whose schema will be used, or an OATS schema name.
         api_key (str, optional): An API key for this request.
+        schema_version (str, optional): The OATS schema version to validate against. Defaults to
+            OPEN_VALIDATION_SCHEMAS_VER. Applies only to OATS schemas.
 
     Returns:
         JsonSchemaValidator: A callable instance that validates a dictionary
             record against the fetched schema.
 
     Raises:
-        ValueError: If `dataset_id` is invalid (propagated from `get_dataset`).
+        ValueError: If `dataset_id` is invalid (propagated from `get_dataset`), if `schema_version` is given for
+            a schema that is not an OATS schema, or if the OATS schema is not in `schema_version`.
         DorsalClientError: Base client error or for unexpected issues (propagated
                            from `get_dataset`).
         AuthError: Authentication failure (propagated from `get_dataset`).
@@ -239,12 +252,18 @@ def make_schema_validator(
         JsonSchemaValidationError: If the schema is invalid.
 
     """
-    if dataset_id.startswith("open/"):
-        schema_name = dataset_id.removeprefix("open/")
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
+
+    dataset_id = resolve_schema_id(dataset_id)
+    schema_name = open_schema_name(dataset_id)
+    if schema_name is not None:
+        version = schema_version or OPEN_VALIDATION_SCHEMAS_VER
         try:
-            return get_open_schema_validator(cast(Any, schema_name))
-        except (ValueError, TypeError):
-            pass
+            return get_open_schema_validator(schema_name, version=version)
+        except RuntimeError as err:
+            raise ValueError(f"OATS schema '{schema_name}' is not available at version {version}.") from err
+    if schema_version is not None:
+        raise ValueError(f"`schema_version` applies only to OATS schemas, not '{dataset_id}'.")
 
     if is_offline_mode():
         raise DorsalOfflineError(
@@ -298,6 +317,7 @@ def validate_dataset_records(
                                the record validation loop (should be rare if
                                `prepare_custom_validator` succeeds).
     """
+    dataset_id = resolve_schema_id(dataset_id)
     logger.debug(
         "Initiating record validation for dataset_id: '%s'. %s records. Schema provided: %s. API key: %s. Custom DorsalClient: %s",
         dataset_id,

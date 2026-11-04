@@ -58,7 +58,13 @@ from dorsal.common.model import AnnotationModel, scrub_pii_from_model
 
 from dorsal.file.model_runner import ModelRunner
 from dorsal.file.permissions import is_permitted_public_media_type
-from dorsal.file.schemas import OPEN_SCHEMA_NAME_MAP, OpenSchemaName, open_schema_versions, schema_version_of
+from dorsal.file.schemas import (
+    OPEN_SCHEMA_NAME_MAP,
+    OpenSchemaName,
+    open_schema_versions,
+    resolve_schema_id,
+    schema_version_of,
+)
 from dorsal.file.utils.hashes import hash_string_validator, make_local_record_id
 from dorsal.file.utils.size import human_filesize
 from dorsal.file.validators.open_schema import get_open_schema_validator
@@ -593,13 +599,14 @@ class DorsalFile(_DorsalFile):
         Retrieves a list of annotations (or stubs) from the remote record, by schema_id.
 
         Args:
-            schema_id: The unique identifier of the dataset/schema (e.g. 'open/classification').
+            schema_id: The unique identifier of the dataset/schema (e.g. 'classification').
             source_id: Optional. Filter annotations by their source ID.
             user_id: Optional. Filter annotations by the creator's User ID.
 
         Returns:
             A list of FileAnnotationStub objects (for custom schemas) or Core Models.
         """
+        schema_id = resolve_schema_id(schema_id)
 
         def _check_core_user(attr_name: str) -> bool:
             if user_id is None:
@@ -656,6 +663,7 @@ class DorsalFile(_DorsalFile):
         Raises:
             DorsalClientError: If user_id is not provided and cannot be resolved from the client.
         """
+        schema_id = resolve_schema_id(schema_id)
         if user_id is None:
             client = self._client or get_shared_dorsal_client()
             user_id = client.user_id
@@ -688,6 +696,7 @@ class DorsalFile(_DorsalFile):
         Returns:
             The latest matching annotation/stub, or None if no matches found.
         """
+        schema_id = resolve_schema_id(schema_id)
         results = self.get_annotations(schema_id=schema_id, source_id=source_id, user_id=user_id)
 
         if not results:
@@ -2197,7 +2206,7 @@ class LocalFile(_DorsalFile):
         """Add or update an annotation with manually provided data.
 
         This method employs a "Best Effort" validation strategy:
-        1. If `schema_id` starts with 'open/' (e.g. 'open/classification'), it uses
+        1. If `schema_id` is an OATS schema (e.g. 'classification'), it uses
            the library's bundled validators. This works offline.
         2. If `schema_id` is custom/remote AND the client is Online, it fetches
            the schema from DorsalHub.
@@ -2205,12 +2214,12 @@ class LocalFile(_DorsalFile):
            is skipped with a warning.
 
         Args:
-            schema_id: The schema identifier (e.g., 'open/generic').
+            schema_id: The schema identifier (e.g., 'generic').
                        Note: Core schemas (e.g., 'file/pdf') cannot be added manually.
             annotation_record: The annotation data (a Pydantic model or dict).
             validator: An optional explicit validator. If provided, overrides
                        automatic resolution.
-            schema_version: The version of an 'open/' schema to validate against and record.
+            schema_version: The version of an OATS schema to validate against and record.
                             Defaults to OPEN_VALIDATION_SCHEMAS_VER. Cannot be combined with `validator`.
             source_id: An optional string describing the source of the data.
             api_key: An optional API key for fetching remote schemas.
@@ -2223,7 +2232,7 @@ class LocalFile(_DorsalFile):
 
         Raises:
             ValueError: If `schema_id` is invalid or refers to a protected Core schema, if `schema_version`
-                        is given for a schema other than a built-in 'open/' one, or if the schema version
+                        is given for a schema other than an OATS schema, or if the schema version
                         does not contain the schema.
             DorsalClientError: If an API error occurs while fetching a remote schema.
             FileAnnotatorError: If validation or application fails.
@@ -2246,8 +2255,8 @@ class LocalFile(_DorsalFile):
                 raise ValueError("Pass either `validator` or `schema_version`, not both.")
             if schema_name not in OPEN_SCHEMA_NAME_MAP:
                 raise ValueError(
-                    f"`schema_version` applies only to the built-in 'open/' schemas, not '{schema_id}'. "
-                    f"Valid schemas are: {', '.join(f'open/{name}' for name in OPEN_SCHEMA_NAME_MAP)}"
+                    f"`schema_version` applies only to OATS schemas, not '{schema_id}'. "
+                    f"Valid schemas are: {', '.join(OPEN_SCHEMA_NAME_MAP)}"
                 )
 
         if force:
@@ -2316,6 +2325,7 @@ class LocalFile(_DorsalFile):
         Returns:
             A list of annotation objects (Core models or generic Annotations).
         """
+        schema_id = resolve_schema_id(schema_id)
         from dorsal.file.validators.file_record import AnnotationXL, AnnotationGroup, GenericFileAnnotation
 
         if schema_id == "file/pdf":
@@ -2386,6 +2396,7 @@ class LocalFile(_DorsalFile):
         Returns:
             The latest matching annotation, or None if no matches found.
         """
+        schema_id = resolve_schema_id(schema_id)
         results = self.get_annotations(schema_id=schema_id, source_id=source_id)
 
         if not results:
@@ -2407,6 +2418,7 @@ class LocalFile(_DorsalFile):
         Removes an annotation from the local file model.
         For custom schemas, providing `source_id` removes only that specific entry.
         """
+        schema_id = resolve_schema_id(schema_id)
         from dorsal.file.validators.file_record import CORE_MODEL_ANNOTATION_WRAPPERS
 
         annotation_id = schema_id
@@ -2468,14 +2480,14 @@ class LocalFile(_DorsalFile):
         """
         Adds an annotation for any schema to the file.
 
-        Built-in 'open/' schemas are validated locally, against `schema_version`. Other schemas are validated
+        OATS schemas are validated locally, against `schema_version`. Other schemas are validated
         against the schema fetched from DorsalHub, or added without validation in offline mode.
 
         Args:
-            schema_id: The schema identifier (e.g. 'open/ranking' or 'my-org/my-schema').
+            schema_id: The schema identifier (e.g. 'ranking' or 'my-org/my-schema').
                 Core schemas such as 'file/pdf' cannot be added manually.
             record: The annotation record, as a dict or a Pydantic model.
-            schema_version: The version of an 'open/' schema to validate against and record on the
+            schema_version: The version of an OATS schema to validate against and record on the
                 annotation (e.g. '0.8.0'). Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             source: An optional string describing the source of the annotation.
             overwrite: Whether to overwrite an existing annotation.
@@ -2488,10 +2500,11 @@ class LocalFile(_DorsalFile):
 
         Raises:
             ValueError: If `schema_id` is invalid or a Core schema, if `schema_version` is given for a
-                schema other than a built-in 'open/' one, or if the schema version does not contain the schema.
+                schema other than an OATS schema, or if the schema version does not contain the schema.
             DorsalClientError: If an API error occurs while fetching a remote schema.
             FileAnnotatorError: If validation fails.
         """
+        schema_id = resolve_schema_id(schema_id)
         return self._add_annotation(
             schema_id=schema_id,
             annotation_record=record,
@@ -2518,7 +2531,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> LocalFile:
         """
-        Adds an 'open/classification' annotation to the file.
+        Adds a 'classification' annotation to the file.
 
         Args:
             labels: can be simple strings (e.g., ["cat"]) or dictionaries.
@@ -2588,7 +2601,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> "LocalFile":
         """
-        Adds an 'open/embedding' annotation to the file.
+        Adds an 'embedding' annotation to the file.
 
         This helper provides a convenience wrapper for adding a simple
         embedding (feature vector) to the file record.
@@ -2653,7 +2666,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> "LocalFile":
         """
-        Adds an 'open/llm-output' annotation to the file.
+        Adds an 'llm-output' annotation to the file.
 
         This helper provides a convenience wrapper for storing the output
         of a Large Language Model (LLM) task related to this file.
@@ -2690,7 +2703,7 @@ class LocalFile(_DorsalFile):
         from dorsal.file.helpers import build_llm_output_record
 
         logger.debug(
-            "Adding 'open/llm-output' (Model: %s) to file '%s'.",
+            "Adding 'llm-output' (Model: %s) to file '%s'.",
             model,
             self.file_path,
         )
@@ -2734,7 +2747,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> "LocalFile":
         """
-        Adds an 'open/geolocation' annotation for a simple Point.
+        Adds a 'geolocation' annotation for a simple Point.
 
         This helper provides a convenience wrapper for the common use case of
         tagging a file with a single GPS coordinate (longitude, latitude)
@@ -2766,7 +2779,7 @@ class LocalFile(_DorsalFile):
         from dorsal.file.helpers import build_location_record
 
         logger.debug(
-            "Adding 'open/geolocation' Point(%s, %s) to file '%s'.",
+            "Adding 'geolocation' Point(%s, %s) to file '%s'.",
             longitude,
             latitude,
             self.file_path,
@@ -2806,7 +2819,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> "LocalFile":
         """
-        Adds a simple 'open/audio-transcription' annotation to the file.
+        Adds a simple 'audio-transcription' annotation to the file.
 
         This helper provides a convenience wrapper for the common use case of
         storing the *full, flat text* transcription of an audio file.
@@ -2839,7 +2852,7 @@ class LocalFile(_DorsalFile):
         from dorsal.file.helpers import build_transcription_record
 
         logger.debug(
-            "Adding 'open/audio-transcription' (Language: %s, Length: %d) to file '%s'.",
+            "Adding 'audio-transcription' (Language: %s, Length: %d) to file '%s'.",
             language,
             len(text),
             self.file_path,
@@ -2886,7 +2899,7 @@ class LocalFile(_DorsalFile):
         force: bool = False,
     ) -> "LocalFile":
         """
-        Adds an 'open/regression' annotation for a single point estimate.
+        Adds a 'regression' annotation for a single point estimate.
 
         This helper creates a record containing a single data point.
 
@@ -2942,7 +2955,7 @@ class LocalFile(_DorsalFile):
         from dorsal.file.helpers import build_single_point_regression_record
 
         logger.debug(
-            "Adding 'open/regression' (Target: %s, Value: %s) to file '%s'.",
+            "Adding 'regression' (Target: %s, Value: %s) to file '%s'.",
             target,
             value,
             self.file_path,

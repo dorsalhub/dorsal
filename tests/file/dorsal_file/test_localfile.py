@@ -1530,10 +1530,10 @@ def annotatable_local_file(mock_metadata_reader, mock_file_record_strict, fs):
 RANKING_RECORD = {"results": [{"id": "doc-1", "rank": 1}]}
 
 
-def test_add_classification_defaults_to_0_5_0(annotatable_local_file):
+def test_add_classification_defaults_to_0_8_0(annotatable_local_file):
     annotatable_local_file.add_classification(labels=["cat"])
 
-    assert annotatable_local_file.get_annotations("open/classification")[0].schema_version == "0.5.0"
+    assert annotatable_local_file.get_annotations("classification")[0].schema_version == "0.8.0"
 
 
 @pytest.mark.parametrize(
@@ -1554,14 +1554,14 @@ def test_add_helpers_validate_and_stamp_schema_version(annotatable_local_file, m
 
 
 @pytest.mark.parametrize(
-    "schema_version, expected", [(None, 1), ("0.5.0", 1), ("0.6.0", 1), ("0.7.0", "1"), ("0.8.0", "1")]
+    "schema_version, expected", [(None, "1"), ("0.5.0", 1), ("0.6.0", 1), ("0.7.0", "1"), ("0.8.0", "1")]
 )
 def test_add_transcription_integer_track_id(annotatable_local_file, schema_version, expected):
     annotatable_local_file.add_transcription(text="hi", language="eng", track_id=1, schema_version=schema_version)
 
     annotation = annotatable_local_file.get_annotations("open/audio-transcription")[0]
     assert annotation.record.track_id == expected
-    assert annotation.schema_version == (schema_version or "0.5.0")
+    assert annotation.schema_version == (schema_version or "0.8.0")
 
 
 def test_add_annotation_with_schema_version(annotatable_local_file):
@@ -1573,9 +1573,18 @@ def test_add_annotation_with_schema_version(annotatable_local_file):
 
 
 @pytest.mark.parametrize("schema_name", ["ranking", "temporal-segmentation"])
-def test_add_annotation_without_version_names_available_versions(annotatable_local_file, schema_name):
+def test_add_annotation_without_version_names_available_versions(annotatable_local_file, schema_name, monkeypatch):
+    from dorsal.common import constants
+
+    monkeypatch.setattr(constants, "OPEN_VALIDATION_SCHEMAS_VER", "0.5.0")
     with pytest.raises(ValueError, match=r"not in schema version 0\.5\.0, the default.*0\.8\.0"):
-        annotatable_local_file.add_annotation(f"open/{schema_name}", {})
+        annotatable_local_file.add_annotation(schema_name, {})
+
+
+def test_add_annotation_ranking_defaults_to_0_8_0(annotatable_local_file):
+    annotatable_local_file.add_annotation("ranking", RANKING_RECORD, source="ranker")
+
+    assert annotatable_local_file.get_annotations("ranking")[0].schema_version == "0.8.0"
 
 
 def test_add_annotation_other_schema_load_errors_propagate(annotatable_local_file, mocker):
@@ -1591,7 +1600,7 @@ def test_add_annotation_unknown_version(annotatable_local_file):
 
 
 def test_add_annotation_rejects_version_for_custom_schema(annotatable_local_file):
-    with pytest.raises(ValueError, match="applies only to the built-in 'open/' schemas"):
+    with pytest.raises(ValueError, match="applies only to OATS schemas"):
         annotatable_local_file.add_annotation("my-org/my-schema", {}, schema_version="0.8.0")
 
 
@@ -1610,3 +1619,88 @@ def test_add_annotation_invalid_record_for_version(annotatable_local_file):
 
     with pytest.raises(FileAnnotatorError):
         annotatable_local_file.add_annotation("open/ranking", {"results": "nope"}, schema_version="0.8.0")
+
+
+def test_localfile_bare_and_prefixed_schema_ids_are_identical(annotatable_local_file):
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        annotatable_local_file.add_annotation("ranking", RANKING_RECORD, source="ranker")
+        bare = annotatable_local_file.get_annotations("ranking")
+        bare_latest = annotatable_local_file.get_latest_annotation("ranking")
+
+    with pytest.warns(DeprecationWarning, match="'open/ranking' is deprecated"):
+        prefixed = annotatable_local_file.get_annotations("open/ranking")
+    with pytest.warns(DeprecationWarning):
+        prefixed_latest = annotatable_local_file.get_latest_annotation("open/ranking")
+
+    assert bare == prefixed
+    assert bare_latest == prefixed_latest
+    assert bare[0].schema_id == "open/ranking"
+
+    with pytest.warns(DeprecationWarning):
+        annotatable_local_file.add_annotation("open/ranking", RANKING_RECORD, source="ranker-2")
+    assert len(annotatable_local_file.get_annotations("ranking")) == 2
+
+    annotatable_local_file.remove_annotation("ranking", source_id="ranker")
+    with pytest.warns(DeprecationWarning):
+        annotatable_local_file.remove_annotation("open/ranking", source_id="ranker-2")
+    assert annotatable_local_file.get_annotations("ranking") == []
+
+
+def test_localfile_helpers_do_not_warn(annotatable_local_file):
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        annotatable_local_file.add_classification(labels=["cat"])
+        annotatable_local_file.add_embedding(vector=[0.1, 0.2])
+        annotatable_local_file.add_transcription(text="hi", language="eng")
+
+
+DENSE_LIMIT_MESSAGE = r"16,385 values, more than the limit of 16,384"
+
+
+def test_add_embedding_rejects_dense_vector_over_the_limit(annotatable_local_file):
+    from dorsal.common.constants import DENSE_EMBEDDING_MAX_VALUES
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_embedding(vector=[0.0] * (DENSE_EMBEDDING_MAX_VALUES + 1))
+    assert annotatable_local_file.get_annotations("embedding") == []
+
+
+def test_add_embedding_accepts_dense_vector_at_the_limit(annotatable_local_file):
+    from dorsal.common.constants import DENSE_EMBEDDING_MAX_VALUES
+
+    annotatable_local_file.add_embedding(vector=[0.0] * DENSE_EMBEDDING_MAX_VALUES)
+
+    assert len(annotatable_local_file.get_annotations("embedding")[0].record.vector) == DENSE_EMBEDDING_MAX_VALUES
+
+
+@pytest.mark.parametrize("schema_version", [None, "0.5.0"])
+def test_add_annotation_rejects_dense_embedding_over_the_limit(annotatable_local_file, schema_version):
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_annotation(
+            "embedding", {"vector": [0.0] * 16_385}, schema_version=schema_version, source="embedder"
+        )
+
+
+@pytest.mark.parametrize("schema_id", ["embedding", "oats/embedding"])
+def test_add_annotation_force_still_rejects_dense_embedding_over_the_limit(annotatable_local_file, schema_id):
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_annotation(schema_id, {"vector": [0.0] * 16_385}, source="embedder", force=True)
+    assert annotatable_local_file.get_annotations("embedding") == []
+
+
+def test_add_embedding_force_still_rejects_dense_vector_over_the_limit(annotatable_local_file):
+    from dorsal.common.exceptions import EmbeddingTooLargeError
+
+    with pytest.raises(EmbeddingTooLargeError, match=DENSE_LIMIT_MESSAGE):
+        annotatable_local_file.add_embedding(vector=[0.0] * 16_385, model="m", force=True)
+    assert annotatable_local_file.get_annotations("embedding") == []

@@ -65,6 +65,8 @@ IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
         "dorsal.file.validators.pdf": ["PDFValidationModel"],
         "dorsal": ["LocalFile"],
         "dorsal.client": ["DorsalClient"],
+        "dorsal.api.adapters": ["export_record"],
+        "dorsal.adapters.arxiv": ["register_arxiv_adapters"],
     },
     "dorsal-worker": {
         "dorsal": ["DorsalClient", "LocalFile"],
@@ -90,11 +92,6 @@ IMPORT_CONTRACT: dict[str, dict[str, list[str]]] = {
         "dorsal": ["AnnotationModel"],
         "dorsal.common.language": ["normalize_language_alpha3"],
         "dorsal.testing": ["run_model"],
-    },
-    "dorsalhub-adapters": {
-        "dorsal.file.validators.open_schema": ["get_open_schema_validator"],
-        "dorsal.common.validators.json_schema": ["get_json_schema_validator"],
-        "dorsal.api.dataset": ["get_dataset_schema"],
     },
 }
 

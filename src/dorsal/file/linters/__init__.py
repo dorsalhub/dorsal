@@ -41,7 +41,7 @@ def apply_linter(schema_id: str | None, record: dict, raise_on_error: bool = Tru
         in the `dorsal.toml` pipeline step.
 
     Args:
-        schema_id: The schema ID (e.g., "open/classification") to check for a linter.
+        schema_id: The schema ID (e.g., "classification") to check for a linter.
         record: The annotation record dictionary that has *already passed*
                 JSON Schema validation.
         raise_on_error: If `True`, raises `DataQualityError` on failure.
@@ -53,7 +53,9 @@ def apply_linter(schema_id: str | None, record: dict, raise_on_error: bool = Tru
     if schema_id is None:
         return None
 
-    linter_cls = LINTER_MAP.get(schema_id)
+    from dorsal.file.schemas import resolve_schema_id
+
+    linter_cls = LINTER_MAP.get(resolve_schema_id(schema_id))
 
     if linter_cls is None:
         return None

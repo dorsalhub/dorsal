@@ -124,7 +124,7 @@ You can run and install models directly from the command line:
 dorsal install dorsalhub/pdf-extractor
 ```
 
-You can also export to any format supported by [Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):
+You can also export to any format supported by [OATS Adapters](https://github.com/oatschema/oatschema-adapters-py):
 
 ```console
 $ dorsal run dorsalhub/whisper /home/video/test.mkv --export=srt
@@ -150,27 +150,27 @@ Outputs saved successfully:
 
 Dorsal has two companion libraries to handle data structure and interoperability:
 
-* **[OATS (Open Annotation Task Schemas)](https://oatschema.org):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `open/classification`, `open/document-extraction`). This ensures predictable outputs.
+* **[OATS (Open Annotation Task Schemas)](https://oatschema.org):** Dorsal annotations are strictly validated against these versioned, source-agnostic JSON schemas (e.g., `classification`, `document-extraction`). This ensures predictable outputs.
 
-* **[Dorsal Adapters](https://github.com/dorsalhub/dorsal-adapters):** A bundled utility that converts between strictly validated JSON records and standard file formats.
+* **[OATS Adapters](https://github.com/oatschema/oatschema-adapters-py):** A bundled utility that converts between strictly validated JSON records and standard file formats.
 
 **Example: Parse a standard file into a validated JSON record:**
 
 ```bash
-$ dorsal adapter parse OSR_uk_000_0020_8k.srt open/audio-transcription
+$ dorsal adapter parse OSR_uk_000_0020_8k.srt audio-transcription
 ```
 
 **Example: List available export formats for a schema:**
 
 ```bash
-$ dorsal adapter list open/document-extraction
+$ dorsal adapter list document-extraction
 ```
 
 #### Supported Export Formats
 
 You can currently export validated records into the following formats:
 
-**Document Extraction** (`open/document-extraction`):
+**Document Extraction** (`document-extraction`):
 
 - Markdown (`.md`)
 - HTML (`.html`)
@@ -178,7 +178,7 @@ You can currently export validated records into the following formats:
 - TSV (`.tsv`)
 - Plain Text (`.txt`)
 
-**Audio Transcription** (`open/audio-transcription`):
+**Audio Transcription** (`audio-transcription`):
 
 - SRT (`.srt`)
 - WebVTT (`.vtt`)
@@ -224,7 +224,7 @@ if lf.pdf:
 # Add a simple key-value tag
 lf.add_tag(name="project_id", value=12345)
 
-# Add a structured annotation (validates against the 'open/classification' schema)
+# Add a structured annotation (validates against the 'classification' schema)
 lf.add_classification(labels=[{"label": "urgent", "score": 1.0}], vocabulary=["urgent", "review"])
 
 # Sync the enriched record to DorsalHub (private by default; pass public=True to share it)
@@ -260,7 +260,7 @@ class HelloWord(AnnotationModel):
 
 
 # Validate the model
-results = run_model(annotation_model=HelloWord, file_path="./path/to/test/file.txt", schema_id="open/generic")
+results = run_model(annotation_model=HelloWord, file_path="./path/to/test/file.txt", schema_id="generic")
 
 assert not results[0].error
 ```
@@ -271,7 +271,7 @@ from dorsal.api import register_model
 from helloword import HelloWord
 
 # Add the model to your pipeline
-register_model(annotation_model=HelloWord, schema_id="open/generic")
+register_model(annotation_model=HelloWord, schema_id="generic")
 ```
 
 Now, each time you run `dorsal scan` or `LocalFile()`, this model will execute automatically.

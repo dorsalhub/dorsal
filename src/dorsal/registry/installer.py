@@ -289,7 +289,7 @@ def install_model_from_package(
 
         merged_config = {
             "model_class": model_class,
-            "schema_id": toml_config.get("schema_id", "open/generic"),
+            "schema_id": toml_config.get("schema_id", "generic"),
             "schema_version": toml_config.get("schema_version"),
             "dependencies": toml_config.get("dependencies"),
             "options": flat_options,  # <--- FIXED

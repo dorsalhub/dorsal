@@ -27,7 +27,7 @@ class _LinterEntityItem(BaseModel):
 
 class OpenEntityExtractionLinter(BaseModel):
     """
-    A linter for valid 'open/entity-extraction' records.
+    A linter for valid 'entity-extraction' records.
 
     Enforces data quality rules:
     - If `vocabulary` is present, every entity's `label` must be in that vocabulary.

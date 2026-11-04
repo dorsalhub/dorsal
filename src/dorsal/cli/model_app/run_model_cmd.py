@@ -320,12 +320,16 @@ def run_model(
 
                                     save_path = out_dir / f"{base_name}.{ext}"
 
+                                    export_options_for_record: dict[str, Any] = {
+                                        "validate": not is_merged,
+                                        "schema_version": res.schema_version,
+                                        **parsed_export_options,
+                                    }
                                     exported_text = export_record(
                                         record=rec_dict,
                                         schema_id=schema_id,
                                         target_format=export_format,
-                                        validate=not is_merged,
-                                        **parsed_export_options,
+                                        **export_options_for_record,
                                     )
 
                                     export_files_to_save.append((save_path, exported_text))

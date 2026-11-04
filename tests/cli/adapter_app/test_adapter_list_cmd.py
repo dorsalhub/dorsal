@@ -115,12 +115,12 @@ def test_list_empty_results(mock_list_deps):
 
 
 def test_list_missing_adapters_package(mock_list_deps):
-    """Tests graceful failure when dorsalhub-adapters is missing, which raises a DorsalError."""
-    mock_list_deps["get_formats"].side_effect = DorsalError("Please pip install dorsalhub-adapters to enable exports.")
+    """Tests graceful failure when the schema has no adapters, which raises a DorsalError."""
+    mock_list_deps["get_formats"].side_effect = DorsalError("no adapters for schema 'my-org/schema'")
 
     result = runner.invoke(cli_app, ["list", "open/audio-transcription"])
 
     assert result.exit_code != 0
     error_msg = str(mock_list_deps["error_console"].print.call_args.args[0])
     assert "Error:" in error_msg
-    assert "Please pip install dorsalhub-adapters" in error_msg
+    assert "no adapters for schema" in error_msg

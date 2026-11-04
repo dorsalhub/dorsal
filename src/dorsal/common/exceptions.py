@@ -129,6 +129,18 @@ class SchemaFormatError(ValidationError):
         return msg
 
 
+class EmbeddingTooLargeError(ValidationError, ValueError):
+    """A dense embedding vector holds more values than the `embedding` schema allows."""
+
+    def __init__(self, size: int, limit: int):
+        super().__init__(
+            f"The dense embedding vector has {size:,} values, more than the limit of {limit:,}. "
+            "Dense vectors are not split: reduce its dimensions, or store it as a sparse vector."
+        )
+        self.size = size
+        self.limit = limit
+
+
 class RecordValidationError(ValidationError):
     """Indicates records failed client-side validation against the dataset's schema."""
 

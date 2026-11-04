@@ -15,7 +15,7 @@
 import logging
 import json
 import pathlib
-from typing import Annotated, Optional, List
+from typing import Annotated, Any, Optional, List
 
 import typer
 
@@ -37,9 +37,16 @@ def parse_adapter(
     schema_id: Annotated[
         str,
         typer.Argument(
-            help="The target Dorsal schema ID to parse into (e.g., 'open/audio-transcription').",
+            help="The schema to parse into (e.g., 'audio-transcription').",
         ),
     ],
+    schema_version: Annotated[
+        Optional[str],
+        typer.Option(
+            "--schema-version",
+            help="The schema version to validate against. Defaults to the version this release of Dorsal uses.",
+        ),
+    ] = None,
     source_format: Annotated[
         Optional[str],
         typer.Option(
@@ -82,7 +89,9 @@ def parse_adapter(
         get_error_console,
         parse_cli_options,
         print_json_output,
+        warn_if_deprecated_schema_id,
     )
+    from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
     from dorsal.common.exceptions import DorsalError
     from dorsal.api.adapters import parse_file_from_path
 
@@ -90,11 +99,17 @@ def parse_adapter(
     error_console = get_error_console()
     palette: dict[str, str] = ctx.obj.get("palette", {}) if ctx.obj else {}
 
+    warn_if_deprecated_schema_id(schema_id, palette)
     parsed_options = parse_cli_options(options=options, palette=palette)
+    schema_version = parsed_options.pop("schema_version", None) or schema_version
 
     try:
         record_dict = parse_file_from_path(
-            file_path=file_path, schema_id=schema_id, source_format=source_format, **parsed_options
+            file_path=file_path,
+            schema_id=schema_id,
+            source_format=source_format,
+            schema_version=schema_version,
+            **parsed_options,
         )
     except DorsalError as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Parse failed:[/] {e}")
@@ -104,11 +119,15 @@ def parse_adapter(
         error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
 
-    final_payload = {
-        "schema_id": schema_id,
+    from dorsal.file.schemas import normalize_schema_id, open_schema_name
+
+    final_payload: dict[str, Any] = {
+        "schema_id": open_schema_name(schema_id) or normalize_schema_id(schema_id),
         "file_path": str(file_path.resolve()),
         "record": record_dict,
     }
+    if open_schema_name(schema_id) is not None:
+        final_payload["schema_version"] = schema_version or OPEN_VALIDATION_SCHEMAS_VER
 
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
     save_path = output_path if output_path and not output_path.is_dir() else out_dir / f"{file_path.stem}.dorsal.json"

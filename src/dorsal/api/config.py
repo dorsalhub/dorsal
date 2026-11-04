@@ -202,7 +202,7 @@ def register_model(
         JSON_SCHEMA_CONSTRAINT_KEYWORDS,
     )
     from dorsal.common.exceptions import DorsalConfigError, PydanticValidationError
-    from dorsal.file.schemas import normalize_schema_id
+    from dorsal.file.schemas import resolve_schema_id
     from dorsal.common.validators.schemas import is_valid_dataset_id_or_schema_id
 
     if scope not in ["project", "global"]:
@@ -245,7 +245,8 @@ def register_model(
                 "is passed as the 'validation_model' (in which case it can be inferred)."
             )
 
-    schema_id = normalize_schema_id(schema_id)
+    if schema_id is not None:
+        schema_id = resolve_schema_id(schema_id)
 
     if not is_valid_dataset_id_or_schema_id(schema_id):
         raise ValueError(

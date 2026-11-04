@@ -261,7 +261,7 @@ def test_run_model_export_success(mock_rich_console, mock_run_deps, mocker, tmp_
     assert written == "1\n00:00:00 --> 00:00:01\n[music] Transcribed string"
 
 
-def test_run_model_export_missing_adapters(mock_run_deps, mocker, tmp_path, monkeypatch):
+def test_run_model_export_unsupported_schema(mock_run_deps, mocker, tmp_path, monkeypatch):
     mock_result = RunModelResult(
         name="FasterWhisperTranscriber",
         source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
@@ -272,7 +272,7 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker, tmp_path, monk
 
     mocker.patch(
         "dorsal.api.adapters.export_record",
-        side_effect=DorsalError("Please pip install dorsalhub-adapters to enable exports."),
+        side_effect=DorsalError("Failed to export record to srt: no adapters for schema 'my-org/schema'"),
     )
 
     monkeypatch.chdir(tmp_path)
@@ -283,7 +283,41 @@ def test_run_model_export_missing_adapters(mock_run_deps, mocker, tmp_path, monk
     assert result.exit_code == 0
 
     printed_messages = [str(call.args[0]) for call in mock_run_deps["error_console"].print.call_args_list]
-    assert any("dorsalhub-adapters" in msg for msg in printed_messages)
+    assert any("no adapters for schema" in msg for msg in printed_messages)
+
+
+@pytest.mark.parametrize(
+    "export_opts, expected",
+    [
+        ([], {"validate": True, "schema_version": "0.5.0"}),
+        (["--export-opt", "schema_version=0.6.0"], {"validate": True, "schema_version": "0.6.0"}),
+        (["--export-opt", "validate=false"], {"validate": "false", "schema_version": "0.5.0"}),
+    ],
+)
+def test_run_model_export_passes_the_results_version(
+    mock_run_deps, mocker, tmp_path, monkeypatch, export_opts, expected
+):
+    mock_result = RunModelResult(
+        name="FasterWhisperTranscriber",
+        source=AnnotationModelSource(type="Model", id="dorsalhub/whisper", version="0.1.0"),
+        records=[{"text": "Transcribed string"}],
+        schema_id="open/audio-transcription",
+        schema_version="0.5.0",
+    )
+    mock_run_deps["run_logic"].return_value = [mock_result]
+    mock_export = mocker.patch("dorsal.api.adapters.export_record", return_value="exported")
+
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.wav")
+    test_file.touch()
+    result = runner.invoke(
+        cli_app, ["run", "dorsal/whisper", str(test_file), "--export", "srt", "--no-save", *export_opts]
+    )
+
+    assert result.exit_code == 0, result.output
+    kwargs = mock_export.call_args.kwargs
+    assert {key: kwargs[key] for key in expected} == expected
+    assert kwargs["schema_id"] == "open/audio-transcription"
 
 
 def test_run_model_export_adapter_error(mock_run_deps, mocker, tmp_path, monkeypatch):

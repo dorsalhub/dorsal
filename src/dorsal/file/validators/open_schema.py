@@ -18,8 +18,15 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 from dorsal.common.constants import ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR, OPEN_VALIDATION_SCHEMAS_VER
-from dorsal.common.validators.json_schema import JsonSchemaValidator
-from dorsal.file.schemas import OpenSchemaName, get_open_schema, OPEN_SCHEMA_NAME_MAP, schema_version_of
+from dorsal.common.validators.json_schema import JsonSchemaValidator, bound_validation_error
+from dorsal.file.schemas import (
+    OPEN_SCHEMA_NAME_MAP,
+    OpenSchemaName,
+    get_open_schema,
+    open_schema_name,
+    resolve_schema_id,
+    schema_version_of,
+)
 
 if TYPE_CHECKING:
     import oatschema
@@ -33,7 +40,9 @@ if TYPE_CHECKING:
     geolocation: "OpenSchemaValidator"
     llm_output: "OpenSchemaValidator"
     object_detection: "OpenSchemaValidator"
+    ranking: "OpenSchemaValidator"
     regression: "OpenSchemaValidator"
+    temporal_segmentation: "OpenSchemaValidator"
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +54,8 @@ class OpenSchemaValidator(JsonSchemaValidator):
     """
     A JsonSchemaValidator for one version of an open schema.
 
-    `validate` raises `jsonschema_rs.ValidationError`, as for any JsonSchemaValidator. Error details reported
-    by `first_error` come from `oatschema`, unless `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` overrides the schema.
+    `validate` raises `oatschema.ValidationError`. Errors come from `oatschema`, unless
+    `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` overrides the schema.
     """
 
     __slots__ = ("schema_name", "schema_version", "oats_validator")
@@ -61,6 +70,27 @@ class OpenSchemaValidator(JsonSchemaValidator):
             import oatschema
 
             self.oats_validator = oatschema.get_validator(cast("oatschema.SchemaName", name), version)
+
+    def validate(self, instance: Any) -> None:
+        """Validate the instance, raising `oatschema.ValidationError` on failure."""
+        if self.oats_validator is not None:
+            self.oats_validator.validate(instance)
+            return
+
+        import jsonschema_rs
+        import oatschema
+
+        try:
+            self.validator.validate(instance)
+        except jsonschema_rs.ValidationError as err:
+            bound_validation_error(err)
+            raise oatschema.ValidationError(
+                err.message,
+                schema_name=self.schema_name,
+                schema_version=self.schema_version,
+                path=tuple(err.instance_path),
+                schema_path=tuple(err.schema_path),
+            ) from err
 
     def is_valid(self, instance: Any) -> bool:
         """Return True if valid, False otherwise."""
@@ -94,10 +124,11 @@ def _build_and_cache_validator(schema_name: OpenSchemaName, version: str) -> Ope
 
 
 def get_open_schema_validator(name: OpenSchemaName, version: str = OPEN_VALIDATION_SCHEMAS_VER) -> OpenSchemaValidator:
-    """Gets the cached validator for one version of an open schema."""
-    if name not in OPEN_SCHEMA_NAME_MAP:
+    """Gets the cached validator for one version of an OATS schema, such as `get_open_schema_validator("generic")`."""
+    schema_name = open_schema_name(resolve_schema_id(name)) if isinstance(name, str) else None
+    if schema_name is None:
         raise ValueError(f"Unknown schema name: '{name}'.")
-    return _build_and_cache_validator(name, version)
+    return _build_and_cache_validator(schema_name, version)
 
 
 def __getattr__(name: str) -> OpenSchemaValidator:

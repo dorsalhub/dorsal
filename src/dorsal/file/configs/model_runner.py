@@ -326,7 +326,7 @@ class ModelRunnerPipelineStep(BaseModel):
     - annotation_model: Two-part path to an Annotation Model.
     - dependencies: Rules to trigger execution.
     - validation_model: Path to validation logic.
-    - schema_id: Unique dataset ID.
+    - schema_id: Unique dataset ID, or an OATS schema name such as `generic`.
     - options: Runtime options for the model.
     - ignore_linter_errors: Skip strict linting if True.
     - deactivated: (Optional) If True, this step is skipped. Defaults to False.
@@ -342,6 +342,19 @@ class ModelRunnerPipelineStep(BaseModel):
     ignore_linter_errors: bool = False
     deactivated: bool = False
     package_name: str | None = None
+
+    @field_validator("schema_id", mode="before")
+    @classmethod
+    def _normalize_schema_id(cls, value: Any) -> Any:
+        from dorsal.file.schemas import normalize_schema_id
+
+        return normalize_schema_id(value) if isinstance(value, str) else value
+
+    @field_serializer("schema_id")
+    def _serialize_schema_id(self, schema_id: str) -> str:
+        from dorsal.file.schemas import open_schema_name
+
+        return open_schema_name(schema_id) or schema_id
 
 
 BASE_ANNOTATION_MODEL = {

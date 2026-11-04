@@ -351,3 +351,64 @@ def test_render_borderless_has_no_panel():
     assert lines[0] == "Classification result"
     assert lines[1] == "  sentiment-model  test.txt"
     assert not any(char in "\n".join(lines) for char in "╭╰│─")
+
+
+def test_render_ranking():
+    data = {
+        "target": "relevance",
+        "query": "cats [bold]",
+        "collection": "docs",
+        "producer": "ranker",
+        "results": [
+            {"rank": 1, "title": "Cats [red]", "score": 0.9},
+            {"rank": 2, "id": "doc-2"},
+            {"rank": 3, "text": "a snippet", "score": True},
+            "not-a-dict",
+        ],
+    }
+    res = create_run_result(data, schema_id="open/ranking")
+    output = render_to_string(create_model_result_panel(res, "ranker", "file.txt", DUMMY_UI_CONTEXT))
+
+    assert "Ranking: relevance" in output
+    assert "Query: cats [bold]" in output
+    assert "Collection: docs" in output
+    assert "Cats [red]" in output
+    assert "0.9000" in output
+    assert "doc-2" in output and "a snippet" in output
+
+
+def test_render_ranking_truncates():
+    data = {"results": [{"rank": i, "id": f"d{i}"} for i in range(1, 30)]}
+    res = create_run_result(data, schema_id="open/ranking")
+    output = render_to_string(create_model_result_panel(res, "ranker", "file.txt", DUMMY_UI_CONTEXT, max_length=5))
+
+    assert "Ranking: Unknown Target" in output
+    assert "24 more results" in output
+
+
+def test_render_temporal_segmentation():
+    data = {
+        "producer": "scenes",
+        "duration": 120,
+        "segments": [
+            {"start_time": 0, "end_time": 10.5, "label": "scene", "title": "Intro [b]"},
+            {"start_time": 10.5, "end_time": 20, "label": "scene", "description": "Chase"},
+            {"label": "chapter"},
+            "not-a-dict",
+        ],
+    }
+    res = create_run_result(data, schema_id="open/temporal-segmentation")
+    output = render_to_string(create_model_result_panel(res, "scenes", "video.mp4", DUMMY_UI_CONTEXT))
+
+    assert "Temporal Segments" in output
+    assert "Duration: 120.00s" in output
+    assert "10.50s" in output and "Intro [b]" in output and "Chase" in output
+    assert "chapter" in output
+
+
+def test_render_temporal_segmentation_truncates():
+    data = {"segments": [{"start_time": i, "end_time": i + 1, "label": "s"} for i in range(12)]}
+    res = create_run_result(data, schema_id="open/temporal-segmentation")
+    output = render_to_string(create_model_result_panel(res, "scenes", "v.mp4", DUMMY_UI_CONTEXT, max_length=5))
+
+    assert "7 more segments" in output

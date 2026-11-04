@@ -15,6 +15,8 @@
 import json
 import logging
 import os
+import sys
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
@@ -22,6 +24,13 @@ from typing import Literal, cast
 from dorsal.common.constants import ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR, OPEN_VALIDATION_SCHEMAS_VER
 
 logger = logging.getLogger(__name__)
+
+OPEN_SCHEMA_PREFIX = "open/"
+OATS_SCHEMA_PREFIX = "oats/"
+
+SCHEMA_ALIASES: dict[str, str] = {
+    "arxiv": "dorsal/arxiv",
+}
 
 OPEN_SCHEMA_NAME_MAP = {
     "entity-extraction": "entity-extraction.json",
@@ -39,17 +48,17 @@ OPEN_SCHEMA_NAME_MAP = {
 }
 
 OpenSchemaName = Literal[
-    "entity-extraction",
-    "generic",
-    "llm-output",
+    "audio-transcription",
     "classification",
     "document-extraction",
-    "object-detection",
     "embedding",
-    "audio-transcription",
+    "entity-extraction",
+    "generic",
     "geolocation",
-    "regression",
+    "llm-output",
+    "object-detection",
     "ranking",
+    "regression",
     "temporal-segmentation",
 ]
 
@@ -142,6 +151,7 @@ def get_open_schema(name: OpenSchemaName, version: str = OPEN_VALIDATION_SCHEMAS
         FileNotFoundError: If the requested `version` is not available, or does not contain `name`.
         RuntimeError: If the schema file is corrupted or fails its version integrity check.
     """
+    name = cast(OpenSchemaName, open_schema_name(resolve_schema_id(name)) or name)
     schema_filename = OPEN_SCHEMA_NAME_MAP.get(name)
 
     if schema_filename is None:
@@ -154,6 +164,8 @@ def open_schema_versions(name: OpenSchemaName) -> list[str]:
     """Return the schema versions, oldest first, in which the installed `oatschema` package provides `name`."""
     import oatschema
 
+    name = cast(OpenSchemaName, open_schema_name(resolve_schema_id(name)) or name)
+
     versions = []
     for version in oatschema.available_versions():
         try:
@@ -165,18 +177,94 @@ def open_schema_versions(name: OpenSchemaName) -> list[str]:
 
 
 def normalize_schema_id(schema_id: str | None) -> str | None:
-    if not schema_id:
+    """
+    Return the dataset id for `schema_id`.
+
+    An OATS schema name, bare (`generic`) or with the `oats/` prefix (`oats/generic`), becomes its dataset id
+    (`open/generic`). An official alias in SCHEMA_ALIASES (`arxiv`) becomes the id it names (`dorsal/arxiv`).
+    Other ids are returned unchanged.
+    """
+    if not schema_id or not isinstance(schema_id, str):
         return schema_id
 
-    if schema_id in OPEN_SCHEMA_NAME_MAP:
-        return f"open/{schema_id}"
+    name = open_schema_name(schema_id)
+    if name is not None:
+        return f"{OPEN_SCHEMA_PREFIX}{name}"
 
-    return schema_id
+    return SCHEMA_ALIASES.get(schema_id, schema_id)
+
+
+def open_schema_name(schema_id: str | None) -> OpenSchemaName | None:
+    """Return the OATS schema name for `schema_id` (`generic`, `oats/generic` or `open/generic`), or None."""
+    if not isinstance(schema_id, str):
+        return None
+    for prefix in (OATS_SCHEMA_PREFIX, OPEN_SCHEMA_PREFIX):
+        if schema_id.startswith(prefix):
+            schema_id = schema_id.removeprefix(prefix)
+            break
+    return cast(OpenSchemaName, schema_id) if schema_id in OPEN_SCHEMA_NAME_MAP else None
+
+
+def hub_record_schema_version(schema_id: str | None, schema_version: str | None) -> str | None:
+    """Return the schema version of a record from DorsalHub, reading an unversioned OATS record as 0.5.0."""
+    from dorsal.common.constants import UNVERSIONED_HUB_RECORD_SCHEMA_VER
+
+    if schema_version is None and open_schema_name(schema_id) is not None:
+        return UNVERSIONED_HUB_RECORD_SCHEMA_VER
+    return schema_version
+
+
+def is_deprecated_schema_id(schema_id: object) -> bool:
+    """Return True if `schema_id` names an OATS schema with the deprecated `open/` prefix."""
+    return (
+        isinstance(schema_id, str)
+        and schema_id.startswith(OPEN_SCHEMA_PREFIX)
+        and schema_id.removeprefix(OPEN_SCHEMA_PREFIX) in OPEN_SCHEMA_NAME_MAP
+    )
+
+
+def deprecated_schema_id_message(schema_id: str) -> str:
+    """Return the warning shown when `schema_id` uses the deprecated `open/` prefix."""
+    name = schema_id.removeprefix(OPEN_SCHEMA_PREFIX)
+    return (
+        f"The schema id '{schema_id}' is deprecated and will stop working in a future release of Dorsal: use '{name}'."
+    )
+
+
+def _called_from_dorsal(depth: int) -> bool:
+    try:
+        frame = sys._getframe(depth + 1)
+    except ValueError:
+        return False
+    module = frame.f_globals.get("__name__", "")
+    return isinstance(module, str) and (module == "dorsal" or module.startswith("dorsal."))
+
+
+def resolve_schema_id(schema_id: str, *, depth: int = 1) -> str:
+    """
+    Return the dataset id for a schema id given to a public function, warning if it uses the `open/` prefix.
+
+    `generic`, `oats/generic` and the deprecated `open/generic` all resolve to `open/generic`, and an official
+    alias such as `arxiv` resolves to `dorsal/arxiv`, as `normalize_schema_id` does. The `DeprecationWarning` is
+    emitted only when the public function was called from outside Dorsal. `depth` is how many frames the public
+    function is above this call.
+    """
+    if is_deprecated_schema_id(schema_id) and not _called_from_dorsal(depth + 1):
+        warnings.warn(deprecated_schema_id_message(schema_id), DeprecationWarning, stacklevel=depth + 2)
+    return normalize_schema_id(schema_id) or schema_id
 
 
 __all__ = [
     "get_open_schema",
     "OpenSchemaName",
+    "OATS_SCHEMA_PREFIX",
+    "OPEN_SCHEMA_PREFIX",
+    "SCHEMA_ALIASES",
+    "deprecated_schema_id_message",
+    "hub_record_schema_version",
+    "is_deprecated_schema_id",
     "normalize_schema_id",
+    "open_schema_name",
+    "resolve_schema_id",
     "schema_version_of",
 ]

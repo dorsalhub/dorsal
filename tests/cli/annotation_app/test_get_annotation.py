@@ -170,6 +170,7 @@ def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps)
     """Covers successful export logic using the hydrated.record attribute."""
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.record = {"title": "Test Paper"}
     mock_get_deps["api_get"].return_value = mock_result
 
@@ -178,7 +179,9 @@ def test_get_annotation_export_success(mocker, mock_rich_console, mock_get_deps)
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--export", "csl"])
 
     assert result.exit_code == 0
-    mock_export.assert_called_once_with(record={"title": "Test Paper"}, schema_id="Article", target_format="csl")
+    mock_export.assert_called_once_with(
+        record={"title": "Test Paper"}, schema_id="Article", target_format="csl", schema_version="0.5.0"
+    )
     mock_rich_console.file.write.assert_called_with("exported_csl_string")
 
 
@@ -187,6 +190,7 @@ def test_get_annotation_export_fallback_model_dump(mocker, mock_rich_console, mo
     mock_result = MagicMock()
     del mock_result.record
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.model_dump.return_value = {"record": {"title": "Fallback Data"}}
     mock_get_deps["api_get"].return_value = mock_result
 
@@ -195,7 +199,9 @@ def test_get_annotation_export_fallback_model_dump(mocker, mock_rich_console, mo
     result = runner.invoke(cli_app, ["get", "uuid-1234", "--export", "csl"])
 
     assert result.exit_code == 0
-    mock_export.assert_called_once_with(record={"title": "Fallback Data"}, schema_id="Article", target_format="csl")
+    mock_export.assert_called_once_with(
+        record={"title": "Fallback Data"}, schema_id="Article", target_format="csl", schema_version="0.5.0"
+    )
 
 
 def test_get_annotation_export_missing_record(mock_get_deps):
@@ -232,6 +238,7 @@ def test_get_annotation_output_file_standard(tmp_path, mock_get_deps, mock_rich_
 
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.model_dump.return_value = {"id": "uuid-1234", "schema_id": "Article"}
     mock_get_deps["api_get"].return_value = mock_result
     mock_get_deps["panel"].return_value = "PanelOutput"
@@ -272,6 +279,7 @@ def test_get_annotation_output_dir_export(mocker, tmp_path, mock_get_deps):
 
     mock_result = MagicMock()
     mock_result.schema_id = "Article"
+    mock_result.schema_version = "0.5.0"
     mock_result.record = {"title": "Test"}
     mock_get_deps["api_get"].return_value = mock_result
 
@@ -284,3 +292,69 @@ def test_get_annotation_output_dir_export(mocker, tmp_path, mock_get_deps):
     expected_file = out_dir / "uuid-1234.csl"
     assert expected_file.exists()
     assert expected_file.read_text(encoding="utf-8") == "exported text"
+
+
+@pytest.mark.parametrize(
+    "schema_id, stored, expected",
+    [
+        ("open/audio-transcription", None, "0.5.0"),
+        ("open/audio-transcription", "0.8.0", "0.8.0"),
+        ("open/audio-transcription", "0.6.0", "0.6.0"),
+        ("dorsal/arxiv", None, None),
+        ("my-org/books", None, None),
+    ],
+)
+def test_hub_record_schema_version(schema_id, stored, expected):
+    from dorsal.file.schemas import hub_record_schema_version
+
+    assert hub_record_schema_version(schema_id, stored) == expected
+
+
+LEGACY_TRANSCRIPTION = {
+    "text": "Hello. Hi.",
+    "language": "eng",
+    "segments": [
+        {"text": "Hello.", "start_time": 0.0, "end_time": 1.0, "speaker": {"id": 1}},
+        {"text": "Hi.", "start_time": 1.0, "end_time": 2.0, "speaker": {"id": 2}},
+    ],
+}
+
+
+def _hub_annotation(schema_version):
+    from dorsal.client.validators import FileAnnotationResponse
+
+    return FileAnnotationResponse.model_validate(
+        {
+            "annotation_id": "abc",
+            "file_hash": "a" * 64,
+            "schema_id": "open/audio-transcription",
+            "schema_version": schema_version,
+            "source": {"type": "Model", "id": "whisper"},
+            "record": LEGACY_TRANSCRIPTION,
+            "private": True,
+            "user_id": 1,
+            "date_created": "2026-01-01T00:00:00Z",
+            "date_modified": "2026-01-01T00:00:00Z",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "stored, export_opts, exit_code",
+    [(None, [], 0), ("0.8.0", [], 1), (None, ["--export-opt", "schema_version=0.8.0"], 1)],
+)
+def test_unversioned_hub_record_exports_at_0_5_0(mock_get_deps, mock_rich_console, stored, export_opts, exit_code):
+    import oatschema
+
+    from dorsal.common.validators.json_schema import get_json_schema_validator
+
+    assert not oatschema.is_valid(LEGACY_TRANSCRIPTION, "audio-transcription", "0.8.0")
+    assert oatschema.is_valid(LEGACY_TRANSCRIPTION, "audio-transcription", "0.5.0")
+    mock_get_deps["api_get"].return_value = _hub_annotation(stored)
+
+    result = runner.invoke(cli_app, ["get", "abc", "--export", "srt", *export_opts])
+
+    assert result.exit_code == exit_code, result.output
+    if exit_code == 0:
+        written = "".join(call.args[0] for call in mock_rich_console.file.write.call_args_list)
+        assert "Hello." in written
