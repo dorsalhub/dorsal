@@ -14,6 +14,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -118,12 +119,35 @@ jobs:
     needs: [lint, build-and-test]
     runs-on: ubuntu-latest
     if: always()
+    timeout-minutes: 5
+    permissions:
+      actions: read
     steps:
-      - name: Check workflow status
+      - name: Require every job in this run to have succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # If any dependency failed or was cancelled, this step fails.
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
-            echo "One or more matrix jobs failed."
+          listing=""
+          for try in 1 2 3 4 5 6; do
+            if listing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq '.jobs[] | select(.name != "ci-success") | [.conclusion // .status, .name] | @tsv'); then
+              if [[ -n "$listing" ]] && ! grep -qE '^(queued|in_progress|waiting|requested|pending)'$'\t' <<<"$listing"; then
+                break
+              fi
+            else
+              listing=""
+            fi
+            sleep 10
+          done
+          if [[ -z "$listing" ]]; then
+            echo "::error::Could not list the jobs of this run."
             exit 1
           fi
-          echo "All checks passed!"
+          echo "$listing"
+          not_success=$(awk -F'\t' '$1 != "success"' <<<"$listing")
+          if [[ -n "$not_success" ]]; then
+            echo "::error::Every job must conclude success; see the list above."
+            exit 1
+          fi
+          echo "All jobs succeeded."
