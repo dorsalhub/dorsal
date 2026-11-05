@@ -1,0 +1,12 @@
+{
+  "name": "js_quick_hasher",
+  "version": "0.1.0",
+  "description": "Reference JavaScript implementation of the Dorsal QUICK hash",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": "./src/quick_hasher.js",
+  "bin": { "js_quick_hasher": "./src/main.js" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test/" }
+}
