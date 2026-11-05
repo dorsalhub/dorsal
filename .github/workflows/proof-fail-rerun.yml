@@ -1,0 +1,73 @@
+name: proof-fail-rerun
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+
+  build-and-test:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [a, b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          if [[ "${{ matrix.leg }}" == "b" && "${{ github.run_attempt }}" == "1" ]]; then exit 1; fi
+        shell: bash
+
+  ci-success:
+    needs: [lint, build-and-test]
+    runs-on: ubuntu-latest
+    if: always()
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: "Diagnostic: what needs reports and the old check's verdict"
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          OLD_FAILS: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "$NEEDS"
+          echo "old check would fail: $OLD_FAILS"
+      - name: Require every job in this run to have succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          listing=""
+          for try in 1 2 3 4 5 6; do
+            if listing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq '.jobs[] | select(.name != "ci-success") | [.conclusion // .status, .name] | @tsv'); then
+              if [[ -n "$listing" ]] && ! grep -qE '^(queued|in_progress|waiting|requested|pending)'$'\t' <<<"$listing"; then
+                break
+              fi
+            else
+              listing=""
+            fi
+            sleep 10
+          done
+          if [[ -z "$listing" ]]; then
+            echo "::error::Could not list the jobs of this run."
+            exit 1
+          fi
+          echo "$listing"
+          not_success=$(awk -F'\t' '$1 != "success"' <<<"$listing")
+          if [[ -n "$not_success" ]]; then
+            echo "::error::Every job must conclude success; see the list above."
+            exit 1
+          fi
+          echo "All jobs succeeded."
