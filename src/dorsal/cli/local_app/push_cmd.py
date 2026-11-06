@@ -38,6 +38,7 @@ from dorsal.common.exceptions import (
     AuthError,
     PartialIndexingError,
     DorsalError,
+    UnversionedAnnotationError,
 )
 
 if TYPE_CHECKING:
@@ -335,6 +336,8 @@ def _process_file_push(
         raise
     except (DorsalOfflineError, AuthError):
         raise
+    except UnversionedAnnotationError as e:
+        exit_cli(code=EXIT_CODE_ERROR, message=str(e))
     except DorsalClientError as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {e.message}")
     except Exception as e:

@@ -63,7 +63,11 @@ from dorsal.common.validators.datasets import (
     Dataset,
     is_valid_dataset_id_or_schema_id,
 )
-from dorsal.file.integrity import normalize_record_privacy
+from dorsal.file.integrity import (
+    check_annotation_schema_version,
+    check_record_schema_versions,
+    normalize_record_privacy,
+)
 from dorsal.file.schemas import resolve_schema_id
 from dorsal.file.validators.common import validate_hex64
 from dorsal.file.utils.hashes import HashFunction, parse_validate_hash
@@ -1051,6 +1055,8 @@ class DorsalClient:
             except TypeError as err:
                 logger.error("Type error for record at index %s: %s", i, err)
                 raise DorsalClientError(str(err)) from err
+
+        check_record_schema_versions(validated_records)
 
         records_to_send: list[FileRecordStrict] = []
 
@@ -3260,6 +3266,7 @@ class DorsalClient:
 
         Raises:
             DorsalClientError: For client-side validation errors.
+            UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
             NotFoundError: If the file or dataset is not found.
             ConflictError: If `overwrite` is False and an annotation from this
                 source already exists.
@@ -3282,6 +3289,8 @@ class DorsalClient:
 
         if not isinstance(annotation, (Annotation, AnnotationGroup)):
             raise DorsalClientError("The 'annotation' argument must be a valid Annotation or AnnotationGroup.")
+
+        check_annotation_schema_version(schema_id=schema_id, annotation=annotation, file_label=validated_hash)
 
         namespace, name = self._split_dataset_or_schema_id(schema_id)
         target_url = self._make_add_file_annotation_url(validated_hash, namespace, name)

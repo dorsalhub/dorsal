@@ -539,6 +539,8 @@ class MetadataReader:
                 underlying multipart API requests were required to push them.
 
         Raises:
+            UnversionedAnnotationError: If an OATS annotation on any record has no exact `schema_version`.
+                Nothing is uploaded, whatever `fail_fast` is.
             ExceedsApiLimitError: If `include_oversized` is False and records exceed the size limit.
             BatchIndexingError: If `fail_fast` is True and an HTTP request fails.
         """
@@ -546,6 +548,7 @@ class MetadataReader:
         from dorsal.common.exceptions import ExceedsApiLimitError, BatchIndexingError
         from dorsal.client.validators import FileIndexResponse
         from dorsal.common.environment import is_jupyter_environment
+        from dorsal.file.integrity import check_record_schema_versions
         from rich.progress import (
             Progress,
             SpinnerColumn,
@@ -570,6 +573,8 @@ class MetadataReader:
 
         if not records:
             return summary
+
+        check_record_schema_versions(records, hash_to_path_map=hash_to_path_map)
 
         standard_records_with_sizes = []
         oversized_records = []
@@ -971,11 +976,17 @@ class MetadataReader:
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read by ModelRunner.
         """
+        from dorsal.file.integrity import check_record_schema_versions
+
         if self.offline:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
         logger.debug("Starting file indexing for: %s (Public: %s)", file_path, public)
         file_record = self._get_or_create_record(
             file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache, calculate_hashes=True
+        )
+
+        check_record_schema_versions(
+            [cast("FileRecordStrict", file_record)], hash_to_path_map={str(file_record.hash): file_path}
         )
 
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)

@@ -141,6 +141,39 @@ class EmbeddingTooLargeError(ValidationError, ValueError):
         self.limit = limit
 
 
+class UnversionedAnnotationError(ValidationError, ValueError):
+    """A push was refused before upload: an OATS annotation has no usable `schema_version`."""
+
+    MAX_LISTED = 10
+
+    def __init__(self, problems: list[dict[str, str | None]]):
+        from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
+
+        count = len(problems)
+        lines = [
+            f"Nothing was pushed to DorsalHub: {count} OATS annotation{'' if count == 1 else 's'} "
+            "had no usable schema version, and DorsalHub refuses those."
+        ]
+        for problem in problems[: self.MAX_LISTED]:
+            version = problem["schema_version"]
+            state = "missing" if version is None else f"'{version}'"
+            lines.append(
+                f"  - {problem['file']}: schema '{problem['schema']}' from model or source "
+                f"'{problem['model']}' (schema_version: {state})"
+            )
+        if count > self.MAX_LISTED:
+            lines.append(f"  ... and {count - self.MAX_LISTED} more.")
+        lines.append(
+            f'Set `schema_version` to an exact version such as "{OPEN_VALIDATION_SCHEMAS_VER}": in the '
+            "`model_config.toml` of the model, in its `dorsal.toml` pipeline step, or as an argument to "
+            "`add_annotation`. A version already set is dropped if the record doesn't validate against it, "
+            "or if the schema doesn't exist at that version: check the warning logged when the model ran."
+        )
+        lines.append("Then run the model again without its cached result (`dorsal push --overwrite-cache`).")
+        super().__init__("\n".join(lines))
+        self.problems = problems
+
+
 class RecordValidationError(ValidationError):
     """Indicates records failed client-side validation against the dataset's schema."""
 

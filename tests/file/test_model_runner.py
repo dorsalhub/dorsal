@@ -995,7 +995,9 @@ class TestRunModelWrapper:
         """
         Test that providing an OATS schema_id automatically resolves the standard validator.
         """
-        mock_val = MagicMock(spec=JsonSchemaValidator)
+        from dorsal.file.validators.open_schema import OpenSchemaValidator
+
+        mock_val = MagicMock(spec=OpenSchemaValidator)
         mock_val.schema = {"version": "1.0"}
 
         mocker.patch("dorsal.file.validators.open_schema.get_open_schema_validator", return_value=mock_val)
