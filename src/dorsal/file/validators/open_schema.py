@@ -112,6 +112,63 @@ class OpenSchemaValidator(JsonSchemaValidator):
         return None
 
 
+def verified_open_schema_version(schema_id: str | None, schema_version: str | None, records: Any) -> str | None:
+    """
+    Return the version to stamp on records that no OATS validator has checked yet.
+
+    For an OATS `schema_id`, returns `schema_version` only if every record validates against it, otherwise None.
+    Any other `schema_id` keeps its `schema_version`.
+    """
+    schema_name = open_schema_name(schema_id)
+    if schema_name is None or schema_version is None:
+        return schema_version
+
+    try:
+        validator = get_open_schema_validator(schema_name, version=schema_version)
+    except RuntimeError as err:
+        logger.warning("Not recording schema version '%s' for '%s': %s", schema_version, schema_name, err)
+        return None
+
+    if validator.schema_version != schema_version:
+        logger.warning(
+            "Not recording schema version '%s' for '%s': the schema loaded declares '%s'.",
+            schema_version,
+            schema_name,
+            validator.schema_version,
+        )
+        return None
+
+    items = records if isinstance(records, list) else [records]
+    if all(validator.is_valid(record) for record in items):
+        return schema_version
+
+    logger.warning(
+        "Not recording schema version '%s' for '%s': the record does not validate against it.",
+        schema_version,
+        schema_name,
+    )
+    return None
+
+
+def stamped_schema_version(
+    schema_id: str | None, requested: str | None, validator: Any, validated_version: str | None, records: Any
+) -> str | None:
+    """
+    Return the version records may carry after `validator` accepted them.
+
+    A built-in OATS validator proves `validated_version`. For an OATS `schema_id`, anything else is checked against
+    the real schema: the version a custom JSON Schema declares, or else `requested`. Other ids keep
+    `validated_version` from a JSON Schema validator and `requested` from anything else.
+    """
+    if isinstance(validator, OpenSchemaValidator):
+        return validated_version
+    if isinstance(validator, JsonSchemaValidator):
+        if open_schema_name(schema_id) is None:
+            return validated_version
+        return verified_open_schema_version(schema_id, validated_version or requested, records)
+    return verified_open_schema_version(schema_id, requested, records)
+
+
 @lru_cache(maxsize=None)
 def _build_and_cache_validator(schema_name: OpenSchemaName, version: str) -> OpenSchemaValidator:
     """Internal helper to build and cache the validator on demand."""

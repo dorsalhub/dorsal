@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.1 (2026-11-06)
+
+### Changed
+- Pushing to DorsalHub raises `UnversionedAnnotationError` (a `ValueError`) before any upload if an OATS annotation's
+  `schema_version` is missing, `latest` or `published`. The whole push is refused, and the error lists each file,
+  schema and model. Set `schema_version` on the model or pipeline step, then push with `--overwrite-cache`.
+
+### Fixed
+- A `schema_version` pin or argument is recorded only if the record validates against that version, including with
+  a Pydantic validator, no validator or `force=True`. Otherwise the record has no version, and running still succeeds.
+
 ## 0.13.0 (2026-11-04)
 
 ### Migrating from 0.12

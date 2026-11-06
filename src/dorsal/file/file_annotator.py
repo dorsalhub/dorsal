@@ -50,7 +50,7 @@ from dorsal.file.model_runner import ModelRunner
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelResult, resolve_pipeline_step_models
 from dorsal.file.linters import apply_linter
 from dorsal.file.sharding import build_annotation_or_annotationgroup, process_record_for_sharding
-from dorsal.file.schemas import resolve_schema_id
+from dorsal.file.schemas import open_schema_name, resolve_schema_id, schema_version_of
 from dorsal.file.validators.file_record import (
     Annotation,
     AnnotationGroup,
@@ -134,6 +134,22 @@ class FileAnnotator:
         except ModelRunnerError as err:
             logger.exception("ModelRunner execution failed for model '%s'.", annotation_model.id)
             raise AnnotationExecutionError(f"Execution failed for model '{annotation_model.id}'.") from err
+
+    @staticmethod
+    def _verified_version(
+        *,
+        schema_id: str,
+        requested: str | None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None,
+        validated_version: str | None,
+        records: Any,
+    ) -> str | None:
+        """Return the version an OATS record may carry after `validator` accepted it."""
+        from dorsal.file.validators.open_schema import stamped_schema_version
+
+        if not records:
+            return None
+        return stamped_schema_version(schema_id, requested, validator, validated_version, records)
 
     def _make_annotation(
         self,
@@ -244,6 +260,14 @@ class FileAnnotator:
             final_version = schema_version
             if final_version is None and hasattr(res, "schema_version"):
                 final_version = res.schema_version
+            if open_schema_name(effective_schema_id) is not None:
+                final_version = self._verified_version(
+                    schema_id=effective_schema_id,
+                    requested=schema_version or pipeline_step_obj.schema_version,
+                    validator=validator,
+                    validated_version=res.schema_version,
+                    records=res.records,
+                )
 
             source_dict = res.source.model_dump(by_alias=True, exclude_none=True)
 
@@ -324,13 +348,22 @@ class FileAnnotator:
         results = []
         for res in run_model_results:
             source_dict = res.source.model_dump(by_alias=True, exclude_none=True)
+            final_version = schema_version
+            if open_schema_name(schema_id) is not None:
+                final_version = self._verified_version(
+                    schema_id=schema_id,
+                    requested=schema_version,
+                    validator=validation_model,
+                    validated_version=res.schema_version,
+                    records=res.records,
+                )
 
             if res.records:
                 for record_data in res.records:
                     annotation_item = self._make_annotation(
                         validated_annotation=cast(dict, record_data),
                         schema_id=schema_id,
-                        schema_version=schema_version,
+                        schema_version=final_version,
                         private=private,
                         source=source_dict,
                     )
@@ -499,8 +532,6 @@ class FileAnnotator:
 
                     chunk_version = schema_version
                     if chunk_version is None and isinstance(validator, JsonSchemaValidator):
-                        from dorsal.file.schemas import schema_version_of
-
                         chunk_version = schema_version_of(validator.schema)
                     chunks = chunk_record(raw_dict, schema_id, schema_version=chunk_version)
 
@@ -523,6 +554,21 @@ class FileAnnotator:
                     else:
                         raise original_err
 
+            stamped_version = schema_version
+            if open_schema_name(schema_id) is not None:
+                from dorsal.file.validators.open_schema import stamped_schema_version
+
+                validated_version = (
+                    schema_version_of(validator.schema) if isinstance(validator, JsonSchemaValidator) else None
+                )
+                stamped_version = stamped_schema_version(
+                    schema_id,
+                    schema_version,
+                    None if force else validator,
+                    None if force else validated_version,
+                    validated_annotations,
+                )
+
             for idx, valid_rec in enumerate(validated_annotations):
                 if not force:
                     raise_on_error = not ignore_linter_errors
@@ -537,7 +583,7 @@ class FileAnnotator:
                 annotation_item = self._make_annotation(
                     validated_annotation=valid_rec,
                     schema_id=schema_id,
-                    schema_version=schema_version,
+                    schema_version=stamped_version,
                     private=private,
                     source=chunk_source,
                     force=force,

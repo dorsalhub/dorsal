@@ -359,7 +359,12 @@ def test_client_add_file_annotation_posts_to_the_same_url(requests_mock):
         url, json={"total": 1, "success": 1, "error": 0, "dataset_id": "open/classification", "results": []}
     )
     annotation = Annotation.model_validate(
-        {"record": {"labels": []}, "source": {"type": "Model", "id": "x"}, "schema_id": "open/classification"}
+        {
+            "record": {"labels": []},
+            "source": {"type": "Model", "id": "x"},
+            "schema_id": "open/classification",
+            "schema_version": "0.8.0",
+        }
     )
 
     client.add_file_annotation(file_hash="a" * 64, schema_id="classification", annotation=annotation)

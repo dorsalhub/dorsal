@@ -897,6 +897,15 @@ class ModelRunner:
                         validation_error_payload = None
 
                         if len(validated_data) > 1:
+                            from dorsal.file.validators.open_schema import stamped_schema_version
+
+                            result_data["schema_version"] = stamped_schema_version(
+                                schema_id,
+                                schema_version,
+                                validation_model,
+                                result_data["schema_version"],
+                                validated_data,
+                            )
                             for idx, chunk_data in enumerate(validated_data):
                                 chunk_result_data = result_data.copy()
                                 chunk_result_data["source"] = result_data["source"].copy()
@@ -939,6 +948,11 @@ class ModelRunner:
                             result_data["error"] = str(e)
                             final_results.append(RunModelResult(**result_data))
                             continue
+                        from dorsal.file.validators.open_schema import stamped_schema_version
+
+                        result_data["schema_version"] = stamped_schema_version(
+                            schema_id, schema_version, validation_model, result_data["schema_version"], validated_data
+                        )
                     result_data["records"] = validated_data
 
                 final_results.append(RunModelResult(**result_data))

@@ -89,6 +89,11 @@ class MockAnnotationsModel(BaseModel):
 
 
 @pytest.fixture(autouse=True)
+def skip_schema_version_check_on_mock_records(mocker):
+    mocker.patch("dorsal.file.integrity.check_record_schema_versions")
+
+
+@pytest.fixture(autouse=True)
 def mock_api_key_env_for_metadata_reader(mocker):
     mocker.patch.dict(os.environ, {"DORSAL_API_KEY": "mock_metadata_reader_api_key"})
 

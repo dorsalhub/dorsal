@@ -1866,10 +1866,13 @@ class LocalFile(_DorsalFile):
 
         Raises:
             ValueError: If `public=True` but the file's media type is prohibited.
+            UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
+                Nothing is uploaded.
             DorsalClientError: If the push operation fails due to API error,
                 network issue, or authentication failure.
             PartialIndexingError: If strict=True and the response contains partial errors.
         """
+        from dorsal.file.integrity import check_record_schema_versions
         from dorsal.file.validators.file_record import FileRecordStrict
 
         if self.offline:
@@ -1882,6 +1885,8 @@ class LocalFile(_DorsalFile):
             )
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
+
+        check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
 
         if public:
             if not is_permitted_public_media_type(self.media_type):
