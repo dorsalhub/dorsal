@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.2 (unreleased)
+## 0.13.2 (2026-11-08)
 
 ### Changed
 - PDF text extraction (`extract_pdf_layout_per_mille`, `extract_pdf_layout_normalized`, `extract_pdf_layout_pts`,
