@@ -50,6 +50,14 @@ LINES = [
     "BT /F1 12 Tf 72 380 Td (qFEpFFEEo) Tj ET",
 ]
 CONTENT = "\n".join(LINES)
+ASTRAL_CONTENT = "\n".join(
+    [
+        "BT /F2 12 Tf 72 760 Td (AAAAABBBBB) Tj ET",
+        "BT /F2 12 Tf 72 700 Td (BABA) Tj ET",
+        "BT /F2 12 Tf 72 600 Td (BBBxyz) Tj ET",
+        f"BT /F1 12 Tf 72 500 Td {PLAIN} ET",
+    ]
+)
 A4 = (595.276, 841.89)
 PAGES = [
     {"media": (0, 0, *A4)},
@@ -58,8 +66,10 @@ PAGES = [
     {"media": (0, 0, *A4), "rotate": 270},
     {"media": (100, 100, 100 + A4[0], 100 + A4[1]), "crop": (150, 200, 645, 900), "rotate": 90},
     {"media": (-50, -50, A4[0] - 50, A4[1] - 50)},
+    {"media": (0, 0, *A4), "content": ASTRAL_CONTENT},
     {"media": (0, 0, *A4), "content": ""},
 ]
+ASTRAL_PAGE = len(PAGES) - 2
 
 
 def _cmap() -> bytes:
@@ -83,6 +93,8 @@ def _write_pdf(path: Path) -> None:
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 3 0 R >>",
         b"",
         _stream(_cmap()),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+        b" /Encoding << /Type /Encoding /Differences [65 /u1D400 66 /u1F600] >> >>",
     ]
     kids = []
     for page in PAGES:
@@ -92,7 +104,7 @@ def _write_pdf(path: Path) -> None:
         entries = [
             b"/Type /Page /Parent 2 0 R",
             b"/MediaBox [%s]" % " ".join(str(v) for v in page["media"]).encode(),
-            b"/Resources << /Font << /F1 1 0 R >> >>",
+            b"/Resources << /Font << /F1 1 0 R /F2 4 0 R >> >>",
             b"/Contents %d 0 R" % content_ref,
         ]
         if "crop" in page:
@@ -169,7 +181,7 @@ def test_reader_matches_pypdfium_on_every_rectangle(special_pdf, bounded_calls):
     doc = pdfium.PdfDocument(str(special_pdf))
     checked = astral = 0
     try:
-        for page in doc:
+        for index, page in enumerate(doc):
             text_page = page.get_textpage()
             rects = _probe_rects(text_page)
             expected = [text_page.get_text_bounded(*rect) for rect in rects]
@@ -180,7 +192,7 @@ def test_reader_matches_pypdfium_on_every_rectangle(special_pdf, bounded_calls):
                 assert read(*rect) == native
                 assert bounded_calls[0] > 0
                 assert bounded_calls[1:] == ([0] if has_surrogates and not dorsal_pdf._WCHAR_IS_UTF16 else [])
-                astral += has_surrogates
+                astral += has_surrogates and index != ASTRAL_PAGE
                 checked += 1
     finally:
         doc.close()
@@ -241,3 +253,25 @@ def test_reader_falls_back_when_the_buffer_is_full(special_pdf, monkeypatch):
         assert read(*rect) == expected
     finally:
         doc.close()
+
+
+def test_reader_matches_pypdfium_where_pdfium_measures_less_than_it_fills(special_pdf):
+    doc = pdfium.PdfDocument(str(special_pdf))
+    shorter = []
+    try:
+        text_page = doc[ASTRAL_PAGE].get_textpage()
+        read = dorsal_pdf._BoundedTextReader(text_page)
+        for rect in _probe_rects(text_page):
+            left, bottom, right, top = rect
+            measured = REAL_GET_BOUNDED_TEXT(text_page, left, top, right, bottom, None, 0)
+            filled = len(_full_text(text_page, rect).encode("utf-16-le", "surrogatepass")) // 2
+            expected = text_page.get_text_bounded(*rect)
+            assert read(*rect) == expected
+            if measured < filled:
+                shorter.append(expected)
+    finally:
+        doc.close()
+    if dorsal_pdf._WCHAR_IS_UTF16:
+        assert shorter == [], "a 16-bit wchar_t makes pdfium measure in UTF-16 units, so measure equals fill"
+    else:
+        assert "\U0001d400" * 5 in shorter, "pdfium no longer measures astral text shorter than it fills"
