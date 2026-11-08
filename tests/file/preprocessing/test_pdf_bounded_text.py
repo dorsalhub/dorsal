@@ -55,6 +55,7 @@ ASTRAL_CONTENT = "\n".join(
         "BT /F2 12 Tf 72 760 Td (AAAAABBBBB) Tj ET",
         "BT /F2 12 Tf 72 700 Td (BABA) Tj ET",
         "BT /F2 12 Tf 72 600 Td (BBBxyz) Tj ET",
+        "BT /F2 12 Tf 72 650 Td (xyzBBB) Tj ET",
         f"BT /F1 12 Tf 72 500 Td {PLAIN} ET",
     ]
 )
@@ -258,20 +259,23 @@ def test_reader_falls_back_when_the_buffer_is_full(special_pdf, monkeypatch):
 def test_reader_matches_pypdfium_where_pdfium_measures_less_than_it_fills(special_pdf):
     doc = pdfium.PdfDocument(str(special_pdf))
     shorter = []
+    split_pairs = 0
     try:
         text_page = doc[ASTRAL_PAGE].get_textpage()
         read = dorsal_pdf._BoundedTextReader(text_page)
         for rect in _probe_rects(text_page):
             left, bottom, right, top = rect
             measured = REAL_GET_BOUNDED_TEXT(text_page, left, top, right, bottom, None, 0)
-            filled = len(_full_text(text_page, rect).encode("utf-16-le", "surrogatepass")) // 2
+            filled = _full_text(text_page, rect).encode("utf-16-le", "surrogatepass")
             expected = text_page.get_text_bounded(*rect)
             assert read(*rect) == expected
-            if measured < filled:
+            if 0 < measured < len(filled) // 2:
                 shorter.append(expected)
+                split_pairs += 0xD800 <= int.from_bytes(filled[2 * measured - 2 : 2 * measured], "little") <= 0xDBFF
     finally:
         doc.close()
     if dorsal_pdf._WCHAR_IS_UTF16:
         assert shorter == [], "a 16-bit wchar_t makes pdfium measure in UTF-16 units, so measure equals fill"
     else:
         assert "\U0001d400" * 5 in shorter, "pdfium no longer measures astral text shorter than it fills"
+        assert split_pairs > 0, "pdfium no longer cuts astral text inside a surrogate pair"
