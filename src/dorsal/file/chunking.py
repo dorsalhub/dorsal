@@ -489,6 +489,22 @@ def list_limit(schema_id: str, field: str, schema_version: str | None = None) ->
     return min(limit, SPLIT_LIMIT_DEFAULT)
 
 
+def over_list_limit(records: Any, schema_id: str, schema: dict[str, Any]) -> bool:
+    """Return True if a record holds more items in the list `chunk_record` splits than `schema`'s `maxItems` allows."""
+    strategy = SPLIT_STRATEGY_REGISTRY.get(resolve_schema_id(schema_id))
+    field = getattr(strategy, "list_field", None)
+    if not isinstance(field, str):
+        return False
+    field_schema = schema.get("properties", {}).get(field) if isinstance(schema, dict) else None
+    max_items = field_schema.get("maxItems") if isinstance(field_schema, dict) else None
+    if not isinstance(max_items, int) or isinstance(max_items, bool):
+        return False
+    items = records if isinstance(records, list) else [records]
+    return any(
+        isinstance(rec, dict) and isinstance(rec.get(field), list) and len(rec[field]) > max_items for rec in items
+    )
+
+
 def chunk_record(record: dict[str, Any], schema_id: str, schema_version: str | None = None) -> list[dict[str, Any]]:
     """Splits oversize record into valid chunks. Returns original if unsupported or small enough.
 

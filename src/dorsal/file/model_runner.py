@@ -849,6 +849,7 @@ class ModelRunner:
 
                 validated_data: list[dict[str, Any]] | None = None
                 validation_error_payload: list[dict[str, Any]] | str | None = None
+                skipped_whole_validation = False
 
                 if validation_model is None:
                     validated_data = raw_data if isinstance(raw_data, list) else [raw_data]
@@ -857,15 +858,27 @@ class ModelRunner:
                     log_level = logging.DEBUG if can_rescue else logging.WARNING
                     if isinstance(validation_model, JsonSchemaValidator):
                         result_data["schema_version"] = schema_version_of(validation_model.schema)
-                        validated_data, validation_error_payload = (
-                            self._json_schema_validate_raw_annotation_model_output(
-                                raw_model_output=raw_data,
-                                schema_validator_instance=validation_model,
-                                annotator_model_name=model_name,
-                                file_path=file_path,
-                                error_log_level=log_level,
+                        from dorsal.file.chunking import over_list_limit
+
+                        if can_rescue and over_list_limit(raw_data, cast(str, schema_id), validation_model.schema):
+                            skipped_whole_validation = True
+                            validation_error_payload = [
+                                {
+                                    "path": [],
+                                    "validator": "maxItems",
+                                    "error_message": "A record holds more items than the schema allows in one record.",
+                                }
+                            ]
+                        else:
+                            validated_data, validation_error_payload = (
+                                self._json_schema_validate_raw_annotation_model_output(
+                                    raw_model_output=raw_data,
+                                    schema_validator_instance=validation_model,
+                                    annotator_model_name=model_name,
+                                    file_path=file_path,
+                                    error_log_level=log_level,
+                                )
                             )
-                        )
                     elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
                         validated_data, validation_error_payload = self._pydantic_validate_raw_annotation_model_output(
                             raw_model_output=raw_data,
@@ -892,6 +905,17 @@ class ModelRunner:
                         validation_error_payload = [
                             {"path": "vector", "validator": "maxItems", "error_message": str(err)}
                         ]
+                    if skipped_whole_validation and rescue_errors:
+                        validation_error_payload = rescue_errors
+                    elif skipped_whole_validation and rescued_data is None:
+                        validated_data, validation_error_payload = (
+                            self._json_schema_validate_raw_annotation_model_output(
+                                raw_model_output=raw_data,
+                                schema_validator_instance=cast(JsonSchemaValidator, validation_model),
+                                annotator_model_name=model_name,
+                                file_path=file_path,
+                            )
+                        )
                     if rescued_data is not None and rescue_errors is None:
                         validated_data = rescued_data
                         validation_error_payload = None

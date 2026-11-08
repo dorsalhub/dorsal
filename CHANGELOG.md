@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.2 (unreleased)
+
+### Changed
+- PDF text extraction (`extract_pdf_layout_per_mille`, `extract_pdf_layout_normalized`, `extract_pdf_layout_pts`,
+  and so the PDF extractor) asks pdfium for each text box's text once instead of twice, and reads `raw_text` from
+  the page's existing text page instead of building a second one. Dense pages take about half the CPU time.
+  The text, blocks and exports are unchanged.
+- A record over its schema's list limit (such as more than 100,000 `blocks` in `document-extraction`) is split into
+  parts without first being validated whole. Each part is still validated and records its `schema_version`. This
+  cuts peak memory by about 40% on files that are split. If a part fails validation, the error is now that part's.
+
 ## 0.13.1 (2026-11-06)
 
 ### Changed

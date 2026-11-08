@@ -13,15 +13,20 @@
 # limitations under the License.
 
 from contextlib import contextmanager
+import ctypes
 from dataclasses import dataclass
 import logging
-from typing import Any, Callable, Generic, Generator, TypeVar
+import re
+from typing import Any, Callable, Generic, Generator, Iterator, TypeVar
 
 from dorsal.common.exceptions import DependencyError, PDFProcessingError
 
 logger = logging.getLogger(__name__)
 
 CoordType = TypeVar("CoordType", int, float)
+
+_WCHAR_IS_UTF16 = ctypes.sizeof(ctypes.c_wchar) == 2
+_SURROGATE_OR_ASTRAL = re.compile("[\ud800-\udfff\U00010000-\U0010ffff]")
 
 
 @dataclass(slots=True, frozen=True)
@@ -101,6 +106,45 @@ def _display_mapper(
         return u0, unrotated_h - v1, u1, unrotated_h - v0
 
     return width_pt, height_pt, to_display
+
+
+class _BoundedTextReader:
+    __slots__ = ("_text_page", "_get_bounded_text", "_buffer", "_size")
+
+    def __init__(self, text_page: Any) -> None:
+        import pypdfium2 as pdfium
+
+        self._text_page = text_page
+        self._get_bounded_text = pdfium.raw.FPDFText_GetBoundedText
+        self._size = 4 * text_page.count_chars() + 64
+        self._buffer = (ctypes.c_ushort * self._size)()
+
+    def __call__(self, left: float, bottom: float, right: float, top: float) -> str:
+        units = self._get_bounded_text(self._text_page, left, top, right, bottom, self._buffer, self._size)
+        if units <= 0:
+            return ""
+        if units >= self._size or self._buffer[units - 1] != 0:
+            return self._text_page.get_text_bounded(left, bottom, right, top)
+        text = ctypes.string_at(self._buffer, 2 * (units - 1)).decode("utf-16-le", "surrogatepass")
+        if text.isascii() or not _SURROGATE_OR_ASTRAL.search(text):
+            return text
+        if _WCHAR_IS_UTF16:
+            return ctypes.string_at(self._buffer, 2 * (units - 1)).decode("utf-16-le", "ignore")
+        measured = self._get_bounded_text(self._text_page, left, top, right, bottom, None, 0)
+        if measured <= 0:
+            return ""
+        return ctypes.string_at(self._buffer, 2 * min(measured, units)).decode("utf-16-le", "ignore")
+
+
+def _text_segments(text_page: Any) -> Iterator[tuple[str, tuple[float, float, float, float]]]:
+    rects = [text_page.get_rect(j) for j in range(text_page.count_rects())]
+    if not rects:
+        return
+    read = _BoundedTextReader(text_page)
+    for rect in rects:
+        text_segment = read(*rect)
+        if text_segment and text_segment.strip():
+            yield text_segment, rect
 
 
 def extract_pdf_text(file_path: str, password: str | None = None) -> list[str]:
@@ -189,14 +233,9 @@ def extract_pdf_layout_per_mille(
             scale = 1000
 
             tokens: list[PDFToken[int]] = []
-            rects = [text_page.get_rect(j) for j in range(text_page.count_rects())]
 
-            for left, bottom, right, top in rects:
-                text_segment = text_page.get_text_bounded(left, bottom, right, top)
-                if not text_segment or not text_segment.strip():
-                    continue
-
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+            for text_segment, rect in _text_segments(text_page):
+                x0, y0, x1, y1 = to_display(*rect)
 
                 box_int = (
                     int(max(0, min(scale, scale * (x0 / w_s)))),
@@ -212,7 +251,7 @@ def extract_pdf_layout_per_mille(
                     width=_page_dimension(width_pt),
                     height=_page_dimension(height_pt),
                     tokens=tokens,
-                    raw_text=page.get_textpage().get_text_range(),
+                    raw_text=text_page.get_text_range(),
                 )
             )
     return results
@@ -266,14 +305,9 @@ def extract_pdf_layout_normalized(
             h_s = height_pt if height_pt > 0 else 1
 
             tokens: list[PDFToken[float]] = []
-            rects = [text_page.get_rect(j) for j in range(text_page.count_rects())]
 
-            for left, bottom, right, top in rects:
-                text_segment = text_page.get_text_bounded(left, bottom, right, top)
-                if not text_segment or not text_segment.strip():
-                    continue
-
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+            for text_segment, rect in _text_segments(text_page):
+                x0, y0, x1, y1 = to_display(*rect)
 
                 box_float = (float(x0 / w_s), float(y0 / h_s), float(x1 / w_s), float(y1 / h_s))
                 tokens.append(PDFToken(text=text_segment, box=box_float))
@@ -284,7 +318,7 @@ def extract_pdf_layout_normalized(
                     width=_page_dimension(width_pt),
                     height=_page_dimension(height_pt),
                     tokens=tokens,
-                    raw_text=page.get_textpage().get_text_range(),
+                    raw_text=text_page.get_text_range(),
                 )
             )
     return results
@@ -328,14 +362,9 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
             text_page = page.get_textpage()
 
             tokens: list[PDFToken[float]] = []
-            rects = [text_page.get_rect(j) for j in range(text_page.count_rects())]
 
-            for left, bottom, right, top in rects:
-                text_segment = text_page.get_text_bounded(left, bottom, right, top)
-                if not text_segment or not text_segment.strip():
-                    continue
-
-                x0, y0, x1, y1 = to_display(left, bottom, right, top)
+            for text_segment, rect in _text_segments(text_page):
+                x0, y0, x1, y1 = to_display(*rect)
 
                 box_float = (float(x0), float(y0), float(x1), float(y1))
                 tokens.append(PDFToken(text=text_segment, box=box_float))
@@ -346,7 +375,7 @@ def extract_pdf_layout_pts(file_path: str, password: str | None = None, strict: 
                     width=_page_dimension(width_pt),
                     height=_page_dimension(height_pt),
                     tokens=tokens,
-                    raw_text=page.get_textpage().get_text_range(),
+                    raw_text=text_page.get_text_range(),
                 )
             )
     return results

@@ -38,6 +38,7 @@ def mock_dependencies():
     """
     mock_pdfium = MagicMock()
     mock_pdfium.PdfiumError = type("PdfiumError", (Exception,), {})
+    mock_pdfium.raw.FPDFText_GetBoundedText.side_effect = lambda *args: args[-1]
     mock_pil = MagicMock()
 
     with patch.dict(sys.modules, {"pypdfium2": mock_pdfium, "PIL": mock_pil}):
@@ -59,6 +60,7 @@ def create_mock_page(width=100, height=200, rects=None, rotation=0, origin=(0.0,
     unrotated = (height, width) if rotation in (90, 270) else (width, height)
     mock_page.get_bbox.return_value = (origin[0], origin[1], origin[0] + unrotated[0], origin[1] + unrotated[1])
     mock_page.get_textpage.return_value = mock_textpage
+    mock_textpage.count_chars.return_value = 0
 
     if rects:
         mock_textpage.count_rects.return_value = len(rects)
