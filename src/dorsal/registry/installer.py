@@ -27,6 +27,7 @@ import tomlkit
 
 from dorsal.api.config import register_model
 from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError
+from dorsal.registry.model_config import model_config_options
 from dorsal.registry.validators import ModelSpec, is_registry_id, is_valid_local_path, validate_install_url
 from dorsal.session import get_shared_dorsal_client
 
@@ -279,20 +280,12 @@ def install_model_from_package(
                 f"Config defines model_class='{class_name}', but it was not exported by module '{module_name}' - {err}"
             ) from err
 
-        raw_options = toml_config.get("options", {})
-        flat_options = {}
-        for key, value in raw_options.items():
-            if isinstance(value, dict) and "default" in value:
-                flat_options[key] = value["default"]
-            elif not isinstance(value, dict):
-                flat_options[key] = value
-
         merged_config = {
             "model_class": model_class,
             "schema_id": toml_config.get("schema_id", "generic"),
             "schema_version": toml_config.get("schema_version"),
             "dependencies": toml_config.get("dependencies"),
-            "options": flat_options,  # <--- FIXED
+            "options": model_config_options(config=toml_config),
         }
 
         spec = ModelSpec(**merged_config)

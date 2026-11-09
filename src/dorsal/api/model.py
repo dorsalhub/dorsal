@@ -32,6 +32,7 @@ from dorsal.file.file_annotator import FILE_ANNOTATOR
 from dorsal.file.model_runner import ModelRunner, run_model
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 from dorsal.registry.installer import install_model_target
+from dorsal.registry.model_config import model_config_options
 from dorsal.registry.resolution import resolve_target, is_package_installed
 from dorsal.registry.validators import is_registry_id, is_valid_local_path
 from dorsal.registry.uninstaller import uninstall_model_target
@@ -351,15 +352,6 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
     if not schema_id:
         raise DorsalConfigError(f"Invalid config in '{package_name}': missing required field 'schema_id'")
 
-    raw_options = config_data.get("options", {})
-    parsed_options = {}
-
-    for key, value in raw_options.items():
-        if isinstance(value, dict) and "default" in value:
-            parsed_options[key] = value["default"]
-        else:
-            parsed_options[key] = value
-
     try:
         return ModelRunnerPipelineStep(
             annotation_model=CallableImportPath(module=module_name, name=class_name),
@@ -367,7 +359,7 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
             schema_version=config_data.get("schema_version"),
             dependencies=config_data.get("dependencies"),
             validation_model=None,
-            options=parsed_options,
+            options=model_config_options(config=config_data),
             package_name=package_name,
         )
     except Exception as e:

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.3 (unreleased)
+
+### Fixed
+- A `model_config.toml` option documented as a table without a `default` is no longer passed to the model by
+  `dorsal run <namespace>/<name>`, `dorsal run <package>` and `run_or_install_model`, so the model's own default
+  applies. Set it with `--opt` as before. A table under `[options]` is always a documented option: put a dict value
+  in its `default`.
+- The test written by `dorsal model init` reads `model_config.toml` from the project root, passes option defaults
+  rather than the option tables, and checks every result `run_model` returns. New projects require
+  `dorsalhub>=0.13.3`.
+
+### Added
+- `dorsal.testing.model_config_options(config=...)` returns the options a parsed `model_config.toml` passes to its
+  model.
+
 ## 0.13.2 (2026-11-08)
 
 ### Changed
