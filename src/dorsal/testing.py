@@ -20,10 +20,11 @@ from dorsal.common.model import AnnotationModel
 from dorsal.common.validators.json_schema import JsonSchemaValidator
 from dorsal.file.configs.model_runner import RunModelResult, ModelRunnerDependencyConfig
 from dorsal.file.model_runner import run_model as _run_model_impl
+from dorsal.registry.model_config import model_config_options
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["run_model", "RunModelResult"]
+__all__ = ["model_config_options", "run_model", "RunModelResult"]
 
 
 def run_model(

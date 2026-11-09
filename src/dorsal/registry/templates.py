@@ -23,7 +23,7 @@ description = "Dorsal model: {human_name}"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "dorsalhub",
+    "dorsalhub>=0.13.3",
 ]
 
 [dependency-groups]
@@ -82,6 +82,16 @@ include = ["text/plain"]
 # --- RUNTIME OPTIONS ---
 [options]
 # Pass keyword arguments to your model class `main` method
+#
+# A plain value is passed as it is:
+#   strict = false
+# A table is a documented option and passes its `default`:
+#   language = {{ type = "str", default = "en", help = "Input language." }}
+# A table without a `default` is not passed, so `main` uses its own default
+# unless the option is set with `--opt`:
+#   batch_size = {{ type = "int", help = "Batch size. Unbatched if not provided." }}
+# To pass a dict, put it in `default`:
+#   vad_parameters = {{ type = "dict", default = {{ min_silence_duration_ms = 500 }} }}
 """
 
 INIT_TEMPLATE = """from .model import {class_name}
@@ -106,7 +116,7 @@ class {class_name}(AnnotationModel):
 TEST_TEMPLATE = """import pytest
 import pathlib
 import tomllib
-from dorsal.testing import run_model
+from dorsal.testing import model_config_options, run_model
 from {module_name}.model import {class_name}
 
 def test_model_integration(tmp_path):
@@ -116,19 +126,21 @@ def test_model_integration(tmp_path):
 
     # 2. Load Registry Metadata
     root = pathlib.Path(__file__).parent.parent
-    with open(root / "{module_name}" / "model_config.toml", "rb") as f:
+    with open(root / "model_config.toml", "rb") as f:
         config = tomllib.load(f)
 
     # 3. Run Model
-    result = run_model(
+    results = run_model(
         annotation_model={class_name},
         file_path=str(dummy_file),
         schema_id=config.get("schema_id", "generic"),
         schema_version=config.get("schema_version"),
         dependencies=config.get("dependencies"),
-        options=config.get("options"),
+        options=model_config_options(config=config),
     )
 
-    assert result.error is None, f"Model execution failed: {{result.error}}"
-    assert result.record is not None
+    assert results, "Model produced no results"
+    for result in results:
+        assert result.error is None, f"Model execution failed: {{result.error}}"
+        assert result.record is not None
 """
