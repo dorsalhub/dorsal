@@ -21,7 +21,7 @@ done
 if [ "$FAST" = true ]; then
   PYTHON_VERSIONS="3.14"
 else
-  PYTHON_VERSIONS="3.11 3.12 3.13 3.14"
+  PYTHON_VERSIONS="3.11 3.12 3.13 3.14 3.15"
 fi
 
 PYTEST_ARGS=""
