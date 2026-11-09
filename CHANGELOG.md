@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.3 (unreleased)
+
+### Added
+- Python 3.15 is supported and tested on Linux, macOS and Windows. `marisa-trie` (needed by `langcodes`) has no
+  Python 3.15 wheel yet, so installing on 3.15 builds it from source, which needs a C++ compiler.
+
 ## 0.13.2 (2026-11-08)
 
 ### Changed
