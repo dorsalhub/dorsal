@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.3 (unreleased)
+## 0.13.3 (2026-11-17)
 
 ### Fixed
 - A `model_config.toml` option documented as a table without a `default` is no longer passed to the model by
@@ -14,6 +14,8 @@
 ### Added
 - `dorsal.testing.model_config_options(config=...)` returns the options a parsed `model_config.toml` passes to its
   model.
+- Python 3.15 is supported and tested on Linux, macOS and Windows. `marisa-trie` (needed by `langcodes`) has no
+  Python 3.15 wheel yet, so installing on 3.15 builds it from source, which needs a C++ compiler.
 
 ## 0.13.2 (2026-11-08)
 
