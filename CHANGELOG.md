@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.3 (unreleased)
+## 0.13.3 (2026-11-17)
 
 ### Fixed
 - A `model_config.toml` option documented as a table without a `default` is no longer passed to the model by
