@@ -26,13 +26,13 @@ from pydantic import BaseModel
 from dorsal.api.config import get_model_pipeline
 from dorsal.common.constants import WEB_URL
 from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError, NotFoundError
+from dorsal.common.model_config import model_config_options
 from dorsal.common.validators import CallableImportPath
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pipeline_step_models, RunModelResult
 from dorsal.file.file_annotator import FILE_ANNOTATOR
 from dorsal.file.model_runner import ModelRunner, run_model
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup
 from dorsal.registry.installer import install_model_target
-from dorsal.registry.model_config import model_config_options
 from dorsal.registry.resolution import resolve_target, is_package_installed
 from dorsal.registry.validators import is_registry_id, is_valid_local_path
 from dorsal.registry.uninstaller import uninstall_model_target

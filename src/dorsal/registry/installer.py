@@ -27,7 +27,7 @@ import tomlkit
 
 from dorsal.api.config import register_model
 from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError
-from dorsal.registry.model_config import model_config_options
+from dorsal.common.model_config import model_config_options
 from dorsal.registry.validators import ModelSpec, is_registry_id, is_valid_local_path, validate_install_url
 from dorsal.session import get_shared_dorsal_client
 
