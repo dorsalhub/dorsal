@@ -382,7 +382,7 @@ def test_build_pipeline_step_options_parsing():
     step = _build_pipeline_step(config, "my_module", "my_pkg")
     assert step.schema_id == "test/schema"
     assert step.annotation_model.name == "MyModel"
-    assert step.options == {"flat_val": "value", "dict_with_default": 42, "dict_no_default": {"help": "just help text"}}
+    assert step.options == {"flat_val": "value", "dict_with_default": 42}
 
 
 @patch("dorsal.api.model.get_model_pipeline")

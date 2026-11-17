@@ -308,3 +308,36 @@ def test_install_from_package_missing_entry_point():
             installer.install_model_from_package("ghost-package")
 
         assert "does not expose a 'dorsal.models' entry point" in str(exc.value)
+
+
+def test_install_model_from_package_registers_documented_option_defaults_only(mock_register_model):
+    mock_ep = MagicMock()
+    mock_ep.dist.name = "dorsal-fake"
+    mock_ep.module = "dorsal_fake_module"
+
+    class FakeModel(AnnotationModel):
+        id = "fake/model"
+        version = "0.0.1"
+
+        def main(self):
+            pass
+
+    mock_ep.load.return_value = MagicMock(MyModelClass=FakeModel)
+
+    fake_config = {
+        "model_class": "MyModelClass",
+        "schema_id": "generic",
+        "options": {
+            "flat": 1,
+            "documented": {"type": "int", "default": 5, "help": "Beam size."},
+            "no_default": {"type": "str", "help": "Auto-detected if not provided."},
+        },
+    }
+
+    with (
+        patch("importlib.metadata.entry_points", return_value=[mock_ep]),
+        patch("dorsal.registry.installer._load_packaged_model_config", return_value=fake_config),
+    ):
+        installer.install_model_from_package("dorsal-fake")
+
+    assert mock_register_model.call_args.kwargs["options"] == {"flat": 1, "documented": 5}

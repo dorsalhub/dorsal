@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from dorsal.api.config import get_model_pipeline
 from dorsal.common.constants import WEB_URL
 from dorsal.common.exceptions import AuthError, DorsalError, DorsalConfigError, NotFoundError
+from dorsal.common.model_config import model_config_options
 from dorsal.common.validators import CallableImportPath
 from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pipeline_step_models, RunModelResult
 from dorsal.file.file_annotator import FILE_ANNOTATOR
@@ -351,15 +352,6 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
     if not schema_id:
         raise DorsalConfigError(f"Invalid config in '{package_name}': missing required field 'schema_id'")
 
-    raw_options = config_data.get("options", {})
-    parsed_options = {}
-
-    for key, value in raw_options.items():
-        if isinstance(value, dict) and "default" in value:
-            parsed_options[key] = value["default"]
-        else:
-            parsed_options[key] = value
-
     try:
         return ModelRunnerPipelineStep(
             annotation_model=CallableImportPath(module=module_name, name=class_name),
@@ -367,7 +359,7 @@ def _build_pipeline_step(config_data: dict[str, Any], module_name: str, package_
             schema_version=config_data.get("schema_version"),
             dependencies=config_data.get("dependencies"),
             validation_model=None,
-            options=parsed_options,
+            options=model_config_options(config=config_data),
             package_name=package_name,
         )
     except Exception as e:

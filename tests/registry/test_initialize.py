@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
+import sys
 import pytest
 import pathlib
 from unittest.mock import patch
@@ -87,3 +89,84 @@ def test_create_project_os_error(tmp_path):
             initialize.create_new_annotation_model_project("Fail Project", target_dir=tmp_path)
 
         assert "Failed to initialize project directory" in str(exc.value)
+
+
+@pytest.fixture(autouse=True)
+def forget_generated_modules():
+    """Removes the generated projects' modules from `sys.modules` before and after each test."""
+
+    def forget():
+        for name in [name for name in sys.modules if name.split(".")[0] in ("fresh_probe", "option_probe")]:
+            del sys.modules[name]
+
+    forget()
+    yield
+    forget()
+
+
+def _load_generated_test(*, project_root, module_name, package_name, monkeypatch):
+    """Imports a generated project's `tests/test_model.py` as if the project were installed."""
+    model_path = project_root / module_name / "model.py"
+    model_source = model_path.read_text(encoding="utf-8")
+    model_path.write_text(
+        model_source.replace(f'version = version("{package_name}")', 'version = "0.1.0"'), encoding="utf-8"
+    )
+
+    monkeypatch.syspath_prepend(str(project_root))
+
+    spec = importlib.util.spec_from_file_location("generated_test_model", project_root / "tests" / "test_model.py")
+    assert spec is not None and spec.loader is not None
+    generated = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generated)
+    return generated
+
+
+def test_generated_test_passes(tmp_path, monkeypatch):
+    result = initialize.create_new_annotation_model_project("Fresh Probe", target_dir=tmp_path)
+    generated = _load_generated_test(
+        project_root=result.path,
+        module_name="fresh_probe",
+        package_name="dorsal-fresh-probe",
+        monkeypatch=monkeypatch,
+    )
+
+    generated.test_model_integration(tmp_path)
+
+
+def test_generated_test_passes_documented_option_defaults_only(tmp_path, monkeypatch):
+    result = initialize.create_new_annotation_model_project("Option Probe", target_dir=tmp_path)
+    project_root = result.path
+
+    with (project_root / "model_config.toml").open("a", encoding="utf-8") as f:
+        f.write('beam_size = { type = "int", default = 5, help = "Beam size." }\n')
+        f.write('language = { type = "str", help = "Auto-detected if not provided." }\n')
+
+    model_path = project_root / "option_probe" / "model.py"
+    model_source = model_path.read_text(encoding="utf-8")
+    model_source = model_source.replace("    def main(self):", "    def main(self, beam_size: int = 1):")
+    model_source = model_source.replace(
+        'return {"data": {"Hello": "World"}}', 'return {"data": {"beam_size": beam_size}}'
+    )
+    model_path.write_text(model_source, encoding="utf-8")
+
+    generated = _load_generated_test(
+        project_root=project_root,
+        module_name="option_probe",
+        package_name="dorsal-option-probe",
+        monkeypatch=monkeypatch,
+    )
+
+    captured = {}
+    real_run_model = generated.run_model
+
+    def spy_run_model(**kwargs):
+        results = real_run_model(**kwargs)
+        captured["options"] = kwargs["options"]
+        captured["records"] = results[0].records
+        return results
+
+    monkeypatch.setattr(generated, "run_model", spy_run_model)
+    generated.test_model_integration(tmp_path)
+
+    assert captured["options"] == {"beam_size": 5}
+    assert captured["records"] == [{"data": {"beam_size": 5}}]
