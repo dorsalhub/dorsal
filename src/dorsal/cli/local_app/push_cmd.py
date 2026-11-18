@@ -187,9 +187,12 @@ def push_target(
     Pushes local file or directory metadata to DorsalHub,
     with options for strict validation and collection creation.
     """
+    from dorsal.cli.number_changes import silence_dropped_number_warnings
+
     console = get_rich_console()
     ui_context: UIContext = ctx.obj
     palette = ui_context["palette"]
+    silence_dropped_number_warnings()
 
     if use_cache and skip_cache:
         exit_cli(code=EXIT_CODE_ERROR, message="Error: --use-cache and --skip-cache flags cannot be used together.")
@@ -280,11 +283,19 @@ def _process_file_push(
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
 
+        from dorsal.cli.number_changes import local_file_changes_json, print_local_file_changes
+
+        print_local_file_changes(error_console, ui_context, [local_file], with_file_names=False)
+
         with error_console.status("Pushing to DorsalHub..."):
             api_response = local_file.push(public=public, strict=strict)
 
         if json_output:
-            print_json_output(api_response.model_dump(mode="json"), console)
+            response_json = api_response.model_dump(mode="json")
+            number_changes = local_file_changes_json([local_file])
+            if number_changes:
+                response_json["number_changes"] = next(iter(number_changes.values()))
+            print_json_output(response_json, console)
             exit_cli()
 
         if api_response.results and api_response.success > 0:
@@ -436,6 +447,9 @@ def _process_dir_push(
             if collection_name is None:
                 exit_cli(code=EXIT_CODE_ERROR, message="Internal Error: Collection name was not set before creation.")
 
+            from dorsal.cli.number_changes import print_local_file_changes
+
+            print_local_file_changes(error_console, ui_context, collection.files)
             remote_collection = collection.create_remote_collection(
                 name=collection_name, description=collection_desc, public=public
             )
@@ -460,6 +474,9 @@ def _process_dir_push(
                 )
 
         if not create_collection:
+            from dorsal.cli.number_changes import local_file_changes_json, print_local_file_changes
+
+            print_local_file_changes(error_console, ui_context, collection.files)
             summary = collection.push(
                 public=public,
                 console=progress_console,
@@ -468,6 +485,9 @@ def _process_dir_push(
                 strict=strict,
                 include_oversized=force,
             )
+            number_changes = local_file_changes_json(collection.files)
+            if number_changes:
+                summary["number_changes"] = number_changes
 
             is_duplicate_error = False
             if summary.get("failed", 0) > 0:

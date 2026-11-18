@@ -107,9 +107,10 @@ def test_export_matches_0_12_1(case_id):
 @pytest.mark.parametrize("case_id", DOCUMENTED)
 def test_documented_changes_differ_from_0_12_1(case_id):
     result = _run(case_id)
+    case = RECORDED["cases"][case_id]
 
-    assert result["err"] is None, RECORDED["cases"][case_id]["documented_change"]
-    assert result != _expected(case_id), RECORDED["cases"][case_id]["documented_change"]
+    assert result["err"] == case.get("documented_error"), case["documented_change"]
+    assert result != _expected(case_id), case["documented_change"]
 
 
 def test_recording_covers_every_kind_of_case():
@@ -117,4 +118,4 @@ def test_recording_covers_every_kind_of_case():
 
     assert kinds == {"arxiv", "arxiv-parse", "export", "filesushi", "parse", "pdf-record"}
     assert len(RECORDED["cases"]) == 305
-    assert len(DOCUMENTED) == 31
+    assert len(DOCUMENTED) == 42

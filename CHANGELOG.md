@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.14.0 (unreleased)
+
+### Migrating from 0.13
+- **New minimum versions:** `oatschema[validate]>=0.9.0.1,<0.10`, `oatschema-adapters>=0.2,<0.3`,
+  `jsonschema-rs>=0.58`, `typer>=0.19.0` and `tomlkit>=0.13.3`. `oatschema` 0.8 can no longer be installed with
+  Dorsal.
+- **OATS 0.8.0 stays the default.** `oatschema` and `oatschema-adapters` now default to 0.9.0, so Dorsal passes its
+  own version to them. Pass `schema_version="0.9.0"` (`--schema-version 0.9.0`) to build, validate, stamp, export or
+  push 0.9.0 records. DorsalHub doesn't accept 0.9.0 annotations yet.
+- **Stricter validation at every schema version, 0.8.0 included:** a string or key with an unpaired surrogate is
+  invalid, and so is a malformed `date-time` (such as `generation_metadata.created`). A record nested too deeply
+  for the validator no longer raises `TypeError`: it is validated, and an error in it raises
+  `oatschema.ValidationError`. A record that used to validate can now fail, and isn't stamped.
+- **Numbers are checked before a record is stamped.** Every OATS record from `run_model`, the pipeline,
+  `LocalFile.add_*` and adapter parsers goes through `oatschema.check_numbers` at the version it will carry. A bad
+  number is NaN, ±infinity, beyond ±9007199254740991, or outside its field's bounds. An optional one under a
+  property is dropped. A required one, or one in a list, rejects the record. Lossless conversions are made: numpy
+  values to Python ones, `-0.0` to `0.0`, a whole float in an integer field to an int, and from 0.9.0 an integer
+  `seed` to its string. Nothing is rounded. At 0.8.0 a `seed` beyond ±9007199254740991 is dropped; at 0.9.0 it is
+  kept as a string. `force=True` skips the check as it skips validation. A forced record is stamped only if it
+  validates at that version, so one holding NaN or ±infinity never gets a `schema_version` and can't be pushed.
+
+### Added
+- What was dropped or converted is reported. In Python: `RunModelResult.dropped` and `.converted`,
+  `LocalFile.number_changes` (from the scan and `add_*`), `number_changes` in the `index_directory` summary, and the
+  `dropped` and `converted` attributes of the dict `parse_file` returns. On the CLI, `dorsal scan`, `dorsal push`,
+  `dorsal model run` and `dorsal adapter parse` print a warning on stderr and add the changes to `--json` output.
+  The exit code is still 0. A record read back from the local cache shows no changes.
+- `on_bad_number="raise"` rejects a record with any bad number instead of dropping it, on `run_model`,
+  `run_or_install_model`, `ModelRunner`, `MetadataReader`, `LocalFile` (its pipeline and `add_*`) and
+  `parse_file`. On the CLI: `--on-bad-number raise`. The default is `"drop"`.
+- `OpenSchemaValidator.check_numbers()`, also on the validator `make_schema_validator` returns for an OATS schema.
+
+### Changed
+- `oatschema-adapters` 0.2.0 changes some output (see its changelog). Document TSV gains a `polygon` column, and a
+  polygon block's box columns hold its bounding box. Audio TSV with speakers gains `speaker_id` when an id differs
+  from its name. Markdown parsing reads the frontmatter, including `producer` and `track_id`, so an integer
+  `track_id` there now fails validation. A document record with no blocks exports to Markdown as "No content
+  extracted from this document." instead of failing. `list_formats()` lists a `json` format for every OATS schema.
+- With `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` set, `run_model`, the pipeline and `add_*` validate records against the
+  override schema and don't check their numbers. Adapter parsing still checks them against the bundled schemas.
+
+### Documentation
+- `run_model`, `get_annotations` and `reassemble_record` say how to rebuild a record that was split into parts: join
+  the parts' lists (such as `blocks`) in `source.execution_part` order. A part that was sharded for upload is
+  reassembled in `group.index` order when it is read.
+
 ## 0.13.3 (2026-11-17)
 
 ### Fixed

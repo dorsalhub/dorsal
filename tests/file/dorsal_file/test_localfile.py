@@ -319,7 +319,7 @@ def test_add_annotation_success(mock_annotator, mock_metadata_reader, mock_file_
         private=None,
         source=AnnotationManualSource(id="test"),
     )
-    mock_annotator.make_manual_annotation.return_value = mock_annotation
+    mock_annotator.make_checked_manual_annotation.return_value = ([mock_annotation], [])
 
     mock_client = MagicMock()
 
@@ -351,7 +351,7 @@ def test_add_annotation_raises_conflict_error(mock_annotator, mock_metadata_read
     mock_annotation = Annotation(
         record=GenericFileAnnotation(), private=True, source=AnnotationManualSource(id="conflict_test_id")
     )
-    mock_annotator.make_manual_annotation.return_value = mock_annotation
+    mock_annotator.make_checked_manual_annotation.return_value = ([mock_annotation], [])
 
     mock_client = MagicMock()
 
@@ -382,9 +382,9 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
     mock_annotation_2 = Annotation(
         record={"version": 2}, private=True, source=AnnotationManualSource(id="overwrite_test_id")
     )
-    mock_annotator.make_manual_annotation.side_effect = [
-        mock_annotation_1,
-        mock_annotation_2,
+    mock_annotator.make_checked_manual_annotation.side_effect = [
+        ([mock_annotation_1], []),
+        ([mock_annotation_2], []),
     ]
 
     mock_client = MagicMock()
@@ -400,7 +400,7 @@ def test_add_annotation_succeeds_with_overwrite(mock_annotator, mock_metadata_re
         overwrite=True,
     )
 
-    assert mock_annotator.make_manual_annotation.call_count == 2
+    assert mock_annotator.make_checked_manual_annotation.call_count == 2
 
     assert getattr(lf.model.annotations, "dorsal/test-dataset")[0].record.version == 2
 
@@ -765,12 +765,14 @@ def test_add_annotation_crud_lifecycle(
     mock_client.make_schema_validator.return_value = MagicMock()
 
     def mock_make_annotation(annotation, **kwargs):
-        return Annotation(
-            record=GenericFileAnnotation(**annotation),
-            source=AnnotationManualSource(id=kwargs.get("source_id", "default_src")),
-        )
+        return [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                source=AnnotationManualSource(id=kwargs.get("source_id", "default_src")),
+            )
+        ], []
 
-    mock_annotator.make_manual_annotation.side_effect = mock_make_annotation
+    mock_annotator.make_checked_manual_annotation.side_effect = mock_make_annotation
 
     lf = LocalFile(file_path)
 
@@ -806,10 +808,15 @@ def test_add_classification_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="cls"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="cls"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)
@@ -834,10 +841,15 @@ def test_add_embedding_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="emb"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="emb"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)
@@ -860,10 +872,15 @@ def test_add_llm_output_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="llm"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="llm"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)
@@ -886,10 +903,15 @@ def test_add_location_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="loc"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="loc"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)
@@ -915,10 +937,15 @@ def test_add_transcription_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="trans"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="trans"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)
@@ -941,10 +968,15 @@ def test_add_regression_integration(
     fs.create_file(file_path)
     mock_metadata_reader._get_or_create_record.return_value = mock_file_record_strict
 
-    mock_annotator.make_manual_annotation.side_effect = lambda annotation, **kwargs: Annotation(
-        record=GenericFileAnnotation(**annotation),
-        private=kwargs.get("private", True),
-        source=AnnotationManualSource(id="reg"),
+    mock_annotator.make_checked_manual_annotation.side_effect = lambda annotation, **kwargs: (
+        [
+            Annotation(
+                record=GenericFileAnnotation(**annotation),
+                private=kwargs.get("private", True),
+                source=AnnotationManualSource(id="reg"),
+            )
+        ],
+        [],
     )
 
     lf = LocalFile(file_path)

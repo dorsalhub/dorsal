@@ -57,11 +57,21 @@ from dorsal.common.validators.json_schema import (
 )
 from dorsal.file.linters import apply_linter
 from dorsal.file.schemas import schema_version_of
+from dorsal.file.validators.numbers import (
+    ON_BAD_NUMBER_DEFAULT,
+    ConvertedValue,
+    DroppedValue,
+    NumberChanges,
+    OnBadNumber,
+    check_on_bad_number,
+    log_number_changes,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
 if TYPE_CHECKING:
     from dorsal.file.validators.file_record import FileRecord, FileRecordStrict
+    from dorsal.file.validators.open_schema import OpenSchemaValidator
     from dorsal.file.configs.model_runner import (
         DependencyConfig,
         ModelRunnerPipelineStep,
@@ -172,6 +182,8 @@ class ModelRunner:
         pipeline_config: str | list[dict[str, Any]] | None = "default",
         debug: bool = False,
         single_model_mode: bool = False,
+        *,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
     ):
         """
         Initializes the ModelRunner.
@@ -185,6 +197,8 @@ class ModelRunner:
                 - None: No pipeline will be set up. Useful for when you only need
             debug: If True, enables timing of model executions.
             single_model_mode: If True, supresses warning about the pipeline_config being set to None
+            on_bad_number: What to do with a bad number in an OATS record: "drop" (default) removes a bad optional
+                           value and reports it, "raise" rejects the record.
         """
         from dorsal.common.config import load_config
 
@@ -206,6 +220,8 @@ class ModelRunner:
         self.debug = debug
         self.time_taken: dict[str, float] = {}
         self.errors: dict[str, str] = {}
+        self.on_bad_number: OnBadNumber = check_on_bad_number(on_bad_number)
+        self.number_changes: dict[str, list[NumberChanges]] = {}
 
         self.pre_model = self._load_pre_pipeline_model_step()
 
@@ -667,6 +683,108 @@ class ModelRunner:
                 )
             return None, error_details
 
+    def _check_open_schema_output(
+        self,
+        raw_model_output: dict[str, Any] | list[dict[str, Any]],
+        validator: "OpenSchemaValidator",
+        annotator_model_name: str,
+        file_path: str,
+        on_bad_number: OnBadNumber,
+        error_log_level: int = logging.WARNING,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None, list[DroppedValue], list[ConvertedValue]]:
+        """Check each output record's numbers with `oatschema.check_numbers`, which also validates it."""
+        import oatschema
+
+        from dorsal.common.validators.json_schema import (
+            ERROR_MESSAGE_LIMIT,
+            preview_record,
+            shorten_text,
+            validation_error_message,
+        )
+
+        records: list[Any] = raw_model_output if isinstance(raw_model_output, list) else [raw_model_output]
+        checked: list[dict[str, Any]] = []
+        dropped: list[DroppedValue] = []
+        converted: list[ConvertedValue] = []
+        errors: list[dict[str, Any]] = []
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                errors.append(
+                    {
+                        "record_index": index,
+                        "path": [],
+                        "validator": "type_check",
+                        "error_message": f"Invalid record type: {type(record).__name__}",
+                    }
+                )
+                continue
+            try:
+                result = validator.check_numbers([record], on_bad_number=on_bad_number)
+            except oatschema.ValidationError as err:
+                errors.append(
+                    {
+                        "record_index": index,
+                        "record_preview": preview_record(record),
+                        "path": list(err.path),
+                        "validator": type(validator).__name__,
+                        "error_message": validation_error_message(err.message, list(err.path), err.keyword),
+                    }
+                )
+                continue
+            except TypeError as err:
+                errors.append(
+                    {
+                        "record_index": index,
+                        "path": [],
+                        "validator": "type_check",
+                        "error_message": shorten_text(str(err), ERROR_MESSAGE_LIMIT),
+                    }
+                )
+                continue
+            checked.extend(result.records)
+            dropped.extend(item.model_copy(update={"record": index}) for item in result.dropped)
+            converted.extend(item.model_copy(update={"record": index}) for item in result.converted)
+
+        if errors:
+            for err_detail in errors:
+                logger.log(
+                    error_log_level,
+                    "OATS validation failed for annotator '%s' on file '%s'. Record Index: %s, Path: %s, "
+                    "Validator: '%s', Message: %s",
+                    annotator_model_name,
+                    file_path,
+                    err_detail["record_index"],
+                    err_detail["path"],
+                    err_detail["validator"],
+                    err_detail["error_message"],
+                )
+            return None, errors, [], []
+        return checked, None, dropped, converted
+
+    def _validate_with_json_schema(
+        self,
+        raw_model_output: dict[str, Any] | list[dict[str, Any]],
+        validator: JsonSchemaValidator,
+        annotator_model_name: str,
+        file_path: str,
+        on_bad_number: OnBadNumber,
+        error_log_level: int = logging.WARNING,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None, list[DroppedValue], list[ConvertedValue]]:
+        from dorsal.file.validators.open_schema import OpenSchemaValidator
+
+        if isinstance(validator, OpenSchemaValidator):
+            return self._check_open_schema_output(
+                raw_model_output, validator, annotator_model_name, file_path, on_bad_number, error_log_level
+            )
+        data, errors = self._json_schema_validate_raw_annotation_model_output(
+            raw_model_output=raw_model_output,
+            schema_validator_instance=validator,
+            annotator_model_name=annotator_model_name,
+            file_path=file_path,
+            error_log_level=error_log_level,
+        )
+        return data, errors, [], []
+
     def _attempt_rescue_by_chunking(
         self,
         raw_model_output: dict[str, Any] | list[dict[str, Any]],
@@ -674,11 +792,12 @@ class ModelRunner:
         validation_model: Type[BaseModel] | JsonSchemaValidator,
         model_name: str,
         file_path: str,
-    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None]:
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
+    ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]] | None, list[DroppedValue], list[ConvertedValue]]:
         """
         Attempts to rescue validation failures by chunking oversized records.
         Returns:
-            (rescued_data, rescue_errors)
+            (rescued_data, rescue_errors, dropped, converted), where `record` in each change is the chunk index.
         """
         from dorsal.file.chunking import chunk_record
 
@@ -692,7 +811,7 @@ class ModelRunner:
             rescued_records.extend(chunk_record(rec, schema_id, schema_version=chunk_version))
 
         if len(rescued_records) <= len(raw_records):
-            return None, None
+            return None, None, [], []
 
         logger.info(
             "Validation failed for '%s'. Attempting to rescue by semantically chunking into %d records.",
@@ -700,12 +819,11 @@ class ModelRunner:
             len(rescued_records),
         )
 
+        dropped: list[DroppedValue] = []
+        converted: list[ConvertedValue] = []
         if isinstance(validation_model, JsonSchemaValidator):
-            validated_data, rescue_error_payload = self._json_schema_validate_raw_annotation_model_output(
-                raw_model_output=rescued_records,
-                schema_validator_instance=validation_model,
-                annotator_model_name=model_name,
-                file_path=file_path,
+            validated_data, rescue_error_payload, dropped, converted = self._validate_with_json_schema(
+                rescued_records, validation_model, model_name, file_path, on_bad_number
             )
         else:
             validated_data, rescue_error_payload = self._pydantic_validate_raw_annotation_model_output(
@@ -720,7 +838,7 @@ class ModelRunner:
         else:
             logger.warning("Rescue failed. The semantically chunked records still failed validation.")
 
-        return validated_data, rescue_error_payload
+        return validated_data, rescue_error_payload, dropped, converted
 
     @model_debug_timer
     def run_single_model(
@@ -735,6 +853,8 @@ class ModelRunner:
         ignore_linter_errors: bool = False,
         follow_symlinks: bool = True,
         progress_callback: Callable[[float, float, str], None] | None = None,
+        *,
+        on_bad_number: OnBadNumber | None = None,
     ) -> list["RunModelResult"]:
         """
         Runs a single annotation model and validates its output.
@@ -760,9 +880,11 @@ class ModelRunner:
             options: A dictionary of options to pass to the model's `.main()` method.
             follow_symlinks: If True (default), the model will treat the path as resolving
                               to its target. If False, it may treat it as a raw node.
+            on_bad_number: "drop" or "raise", for bad numbers in OATS records. Defaults to the runner's setting.
 
         Returns:
-            A RunModelResult object containing the model's output or an error.
+            A RunModelResult object containing the model's output or an error. Values dropped from or converted
+            in OATS records are listed in its `dropped` and `converted`.
         """
         from dorsal.file.configs.model_runner import RunModelResult
         from dorsal.file.schemas import resolve_schema_id
@@ -770,6 +892,7 @@ class ModelRunner:
         if schema_id is not None:
             schema_id = resolve_schema_id(schema_id, depth=2)
         model_name = annotation_model.__name__
+        bad_number_mode = check_on_bad_number(on_bad_number or self.on_bad_number)
 
         try:
             logger.debug("Instantiating model '%s' for file '%s'", model_name, file_path)
@@ -850,6 +973,8 @@ class ModelRunner:
                 validated_data: list[dict[str, Any]] | None = None
                 validation_error_payload: list[dict[str, Any]] | str | None = None
                 skipped_whole_validation = False
+                dropped: list[DroppedValue] = []
+                converted: list[ConvertedValue] = []
 
                 if validation_model is None:
                     validated_data = raw_data if isinstance(raw_data, list) else [raw_data]
@@ -870,13 +995,9 @@ class ModelRunner:
                                 }
                             ]
                         else:
-                            validated_data, validation_error_payload = (
-                                self._json_schema_validate_raw_annotation_model_output(
-                                    raw_model_output=raw_data,
-                                    schema_validator_instance=validation_model,
-                                    annotator_model_name=model_name,
-                                    file_path=file_path,
-                                    error_log_level=log_level,
+                            validated_data, validation_error_payload, dropped, converted = (
+                                self._validate_with_json_schema(
+                                    raw_data, validation_model, model_name, file_path, bad_number_mode, log_level
                                 )
                             )
                     elif inspect.isclass(validation_model) and issubclass(validation_model, BaseModel):
@@ -891,13 +1012,18 @@ class ModelRunner:
                         raise ModelRunnerConfigError(f"Unsupported validator type '{type(validation_model).__name__}'")
 
                 if validation_error_payload is not None and schema_id and validation_model:
+                    rescued_dropped: list[DroppedValue] = []
+                    rescued_converted: list[ConvertedValue] = []
                     try:
-                        rescued_data, rescue_errors = self._attempt_rescue_by_chunking(
-                            raw_model_output=raw_data,
-                            schema_id=schema_id,
-                            validation_model=validation_model,
-                            model_name=model_name,
-                            file_path=file_path,
+                        rescued_data, rescue_errors, rescued_dropped, rescued_converted = (
+                            self._attempt_rescue_by_chunking(
+                                raw_model_output=raw_data,
+                                schema_id=schema_id,
+                                validation_model=validation_model,
+                                model_name=model_name,
+                                file_path=file_path,
+                                on_bad_number=bad_number_mode,
+                            )
                         )
                     except EmbeddingTooLargeError as err:
                         logger.warning("Validation failed for '%s': %s", model_name, err)
@@ -908,34 +1034,60 @@ class ModelRunner:
                     if skipped_whole_validation and rescue_errors:
                         validation_error_payload = rescue_errors
                     elif skipped_whole_validation and rescued_data is None:
-                        validated_data, validation_error_payload = (
-                            self._json_schema_validate_raw_annotation_model_output(
-                                raw_model_output=raw_data,
-                                schema_validator_instance=cast(JsonSchemaValidator, validation_model),
-                                annotator_model_name=model_name,
-                                file_path=file_path,
-                            )
+                        validated_data, validation_error_payload, dropped, converted = self._validate_with_json_schema(
+                            raw_data,
+                            cast(JsonSchemaValidator, validation_model),
+                            model_name,
+                            file_path,
+                            bad_number_mode,
                         )
                     if rescued_data is not None and rescue_errors is None:
                         validated_data = rescued_data
                         validation_error_payload = None
+                        dropped, converted = rescued_dropped, rescued_converted
 
                         if len(validated_data) > 1:
-                            from dorsal.file.validators.open_schema import stamped_schema_version
+                            from dorsal.file.validators.open_schema import OpenSchemaValidator, stamp_checked_records
 
-                            result_data["schema_version"] = stamped_schema_version(
+                            stamped = stamp_checked_records(
                                 schema_id,
                                 schema_version,
                                 validation_model,
                                 result_data["schema_version"],
                                 validated_data,
+                                on_bad_number=bad_number_mode,
+                                already_checked=isinstance(validation_model, OpenSchemaValidator),
                             )
+                            if stamped.rejection and bad_number_mode == "raise":
+                                result_data["schema_version"] = None
+                                result_data["error"] = (
+                                    f"Output from model '{model_name}' was rejected: {stamped.rejection}"
+                                )
+                                final_results.append(RunModelResult(**result_data))
+                                continue
+                            result_data["schema_version"] = stamped.version
+                            validated_data = stamped.records
+                            dropped = dropped + stamped.dropped
+                            converted = converted + stamped.converted
+                            total_parts = len(validated_data)
                             for idx, chunk_data in enumerate(validated_data):
                                 chunk_result_data = result_data.copy()
                                 chunk_result_data["source"] = result_data["source"].copy()
                                 chunk_result_data["source"]["execution_part"] = idx + 1
-                                chunk_result_data["source"]["execution_total_parts"] = len(validated_data)
+                                chunk_result_data["source"]["execution_total_parts"] = total_parts
                                 chunk_result_data["records"] = [chunk_data]
+                                chunk_result_data["dropped"] = [
+                                    item.model_copy(update={"record": 0}) for item in dropped if item.record == idx
+                                ]
+                                chunk_result_data["converted"] = [
+                                    item.model_copy(update={"record": 0}) for item in converted if item.record == idx
+                                ]
+                                log_number_changes(
+                                    logger,
+                                    f"part {idx + 1} of {total_parts} of '{model_name}' output for '{file_path}'",
+                                    chunk_result_data["dropped"],
+                                    chunk_result_data["converted"],
+                                )
                                 final_results.append(RunModelResult(**chunk_result_data))
                             continue
 
@@ -972,15 +1124,37 @@ class ModelRunner:
                             result_data["error"] = str(e)
                             final_results.append(RunModelResult(**result_data))
                             continue
-                        from dorsal.file.validators.open_schema import stamped_schema_version
+                        from dorsal.file.validators.open_schema import OpenSchemaValidator, stamp_checked_records
 
-                        result_data["schema_version"] = stamped_schema_version(
-                            schema_id, schema_version, validation_model, result_data["schema_version"], validated_data
+                        stamped = stamp_checked_records(
+                            schema_id,
+                            schema_version,
+                            validation_model,
+                            result_data["schema_version"],
+                            validated_data,
+                            on_bad_number=bad_number_mode,
+                            already_checked=isinstance(validation_model, OpenSchemaValidator),
+                        )
+                        if stamped.rejection and bad_number_mode == "raise":
+                            result_data["schema_version"] = None
+                            result_data["error"] = f"Output from model '{model_name}' was rejected: {stamped.rejection}"
+                            final_results.append(RunModelResult(**result_data))
+                            continue
+                        result_data["schema_version"] = stamped.version
+                        validated_data = stamped.records
+                        result_data["dropped"] = dropped + stamped.dropped
+                        result_data["converted"] = converted + stamped.converted
+                        log_number_changes(
+                            logger,
+                            f"'{model_name}' output for '{file_path}'",
+                            result_data["dropped"],
+                            result_data["converted"],
                         )
                     result_data["records"] = validated_data
 
                 final_results.append(RunModelResult(**result_data))
 
+            self._record_number_changes(file_path, final_results)
             return final_results
 
         except ModelRunnerConfigError:
@@ -1106,6 +1280,7 @@ class ModelRunner:
         from dorsal.file.validators.base import FileCoreValidationModel, FileCoreValidationModelStrict
 
         logger.debug("Starting model execution pipeline for file: %s", file_path)
+        self.number_changes.pop(file_path, None)
         self._validate_file_path(file_path, follow_symlinks)
 
         all_model_results: "list[RunModelResult]" = []
@@ -1336,6 +1511,20 @@ class ModelRunner:
             logger.debug("Model execution times for file '%s': %s", file_path, self.time_taken)
         return final_file_record
 
+    def _record_number_changes(self, file_path: str, results: "list[RunModelResult]") -> None:
+        for res in results:
+            if res.dropped or res.converted:
+                self.number_changes.setdefault(file_path, []).append(
+                    NumberChanges(
+                        schema_id=res.schema_id,
+                        schema_version=res.schema_version,
+                        source_id=res.source.id,
+                        part=getattr(res.source, "execution_part", None),
+                        dropped=res.dropped,
+                        converted=res.converted,
+                    )
+                )
+
     def _merge_model_results(
         self, model_results: "list[RunModelResult]", file_path_for_log: str, calculate_hashes: bool
     ) -> "FileRecord | FileRecordStrict":
@@ -1517,6 +1706,7 @@ def run_model(
     debug: bool = False,
     ignore_linter_errors: bool = False,
     progress_callback: Callable[[float, float, str], None] | None = None,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> list["RunModelResult"]:
     """
     Execute a single AnnotationModel in isolation.
@@ -1540,9 +1730,18 @@ def run_model(
         dependencies: (Optional) A list of dependency configs to check before running.
                       Can be Pydantic objects or raw dictionaries (from TOML).
         options: (Optional) A dictionary of options to pass to the model's `.main()` method.
+        on_bad_number: For an OATS schema, what to do with a bad number (NaN, ±infinity, beyond
+                       ±9007199254740991, or outside its field's bounds): "drop" (default) removes a bad optional
+                       value and lists it in the result's `dropped`; "raise" rejects the record. A bad required
+                       value, or one in a list, rejects the record either way. Nothing is rounded.
 
     Returns:
-        A RunModelResult object containing your model's output or any errors.
+        A list of RunModelResult objects containing your model's output or any errors. Values dropped from or
+        converted in OATS records are listed in each result's `dropped` and `converted`.
+
+        A record over its schema's list limits is split into parts, one result each, with
+        `source.execution_part` and `source.execution_total_parts` set. To rebuild the original record, join the
+        parts' lists (such as `blocks`) in `execution_part` order.
 
     Raises:
         ValueError: If 'schema_id' is an OATS schema and a
@@ -1587,7 +1786,7 @@ def run_model(
                 )
             ]
 
-    runner = ModelRunner(pipeline_config=None, debug=debug, single_model_mode=True)
+    runner = ModelRunner(pipeline_config=None, debug=debug, single_model_mode=True, on_bad_number=on_bad_number)
 
     logger.info(f"Running FileCoreAnnotationModel on {file_path}...")
     core_validation_model: Type[FileCoreValidationModel]

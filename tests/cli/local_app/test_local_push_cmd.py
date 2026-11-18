@@ -67,6 +67,8 @@ def mock_file_deps(mocker):
     }
 
     mock_instance.push.return_value = mock_api_response
+    mock_instance.number_changes = []
+    mock_instance.file_path = "/fake/test.txt"
 
     return {
         "local_file_class": mock_local_file_class,
@@ -902,3 +904,41 @@ def test_push_dir_dry_run_not_blocked_by_duplicates(mock_rich_console, mock_dir_
 
     assert result.exit_code == 0
     mock_dir_deps["collection_instance"].push.assert_not_called()
+
+
+def _number_changes():
+    from dorsal.file.validators.numbers import DroppedValue, NumberChanges
+
+    return [
+        NumberChanges(
+            schema_id="open/llm-output",
+            schema_version="0.8.0",
+            source_id="acme/model",
+            dropped=[DroppedValue(path=["score"], value="7.0", reason="outside the bounds of this field")],
+        )
+    ]
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_push_file_reports_number_changes(
+    mock_rich_console, mock_error_console, mock_file_deps, mock_exit_cli, tmp_path, rendered, json_flag
+):
+    target = tmp_path / "test.txt"
+    target.touch()
+    mock_file_deps["local_file_instance"].number_changes = _number_changes()
+
+    runner.invoke(app, ["local", "push", str(target), *json_flag])
+
+    assert "open/llm-output from acme/model: dropped 7.0 at /score" in rendered(mock_error_console)
+    if json_flag:
+        data = json.loads(mock_rich_console.print.call_args_list[0].args[0])
+        assert data["number_changes"][0]["dropped"][0]["path"] == ["score"]
+
+
+def test_push_file_clean_run_adds_no_number_changes(mock_rich_console, mock_file_deps, mock_exit_cli, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    runner.invoke(app, ["local", "push", str(target), "--json"])
+
+    assert "number_changes" not in json.loads(mock_rich_console.print.call_args_list[0].args[0])

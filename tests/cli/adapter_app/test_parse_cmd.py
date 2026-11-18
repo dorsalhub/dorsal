@@ -212,6 +212,8 @@ def test_parse_cmd_non_oats_schema_has_no_version(mock_parse_deps, tmp_path, mon
     data = json.loads(mock_parse_deps["rich_console"].print.call_args.args[0])
     assert data["schema_id"] == "dorsal/arxiv"
     assert "schema_version" not in data
+    assert "dropped" not in data
+    assert mock_parse_deps["parse_api"].call_args.kwargs["on_bad_number"] is None
 
 
 def test_parse_cmd_schema_version_as_an_option(mock_parse_deps, tmp_path, monkeypatch):
@@ -246,3 +248,67 @@ def test_parse_cmd_writes_the_resolved_schema_id(mock_parse_deps, tmp_path, monk
         for call in mock_parse_deps["error_console"].print.call_args_list
     ]
     assert not any("deprecated" in line for line in printed)
+
+
+HOCR = """<html><body>
+<div class="ocr_page" title="bbox 0 0 1000 1000; ppageno 0">
+<span class="ocr_line" title="bbox 10 10 200 30; x_wconf 150">Hello world</span>
+<span class="ocr_line" title="bbox 10 40 200 60; x_wconf 90">Second line</span>
+</div></body></html>"""
+
+
+@pytest.mark.parametrize("version", [None, "0.9.0"])
+def test_parse_cmd_reports_dropped_numbers(mock_rich_console, mock_error_console, rendered, tmp_path, version):
+    test_file = tmp_path / "doc.hocr"
+    test_file.write_text(HOCR, encoding="utf-8")
+    args = ["parse", str(test_file), "document-extraction", "--no-save"]
+    if version:
+        args += ["--schema-version", version]
+
+    result = runner.invoke(cli_app, args)
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(mock_rich_console.print.call_args.args[0])
+    assert data["schema_version"] == (version or "0.8.0")
+    assert data["dropped"] == [
+        {"record": 0, "path": ["blocks", 0, "score"], "value": "1.5", "reason": "outside the bounds of this field"}
+    ]
+    assert data["converted"] == []
+    assert "score" not in data["record"]["blocks"][0]
+    assert "doc.hocr: dropped 1.5 at /blocks/0/score (outside the bounds of this field)" in rendered(mock_error_console)
+
+
+def test_parse_cmd_clean_run_has_empty_change_lists(mock_rich_console, mock_error_console, rendered, tmp_path):
+    test_file = tmp_path / "doc.hocr"
+    test_file.write_text(HOCR.replace("x_wconf 150", "x_wconf 50"), encoding="utf-8")
+
+    result = runner.invoke(cli_app, ["parse", str(test_file), "document-extraction", "--no-save"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(mock_rich_console.print.call_args.args[0])
+    assert data["dropped"] == [] and data["converted"] == []
+    assert "dropped" not in rendered(mock_error_console)
+
+
+@pytest.mark.parametrize("how", [["--on-bad-number", "raise"], ["-o", "on_bad_number=raise"]])
+def test_parse_cmd_strict_mode_fails(mock_rich_console, mock_error_console, rendered, tmp_path, how):
+    test_file = tmp_path / "doc.hocr"
+    test_file.write_text(HOCR, encoding="utf-8")
+
+    result = runner.invoke(cli_app, ["parse", str(test_file), "document-extraction", "--no-save", *how])
+
+    assert result.exit_code != 0
+    assert not mock_rich_console.print.called
+    assert "/blocks/0/score" in rendered(mock_error_console)
+
+
+def test_parse_cmd_rejects_an_unknown_on_bad_number(mock_rich_console, mock_error_console, rendered, tmp_path):
+    test_file = tmp_path / "doc.hocr"
+    test_file.write_text(HOCR, encoding="utf-8")
+
+    result = runner.invoke(
+        cli_app, ["parse", str(test_file), "document-extraction", "--no-save", "-o", "on_bad_number=round"]
+    )
+
+    assert result.exit_code != 0
+    assert "on_bad_number" in rendered(mock_error_console)

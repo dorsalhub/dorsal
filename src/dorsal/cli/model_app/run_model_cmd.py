@@ -19,6 +19,8 @@ from typing import Annotated, Optional, List, Any
 
 import typer
 
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +66,10 @@ def run_model(
             rich_help_panel="Model Configuration",
         ),
     ] = False,
+    on_bad_number: Annotated[
+        OnBadNumberOption,
+        typer.Option("--on-bad-number", help=ON_BAD_NUMBER_HELP, rich_help_panel="Model Configuration"),
+    ] = OnBadNumberOption.drop,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -151,6 +157,7 @@ def run_model(
     from dorsal.cli.views.model import create_model_result_panel
     from dorsal.file.configs.model_runner import RunModelResult
     from dorsal.cli.model_app.checks import check_and_confirm_model_install
+    from dorsal.cli.number_changes import print_number_changes, silence_dropped_number_warnings
     from dorsal.cli.themes import UIContext
     from dorsal.cli.views.layout import table as themed_table
     from rich.logging import RichHandler
@@ -176,6 +183,8 @@ def run_model(
 
     parsed_options = parse_cli_options(options=options, palette=palette)
     parsed_export_options = parse_cli_options(options=export_options, palette=palette)
+    silence_dropped_number_warnings()
+    number_reports: list[tuple[str, RunModelResult]] = []
 
     try:
         resolution = prepare_model_target(target)
@@ -268,6 +277,7 @@ def run_model(
                         options=parsed_options,
                         ignore_linter_errors=ignore_lint,
                         progress_callback=progress_hook,
+                        on_bad_number=on_bad_number.value,
                     )
 
                     for res in file_results:
@@ -275,6 +285,9 @@ def run_model(
                             raise AuthError(res.error)
 
                         raw_results.append(res)
+                        if res.dropped or res.converted:
+                            part = getattr(res.source, "execution_part", None)
+                            number_reports.append((f"{f.name} (part {part})" if part else f.name, res))
 
                         res_dict = res.model_dump(exclude_none=True)
                         res_dict["file_path"] = str(f)
@@ -377,6 +390,9 @@ def run_model(
         else:
             error_console.print(f"[{palette.get('error', 'bold red')}]Unexpected Error:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
+
+    for label, res in number_reports:
+        print_number_changes(error_console, ui_context, label, res.dropped, res.converted)
 
     final_json_data = {"results": results_data}
 

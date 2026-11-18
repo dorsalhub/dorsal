@@ -34,6 +34,7 @@ from dorsal.common.validators import (
 from dorsal.file.annotation_models.mediainfo.config import MEDIAINFO_MEDIA_TYPES
 from dorsal.file.utils.size import parse_filesize
 from dorsal.file.validators.base import MediaTypePartString
+from dorsal.file.validators.numbers import ConvertedValue, DroppedValue
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,14 @@ class RunModelResult(BaseModel):
     error: str | None = Field(
         default=None,
         description="A descriptive error message if the model failed, crashed, or if a dependency was not met.",
+    )
+    dropped: list[DroppedValue] = Field(
+        default_factory=list,
+        description="Bad numbers removed from OATS records before they were stamped. Empty if none were.",
+    )
+    converted: list[ConvertedValue] = Field(
+        default_factory=list,
+        description="Values rewritten without changing what they mean, such as `-0.0` to `0.0`. Empty if none were.",
     )
 
     @property

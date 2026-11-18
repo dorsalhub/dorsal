@@ -127,6 +127,7 @@ def mock_dorsal_client_for_reader(mocker):
 def mock_model_runner_for_reader(mocker):
     """Mocks ModelRunner used directly by MetadataReader"""
     mock = mocker.MagicMock(spec=ModelRunner)
+    mock.number_changes = {}
 
     mock_file_record = MagicMock(spec=FileRecordStrict)
     mock_file_record.hash = "default_mock_hash_from_runner"
@@ -211,7 +212,7 @@ class TestMetadataReaderInit:
 
         reader = MetadataReader()
         assert not reader._ignore_duplicates
-        mock_mr_constructor.assert_called_once_with(pipeline_config="default")
+        mock_mr_constructor.assert_called_once_with(pipeline_config="default", on_bad_number="drop")
         mock_get_client.assert_not_called()
         assert reader._client_instance is None
 
@@ -236,7 +237,7 @@ class TestMetadataReaderInit:
         model_config = {"custom": "config"}
 
         reader_lazy = MetadataReader(api_key=api_key, model_config=model_config)
-        mock_mr_constructor.assert_called_once_with(pipeline_config=model_config)
+        mock_mr_constructor.assert_called_once_with(pipeline_config=model_config, on_bad_number="drop")
 
         client_from_key = reader_lazy._client
 

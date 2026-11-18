@@ -47,6 +47,7 @@ from dorsal.common.exceptions import (
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.index import DorsalIndex
 from dorsal.file.model_runner import ModelRunner
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, NumberChanges, OnBadNumber, log_number_changes
 from dorsal.file.utils.files import get_file_paths
 from dorsal.session import get_shared_dorsal_client, get_shared_index
 
@@ -109,6 +110,8 @@ class MetadataReader:
         base_url: str = constants.BASE_URL,
         file_class: Type[LocalFile] = LocalFile,
         offline: bool = False,
+        *,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
     ):
         """
         Args:
@@ -121,10 +124,13 @@ class MetadataReader:
                                If False (default), a DuplicateFileError will be raised.
             base_url: The base URL for the Dorsal API. Defaults to the common BASE_URL.
             file_class: Currently only `LocalFile` supported.
+            on_bad_number: "drop" (default) or "raise", for bad numbers in OATS records the pipeline makes.
         """
         self.offline = offline or is_offline_mode()
         self._ignore_duplicates = ignore_duplicates
-        self._model_runner = ModelRunner(pipeline_config=model_config)
+        self.on_bad_number: OnBadNumber = on_bad_number
+        self._model_runner = ModelRunner(pipeline_config=model_config, on_bad_number=on_bad_number)
+        self.last_number_changes: dict[str, list[NumberChanges]] = {}
 
         if self.offline:
             if client is not None:
@@ -367,6 +373,7 @@ class MetadataReader:
 
         file_hash_to_path_map: dict[str, str] = {}
         records_to_index_list: list[FileRecord | FileRecordStrict] = []
+        self.last_number_changes = {}
         processed_files_summary_local: dict[str, str] = {}
 
         should_display = should_show_progress(show_progress, console)
@@ -435,6 +442,9 @@ class MetadataReader:
                         follow_symlinks=follow_symlinks,
                         calculate_hashes=calculate_hashes,
                     )
+                    changes = self._model_runner.number_changes.pop(processing_path, None)
+                    if changes:
+                        self.last_number_changes[file_path] = changes
                     if calculate_hashes and (not hasattr(file_record, "hash") or not file_record.hash):
                         logger.error(
                             "Skipping file %s: processed record is missing a hash.",
@@ -885,7 +895,8 @@ class MetadataReader:
 
         Returns:
             dict: A summary dictionary detailing the results.
-                  Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
+                  Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors', and
+                  'number_changes' (by file path: values dropped from or converted in OATS records) if any were.
 
         Raises:
             FileNotFoundError: If `dir_path` does not exist.
@@ -927,7 +938,7 @@ class MetadataReader:
                 "errors": [],
             }
 
-        return self.upload_records(
+        summary = self.upload_records(
             records=cast(list["FileRecordStrict"], records_to_index_list),
             public=public,
             fail_fast=fail_fast,
@@ -936,6 +947,12 @@ class MetadataReader:
             console=console,
             palette=palette,
         )
+        if self.last_number_changes:
+            summary["number_changes"] = {
+                path: [change.model_dump(mode="json") for change in changes]
+                for path, changes in self.last_number_changes.items()
+            }
+        return summary
 
     def index_file(
         self, file_path: str, *, public: bool = False, skip_cache: bool = False, overwrite_cache: bool = False
@@ -984,6 +1001,14 @@ class MetadataReader:
         file_record = self._get_or_create_record(
             file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache, calculate_hashes=True
         )
+        for change in self._model_runner.number_changes.pop(file_path, None) or []:
+            log_number_changes(
+                logger,
+                f"'{change.schema_id}' from '{change.source_id}' for '{file_path}'",
+                change.dropped,
+                change.converted,
+                level=logging.WARNING,
+            )
 
         check_record_schema_versions(
             [cast("FileRecordStrict", file_record)], hash_to_path_map={str(file_record.hash): file_path}
@@ -1228,6 +1253,8 @@ class MetadataReader:
                         client=self._client_instance,
                         offline=self.offline,
                         _file_record=record,
+                        on_bad_number=self.on_bad_number,
+                        _number_changes=self._model_runner.number_changes.pop(processing_path, None),
                     )
 
                     local_files.append(local_file_obj)
@@ -1303,6 +1330,7 @@ class MetadataReader:
                 offline=self.offline,
                 follow_symlinks=follow_symlinks,
                 calculate_hashes=calculate_hashes,
+                on_bad_number=self.on_bad_number,
             )
         except FileNotFoundError:
             logger.error("File not found for reading: %s", file_path)

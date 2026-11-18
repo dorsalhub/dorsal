@@ -15,9 +15,14 @@
 import logging
 import json
 import pathlib
-from typing import Annotated, Any, Optional, List
+from typing import TYPE_CHECKING, Annotated, Any, Optional, List, cast
 
 import typer
+
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
+
+if TYPE_CHECKING:
+    from dorsal.cli.themes import UIContext
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,10 @@ def parse_adapter(
             help="Disable auto-saving results to disk (useful for pure piping to stdout).",
         ),
     ] = False,
+    on_bad_number: Annotated[
+        Optional[OnBadNumberOption],
+        typer.Option("--on-bad-number", help=f"{ON_BAD_NUMBER_HELP} [default: drop]", show_default=False),
+    ] = None,
 ):
     """
     Parse a standard file format into a valid Dorsal JSON record using an adapter.
@@ -94,6 +103,8 @@ def parse_adapter(
     from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
     from dorsal.common.exceptions import DorsalError
     from dorsal.api.adapters import parse_file_from_path
+    from dorsal.cli.number_changes import number_changes_json, print_number_changes, silence_dropped_number_warnings
+    from dorsal.file.validators.numbers import changes_from_parsed, check_on_bad_number
 
     console = get_rich_console()
     error_console = get_error_console()
@@ -102,16 +113,20 @@ def parse_adapter(
     warn_if_deprecated_schema_id(schema_id, palette)
     parsed_options = parse_cli_options(options=options, palette=palette)
     schema_version = parsed_options.pop("schema_version", None) or schema_version
+    bad_number_option = parsed_options.pop("on_bad_number", None) or (on_bad_number.value if on_bad_number else None)
+    silence_dropped_number_warnings()
 
     try:
+        bad_number_mode = None if bad_number_option is None else check_on_bad_number(bad_number_option)
         record_dict = parse_file_from_path(
             file_path=file_path,
             schema_id=schema_id,
             source_format=source_format,
             schema_version=schema_version,
+            on_bad_number=bad_number_mode,
             **parsed_options,
         )
-    except DorsalError as e:
+    except (DorsalError, ValueError) as e:
         error_console.print(f"[{palette.get('error', 'bold red')}]Parse failed:[/] {e}")
         exit_cli(code=EXIT_CODE_ERROR)
     except Exception as e:
@@ -126,8 +141,10 @@ def parse_adapter(
         "file_path": str(file_path.resolve()),
         "record": record_dict,
     }
+    dropped, converted = changes_from_parsed(record_dict)
     if open_schema_name(schema_id) is not None:
         final_payload["schema_version"] = schema_version or OPEN_VALIDATION_SCHEMAS_VER
+        final_payload.update(number_changes_json(dropped, converted))
 
     out_dir = output_path if output_path and output_path.is_dir() else pathlib.Path.cwd()
     save_path = output_path if output_path and not output_path.is_dir() else out_dir / f"{file_path.stem}.dorsal.json"
@@ -143,6 +160,9 @@ def parse_adapter(
             exit_cli(code=EXIT_CODE_ERROR)
 
     print_json_output(final_payload, console)
+    print_number_changes(
+        error_console, cast("UIContext", ctx.obj or {"palette": palette}), file_path.name, dropped, converted
+    )
 
     if not no_save and saved_path_msg:
         error_console.print(

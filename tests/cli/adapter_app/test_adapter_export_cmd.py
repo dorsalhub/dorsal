@@ -442,3 +442,33 @@ def test_export_saved_unversioned_hub_annotation_validates_at_0_5_0(tmp_path, mo
     local_file = pathlib.Path("local.json")
     local_file.write_text(json.dumps({"schema_id": "audio-transcription", "record": record}), encoding="utf-8")
     assert runner.invoke(cli_app, ["export", str(local_file), "srt", "--no-save"]).exit_code != 0
+
+
+def test_export_validates_at_0_8_0_by_default_and_at_0_9_0_on_request(tmp_path, monkeypatch, mocker):
+    import io
+
+    from rich.console import Console
+
+    monkeypatch.chdir(tmp_path)
+    out = io.StringIO()
+    mocker.patch("dorsal.common.cli.get_rich_console", return_value=Console(file=out, width=200))
+    mocker.patch("dorsal.common.cli.get_error_console", return_value=MagicMock())
+    record = {
+        "producer": "test",
+        "unit": "pt",
+        "extraction_type": "text",
+        "blocks": [{"block_type": "text", "text": "Hello.", "page_number": 1}],
+    }
+    big = pathlib.Path("big.json")
+    big.write_text(
+        json.dumps({"schema_id": "document-extraction", "record": {**record, "attributes": {"n": 2**60}}}),
+        encoding="utf-8",
+    )
+    clean = pathlib.Path("clean.json")
+    clean.write_text(json.dumps({"schema_id": "document-extraction", "record": record}), encoding="utf-8")
+
+    assert runner.invoke(cli_app, ["export", str(big), "txt", "--no-save"]).exit_code == 0
+    assert runner.invoke(cli_app, ["export", str(big), "txt", "--no-save", "--schema-version", "0.9.0"]).exit_code != 0
+    result = runner.invoke(cli_app, ["export", str(clean), "txt", "--no-save", "--schema-version", "0.9.0"])
+    assert result.exit_code == 0
+    assert "Hello." in out.getvalue()

@@ -223,7 +223,7 @@ def test_parse_file_oats_schema_gets_bare_name_and_version(mock_get_adapter):
     parse_file("content", schema_id="document-extraction", source_format="txt", schema_version="0.7.0")
 
     mock_get_adapter.assert_called_once_with("document-extraction", "txt")
-    mock_adapter_instance.parse.assert_called_once_with("content", schema_version="0.7.0")
+    mock_adapter_instance.parse.assert_called_once_with("content", schema_version="0.7.0", on_bad_number="drop")
 
 
 @patch("oatschema_adapters.get_adapter")
@@ -554,3 +554,16 @@ def test_arxiv_alias_parses_like_the_full_id():
     content = export_record(ARXIV, "arxiv", "md")
 
     assert parse_file(content, "arxiv", "md") == parse_file(content, "dorsal/arxiv", "md")
+
+
+def test_parse_file_sends_on_bad_number_to_other_schemas_only_when_chosen(mocker):
+    from dorsal.api import adapters
+
+    adapter = MagicMock()
+    mocker.patch.object(adapters, "_get_adapter", return_value=adapter)
+
+    adapters.parse_file("content", "dorsal/arxiv", "md")
+    adapters.parse_file("content", "dorsal/arxiv", "md", on_bad_number="raise")
+
+    assert "on_bad_number" not in adapter.parse.call_args_list[0].kwargs
+    assert adapter.parse.call_args_list[1].kwargs["on_bad_number"] == "raise"

@@ -3,16 +3,16 @@ revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32'",
-    "python_full_version < '3.12' and sys_platform == 'win32'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version < '3.12' and sys_platform == 'emscripten'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'emscripten'",
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
@@ -601,10 +601,10 @@ requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "dorsalhub", extras = ["pandas"], marker = "extra == 'all'" },
     { name = "dorsalhub", extras = ["tlsh"], marker = "extra == 'all'" },
-    { name = "jsonschema-rs", specifier = ">=0.38.1" },
+    { name = "jsonschema-rs", specifier = ">=0.58" },
     { name = "langcodes", extras = ["data"], specifier = "==3.5.0" },
-    { name = "oatschema", extras = ["validate"], specifier = ">=0.8.0.2,<0.9" },
-    { name = "oatschema-adapters", specifier = ">=0.1.0,<0.2" },
+    { name = "oatschema", extras = ["validate"], specifier = ">=0.9.0.1,<0.10" },
+    { name = "oatschema-adapters", specifier = ">=0.2,<0.3" },
     { name = "packaging", specifier = ">=23.0" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0.0" },
     { name = "py-tlsh", marker = "extra == 'tlsh'", specifier = ">=4.7.2" },
@@ -617,9 +617,9 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3,<3.0" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "textual", specifier = ">=6.2.1" },
-    { name = "tomlkit", specifier = ">=0.12.0" },
+    { name = "tomlkit", specifier = ">=0.13.3" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "typer", specifier = ">=0.16.0" },
+    { name = "typer", specifier = ">=0.19.0" },
 ]
 provides-extras = ["tlsh", "pandas", "all"]
 
@@ -1102,10 +1102,10 @@ version = "2.5.5"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
@@ -1182,11 +1182,11 @@ wheels = [
 
 [[package]]
 name = "oatschema"
-version = "0.8.0.2"
+version = "0.9.0.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f4/44/483dabbe6b4403591cf7452fb49346cd747009096445691079d3b58d8d25/oatschema-0.8.0.2.tar.gz", hash = "sha256:2ca5624acfcb5b662f60c020ab412e659b0ddbea0db8687c4eea9e7f0dca78e4", size = 87322, upload-time = "2026-10-30T10:38:04.724Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/56/2fa3a7c4feb9dcb754ea5bfea9af8664eabe2544b06b662213528c96f46e/oatschema-0.9.0.1.tar.gz", hash = "sha256:6ac689e45865e048b698a36e1a9c1554c10b37f2e90dd5abbcf7c331bee8f7cf", size = 154560, upload-time = "2026-11-17T15:14:52.519Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/86/d67f3f86af57528f2c412448645cd8515701abfc475eed1620b76d058c04/oatschema-0.8.0.2-py3-none-any.whl", hash = "sha256:01ccb4305a8b41fefcbcf8555b913e6609d940e78330cf3a4db658934498b234", size = 117115, upload-time = "2026-10-30T10:38:03.333Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/b8/480e8ab63d775214569d54277774c9ecd267f8fa2a366338118525fee051/oatschema-0.9.0.1-py3-none-any.whl", hash = "sha256:eac99e0023def57cc1abc0d2b3387d805f090a6fc2a0415e87b42c234c23bdbb", size = 154935, upload-time = "2026-11-17T15:14:51.195Z" },
 ]
 
 [package.optional-dependencies]
@@ -1196,16 +1196,16 @@ validate = [
 
 [[package]]
 name = "oatschema-adapters"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "oatschema", extra = ["validate"] },
     { name = "srt" },
     { name = "webvtt-py" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/e7/6fb1a1864731488c34fa243659c69ba98e8655691eea89191f0e01a4d9a9/oatschema_adapters-0.1.0.tar.gz", hash = "sha256:a8295ed49cfc347fa9d4810f07b1f5a590a9adc32f1f6cd416593e281d458484", size = 91599, upload-time = "2026-10-31T10:17:40.871Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/b6/5b01f11d3b37b0cd170ee4d42d604636d77592dcad744d3717e419d8dd92/oatschema_adapters-0.2.0.tar.gz", hash = "sha256:0f0c48cc1f7d89a447af17c94d3c3b0338b3be374a95ecb0020b945a2ecceefe", size = 123401, upload-time = "2026-11-07T17:38:07.003Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/41/a3596e3ee3788349263c68931ec3b99159e3b41a1dd7234794ec2d261cb2/oatschema_adapters-0.1.0-py3-none-any.whl", hash = "sha256:b176cd693e1e0286d8979e362bff767f20e4ca46ba4ddfd54a08dd3bcd21ba40", size = 46590, upload-time = "2026-10-31T10:17:39.155Z" },
+    { url = "https://files.pythonhosted.org/packages/18/e4/57c029ca1e3b18980e265d2e1182c749ee5d49a07155ac07f732a20e0106/oatschema_adapters-0.2.0-py3-none-any.whl", hash = "sha256:339eab687c356446be04fb0422778c0be24a161ed99a2abfc3d8fee325d8b767", size = 65553, upload-time = "2026-11-07T17:38:05.717Z" },
 ]
 
 [[package]]

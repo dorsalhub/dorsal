@@ -207,9 +207,12 @@ def scan_target(
     """
     Scans a local file or directory, extracts metadata, and generates reports.
     """
+    from dorsal.cli.number_changes import silence_dropped_number_warnings
+
     console = get_rich_console()
     error_console = get_error_console()
     status_console = error_console if json_output else console
+    silence_dropped_number_warnings()
     palette = ctx.obj.get("palette", get_palette())
     icons = ctx.obj.get("icons", get_icons())
     borders = ctx.obj.get("borders", get_borders())
@@ -340,6 +343,9 @@ def _process_file_scan(
                 ),
             }
 
+        if local_file.number_changes:
+            record_dict["number_changes"] = [change.model_dump(mode="json") for change in local_file.number_changes]
+
         if json_output:
             print_json_output(record_dict, console)
         else:
@@ -354,6 +360,8 @@ def _process_file_scan(
             )
             console.print(panel)
 
+        _print_number_changes(local_file, palette, icons, borders)
+
         if save:
             final_path = _get_final_path(path, output_path, output_is_dir, ".json", is_dir=False)
             _save_report_to_disk(final_path, format_json_output(record_dict), "JSON", status_console, palette)
@@ -361,6 +369,13 @@ def _process_file_scan(
     except Exception as err:
         logger.exception(f"CLI 'scan' command failed while processing {path}.")
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
+
+
+def _print_number_changes(local_file, palette, icons, borders) -> None:
+    from dorsal.cli.number_changes import print_local_file_changes
+
+    ui_context: Any = {"palette": palette, "icons": icons, "borders": borders}
+    print_local_file_changes(get_error_console(), ui_context, [local_file], with_file_names=False)
 
 
 def _process_dir_scan(
@@ -408,10 +423,16 @@ def _process_dir_scan(
 
     duration = time.perf_counter() - start_time
 
+    from dorsal.cli.number_changes import local_file_changes_json, print_local_file_changes
+
     scan_data: dict[str, Any] | None = None
     if json_output or save:
         scan_data = collection.to_dict(exclude={"embeddings", "text_chunks"})
         scan_data["scan_metadata"]["duration_seconds"] = duration
+        number_changes = local_file_changes_json(collection.files)
+        if number_changes:
+            scan_data["number_changes"] = number_changes
+    print_local_file_changes(get_error_console(), ui_context, collection.files)
 
     if json_output:
         print_json_output(scan_data, console)
