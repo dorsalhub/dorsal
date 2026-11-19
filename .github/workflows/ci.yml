@@ -130,6 +130,8 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Add uv to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmediainfo0v5
       - name: Install the lowest versions the pins allow
         run: |
           uv venv --python 3.11 .venv-lowest
