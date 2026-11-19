@@ -193,13 +193,18 @@ class FileAnnotator:
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise AnnotationConfigurationError(f"Target dataset '{schema_id}' is not a valid dataset ID.")
 
-        return build_annotation_or_annotationgroup(
+        annotation = build_annotation_or_annotationgroup(
             schema_id=schema_id,
             record_data=validated_annotation,
             source=source,
             schema_version=schema_version,
             private=private,
         )
+        if not force:
+            from dorsal.file.integrity import mark_numbers_checked
+
+            mark_numbers_checked(annotation)
+        return annotation
 
     def annotate_file_using_pipeline_step(
         self,

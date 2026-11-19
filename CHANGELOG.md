@@ -21,16 +21,31 @@
   `seed` to its string. Nothing is rounded. At 0.8.0 a `seed` beyond ±9007199254740991 is dropped; at 0.9.0 it is
   kept as a string. `force=True` skips the check as it skips validation. A forced record is stamped only if it
   validates at that version, so one holding NaN or ±infinity never gets a `schema_version` and can't be pushed.
+- **Pushes check records Dorsal didn't check.** Before anything is uploaded, an OATS annotation that Dorsal didn't
+  make or check in this process (loaded with `LocalFile.from_json`, or built by hand and sent with `DorsalClient`)
+  goes through `check_numbers(..., on_bad_number="raise")` at its `schema_version`, and is sent as the check
+  converts it (`-0.0` to `0.0`, at 0.9.0 an integer `seed` to its string; a sharded record that would need
+  converting is refused). If any fails, the push raises
+  `RejectedAnnotationError` and nothing is sent. That includes a record added with `force=True` and an explicit
+  `schema_version` that holds a bad number.
 
 ### Added
-- What was dropped or converted is reported. In Python: `RunModelResult.dropped` and `.converted`,
-  `LocalFile.number_changes` (from the scan and `add_*`), `number_changes` in the `index_directory` summary, and the
-  `dropped` and `converted` attributes of the dict `parse_file` returns. On the CLI, `dorsal scan`, `dorsal push`,
-  `dorsal model run` and `dorsal adapter parse` print a warning on stderr and add the changes to `--json` output.
-  The exit code is still 0. A record read back from the local cache shows no changes.
+- What was dropped, converted or rejected for a bad number is reported. In Python: `RunModelResult.dropped`,
+  `.converted` and `.rejected`; `LocalFile.number_changes` (from the scan and `add_*`; a record a bad number
+  rejected is listed with its `rejected` reason); `number_changes` on the response of `LocalFile.push`,
+  `dorsal.api.index_file` and `MetadataReader.index_file`; `number_changes` in the `index_directory` summary; and the
+  `dropped` and `converted` attributes of the dict `parse_file` returns. On the CLI, `dorsal scan`, `dorsal push`
+  (with `--create-collection` and `--dry-run` too), `dorsal index build`, `dorsal model run` and
+  `dorsal adapter parse` print a warning on stderr and add the changes to `--json` output. The exit code is still 0.
+- The local cache keeps each record's changes and reports them again when the record is read from it.
 - `on_bad_number="raise"` rejects a record with any bad number instead of dropping it, on `run_model`,
-  `run_or_install_model`, `ModelRunner`, `MetadataReader`, `LocalFile` (its pipeline and `add_*`) and
-  `parse_file`. On the CLI: `--on-bad-number raise`. The default is `"drop"`.
+  `run_or_install_model`, `dorsal.testing.run_model`, `ModelRunner`, `MetadataReader`, `LocalFile` (its pipeline
+  and `add_*`), `LocalFileCollection`, `dorsal.api.scan_file`, `scan_directory`, `index_file`, `index_directory`
+  and `parse_file`. On the CLI, `--on-bad-number raise` on `dorsal scan`, `dorsal push`, `dorsal index build`,
+  `dorsal model run` and `dorsal adapter parse`. The default is `"drop"`. A cached record that had values dropped
+  isn't reused in `raise` mode, and one from which `raise` mode rejected a record isn't reused in `drop` mode: the
+  file is scanned again.
+- `dorsal push <dir> --dry-run --json` prints what would be pushed as JSON.
 - `OpenSchemaValidator.check_numbers()`, also on the validator `make_schema_validator` returns for an OATS schema.
 
 ### Changed
@@ -40,7 +55,14 @@
   `track_id` there now fails validation. A document record with no blocks exports to Markdown as "No content
   extracted from this document." instead of failing. `list_formats()` lists a `json` format for every OATS schema.
 - With `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` set, `run_model`, the pipeline and `add_*` validate records against the
-  override schema and don't check their numbers. Adapter parsing still checks them against the bundled schemas.
+  override schema and don't check their numbers, and pushes don't check them either. Adapter parsing still checks
+  them against the bundled schemas.
+- `validate_dataset_records` validates records and doesn't check their numbers, since it keeps no records. Use
+  `OpenSchemaValidator.check_numbers()` for that.
+
+### Fixed
+- `LocalFile.upgrade_file_record()` runs the file's own pipeline and `on_bad_number`, as do files from
+  `MetadataReader.scan_directory`. It used to run the default pipeline in `drop` mode.
 
 ### Documentation
 - `run_model`, `get_annotations` and `reassemble_record` say how to rebuild a record that was split into parts: join

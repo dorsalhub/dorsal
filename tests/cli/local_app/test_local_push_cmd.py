@@ -84,7 +84,7 @@ def mock_dir_deps(mocker):
     mock_instance.warnings = []
     mock_instance.__len__.return_value = 2
     mock_instance.__bool__.side_effect = lambda: mock_instance.__len__() > 0
-    mock_instance.files = [MagicMock(), MagicMock()]
+    mock_instance.files = [MagicMock(number_changes=[]), MagicMock(number_changes=[])]
 
     mock_instance.push.return_value = {
         "total_records": 2,
@@ -942,3 +942,32 @@ def test_push_file_clean_run_adds_no_number_changes(mock_rich_console, mock_file
     runner.invoke(app, ["local", "push", str(target), "--json"])
 
     assert "number_changes" not in json.loads(mock_rich_console.print.call_args_list[0].args[0])
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_push_dir_create_collection_reports_number_changes(
+    mock_rich_console, mock_error_console, mock_dir_deps, tmp_path, rendered, json_flag
+):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+    changed = MagicMock(file_path="/fake/file1.txt", number_changes=_number_changes())
+    clean = MagicMock(file_path="/fake/file2.txt", number_changes=[])
+    mock_dir_deps["collection_instance"].files = [changed, clean]
+
+    result = runner.invoke(app, ["local", "push", str(target), "--create-collection", *json_flag])
+
+    assert result.exit_code == 0, result.output
+    assert "/fake/file1.txt: open/llm-output from acme/model" in rendered(mock_error_console)
+    if json_flag:
+        data = json.loads(mock_rich_console.print.call_args_list[0].args[0])
+        assert data["id"] == "mock_col"
+        assert list(data["number_changes"]) == ["/fake/file1.txt"]
+
+
+def test_push_dir_create_collection_json_without_changes_is_unchanged(mock_rich_console, mock_dir_deps, tmp_path):
+    target = tmp_path / "test_dir"
+    target.mkdir()
+
+    runner.invoke(app, ["local", "push", str(target), "--create-collection", "--json"])
+
+    assert mock_rich_console.file.write.call_args.args[0] == '{"id": "mock_col"}\n'

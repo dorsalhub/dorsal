@@ -46,9 +46,10 @@ def print_number_changes(
     label: str,
     dropped: Sequence["DroppedValue"],
     converted: Sequence["ConvertedValue"],
+    rejected: str | None = None,
 ) -> None:
-    """Print a warning to stderr listing what was dropped from or converted in the records described by `label`."""
-    if not dropped and not converted:
+    """Print a warning to stderr listing what was rejected, dropped or converted in the records described by `label`."""
+    if not dropped and not converted and not rejected:
         return
     from rich.markup import escape
     from rich.text import Text
@@ -56,7 +57,7 @@ def print_number_changes(
     from dorsal.cli.views.layout import message
     from dorsal.file.validators.numbers import describe_number_changes
 
-    body = Text("\n".join(describe_number_changes(dropped, converted)))
+    body = Text("\n".join(describe_number_changes(dropped, converted, rejected=rejected)))
     error_console.print(message(escape(label), body, ui_context, level="warning"))
 
 
@@ -76,7 +77,12 @@ def print_local_file_changes(
         for change in getattr(local_file, "number_changes", None) or []:
             file_label = getattr(local_file, "file_path", None) if with_file_names else None
             print_number_changes(
-                error_console, ui_context, change_label(change, file_label), change.dropped, change.converted
+                error_console,
+                ui_context,
+                change_label(change, file_label),
+                change.dropped,
+                change.converted,
+                getattr(change, "rejected", None),
             )
 
 

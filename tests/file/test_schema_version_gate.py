@@ -47,6 +47,7 @@ SOURCE = {
     "execution_id": "23456781-1234-5678-1234-567812345678",
 }
 LARGE_RECORD = {"blocks": [{"text": "word " * 20_000, "block_type": "text"} for _ in range(30)], "producer": "x"}
+LARGE_VALID_RECORD = {"blocks": [{"text": "word " * 800, "block_type": "text"} for _ in range(600)], "producer": "x"}
 HUB_OK = {"total": 1, "success": 1, "error": 0, "unauthorized": 0, "results": []}
 
 
@@ -177,7 +178,7 @@ def test_gate_refuses_a_sharded_group_once(bare_record):
     record = bare_record.model_copy(deep=True)
     group = build_annotation_or_annotationgroup(
         schema_id="document-extraction",
-        record_data=LARGE_RECORD,
+        record_data=LARGE_VALID_RECORD,
         source=SOURCE,
         schema_version=None,
     )

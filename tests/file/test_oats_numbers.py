@@ -302,7 +302,14 @@ def test_pipeline_in_strict_mode_keeps_no_record(text_file, output):
     )
 
     assert not lf.get_annotations("llm-output")
-    assert lf.number_changes == []
+    [change] = lf.number_changes
+    assert (change.schema_id, change.source_id, change.dropped, change.converted) == (
+        "open/llm-output",
+        "test/numbers",
+        [],
+        [],
+    )
+    assert change.rejected == "… is outside the bounds of this field at /score"
 
 
 @pytest.fixture

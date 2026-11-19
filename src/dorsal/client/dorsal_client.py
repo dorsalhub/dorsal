@@ -966,6 +966,8 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
             DorsalClientError: For client-side data validation issues.
+            UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
+            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
         """
         return self._index_file_records(file_records=file_records, private=True, api_key=api_key)
 
@@ -1017,6 +1019,8 @@ class DorsalClient:
             NetworkError: If a network or connectivity issue occurs.
             APIError: For any other 4xx or 5xx API error.
             DorsalClientError: For client-side data validation issues.
+            UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
+            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
         """
         return self._index_file_records(file_records=file_records, private=False, api_key=api_key)
 
@@ -3267,6 +3271,7 @@ class DorsalClient:
         Raises:
             DorsalClientError: For client-side validation errors.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
+            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
             NotFoundError: If the file or dataset is not found.
             ConflictError: If `overwrite` is False and an annotation from this
                 source already exists.

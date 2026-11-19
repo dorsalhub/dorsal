@@ -1381,7 +1381,9 @@ class LocalFile(_DorsalFile):
         else:
             self.date_created = datetime.datetime.fromtimestamp(stat_result.st_ctime).astimezone()
 
+        metadata_reader = self._metadata_reader
         super().__init__(file_record=file_record_model)
+        self._metadata_reader = metadata_reader
         logger.debug(
             "LocalFile for path '%s' (hash: %s) initialized successfully.",
             file_path,
@@ -1417,7 +1419,7 @@ class LocalFile(_DorsalFile):
             follow_symlinks=follow_symlinks,
             calculate_hashes=calculate_hashes,
         )
-        self.number_changes.extend(self._metadata_reader._model_runner.number_changes.pop(target_path, []))
+        self.number_changes = list(self._metadata_reader._model_runner.number_changes.pop(target_path, []))
         return record
 
     def upgrade_file_record(self) -> None:
@@ -1432,7 +1434,9 @@ class LocalFile(_DorsalFile):
         if self._metadata_reader is None:
             from dorsal.file.metadata_reader import MetadataReader
 
-            self._metadata_reader = MetadataReader(client=self._client, offline=self.offline)
+            self._metadata_reader = MetadataReader(
+                client=self._client, offline=self.offline, on_bad_number=self.on_bad_number
+            )
 
         self.model = self._generate_record(follow_symlinks=self._follow_symlinks, calculate_hashes=True)
         self._populate()
@@ -1759,7 +1763,11 @@ class LocalFile(_DorsalFile):
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
 
+        from dorsal.file.integrity import check_record_schema_versions, mark_numbers_checked
+
+        check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
         lite_record = self.model.model_copy(deep=True)
+        mark_numbers_checked(lite_record)
 
         extracted_annotations = {}
 
@@ -1862,6 +1870,7 @@ class LocalFile(_DorsalFile):
         else:
             logger.info("Successfully pushed HEAVY file record for '%s' to DorsalHub.", self.file_path)
 
+        response.number_changes = list(self.number_changes)
         return response
 
     def push(self, public: bool = False, api_key: str | None = None, strict: bool = False) -> FileIndexResponse:
@@ -1883,12 +1892,15 @@ class LocalFile(_DorsalFile):
 
         Returns:
             FileIndexResponse: A response object from the API detailing the
-                result of the indexing operation.
+                result of the indexing operation. Its `number_changes` lists what was dropped from or converted in
+                the file's OATS annotations when they were made.
 
         Raises:
             ValueError: If `public=True` but the file's media type is prohibited.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
                 Nothing is uploaded.
+            RejectedAnnotationError: If an OATS annotation Dorsal didn't make or check (loaded from JSON, or added
+                with `force=True`) fails `check_numbers` at its `schema_version`. Nothing is uploaded.
             DorsalClientError: If the push operation fails due to API error,
                 network issue, or authentication failure.
             PartialIndexingError: If strict=True and the response contains partial errors.
@@ -1943,6 +1955,7 @@ class LocalFile(_DorsalFile):
                 response = client.index_public_file_records(file_records=[self.model], api_key=api_key)
             else:
                 response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
+            response.number_changes = list(self.number_changes)
 
             if response.error > 0:
                 error_msg = (
@@ -1994,6 +2007,13 @@ class LocalFile(_DorsalFile):
                 err,
             )
             raise
+
+    def _forget_number_changes(self, schema_id: str, source_id: str | None = None) -> None:
+        self.number_changes = [
+            change
+            for change in self.number_changes
+            if change.schema_id != schema_id or (source_id is not None and change.source_id != source_id)
+        ]
 
     def _set_annotation_attribute(
         self,
@@ -2047,6 +2067,7 @@ class LocalFile(_DorsalFile):
 
                 new_list = [ann for ann in current_list if ann.source.id != new_source_id]
                 new_list.extend(new_items)
+                self._forget_number_changes(schema_id, new_source_id)
                 setattr(self.model.annotations, annotation_id, new_list)
                 logger.debug(
                     "Overwrote existing annotation(s) in list for key '%s' (Source ID: %s).",
@@ -2474,6 +2495,7 @@ class LocalFile(_DorsalFile):
                     if annotation_id in annotations.model_fields_set:
                         annotations.model_fields_set.remove(annotation_id)
 
+                    self._forget_number_changes(schema_id)
                     logger.info("Removed all local annotations for '%s' (key: '%s').", schema_id, annotation_id)
                     self._populate()
                 except Exception as e:
@@ -2492,6 +2514,7 @@ class LocalFile(_DorsalFile):
                     return self.remove_annotation(schema_id)
 
                 setattr(self.model.annotations, annotation_id, new_list)
+                self._forget_number_changes(schema_id, source_id)
                 self._populate()
                 logger.debug(
                     "Removed %d annotation(s) with source_id '%s' from '%s'.",

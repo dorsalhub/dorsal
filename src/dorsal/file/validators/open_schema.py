@@ -26,6 +26,7 @@ from dorsal.file.validators.numbers import (
     DroppedValue,
     OnBadNumber,
     check_open_schema_numbers,
+    number_rejection_reason,
 )
 from dorsal.file.schemas import (
     OPEN_SCHEMA_NAME_MAP,
@@ -211,6 +212,7 @@ class StampedRecords(NamedTuple):
     dropped: list[DroppedValue]
     converted: list[ConvertedValue]
     rejection: str | None = None
+    number_rejection: str | None = None
 
 
 def stamp_checked_records(
@@ -269,7 +271,7 @@ def stamp_checked_records(
             schema_name,
             err,
         )
-        return StampedRecords(None, records, [], [], str(err))
+        return StampedRecords(None, records, [], [], str(err), number_rejection_reason(err))
     return StampedRecords(version, checked.records, checked.dropped, checked.converted)
 
 

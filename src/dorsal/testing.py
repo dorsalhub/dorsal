@@ -21,6 +21,7 @@ from dorsal.common.validators.json_schema import JsonSchemaValidator
 from dorsal.file.configs.model_runner import RunModelResult, ModelRunnerDependencyConfig
 from dorsal.file.model_runner import run_model as _run_model_impl
 from dorsal.common.model_config import model_config_options
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, OnBadNumber
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,14 @@ def run_model(
     dependencies: list[ModelRunnerDependencyConfig | dict] | ModelRunnerDependencyConfig | dict | None = None,
     options: dict[str, Any] | None = None,
     debug: bool = True,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> list[RunModelResult]:
-    """Test wrapper for dorsal.file.run_model."""
+    """
+    Test wrapper for dorsal.file.run_model.
+
+    `on_bad_number` is "drop" (default) or "raise", for bad numbers in OATS records; what was dropped or converted
+    is listed on each result's `dropped` and `converted`.
+    """
     from dorsal.file.schemas import resolve_schema_id
 
     if schema_id is not None:
@@ -62,4 +69,5 @@ def run_model(
         dependencies=dependencies,
         options=options,
         debug=debug,
+        on_bad_number=on_bad_number,
     )

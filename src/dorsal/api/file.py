@@ -61,6 +61,7 @@ from dorsal.file.utils import QuickHasher, get_quick_hash, get_sha256_hash
 from dorsal.file.utils.infer_mediatype import get_media_type
 from dorsal.file.utils.size import get_filesize, human_filesize, parse_filesize
 from dorsal.file.schemas import resolve_schema_id
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, OnBadNumber, check_on_bad_number
 from dorsal.session import get_shared_index, get_metadata_reader
 
 if TYPE_CHECKING:
@@ -664,6 +665,7 @@ def index_file(
     api_key: str | None = None,
     use_cache: bool = True,
     strict: bool = False,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> FileIndexResponse:
     """Processes a single local file and uploads its metadata to DorsalHub.
 
@@ -693,10 +695,17 @@ def index_file(
         strict (bool, optional): If True, raises PartialIndexingError if any part of the
             request fails (e.g., invalid annotation schema), ensuring zero data loss.
             Defaults to False.
+        on_bad_number (str, optional): "drop" (default) removes a bad optional number from an OATS record the
+            pipeline makes; "raise" rejects the record instead.
 
     Returns:
         FileIndexResponse: A response object from the API detailing the
-            result of the indexing operation.
+            result of the indexing operation. Its `number_changes` lists what was dropped from or converted in
+            the file's OATS annotations.
+
+    Raises:
+        UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`. Nothing is uploaded.
+        RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers`. Nothing is uploaded.
     """
     from dorsal.file.dorsal_file import LocalFile
 
@@ -720,7 +729,7 @@ def index_file(
     )
 
     try:
-        local_file = LocalFile(file_path=file_path, use_cache=use_cache)
+        local_file = LocalFile(file_path=file_path, use_cache=use_cache, on_bad_number=on_bad_number)
         response = local_file.push(public=public, api_key=api_key, strict=strict)
 
         logger.debug(
@@ -761,6 +770,7 @@ def index_directory(
     fail_fast: bool = True,
     strict: bool = False,
     include_oversized: bool = False,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> dict:
     """Scans a directory and indexes all files to DorsalHub.
 
@@ -812,14 +822,18 @@ def index_directory(
             failures (e.g. invalid annotations) occur during indexing. Defaults to False.
         include_oversized (bool, optional): If True, uploads oversized records individually
             via multi-part requests. Defaults to False.
+        on_bad_number (str, optional): "drop" (default) removes a bad optional number from an OATS record the
+            pipeline makes; "raise" rejects the record instead.
 
     Returns:
         dict: A summary dictionary detailing the results of the operation.
-            Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
+            Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors', and
+            'number_changes' (by file path) if values were dropped from or converted in OATS records.
 
     Raises:
         FileNotFoundError: If the directory does not exist.
         UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`. Nothing is uploaded.
+        RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers`. Nothing is uploaded.
         ExceedsApiLimitError: If `include_oversized` is False and a file payload is too large.
         BatchIndexingError: If `fail_fast` is True and a network batch fails.
         PartialIndexingError: If `strict` is True and partial errors occur.
@@ -829,12 +843,13 @@ def index_directory(
 
     effective_reader: MetadataReader
 
-    if api_key is not None:
+    on_bad_number = check_on_bad_number(on_bad_number)
+    if api_key is not None or on_bad_number != ON_BAD_NUMBER_DEFAULT:
         logger.debug(
-            "API key override for index_directory (dir: '%s'). Creating temporary MetadataReader.",
+            "API key or on_bad_number override for index_directory (dir: '%s'). Creating temporary MetadataReader.",
             dir_path,
         )
-        effective_reader = MetadataReader(api_key=api_key)
+        effective_reader = MetadataReader(api_key=api_key, on_bad_number=on_bad_number)
     else:
         logger.debug(
             "No API key override for index_directory (dir: '%s'). Using shared METADATA_READER.",
@@ -870,6 +885,7 @@ def scan_directory(
     offline: bool = False,
     follow_symlinks: bool = True,
     calculate_hashes: bool = True,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> list[LocalFile]:
     """Scans a directory and returns a list of LocalFile objects.
 
@@ -897,6 +913,8 @@ def scan_directory(
         dir_path (str): The path to the directory you want to scan.
         recursive (bool, optional): If True, scans all subdirectories
             recursively. Defaults to False.
+        on_bad_number (str, optional): "drop" (default) removes a bad optional number from an OATS record the
+            pipeline makes, listing it in the file's `number_changes`; "raise" rejects the record instead.
 
     Returns:
         list[LocalFile]: A list of processed `LocalFile` objects from the directory.
@@ -904,7 +922,8 @@ def scan_directory(
     from dorsal.file.metadata_reader import MetadataReader
 
     effective_reader: MetadataReader
-    if api_key is not None or offline:
+    on_bad_number = check_on_bad_number(on_bad_number)
+    if api_key is not None or offline or on_bad_number != ON_BAD_NUMBER_DEFAULT:
         if api_key:
             logger.debug(
                 "API key override for scan_directory (path: '%s'). Attaching MetadataReader configured with this API Key",
@@ -914,7 +933,7 @@ def scan_directory(
             logger.debug(
                 "Offline mode. Attached MetadataReader blocked from making network calls",
             )
-        effective_reader = MetadataReader(api_key=api_key)
+        effective_reader = MetadataReader(api_key=api_key, on_bad_number=on_bad_number)
     else:
         logger.debug(
             "No API key override for scan_directory (file: '%s'). Using shared METADATA_READER.",
@@ -968,6 +987,7 @@ def scan_file(
     offline: bool = False,
     follow_symlinks: bool = True,
     calculate_hashes: bool = True,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> LocalFile:
     """Processes a single file and returns a LocalFile object.
 
@@ -987,6 +1007,8 @@ def scan_file(
 
     Args:
         file_path (str): The path to the local file to process.
+        on_bad_number (str, optional): "drop" (default) removes a bad optional number from an OATS record the
+            pipeline makes, listing it in `number_changes`; "raise" rejects the record instead.
 
     Returns:
         LocalFile: An initialized `LocalFile` instance with extracted metadata."
@@ -995,7 +1017,8 @@ def scan_file(
 
     effective_reader: MetadataReader
 
-    if api_key is not None or offline:
+    on_bad_number = check_on_bad_number(on_bad_number)
+    if api_key is not None or offline or on_bad_number != ON_BAD_NUMBER_DEFAULT:
         if api_key:
             logger.debug(
                 "API key override for scan_file (file: '%s'). Attaching MetadataReader configured with this API Key",
@@ -1005,7 +1028,7 @@ def scan_file(
             logger.debug(
                 "Offline mode. Attached MetadataReader blocked from making network calls",
             )
-        effective_reader = MetadataReader(api_key=api_key)
+        effective_reader = MetadataReader(api_key=api_key, on_bad_number=on_bad_number)
     else:
         logger.debug(
             "No API key override for scan_file (file: '%s'). Using shared METADATA_READER.",

@@ -174,6 +174,33 @@ class UnversionedAnnotationError(ValidationError, ValueError):
         self.problems = problems
 
 
+class RejectedAnnotationError(ValidationError, ValueError):
+    """A push was refused before upload: an OATS annotation fails `check_numbers` at its `schema_version`."""
+
+    MAX_LISTED = 10
+
+    def __init__(self, problems: list[dict[str, str | None]]):
+        count = len(problems)
+        lines = [
+            f"Nothing was pushed to DorsalHub: {count} OATS annotation{'' if count == 1 else 's'} "
+            "failed `check_numbers` at the stamped schema version, and DorsalHub refuses those."
+        ]
+        for problem in problems[: self.MAX_LISTED]:
+            lines.append(
+                f"  - {problem['file']}: schema '{problem['schema']}' {problem['schema_version']} from model or "
+                f"source '{problem['model']}': {problem['reason']}"
+            )
+        if count > self.MAX_LISTED:
+            lines.append(f"  ... and {count - self.MAX_LISTED} more.")
+        lines.append(
+            "Records that Dorsal makes or adds are checked when they are made. These were not: they were loaded "
+            "from a file, built by hand, or added with `force=True`. Correct the record, or make it again with "
+            "the model or `add_annotation`."
+        )
+        super().__init__("\n".join(lines))
+        self.problems = problems
+
+
 class RecordValidationError(ValidationError):
     """Indicates records failed client-side validation against the dataset's schema."""
 

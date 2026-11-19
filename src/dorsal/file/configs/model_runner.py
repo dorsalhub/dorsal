@@ -77,6 +77,10 @@ class RunModelResult(BaseModel):
         default_factory=list,
         description="Values rewritten without changing what they mean, such as `-0.0` to `0.0`. Empty if none were.",
     )
+    rejected: str | None = Field(
+        default=None,
+        description="Why an OATS record was rejected for a bad number, if it was. The reason is also in `error`.",
+    )
 
     @property
     def record(self) -> dict[str, Any] | None:

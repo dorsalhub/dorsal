@@ -22,6 +22,7 @@ OnBadNumber = Literal["drop", "raise"]
 ON_BAD_NUMBER_DEFAULT: OnBadNumber = "drop"
 VALUE_DISPLAY_LIMIT = 64
 CHANGES_SHOWN_LIMIT = 10
+REJECTION_DISPLAY_LIMIT = 300
 
 
 class DroppedValue(BaseModel):
@@ -51,6 +52,9 @@ class NumberChanges(BaseModel):
     part: int | None = Field(default=None, description="The part number, for a record split into parts.")
     dropped: list[DroppedValue] = Field(default_factory=list)
     converted: list[ConvertedValue] = Field(default_factory=list)
+    rejected: str | None = Field(
+        default=None, description="Why the record was rejected for a bad number and not kept, if it was."
+    )
 
 
 class CheckedRecords(NamedTuple):
@@ -59,6 +63,18 @@ class CheckedRecords(NamedTuple):
     records: list[dict[str, Any]]
     dropped: list[DroppedValue]
     converted: list[ConvertedValue]
+
+
+def number_rejection_reason(error: Any) -> str | None:
+    """Return why `oatschema.check_numbers` rejected a record for a bad number, or None if it was for another reason."""
+    message = str(getattr(error, "message", "") or "")
+    if "after dropping bad numbers" in message or (
+        not getattr(error, "schema_path", ()) and message.startswith("… is ")
+    ):
+        path = getattr(error, "path", ())
+        reason = f"{message} at {format_path(path)}" if path and "after dropping" not in message else message
+        return reason if len(reason) <= REJECTION_DISPLAY_LIMIT else f"{reason[: REJECTION_DISPLAY_LIMIT - 1]}…"
+    return None
 
 
 def check_on_bad_number(on_bad_number: object) -> OnBadNumber:
@@ -139,10 +155,15 @@ def format_path(path: Sequence[str | int]) -> str:
 
 
 def describe_number_changes(
-    dropped: Sequence[DroppedValue], converted: Sequence[ConvertedValue], *, limit: int = CHANGES_SHOWN_LIMIT
+    dropped: Sequence[DroppedValue],
+    converted: Sequence[ConvertedValue],
+    *,
+    limit: int = CHANGES_SHOWN_LIMIT,
+    rejected: str | None = None,
 ) -> list[str]:
-    """Return one line per dropped or converted value, at most `limit` of them, then a line counting the rest."""
-    lines = [f"dropped {item.value} at {format_path(item.path)} ({item.reason})" for item in dropped]
+    """Return one line per rejection, dropped or converted value, at most `limit` of them, then a line counting the rest."""
+    lines = [f"rejected the record: {rejected}"] if rejected else []
+    lines += [f"dropped {item.value} at {format_path(item.path)} ({item.reason})" for item in dropped]
     lines += [f"converted {item.before} to {item.after} at {format_path(item.path)}" for item in converted]
     if len(lines) > limit:
         hidden = len(lines) - limit

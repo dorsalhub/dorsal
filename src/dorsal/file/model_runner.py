@@ -65,6 +65,7 @@ from dorsal.file.validators.numbers import (
     OnBadNumber,
     check_on_bad_number,
     log_number_changes,
+    number_rejection_reason,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -728,6 +729,7 @@ class ModelRunner:
                         "path": list(err.path),
                         "validator": type(validator).__name__,
                         "error_message": validation_error_message(err.message, list(err.path), err.keyword),
+                        "number_rejection": number_rejection_reason(err),
                     }
                 )
                 continue
@@ -1063,6 +1065,7 @@ class ModelRunner:
                                 result_data["error"] = (
                                     f"Output from model '{model_name}' was rejected: {stamped.rejection}"
                                 )
+                                result_data["rejected"] = stamped.number_rejection
                                 final_results.append(RunModelResult(**result_data))
                                 continue
                             result_data["schema_version"] = stamped.version
@@ -1105,6 +1108,15 @@ class ModelRunner:
                             first_error_msg = str(first_error.get("error_message", first_error.get("msg", "")))
                     base_error_str = str(val_error)
                     result_data["error"] = f"{base_error_str}: {first_error_msg}" if first_error_msg else base_error_str
+                    if isinstance(validation_error_payload, list):
+                        result_data["rejected"] = next(
+                            (
+                                error["number_rejection"]
+                                for error in validation_error_payload
+                                if isinstance(error, dict) and error.get("number_rejection")
+                            ),
+                            None,
+                        )
                 elif validated_data is None and validation_model is not None:
                     result_data["error"] = str(
                         ModelExecutionError(
@@ -1138,6 +1150,7 @@ class ModelRunner:
                         if stamped.rejection and bad_number_mode == "raise":
                             result_data["schema_version"] = None
                             result_data["error"] = f"Output from model '{model_name}' was rejected: {stamped.rejection}"
+                            result_data["rejected"] = stamped.number_rejection
                             final_results.append(RunModelResult(**result_data))
                             continue
                         result_data["schema_version"] = stamped.version
@@ -1509,11 +1522,14 @@ class ModelRunner:
         )
         if self.debug:
             logger.debug("Model execution times for file '%s': %s", file_path, self.time_taken)
+        from dorsal.file.integrity import mark_numbers_checked
+
+        mark_numbers_checked(final_file_record)
         return final_file_record
 
     def _record_number_changes(self, file_path: str, results: "list[RunModelResult]") -> None:
         for res in results:
-            if res.dropped or res.converted:
+            if res.dropped or res.converted or res.rejected:
                 self.number_changes.setdefault(file_path, []).append(
                     NumberChanges(
                         schema_id=res.schema_id,
@@ -1522,6 +1538,7 @@ class ModelRunner:
                         part=getattr(res.source, "execution_part", None),
                         dropped=res.dropped,
                         converted=res.converted,
+                        rejected=res.rejected,
                     )
                 )
 

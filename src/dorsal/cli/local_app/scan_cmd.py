@@ -28,6 +28,7 @@ from rich.cells import cell_len
 from rich.markup import escape
 from rich.text import Text
 
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
 from dorsal.common import constants
 from dorsal.common.cli import (
     exit_cli,
@@ -203,6 +204,10 @@ def scan_target(
             help="Follow symlinks to scan target content vs scanning the link itself.",
         ),
     ] = True,
+    on_bad_number: Annotated[
+        OnBadNumberOption,
+        typer.Option("--on-bad-number", help=ON_BAD_NUMBER_HELP),
+    ] = OnBadNumberOption.drop,
 ):
     """
     Scans a local file or directory, extracts metadata, and generates reports.
@@ -268,6 +273,7 @@ def scan_target(
             console=console,
             status_console=status_console,
             calculate_hashes=deep,
+            on_bad_number=on_bad_number.value,
         )
     else:
         _process_dir_scan(
@@ -292,6 +298,7 @@ def scan_target(
             console=console,
             status_console=status_console,
             calculate_hashes=deep,
+            on_bad_number=on_bad_number.value,
         )
 
 
@@ -311,6 +318,7 @@ def _process_file_scan(
     console,
     status_console,
     calculate_hashes,
+    on_bad_number="drop",
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
@@ -323,6 +331,7 @@ def _process_file_scan(
                 overwrite_cache=overwrite_cache,
                 follow_symlinks=resolve_links,
                 calculate_hashes=calculate_hashes,
+                on_bad_number=on_bad_number,
             )
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
@@ -400,6 +409,7 @@ def _process_dir_scan(
     console,
     status_console,
     calculate_hashes,
+    on_bad_number="drop",
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
@@ -416,6 +426,7 @@ def _process_dir_scan(
             follow_symlinks=resolve_links,
             lazy=lazy,
             calculate_hashes=calculate_hashes,
+            on_bad_number=on_bad_number,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")

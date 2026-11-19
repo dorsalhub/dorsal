@@ -22,6 +22,7 @@ from typing import Annotated, Any, TYPE_CHECKING, cast
 from rich.text import Text
 from rich.markup import escape
 
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
 from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.common.cli import (
     EXIT_CODE_ERROR,
@@ -38,6 +39,7 @@ from dorsal.common.exceptions import (
     AuthError,
     PartialIndexingError,
     DorsalError,
+    RejectedAnnotationError,
     UnversionedAnnotationError,
 )
 
@@ -182,6 +184,10 @@ def push_target(
             help="Follow symlinks to index target metadata vs indexing the link itself.",
         ),
     ] = True,
+    on_bad_number: Annotated[
+        OnBadNumberOption,
+        typer.Option("--on-bad-number", help=ON_BAD_NUMBER_HELP),
+    ] = OnBadNumberOption.drop,
 ):
     """
     Pushes local file or directory metadata to DorsalHub,
@@ -232,6 +238,7 @@ def push_target(
             resolve_links=resolve_links,
             ui_context=ui_context,
             console=console,
+            on_bad_number=on_bad_number.value,
         )
     else:
         _process_dir_push(
@@ -254,11 +261,22 @@ def push_target(
             lazy=lazy,
             ui_context=ui_context,
             console=console,
+            on_bad_number=on_bad_number.value,
         )
 
 
 def _process_file_push(
-    ctx, path, use_cache_value, overwrite_cache, public, strict, json_output, resolve_links, ui_context, console
+    ctx,
+    path,
+    use_cache_value,
+    overwrite_cache,
+    public,
+    strict,
+    json_output,
+    resolve_links,
+    ui_context,
+    console,
+    on_bad_number="drop",
 ) -> None:
     error_console = get_error_console()
     from rich.console import Group
@@ -279,6 +297,7 @@ def _process_file_push(
                 use_cache=use_cache_value,
                 overwrite_cache=overwrite_cache,
                 follow_symlinks=resolve_links,
+                on_bad_number=on_bad_number,
             )
 
         logger.debug("Record to push: %s", local_file.model_dump_json(exclude_none=True, by_alias=True))
@@ -347,7 +366,7 @@ def _process_file_push(
         raise
     except (DorsalOfflineError, AuthError):
         raise
-    except UnversionedAnnotationError as e:
+    except (UnversionedAnnotationError, RejectedAnnotationError) as e:
         exit_cli(code=EXIT_CODE_ERROR, message=str(e))
     except DorsalClientError as e:
         exit_cli(code=EXIT_CODE_ERROR, message=f"API Error: {e.message}")
@@ -376,6 +395,7 @@ def _process_dir_push(
     force,
     ui_context,
     console,
+    on_bad_number="drop",
 ) -> None:
     error_console = get_error_console()
     from rich.console import Group
@@ -414,6 +434,7 @@ def _process_dir_push(
             overwrite_cache=overwrite_cache,
             follow_symlinks=resolve_links,
             lazy=lazy,
+            on_bad_number=on_bad_number,
         )
 
         if not collection:
@@ -432,9 +453,15 @@ def _process_dir_push(
             exit_cli(code=EXIT_CODE_ERROR)
 
         if dry_run:
-            _display_dry_run_panel(
-                collection=collection, use_cache=use_cache_value, ui_context=ui_context, console=console
-            )
+            from dorsal.cli.number_changes import print_local_file_changes
+
+            print_local_file_changes(error_console, ui_context, collection.files)
+            if json_output:
+                print_json_output(_dry_run_json(collection, use_cache_value), console)
+            else:
+                _display_dry_run_panel(
+                    collection=collection, use_cache=use_cache_value, ui_context=ui_context, console=console
+                )
             exit_cli()
 
         if create_collection and len(collection.files) > API_MAX_BATCH_SIZE:
@@ -447,7 +474,7 @@ def _process_dir_push(
             if collection_name is None:
                 exit_cli(code=EXIT_CODE_ERROR, message="Internal Error: Collection name was not set before creation.")
 
-            from dorsal.cli.number_changes import print_local_file_changes
+            from dorsal.cli.number_changes import local_file_changes_json, print_local_file_changes
 
             print_local_file_changes(error_console, ui_context, collection.files)
             remote_collection = collection.create_remote_collection(
@@ -455,9 +482,14 @@ def _process_dir_push(
             )
 
             if json_output:
-                print_raw_output(
-                    remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True), console
-                )
+                metadata_json = remote_collection.metadata.model_dump_json(indent=2, by_alias=True, exclude_none=True)
+                number_changes = local_file_changes_json(collection.files)
+                if number_changes:
+                    import json
+
+                    print_json_output({**json.loads(metadata_json), "number_changes": number_changes}, console)
+                else:
+                    print_raw_output(metadata_json, console)
             else:
                 url = str(remote_collection.metadata.private_url)
                 details = key_values(ui_context)
@@ -613,6 +645,32 @@ def _report_duplicate_files(path, duplicate_groups, json_output, ui_context, err
     error_console.print(
         message(f"{icons.get('error', '')}Duplicate files detected", error_text, ui_context, level="error")
     )
+
+
+def _dry_run_json(collection, use_cache) -> dict[str, Any]:
+    """Return what a dry run would push, as JSON data."""
+    from dorsal.cli.number_changes import local_file_changes_json
+
+    files_from_cache = sum(1 for f in collection if f._source == "cache") if use_cache else 0
+    data: dict[str, Any] = {
+        "dry_run": True,
+        "total_files": len(collection),
+        "from_cache": files_from_cache,
+        "files": [
+            {
+                "path": str(file.file_path),
+                "name": file.name,
+                "size": file.size,
+                "media_type": file.media_type,
+                "source": "cache" if file._source == "cache" else "disk",
+            }
+            for file in collection
+        ],
+    }
+    number_changes = local_file_changes_json(collection.files)
+    if number_changes:
+        data["number_changes"] = number_changes
+    return data
 
 
 def _display_dry_run_panel(collection, use_cache, ui_context, console) -> None:

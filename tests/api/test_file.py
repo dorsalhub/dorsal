@@ -266,7 +266,7 @@ def test_index_file_success(mock_local_file_cls, tmp_path):
     result = file_api.index_file(str(file), public=False, use_cache=False)
 
     assert result == mock_index_response
-    mock_local_file_cls.assert_called_with(file_path=str(file), use_cache=False)
+    mock_local_file_cls.assert_called_with(file_path=str(file), use_cache=False, on_bad_number="drop")
     mock_instance.push.assert_called_with(public=False, api_key=None, strict=False)
 
 
