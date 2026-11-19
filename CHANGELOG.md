@@ -4,8 +4,8 @@
 
 ### Migrating from 0.13
 - **New minimum versions:** `oatschema[validate]>=0.9.0.1,<0.10`, `oatschema-adapters>=0.2,<0.3`,
-  `jsonschema-rs>=0.58`, `typer>=0.19.0` and `tomlkit>=0.13.3`. `oatschema` 0.8 can no longer be installed with
-  Dorsal.
+  `jsonschema-rs>=0.58`, `typer>=0.19.0`, `tomlkit>=0.13.3` and `rich>=14.1.0` (`dorsal index build` failed on
+  `rich` 14.0). `oatschema` 0.8 can no longer be installed with Dorsal.
 - **OATS 0.8.0 stays the default.** `oatschema` and `oatschema-adapters` now default to 0.9.0, so Dorsal passes its
   own version to them. Pass `schema_version="0.9.0"` (`--schema-version 0.9.0`) to build, validate, stamp, export or
   push 0.9.0 records. DorsalHub doesn't accept 0.9.0 annotations yet.

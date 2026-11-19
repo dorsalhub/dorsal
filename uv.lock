@@ -615,7 +615,7 @@ requires-dist = [
     { name = "python-magic", marker = "sys_platform == 'darwin' or sys_platform == 'linux'", specifier = ">=0.4.27" },
     { name = "python-magic-bin", marker = "sys_platform == 'win32'", specifier = ">=0.4.14" },
     { name = "requests", specifier = ">=2.32.3,<3.0" },
-    { name = "rich", specifier = ">=14.0.0" },
+    { name = "rich", specifier = ">=14.1.0" },
     { name = "textual", specifier = ">=6.2.1" },
     { name = "tomlkit", specifier = ">=0.13.3" },
     { name = "tqdm", specifier = ">=4.67.1" },

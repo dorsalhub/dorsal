@@ -518,8 +518,12 @@ def _cli(*args: str):
         return CliRunner().invoke(app, list(args))
 
 
-def _report_lines(stderr: str) -> list[str]:
-    return [line.strip() for line in stderr.splitlines() if line.strip()]
+def _squashed(text: str) -> str:
+    return "".join(text.split())
+
+
+def _count(report: str, text: str) -> int:
+    return report.count(_squashed(text))
 
 
 @pytest.mark.parametrize("command", [["index", "build"], ["scan"], ["push", "--dry-run"]])
@@ -527,7 +531,7 @@ def test_cli_silences_the_raw_dropped_number_warning(data_dir, pipeline_config, 
     result = _cli(*command, str(data_dir), "--deep" if command[0] != "push" else "--skip-cache")
 
     assert result.exit_code == 0, result.output
-    assert "dropped 7.0 at /score" in result.stderr
+    assert _count(_squashed(result.stderr), "dropped 7.0 at /score") == 2
     assert not [w for w in recwarn if issubclass(w.category, oatschema.DroppedNumberWarning)]
 
 
@@ -536,11 +540,11 @@ def test_cli_index_build_reports_every_change(data_dir, pipeline_config, json_fl
     result = _cli("index", "build", str(data_dir), "--deep", *json_flag)
 
     assert result.exit_code == 0, result.output
-    report = " ".join(_report_lines(result.stderr))
+    report = _squashed(result.stderr)
     for name in ("a.txt", "b.txt"):
-        assert f"{data_dir / name}: open/generic from acme/generic" in report
-    assert report.count("dropped 1152921504606846976 at /data/bad") == 2
-    assert report.count("converted -0.0 to 0.0 at /generation_params/temperature") == 2
+        assert _count(report, f"{data_dir / name}: open/generic from acme/generic") == 1
+    assert _count(report, "dropped 1152921504606846976 at /data/bad") == 2
+    assert _count(report, "converted -0.0 to 0.0 at /generation_params/temperature") == 2
     if json_flag:
         data = json.loads(result.stdout)
         assert sorted(data["number_changes"]) == [str(data_dir / "a.txt"), str(data_dir / "b.txt")]
@@ -563,8 +567,9 @@ def test_cli_strict_mode_reports_rejections(data_dir, pipeline_config, command, 
     result = _cli(*command, str(data_dir), "--deep", "--on-bad-number", "raise", *json_flag)
 
     assert result.exit_code == 0, result.output
-    report = " ".join(_report_lines(result.stderr))
-    assert report.count("rejected the record: … is outside the bounds of this field at /score") == 2
+    report = _squashed(result.stderr)
+    assert _count(report, "rejected the record:") == 4
+    assert _count(report, "is outside the bounds of this field at /score") == 2
     assert "dropped" not in report
     if json_flag:
         changes = json.loads(result.stdout)["number_changes"][str(data_dir / "a.txt")]
@@ -576,8 +581,8 @@ def test_cli_push_dry_run_shows_what_would_be_dropped(data_dir, pipeline_config,
     result = _cli("push", str(data_dir), "--dry-run", "--skip-cache", *json_flag)
 
     assert result.exit_code == 0, result.output
-    report = " ".join(_report_lines(result.stderr))
-    assert report.count("dropped 7.0 at /score") == 2
+    report = _squashed(result.stderr)
+    assert _count(report, "dropped 7.0 at /score") == 2
     if json_flag:
         data = json.loads(result.stdout)
         assert data["dry_run"] is True and data["total_files"] == 2
@@ -599,7 +604,7 @@ def test_cli_push_strict_mode_sends_no_rejected_record(data_dir, online_config):
     result = _cli("push", str(data_dir / "a.txt"), "--skip-cache", "--on-bad-number", "raise", "--json")
 
     assert result.exit_code == 0, result.output
-    assert "rejected the record" in result.stderr
+    assert _count(_squashed(result.stderr), "rejected the record") == 2
     [request] = online_config.request_history
     assert not any(key.startswith("open/") for key in request.json()[0]["annotations"])
     assert [change["rejected"] is not None for change in json.loads(result.stdout)["number_changes"]] == [True, True]
