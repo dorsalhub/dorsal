@@ -1314,7 +1314,8 @@ class LocalFile(_DorsalFile):
                     If None, a globally shared DorsalClient instance will be used by `push()`.
                     Ignored if `offline` is True.
             model_runner_pipeline: Optional configuration for the ModelRunner instance.
-            use_cache: Whether to use the local cache to speed up processing. Defaults to True.
+            use_cache: Whether to use the local cache to speed up processing. A cached record is used only if it was
+                made under the current rules and pipeline (`ModelRunner.cache_rules`). Defaults to True.
             overwrite_cache: Whether to run the full pipeline *and* overwrite the cache result. Defaults to False
             offline: If True, puts the instance in Offline Mode. Blocks network calls from `LocalFile`.
             follow_symlinks: If True (default), resolves symbolic links to their target content.
@@ -1734,7 +1735,12 @@ class LocalFile(_DorsalFile):
         return validation_result
 
     def _push_heavy(
-        self, public: bool = False, api_key: str | None = None, strict: bool = False
+        self,
+        public: bool = False,
+        api_key: str | None = None,
+        strict: bool = False,
+        *,
+        record: FileRecordStrict | None = None,
     ) -> "FileIndexResponse":
         """
         When file record exceeds the 15MiB limit (due to large annotations), this method pushes it in two phases:
@@ -1744,14 +1750,10 @@ class LocalFile(_DorsalFile):
         2. Pushes the large annotations via `add_file_annotation`
 
         """
-        from dorsal.common.exceptions import PartialIndexingError
         from dorsal.file.validators.file_record import FileRecordStrict
 
         assert self._client is not None, "DorsalClient must be initialized before pushing."
         assert self.hash is not None, "File hash must be computed before pushing."
-
-        client = self._client
-        file_hash = self.hash
 
         logger.info("Payload exceeds 14 MiB threshold.")
 
@@ -1763,33 +1765,34 @@ class LocalFile(_DorsalFile):
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
 
-        from dorsal.file.integrity import check_record_schema_versions, mark_numbers_checked
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
 
-        check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
-        lite_record = self.model.model_copy(deep=True)
-        mark_numbers_checked(lite_record)
+        if record is None:
+            [record] = check_record_schema_versions(
+                [self.model], hash_to_path_map={self.model.hash: str(self.file_path)}
+            )
+        with sending_checked(record):
+            return self._push_heavy_checked(record, public=public, api_key=api_key, strict=strict)
 
-        extracted_annotations = {}
+    def _push_heavy_checked(
+        self, record: FileRecordStrict, *, public: bool, api_key: str | None, strict: bool
+    ) -> FileIndexResponse:
+        from dorsal.common.exceptions import PartialIndexingError
 
-        if lite_record.annotations is not None:
+        client = cast(DorsalClient, self._client)
+        file_hash = record.hash
+        lite_record = record.model_copy(deep=True)
 
-            def extract(dataset_id, item_or_list):
-                if item_or_list is None:
-                    return None
+        extracted_annotations: dict[str, list[Any]] = {}
+        for dataset_id, item_or_list in (getattr(record.annotations, "__pydantic_extra__", None) or {}).items():
+            if item_or_list is not None:
+                extracted_annotations.setdefault(dataset_id, []).extend(
+                    item_or_list if isinstance(item_or_list, list) else [item_or_list]
+                )
 
-                if dataset_id not in extracted_annotations:
-                    extracted_annotations[dataset_id] = []
-
-                items = item_or_list if isinstance(item_or_list, list) else [item_or_list]
-                extracted_annotations[dataset_id].extend(items)
-
-                return None
-
-            extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
-            if extra is not None:
-                for field, val in list(extra.items()):
-                    extract(field, val)
-                    del extra[field]
+        lite_extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
+        if lite_extra is not None:
+            lite_extra.clear()
 
         try:
             if public:
@@ -1899,13 +1902,13 @@ class LocalFile(_DorsalFile):
             ValueError: If `public=True` but the file's media type is prohibited.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
                 Nothing is uploaded.
-            RejectedAnnotationError: If an OATS annotation Dorsal didn't make or check (loaded from JSON, or added
-                with `force=True`) fails `check_numbers` at its `schema_version`. Nothing is uploaded.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its `schema_version`. Every OATS
+                annotation is checked on every push. Nothing is uploaded.
             DorsalClientError: If the push operation fails due to API error,
                 network issue, or authentication failure.
             PartialIndexingError: If strict=True and the response contains partial errors.
         """
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
         from dorsal.file.validators.file_record import FileRecordStrict
 
         if self.offline:
@@ -1919,7 +1922,7 @@ class LocalFile(_DorsalFile):
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
 
-        check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
+        [record] = check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
 
         if public:
             if not is_permitted_public_media_type(self.media_type):
@@ -1934,12 +1937,12 @@ class LocalFile(_DorsalFile):
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
-        record_bytes = self.model.model_dump_json(exclude_none=True).encode("utf-8")
+        record_bytes = record.model_dump_json(exclude_none=True).encode("utf-8")
 
         safe_threshold = constants.API_MAX_RECORD_SIZE_BYTES - constants.API_RECORD_HEADROOM_BYTES
 
         if len(record_bytes) > safe_threshold:
-            return self._push_heavy(public=public, api_key=api_key, strict=strict)
+            return self._push_heavy(public=public, api_key=api_key, strict=strict, record=record)
 
         client = self._client
 
@@ -1951,10 +1954,11 @@ class LocalFile(_DorsalFile):
         )
 
         try:
-            if public:
-                response = client.index_public_file_records(file_records=[self.model], api_key=api_key)
-            else:
-                response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
+            with sending_checked(record):
+                if public:
+                    response = client.index_public_file_records(file_records=[record], api_key=api_key)
+                else:
+                    response = client.index_private_file_records(file_records=[record], api_key=api_key)
             response.number_changes = list(self.number_changes)
 
             if response.error > 0:

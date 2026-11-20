@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import ANY, patch, MagicMock
 import os
 from pathlib import Path
 import requests
@@ -90,7 +90,7 @@ class MockAnnotationsModel(BaseModel):
 
 @pytest.fixture(autouse=True)
 def skip_schema_version_check_on_mock_records(mocker):
-    mocker.patch("dorsal.file.integrity.check_record_schema_versions")
+    mocker.patch("dorsal.file.integrity.check_record_schema_versions", side_effect=lambda records, **_: list(records))
 
 
 @pytest.fixture(autouse=True)
@@ -845,7 +845,7 @@ class TestMetadataReaderOversizedHandling:
         summary = reader.upload_records([mock_record], include_oversized=True)
 
         mock_file_class.assert_called_once()
-        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False, record=ANY)
 
         assert summary["success"] == 1
         assert summary["processed"] == 1
@@ -916,7 +916,7 @@ class TestMetadataReaderSmartBatching:
         summary = reader.upload_records([mock_record], include_oversized=True)
 
         mock_file_class.assert_called_once()
-        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False, record=ANY)
 
         assert summary["success"] == 1
         assert summary["processed"] == 1
@@ -1034,6 +1034,9 @@ class TestMetadataReaderGetOrCreateRecord:
         mock_cached_record.modified_time = os.path.getmtime(file_path)
         mock_cached_record.hash_sha256 = "hash123"
         mock_cached_record.record_json = "{}"
+        mock_cached_record.rules = reader._model_runner.cache_rules
+        mock_cached_record.on_bad_number = "drop"
+        mock_cached_record.parsed_number_changes.return_value = []
 
         reader._cache.get_record.return_value = mock_cached_record
         mock_record_instance = MagicMock()
@@ -1073,6 +1076,9 @@ class TestMetadataReaderGetOrCreateRecord:
         mock_cached_record.modified_time = os.path.getmtime(file_path)
         mock_cached_record.hash_sha256 = None
         mock_cached_record.record_json = "{}"
+        mock_cached_record.rules = reader._model_runner.cache_rules
+        mock_cached_record.on_bad_number = "drop"
+        mock_cached_record.parsed_number_changes.return_value = []
 
         reader._cache.get_record.return_value = mock_cached_record
 

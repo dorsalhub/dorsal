@@ -133,7 +133,7 @@ class MediaTypeDependencyConfig(DependencyConfig):
 
     @field_serializer("include", "exclude")
     def serialize_sets_to_list(self, v: set[str] | None, _info) -> list[str] | None:
-        return list(v) if v is not None else None
+        return sorted(v) if v is not None else None
 
 
 class FileExtensionDependencyConfig(DependencyConfig):
@@ -153,7 +153,7 @@ class FileExtensionDependencyConfig(DependencyConfig):
 
     @field_serializer("extensions")
     def serialize_extensions_to_list(self, v: set[str], _info) -> list[str]:
-        return list(v)
+        return sorted(v)
 
 
 class FileSizeDependencyConfig(DependencyConfig):

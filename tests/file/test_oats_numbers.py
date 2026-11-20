@@ -490,15 +490,13 @@ def test_without_a_validator_numbers_are_checked_before_stamping():
     assert [c.path for c in result.converted] == [["data", "y"]]
 
 
-def test_without_a_validator_a_rejected_record_is_unstamped_or_an_error_in_strict_mode():
-    record = {"data": {"xs": [2**60]}}
+@pytest.mark.parametrize("on_bad_number", ["drop", "raise"])
+def test_without_a_validator_a_record_a_bad_number_rejects_is_not_kept(on_bad_number):
+    result = _run_without_validator({"data": {"xs": [2**60]}}, on_bad_number=on_bad_number)
 
-    dropping = _run_without_validator(record)
-    strict = _run_without_validator(record, on_bad_number="raise")
-
-    assert dropping.error is None and dropping.schema_version is None
-    assert strict.records is None and strict.schema_version is None
-    assert strict.error is not None and "rejected" in strict.error
+    assert result.records is None and result.schema_version is None
+    assert result.error is not None and "rejected" in result.error
+    assert result.rejected is not None and result.rejected.startswith("… is outside ±9007199254740991")
 
 
 def test_file_annotator_checks_numbers_at_the_requested_version(text_file, output):

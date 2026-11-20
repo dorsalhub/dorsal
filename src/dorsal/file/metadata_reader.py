@@ -216,6 +216,8 @@ class MetadataReader:
             ) from e
 
     def _cached_mode_differs(self, cached_mode: str | None, cached_changes: list[NumberChanges]) -> bool:
+        if cached_mode not in ("drop", "raise"):
+            return True
         if self.on_bad_number == "raise":
             return cached_mode != "raise" and any(change.dropped for change in cached_changes)
         return cached_mode == "raise" and any(change.rejected for change in cached_changes)
@@ -259,18 +261,17 @@ class MetadataReader:
                     # Cache Miss if we need hashes but the cached record doesn't have them
                     if calculate_hashes and not cached_record.hash_sha256:
                         logger.debug("Cache miss: Found shallow record, but deep scan requested for: %s", abspath)
+                    elif cached_record.rules != self._model_runner.cache_rules:
+                        logger.debug("Cache miss: cached record was made under other rules: %s", abspath)
                     else:
                         cached_changes = cached_record.parsed_number_changes()
                         if self._cached_mode_differs(cached_record.on_bad_number, cached_changes):
                             logger.debug("Cache miss: cached record was made with another `on_bad_number`: %s", abspath)
                         else:
-                            from dorsal.file.integrity import mark_numbers_checked
-
                             logger.debug("Cache hit for file: %s", abspath)
                             RecordClass = FileRecordStrict if cached_record.hash_sha256 else FileRecord
                             record = RecordClass.model_validate_json(cached_record.record_json)
                             record.source = "cache"
-                            mark_numbers_checked(record)
                             self._model_runner.number_changes.pop(file_path, None)
                             if cached_changes:
                                 self._model_runner.number_changes[file_path] = cached_changes
@@ -300,6 +301,7 @@ class MetadataReader:
                     record=file_record,
                     number_changes=self._model_runner.number_changes.get(file_path, []),
                     on_bad_number=self.on_bad_number,
+                    rules=self._model_runner.cache_rules,
                 )
 
             return file_record
@@ -577,7 +579,7 @@ class MetadataReader:
 
         Raises:
             UnversionedAnnotationError: If an OATS annotation on any record has no exact `schema_version`.
-            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version.
                 Nothing is uploaded, whatever `fail_fast` is.
             ExceedsApiLimitError: If `include_oversized` is False and records exceed the size limit.
             BatchIndexingError: If `fail_fast` is True and an HTTP request fails.
@@ -586,7 +588,7 @@ class MetadataReader:
         from dorsal.common.exceptions import ExceedsApiLimitError, BatchIndexingError
         from dorsal.client.validators import FileIndexResponse
         from dorsal.common.environment import is_jupyter_environment
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
         from rich.progress import (
             Progress,
             SpinnerColumn,
@@ -612,7 +614,7 @@ class MetadataReader:
         if not records:
             return summary
 
-        check_record_schema_versions(records, hash_to_path_map=hash_to_path_map)
+        records = check_record_schema_versions(records, hash_to_path_map=hash_to_path_map)
 
         standard_records_with_sizes = []
         oversized_records = []
@@ -699,7 +701,7 @@ class MetadataReader:
             )
             task_id = rich_progress.add_task("Initializing...", total=total_tasks)
 
-        with rich_progress if rich_progress else open(os.devnull, "w"):
+        with sending_checked(*records), rich_progress if rich_progress else open(os.devnull, "w"):
             for i, batch in enumerate(iterator):
                 batch_size = len(batch)
                 batch_num = i + 1
@@ -793,7 +795,7 @@ class MetadataReader:
                     )
 
                     try:
-                        api_response = transient_file._push_heavy(public=public, strict=False)
+                        api_response = transient_file._push_heavy(public=public, strict=False, record=heavy_rec)
 
                         summary["success"] += 1
                         summary["processed"] += 1
@@ -1022,7 +1024,7 @@ class MetadataReader:
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read by ModelRunner.
         """
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
 
         if self.offline:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
@@ -1040,17 +1042,18 @@ class MetadataReader:
                 level=logging.WARNING,
             )
 
-        check_record_schema_versions(
+        [record_to_send] = check_record_schema_versions(
             [cast("FileRecordStrict", file_record)], hash_to_path_map={str(file_record.hash): file_path}
         )
 
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)
 
         api_response: FileIndexResponse
-        if public:
-            api_response = self._client.index_public_file_records(file_records=[cast("FileRecordStrict", file_record)])
-        else:
-            api_response = self._client.index_private_file_records(file_records=[cast("FileRecordStrict", file_record)])
+        with sending_checked(record_to_send):
+            if public:
+                api_response = self._client.index_public_file_records(file_records=[record_to_send])
+            else:
+                api_response = self._client.index_private_file_records(file_records=[record_to_send])
         api_response.number_changes = list(number_changes)
 
         log_status_msg = "processed by API"

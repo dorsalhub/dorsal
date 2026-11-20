@@ -200,10 +200,6 @@ class FileAnnotator:
             schema_version=schema_version,
             private=private,
         )
-        if not force:
-            from dorsal.file.integrity import mark_numbers_checked
-
-            mark_numbers_checked(annotation)
         return annotation
 
     def annotate_file_using_pipeline_step(
@@ -660,7 +656,7 @@ class FileAnnotator:
                         on_bad_number=on_bad_number,
                         already_checked=isinstance(validator, OpenSchemaValidator),
                     )
-                    if stamped.rejection and on_bad_number == "raise":
+                    if stamped.rejection and (on_bad_number == "raise" or stamped.number_rejection):
                         raise AnnotationValidationError(f"Schema validation failed: {stamped.rejection}")
                     stamped_version = stamped.version
                     validated_annotations = stamped.records

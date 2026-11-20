@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+import functools
 from functools import wraps
 import importlib
 import inspect
@@ -158,6 +159,27 @@ def model_debug_timer(method):
 
 
 _warned_pipeline_schema_ids: set[tuple[str, str]] = set()
+
+
+def _canonical_value(value: Any) -> Any:
+    if isinstance(value, (set, frozenset)):
+        return sorted(json.dumps(item, sort_keys=True, default=_canonical_value) for item in value)
+    if isinstance(value, re.Pattern):
+        return {"pattern": value.pattern, "flags": value.flags}
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    if callable(value) and hasattr(value, "__qualname__"):
+        return f"{getattr(value, '__module__', '')}.{value.__qualname__}"
+    return f"{type(value).__module__}.{type(value).__qualname__}:{value!r}"
+
+
+@functools.lru_cache(maxsize=1)
+def _oatschema_version() -> str:
+    from importlib.metadata import version
+
+    return version("oatschema")
 
 
 def _warn_deprecated_pipeline_schema_ids(pipeline: list[dict[str, Any]], source: Any) -> None:
@@ -1060,7 +1082,7 @@ class ModelRunner:
                                 on_bad_number=bad_number_mode,
                                 already_checked=isinstance(validation_model, OpenSchemaValidator),
                             )
-                            if stamped.rejection and bad_number_mode == "raise":
+                            if stamped.rejection and (bad_number_mode == "raise" or stamped.number_rejection):
                                 result_data["schema_version"] = None
                                 result_data["error"] = (
                                     f"Output from model '{model_name}' was rejected: {stamped.rejection}"
@@ -1147,7 +1169,7 @@ class ModelRunner:
                             on_bad_number=bad_number_mode,
                             already_checked=isinstance(validation_model, OpenSchemaValidator),
                         )
-                        if stamped.rejection and bad_number_mode == "raise":
+                        if stamped.rejection and (bad_number_mode == "raise" or stamped.number_rejection):
                             result_data["schema_version"] = None
                             result_data["error"] = f"Output from model '{model_name}' was rejected: {stamped.rejection}"
                             result_data["rejected"] = stamped.number_rejection
@@ -1522,10 +1544,27 @@ class ModelRunner:
         )
         if self.debug:
             logger.debug("Model execution times for file '%s': %s", file_path, self.time_taken)
-        from dorsal.file.integrity import mark_numbers_checked
-
-        mark_numbers_checked(final_file_record)
         return final_file_record
+
+    @property
+    def cache_rules(self) -> str:
+        """The rules this runner makes records under; a cached record is reused only if it was made under the same."""
+        import hashlib
+
+        steps = [self.pre_model.model_dump(), self.pre_model_options]
+        steps.extend(step.model_dump() for step in self.pipeline)
+        canonical = json.dumps(steps, sort_keys=True, default=_canonical_value)
+        pipeline = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return json.dumps(
+            {
+                "cache": constants.CACHE_RULES_VERSION,
+                "oatschema": _oatschema_version(),
+                "oats": constants.OPEN_VALIDATION_SCHEMAS_VER,
+                "schemas_dir": os.getenv(constants.ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR) or None,
+                "pipeline": pipeline,
+            },
+            sort_keys=True,
+        )
 
     def _record_number_changes(self, file_path: str, results: "list[RunModelResult]") -> None:
         for res in results:

@@ -30,7 +30,7 @@ from dorsal.common.model import AnnotationModel
 from dorsal.file.collection.local import LocalFileCollection
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.index.dorsal_index import DorsalIndex
-from dorsal.file.integrity import check_record_schema_versions, is_numbers_checked
+from dorsal.file.integrity import check_record_schema_versions
 from dorsal.file.metadata_reader import MetadataReader
 from dorsal.file.sharding import build_annotation_or_annotationgroup
 from dorsal.file.validators.file_record import AnnotationGroup
@@ -218,25 +218,27 @@ def test_strict_mode_reuses_a_clean_cached_record(target, mocker):
     assert LocalFile(target, model_runner_pipeline=clean, on_bad_number="raise")._source == "cache"
 
 
-def test_a_cache_entry_without_number_changes_is_served_and_trusted(target, mocker):
+def test_a_cache_entry_without_number_changes_is_served(target, mocker):
     mocker.patch.object(GenericBad, "main", return_value={"data": {"good": 1}})
     clean = [_step("GenericBad", "generic")]
-    made = LocalFile(target, model_runner_pipeline=clean, use_cache=False)
-    index = DorsalIndex()
-    index.upsert_record(path=target, modified_time=__import__("os").path.getmtime(target), record=made.model)
+    LocalFile(target, model_runner_pipeline=clean)
 
     cached = LocalFile(target, model_runner_pipeline=clean)
 
     assert cached._source == "cache"
     assert cached.number_changes == []
-    assert all(is_numbers_checked(item) for item in cached.model.annotations.__pydantic_extra__["open/generic"])
 
 
-def test_a_cached_record_is_trusted_at_push(target):
+def test_a_cached_record_is_checked_at_push(target, client, hub, mocker):
     LocalFile(target, model_runner_pipeline=PIPELINE)
-    cached = LocalFile(target, model_runner_pipeline=PIPELINE)
+    cached = LocalFile(target, client=client, model_runner_pipeline=PIPELINE)
+    assert cached._source == "cache"
+    spy = mocker.spy(oatschema, "check_numbers")
 
-    assert all(is_numbers_checked(item) for item in cached.model.annotations.__pydantic_extra__["open/generic"])
+    cached.push()
+
+    assert sorted(call.args[1] for call in spy.call_args_list) == ["generic", "llm-output"]
+    assert len(hub.request_history) == 1
 
 
 @pytest.mark.parametrize("make", ["scan_file", "scan_directory", "collection"])
@@ -384,7 +386,6 @@ def test_push_accepts_a_clean_record_loaded_from_json(target, client, hub, tmp_p
     loaded.push()
 
     assert len(hub.request_history) == 1
-    assert all(is_numbers_checked(item) for item in loaded.model.annotations.__pydantic_extra__["open/generic"])
 
 
 def test_push_refuses_a_forced_record_with_a_bad_number(target, client, hub):
@@ -433,7 +434,7 @@ def test_push_sends_the_checked_form_of_a_record_loaded_from_json(target, client
     assert sent["record"]["generation_params"] == {"seed": "5", "temperature": 0.0}
 
 
-def test_a_heavy_push_does_not_check_numbers_again(target, client, hub, mocker):
+def test_a_heavy_push_checks_each_annotation_once(target, client, hub, mocker):
     local_file = LocalFile(target, client=client, model_runner_pipeline=[], use_cache=False)
     blocks = [{"text": "word " * 50, "block_type": "text"} for _ in range(200)]
     local_file.add_annotation("document-extraction", {"blocks": blocks, "producer": "x"}, source="me")
@@ -448,18 +449,18 @@ def test_a_heavy_push_does_not_check_numbers_again(target, client, hub, mocker):
 
     local_file.push()
 
-    assert spy.call_count == 0
+    assert spy.call_count == 1
     assert len(hub.request_history) == 2
 
 
-def test_push_does_not_check_numbers_dorsal_already_checked(target, client, hub, mocker):
+def test_push_checks_each_annotation_dorsal_made_once(target, client, hub, mocker):
     local_file = LocalFile(target, client=client, model_runner_pipeline=PIPELINE, use_cache=False)
     local_file.add_annotation("generic", {"data": {"x": 1}}, source="me")
     spy = mocker.spy(oatschema, "check_numbers")
 
     local_file.push()
 
-    assert spy.call_count == 0
+    assert spy.call_count == 3
     assert len(hub.request_history) == 1
 
 

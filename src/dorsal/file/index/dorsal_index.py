@@ -58,6 +58,7 @@ class CachedFileRecord(BaseModel):
     local_record_id: str | None = None
     number_changes: str | None = None
     on_bad_number: str | None = None
+    rules: str | None = None
 
     def parsed_number_changes(self) -> "list[NumberChanges]":
         """Return what was dropped from or converted in the record's OATS annotations when it was made."""
@@ -72,7 +73,7 @@ class CachedFileRecord(BaseModel):
             return []
 
 
-_ADDED_CACHED_FILE_COLUMNS = {"number_changes": "TEXT", "on_bad_number": "TEXT"}
+_ADDED_CACHED_FILE_COLUMNS = {"number_changes": "TEXT", "on_bad_number": "TEXT", "rules": "TEXT"}
 
 
 class DorsalIndex:
@@ -158,15 +159,13 @@ class DorsalIndex:
                 hash_tlsh TEXT,
                 local_record_id TEXT,
                 number_changes TEXT,
-                on_bad_number TEXT
+                on_bad_number TEXT,
+                rules TEXT
             );
             """
         )
 
-        existing_columns = {row[1] for row in cursor.execute("PRAGMA table_info(cached_files)").fetchall()}
-        for column, column_type in _ADDED_CACHED_FILE_COLUMNS.items():
-            if column not in existing_columns:
-                cursor.execute(f"ALTER TABLE cached_files ADD COLUMN {column} {column_type}")
+        self._add_missing_columns(conn)
 
         cursor.execute(
             """
@@ -225,6 +224,24 @@ class DorsalIndex:
 
         conn.commit()
         logger.debug("Schema initialization complete.")
+
+    @staticmethod
+    def _add_missing_columns(conn: sqlite3.Connection) -> None:
+        def missing() -> list[str]:
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(cached_files)").fetchall()}
+            return [column for column in _ADDED_CACHED_FILE_COLUMNS if column not in existing]
+
+        if not missing():
+            return
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for column in missing():
+                conn.execute(f"ALTER TABLE cached_files ADD COLUMN {column} {_ADDED_CACHED_FILE_COLUMNS[column]}")
+        except BaseException:
+            conn.rollback()
+            raise
+        conn.commit()
 
     def _extract_search_data(self, record: "FileRecord | FileRecordStrict") -> tuple[list[str], list[tuple]]:
         """
@@ -292,11 +309,13 @@ class DorsalIndex:
         record: "FileRecord | FileRecordStrict",
         number_changes: "Sequence[NumberChanges]" = (),
         on_bad_number: str | None = None,
+        rules: str | None = None,
     ):
         """
         Inserts or replaces a record, updating search indexes and respecting compression.
 
         `number_changes` and `on_bad_number` record what was dropped or converted when the record was made, and how.
+        `rules` records the rules it was made under (`ModelRunner.cache_rules`).
         """
         conn = self._ensure_connection()
         logger.debug(f"Upserting record and search indexes for path: {path}")
@@ -340,6 +359,7 @@ class DorsalIndex:
                 json.dumps([change.model_dump(mode="json") for change in number_changes]) if number_changes else None
             ),
             "on_bad_number": on_bad_number,
+            "rules": rules,
         }
 
         fts_texts, eav_attributes = self._extract_search_data(record)
@@ -359,12 +379,12 @@ class DorsalIndex:
                 abspath, modified_time, record, is_compressed, name, size,
                 extension, media_type, hash_sha256, hash_blake3,
                 hash_md5, hash_sha1, hash_dorsal, hash_quick, hash_tlsh, local_record_id,
-                number_changes, on_bad_number
+                number_changes, on_bad_number, rules
             ) VALUES (
                 :abspath, :modified_time, :record, :is_compressed, :name, :size,
                 :extension, :media_type, :hash_sha256, :hash_blake3,
                 :hash_md5, :hash_sha1, :hash_dorsal, :hash_quick, :hash_tlsh, :local_record_id,
-                :number_changes, :on_bad_number
+                :number_changes, :on_bad_number, :rules
             )
             """,
             sql_data,
@@ -391,7 +411,7 @@ class DorsalIndex:
             """
             SELECT abspath, local_record_id, modified_time, record, is_compressed, name, size,
                    extension, media_type, hash_sha256, hash_blake3,
-                   hash_md5, hash_sha1, hash_dorsal, hash_quick, hash_tlsh, number_changes, on_bad_number
+                   hash_md5, hash_sha1, hash_dorsal, hash_quick, hash_tlsh, number_changes, on_bad_number, rules
             FROM cached_files WHERE abspath = ?
             """,
             (path,),

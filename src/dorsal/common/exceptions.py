@@ -193,9 +193,8 @@ class RejectedAnnotationError(ValidationError, ValueError):
         if count > self.MAX_LISTED:
             lines.append(f"  ... and {count - self.MAX_LISTED} more.")
         lines.append(
-            "Records that Dorsal makes or adds are checked when they are made. These were not: they were loaded "
-            "from a file, built by hand, or added with `force=True`. Correct the record, or make it again with "
-            "the model or `add_annotation`."
+            "Every push checks every OATS annotation it sends, however the annotation was made or changed. "
+            "Correct the record, or make it again with the model or `add_annotation`."
         )
         super().__init__("\n".join(lines))
         self.problems = problems

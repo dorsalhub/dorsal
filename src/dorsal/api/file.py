@@ -705,7 +705,7 @@ def index_file(
 
     Raises:
         UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`. Nothing is uploaded.
-        RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers`. Nothing is uploaded.
+        RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version. Nothing is uploaded.
     """
     from dorsal.file.dorsal_file import LocalFile
 
@@ -833,7 +833,7 @@ def index_directory(
     Raises:
         FileNotFoundError: If the directory does not exist.
         UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`. Nothing is uploaded.
-        RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers`. Nothing is uploaded.
+        RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version. Nothing is uploaded.
         ExceedsApiLimitError: If `include_oversized` is False and a file payload is too large.
         BatchIndexingError: If `fail_fast` is True and a network batch fails.
         PartialIndexingError: If `strict` is True and partial errors occur.

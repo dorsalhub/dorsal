@@ -15,19 +15,33 @@
   `oatschema.ValidationError`. A record that used to validate can now fail, and isn't stamped.
 - **Numbers are checked before a record is stamped.** Every OATS record from `run_model`, the pipeline,
   `LocalFile.add_*` and adapter parsers goes through `oatschema.check_numbers` at the version it will carry. A bad
-  number is NaN, ±infinity, beyond ±9007199254740991, or outside its field's bounds. An optional one under a
-  property is dropped. A required one, or one in a list, rejects the record. Lossless conversions are made: numpy
-  values to Python ones, `-0.0` to `0.0`, a whole float in an integer field to an int, and from 0.9.0 an integer
-  `seed` to its string. Nothing is rounded. At 0.8.0 a `seed` beyond ±9007199254740991 is dropped; at 0.9.0 it is
-  kept as a string. `force=True` skips the check as it skips validation. A forced record is stamped only if it
-  validates at that version, so one holding NaN or ±infinity never gets a `schema_version` and can't be pushed.
-- **Pushes check records Dorsal didn't check.** Before anything is uploaded, an OATS annotation that Dorsal didn't
-  make or check in this process (loaded with `LocalFile.from_json`, or built by hand and sent with `DorsalClient`)
-  goes through `check_numbers(..., on_bad_number="raise")` at its `schema_version`, and is sent as the check
-  converts it (`-0.0` to `0.0`, at 0.9.0 an integer `seed` to its string; a sharded record that would need
-  converting is refused). If any fails, the push raises
-  `RejectedAnnotationError` and nothing is sent. That includes a record added with `force=True` and an explicit
-  `schema_version` that holds a bad number.
+  number is NaN, ±infinity, beyond ±9007199254740991, or outside its field's bounds. An optional one under a property
+  is dropped. A required one, or one in a list, rejects the record, in `drop` mode as in `raise` mode, whether a
+  built-in validator or a custom `JsonSchemaValidator` validates it, and with a Pydantic model or no validator when
+  the step pins a `schema_version`; a rejected record is never kept. Without a pin, such a step's record isn't checked
+  or stamped, and can't be pushed. Lossless conversions are made: numpy values to Python ones, `-0.0` to `0.0`, a
+  whole float in an integer field to an int, and from 0.9.0 an integer `seed` to its string. Nothing is rounded. At
+  0.8.0 a `seed` beyond ±9007199254740991 is dropped; at 0.9.0 it is kept as a string. `force=True` skips the check as
+  it skips validation. A forced record is stamped only if it validates at that version, so one holding NaN or
+  ±infinity never gets a `schema_version` and can't be pushed.
+- **Every push checks every OATS annotation.** Before anything is uploaded, each OATS annotation in the push goes
+  through `check_numbers(..., on_bad_number="raise")` at its `schema_version`, whatever happened to it before:
+  scanned, read from the local cache, added with `add_*`, loaded with `LocalFile.from_json`, edited in place, or built
+  by hand and sent with `DorsalClient`. It is sent as the check converts it (`-0.0` to `0.0`, at 0.9.0 an integer
+  `seed` to its string; a sharded record that needs converting is sharded again), and the annotation you hold isn't
+  changed. If any fails, the push raises `RejectedAnnotationError` and nothing is sent. The check reads every value,
+  so pushing a large record, such as an extraction with hundreds of thousands of blocks, takes noticeably longer than
+  before.
+- **Cached records are used only if they were made under the current rules.** Each record in the local cache records
+  what it was made under: a cache version Dorsal raises whenever it changes what a scan stores, the installed
+  `oatschema` version, Dorsal's default OATS version, the value of `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR`, the pipeline
+  (each step's model, validator, options, dependencies, schema and pinned version, and whether it is deactivated) and
+  the `on_bad_number` it was made with (see below for when a record made in the other mode is reused). A record that
+  doesn't match is not used: the file is scanned again and the record replaced. That includes every record Dorsal 0.13
+  or earlier wrote, and any it writes later, since Dorsal 0.13 can still use a cache that 0.14 has upgraded. So the
+  first scan of each cached file after upgrading, or after changing the pipeline, takes as long as a fresh scan. The
+  version of a model package isn't recorded: after upgrading one, scan with `--overwrite-cache`
+  (`overwrite_cache=True`).
 
 ### Added
 - What was dropped, converted or rejected for a bad number is reported. In Python: `RunModelResult.dropped`,

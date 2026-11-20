@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from __future__ import annotations
-import functools
 import os
-import weakref
-from typing import Any, Iterable, TYPE_CHECKING
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterable, Iterator, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dorsal.file.validators.file_record import Annotation, AnnotationGroup, FileRecordStrict
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 UNUSABLE_SCHEMA_VERSIONS = frozenset({"latest", "published"})
 REASON_DISPLAY_LIMIT = 200
 
-_NUMBERS_CHECKED: dict[int, weakref.ref[Any]] = {}
+_PUSH_CHECKED: ContextVar[dict[int, Any] | None] = ContextVar("_PUSH_CHECKED", default=None)
 
 
 def is_usable_schema_version(schema_version: object) -> bool:
@@ -90,41 +90,63 @@ def _annotation_items(item: Any) -> Iterable[Any]:
         yield item
 
 
-def mark_numbers_checked(item: Any) -> None:
-    """Record that the annotations in `item` (an annotation, a group, a list of them or a file record) were checked."""
-    for annotation in _annotation_items(item):
-        key = id(annotation)
-        _NUMBERS_CHECKED[key] = weakref.ref(annotation, functools.partial(_forget_checked, key))
+@contextmanager
+def sending_checked(*items: Any) -> Iterator[None]:
+    """Let the uploads made inside the block send `items`, which this push has just checked, without checking them again."""
+    held = dict(_PUSH_CHECKED.get() or {})
+    for item in items:
+        for annotation in _annotation_items(item):
+            held[id(annotation)] = annotation
+    token = _PUSH_CHECKED.set(held)
+    try:
+        yield
+    finally:
+        _PUSH_CHECKED.reset(token)
 
 
-def _forget_checked(key: int, _ref: Any) -> None:
-    _NUMBERS_CHECKED.pop(key, None)
+def _checked_in_this_push(item: Any) -> bool:
+    return (_PUSH_CHECKED.get() or {}).get(id(item)) is item
 
 
-def is_numbers_checked(annotation: Any) -> bool:
-    """Return True if `annotation` was marked by `mark_numbers_checked` in this process."""
-    ref = _NUMBERS_CHECKED.get(id(annotation))
-    return ref is not None and ref() is annotation
+def _rebuilt_group(group: AnnotationGroup, schema_name: str, record: dict[str, Any]) -> Annotation | AnnotationGroup:
+    from dorsal.file.sharding import build_annotation_or_annotationgroup
+
+    first = group.annotations[0]
+    return build_annotation_or_annotationgroup(
+        schema_id=first.schema_id or schema_name,
+        record_data=record,
+        source=first.source.model_dump(),
+        schema_version=first.schema_version,
+        private=first.private,
+    )
 
 
-def _bad_number_problems(schema_id: str | None, item: Any, file_label: str) -> list[dict[str, str | None]]:
+def _checked_numbers(schema_id: str | None, item: Any, file_label: str) -> tuple[Any, list[dict[str, str | None]]]:
     import oatschema
 
     from dorsal.common.validators.json_schema import shorten_text
-    from dorsal.file.validators.file_record import Annotation, AnnotationGroup
+    from dorsal.file.validators.file_record import Annotation, AnnotationGroup, GenericFileAnnotation
 
     if isinstance(item, list):
-        return [problem for entry in item for problem in _bad_number_problems(schema_id, entry, file_label)]
-    if not isinstance(item, (Annotation, AnnotationGroup)) or is_numbers_checked(item):
-        return []
+        problems: list[dict[str, str | None]] = []
+        checked_items = []
+        for entry in item:
+            checked_entry, entry_problems = _checked_numbers(schema_id, entry, file_label)
+            checked_items.append(checked_entry)
+            problems.extend(entry_problems)
+        changed = any(new is not old for new, old in zip(checked_items, item, strict=True))
+        return (checked_items if changed else item), problems
+    if not isinstance(item, (Annotation, AnnotationGroup)) or _checked_in_this_push(item):
+        return item, []
 
     first = item.annotations[0] if isinstance(item, AnnotationGroup) else item
     schema_name = _oats_schema_name(schema_id) or _oats_schema_name(first.schema_id)
     version = item.schema_version
     if schema_name is None or not is_usable_schema_version(version):
-        return []
+        return item, []
 
     reason: str | None = None
+    to_send: Any = item
     content: dict[str, Any] | None
     try:
         if isinstance(item, AnnotationGroup):
@@ -136,20 +158,17 @@ def _bad_number_problems(schema_id: str | None, item: Any, file_label: str) -> l
         if content is not None:
             checked = oatschema.check_numbers(content, schema_name, version, on_bad_number="raise")  # type: ignore[arg-type]
             if checked.converted and isinstance(item, AnnotationGroup):
-                reason = "holds values the check would convert (such as -0.0); add the record with `add_annotation`"
-            elif checked.converted and isinstance(item, Annotation):
-                from dorsal.file.validators.file_record import GenericFileAnnotation
-
-                item.record = GenericFileAnnotation(**checked.record)
+                to_send = _rebuilt_group(item, schema_name, checked.record)
+            elif checked.converted:
+                to_send = item.model_copy(update={"record": GenericFileAnnotation(**checked.record)})
     except oatschema.ValidationError as err:
         reason = str(err.message)
     except (LookupError, TypeError, ValueError) as err:
         reason = str(err)
 
     if reason is None:
-        mark_numbers_checked(item)
-        return []
-    return [
+        return to_send, []
+    return item, [
         {
             "file": file_label,
             "schema": schema_name,
@@ -166,19 +185,29 @@ def _check_numbers_enabled() -> bool:
     return not os.getenv(ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR)
 
 
+def _with_annotations(record: FileRecordStrict, replaced: dict[str, Any]) -> FileRecordStrict:
+    annotations = record.annotations.model_copy()  # type: ignore[union-attr]
+    annotations.__pydantic_extra__ = {**_record_extras(record), **replaced}
+    return record.model_copy(update={"annotations": annotations})
+
+
 def check_record_schema_versions(
     records: Iterable[FileRecordStrict], *, hash_to_path_map: dict[str, str] | None = None
-) -> None:
+) -> list[FileRecordStrict]:
     """
-    Refuse file records holding an OATS annotation with no exact `schema_version`, or one that fails its number check.
+    Check the OATS annotations in file records about to be uploaded, and return the records to send.
 
-    An OATS annotation that Dorsal did not make or check in this process (loaded with `LocalFile.from_json`, built by
-    hand, or added with `force=True`) is checked with `oatschema.check_numbers(..., on_bad_number="raise")` at its
-    `schema_version`. Numbers are not checked while `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` is set.
+    Every OATS annotation must have an exact `schema_version`, and is checked with
+    `oatschema.check_numbers(..., on_bad_number="raise")` at that version, whatever happened to it before. A record
+    whose numbers the check converts (such as `-0.0`) is returned as a copy holding the converted values; the
+    records passed in are not changed. Numbers are not checked while `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` is set.
 
     Args:
         records: The records about to be uploaded.
         hash_to_path_map: Optional mapping of {hash: local_path}, used to name files in the error.
+
+    Returns:
+        The records to upload, in the same order.
 
     Raises:
         UnversionedAnnotationError: Listing every unversioned annotation across all of `records`.
@@ -197,35 +226,44 @@ def check_record_schema_versions(
         raise UnversionedAnnotationError(_unique_problems(problems))
 
     if not _check_numbers_enabled():
-        return
+        return records
+    to_send: list[FileRecordStrict] = []
     for record in records:
         label = (hash_to_path_map or {}).get(record.hash, record.hash)
+        replaced: dict[str, Any] = {}
         for schema_id, value in _record_extras(record).items():
-            problems.extend(_bad_number_problems(schema_id, value, label))
+            checked_value, value_problems = _checked_numbers(schema_id, value, label)
+            problems.extend(value_problems)
+            if checked_value is not value:
+                replaced[schema_id] = checked_value
+        to_send.append(_with_annotations(record, replaced) if replaced else record)
 
     if problems:
         raise RejectedAnnotationError(_unique_problems(problems))
+    return to_send
 
 
 def check_annotation_schema_version(
     *, schema_id: str, annotation: Annotation | AnnotationGroup, file_label: str
-) -> None:
+) -> Annotation | AnnotationGroup:
     """
-    Refuse a single annotation for an OATS schema with no exact `schema_version`, or one that fails its number check.
+    Check a single OATS annotation about to be uploaded, as `check_record_schema_versions` does, and return what to send.
 
     Raises:
         UnversionedAnnotationError: If any annotation in `annotation` has no usable version.
-        RejectedAnnotationError: If an annotation Dorsal has not checked fails `check_numbers` at its version.
+        RejectedAnnotationError: If an annotation fails `check_numbers` at its version.
     """
     from dorsal.common.exceptions import RejectedAnnotationError, UnversionedAnnotationError
 
     problems = _unversioned_problems(schema_id, annotation, file_label)
     if problems:
         raise UnversionedAnnotationError(_unique_problems(problems))
-    if _check_numbers_enabled():
-        problems = _bad_number_problems(schema_id, annotation, file_label)
-        if problems:
-            raise RejectedAnnotationError(_unique_problems(problems))
+    if not _check_numbers_enabled():
+        return annotation
+    to_send, problems = _checked_numbers(schema_id, annotation, file_label)
+    if problems:
+        raise RejectedAnnotationError(_unique_problems(problems))
+    return to_send
 
 
 def normalize_record_privacy(

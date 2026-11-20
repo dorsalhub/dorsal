@@ -967,7 +967,7 @@ class DorsalClient:
             APIError: For any other 4xx or 5xx API error.
             DorsalClientError: For client-side data validation issues.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
-            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version.
         """
         return self._index_file_records(file_records=file_records, private=True, api_key=api_key)
 
@@ -1020,7 +1020,7 @@ class DorsalClient:
             APIError: For any other 4xx or 5xx API error.
             DorsalClientError: For client-side data validation issues.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
-            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version.
         """
         return self._index_file_records(file_records=file_records, private=False, api_key=api_key)
 
@@ -1060,7 +1060,7 @@ class DorsalClient:
                 logger.error("Type error for record at index %s: %s", i, err)
                 raise DorsalClientError(str(err)) from err
 
-        check_record_schema_versions(validated_records)
+        validated_records = check_record_schema_versions(validated_records)
 
         records_to_send: list[FileRecordStrict] = []
 
@@ -3271,7 +3271,7 @@ class DorsalClient:
         Raises:
             DorsalClientError: For client-side validation errors.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
-            RejectedAnnotationError: If an OATS annotation Dorsal didn't check fails `check_numbers` at its version.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version.
             NotFoundError: If the file or dataset is not found.
             ConflictError: If `overwrite` is False and an annotation from this
                 source already exists.
@@ -3295,7 +3295,9 @@ class DorsalClient:
         if not isinstance(annotation, (Annotation, AnnotationGroup)):
             raise DorsalClientError("The 'annotation' argument must be a valid Annotation or AnnotationGroup.")
 
-        check_annotation_schema_version(schema_id=schema_id, annotation=annotation, file_label=validated_hash)
+        annotation = check_annotation_schema_version(
+            schema_id=schema_id, annotation=annotation, file_label=validated_hash
+        )
 
         namespace, name = self._split_dataset_or_schema_id(schema_id)
         target_url = self._make_add_file_annotation_url(validated_hash, namespace, name)
