@@ -507,7 +507,8 @@
     "options": {
      "include_speakers": true
     }
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: audio TSV with include_speakers gains a speaker_id column when a speaker's id differs from its name"
   },
   "export|open/audio-transcription|audio-transcription-1.txt.0|v=0.5.0": {
    "out": "Welcome back! Today, my guest is the renowned chef, Jean-Pierre. Thank you, it's a pleasure. You know, the secret is simple, c'est une question de respect pour le produit. It's all about respecting the product.",
@@ -623,7 +624,8 @@
     "options": {
      "include_speakers": true
     }
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: audio TSV with include_speakers gains a speaker_id column when a speaker's id differs from its name"
   },
   "export|open/audio-transcription|audio-transcription-2.txt.0|v=0.5.0": {
    "out": "Almost a minute in.  Almost an hour in. Past the hour, with a\ttab.",
@@ -856,7 +858,8 @@
     "options": {
      "include_speakers": true
     }
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: audio TSV with include_speakers gains a speaker_id column when a speaker's id differs from its name"
   },
   "export|open/audio-transcription|audio-transcription-legacy-ids.txt.0|v=0.5.0": {
    "out": "Welcome back! Today, my guest is the renowned chef, Jean-Pierre. Thank you, it's a pleasure. You know, the secret is simple, c'est une question de respect pour le produit. It's all about respecting the product.",
@@ -1153,7 +1156,8 @@
     "fixture": "document-extraction-1",
     "format": "tsv",
     "options": {}
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: document TSV gains a polygon column, and polygon blocks' box columns hold their bounding box"
   },
   "export|open/document-extraction|document-extraction-1.txt.0|v=0.5.0": {
    "out": "Annual Report Summary\n\nThe first column of text begins here, discussing the quarterly earnings and projections for the upcoming fiscal year. The second column contains shareholder information and a summary of the annual general meeting.\n\n--- Page 2 ---\n\nThis caption is wrapped around a circular diagram on the page.",
@@ -1328,7 +1332,8 @@
     "fixture": "document-extraction-2",
     "format": "tsv",
     "options": {}
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: document TSV gains a polygon column, and polygon blocks' box columns hold their bounding box"
   },
   "export|open/document-extraction|document-extraction-2.txt.0|v=0.5.0": {
    "out": "--- Page 2 ---",
@@ -1858,7 +1863,8 @@
     "fixture": "document-extraction-hostile",
     "format": "tsv",
     "options": {}
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: document TSV gains a polygon column, and polygon blocks' box columns hold their bounding box"
   },
   "export|open/document-extraction|document-extraction-hostile.txt.0|v=0.5.0": {
    "out": "<script>alert('text')</script> & <b>bold</b>\n\n--- Page 2 ---\n\n</div></div><iframe src=javascript:alert(3)>",
@@ -2034,7 +2040,8 @@
     "fixture": "document-extraction-normalized",
     "format": "tsv",
     "options": {}
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: document TSV gains a polygon column, and polygon blocks' box columns hold their bounding box"
   },
   "export|open/document-extraction|document-extraction-normalized.txt.0|v=0.5.0": {
    "out": "Top left\n\nNext line\n\nFar below\n\nA shape",
@@ -2486,7 +2493,8 @@
    "call": {
     "fixture": "audio-transcription-formulas",
     "format": "md"
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: from_md takes producer from the frontmatter"
   },
   "parse|audio-transcription-formulas|srt": {
    "out": "{\"producer\": \"srt-adapter\", \"segments\": [{\"end_time\": 1.0, \"start_time\": 0.0, \"text\": \"=HYPERLINK(\\\"https://example.invalid\\\",\\\"click\\\")\"}, {\"end_time\": 2.0, \"start_time\": 1.0, \"text\": \"+1+1\"}, {\"end_time\": 3.0, \"start_time\": 2.0, \"text\": \"-2+3+cmd|' /C calc'!A0\"}, {\"end_time\": 4.0, \"start_time\": 3.0, \"text\": \"@SUM(A1:A2)\"}, {\"end_time\": 5.0, \"start_time\": 4.0, \"text\": \"'=already quoted\"}, {\"end_time\": 6.0, \"start_time\": 5.0, \"text\": \"''+twice\"}, {\"end_time\": 7.0, \"start_time\": 6.0, \"text\": \"-5\"}, {\"end_time\": 8.0, \"start_time\": 7.0, \"text\": \"plain = fine\"}], \"text\": \"=HYPERLINK(\\\"https://example.invalid\\\",\\\"click\\\") +1+1 -2+3+cmd|' /C calc'!A0 @SUM(A1:A2) '=already quoted ''+twice -5 plain = fine\"}",
@@ -2523,11 +2531,12 @@
   "parse|audio-transcription-legacy-ids|md": {
    "out": "{\"producer\": \"md-adapter\", \"segments\": [{\"end_time\": 0.0, \"events\": [\"music\"], \"start_time\": 0.0, \"text\": \"\"}, {\"end_time\": 4.0, \"start_time\": 0.0, \"text\": \"Welcome back! Today, my guest is the renowned chef, Jean-Pierre.\"}, {\"end_time\": 8.0, \"start_time\": 5.0, \"text\": \"Thank you, it's a pleasure. You know, the secret is simple,\"}, {\"end_time\": 10.0, \"start_time\": 8.0, \"text\": \"c'est une question de respect pour le produit.\"}, {\"end_time\": 0.0, \"events\": [\"laughter\"], \"start_time\": 0.0, \"text\": \"\"}, {\"end_time\": 11.0, \"start_time\": 11.0, \"text\": \"[laughter]\"}, {\"end_time\": 14.0, \"start_time\": 12.0, \"text\": \"It's all about respecting the product.\"}], \"text\": \"Welcome back! Today, my guest is the renowned chef, Jean-Pierre. Thank you, it's a pleasure. You know, the secret is simple, c'est une question de respect pour le produit. [laughter] It's all about respecting the product.\"}",
    "err": null,
-   "documented_change": "from_md reads millisecond times, and gives events to the segment that follows them",
+   "documented_change": "from_md reads millisecond times, and gives events to the segment that follows them; from oatschema-adapters 0.2.0, from_md reads the frontmatter's integer track_id, which the schema refuses",
    "call": {
     "fixture": "audio-transcription-legacy-ids",
     "format": "md"
-   }
+   },
+   "documented_error": "DorsalError<-ValidationError"
   },
   "parse|audio-transcription-legacy-ids|srt": {
    "out": "{\"producer\": \"srt-adapter\", \"segments\": [{\"end_time\": 4.75, \"start_time\": 0.5, \"text\": \"Welcome back! Today, my guest is the renowned chef, Jean-Pierre.\"}, {\"end_time\": 8.25, \"start_time\": 5.1, \"text\": \"Thank you, it's a pleasure. You know, the secret is simple,\"}, {\"end_time\": 10.9, \"start_time\": 8.25, \"text\": \"c'est une question de respect pour le produit.\"}, {\"end_time\": 11.8, \"start_time\": 11.0, \"text\": \"[laughter]\"}, {\"end_time\": 14.5, \"start_time\": 12.0, \"text\": \"It's all about respecting the product.\"}], \"text\": \"Welcome back! Today, my guest is the renowned chef, Jean-Pierre. Thank you, it's a pleasure. You know, the secret is simple, c'est une question de respect pour le produit. [laughter] It's all about respecting the product.\"}",
@@ -2567,7 +2576,8 @@
    "call": {
     "fixture": "audio-transcription-text-only",
     "format": "md"
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: from_md takes producer from the frontmatter"
   },
   "parse|audio-transcription-text-only|txt": {
    "out": "{\"producer\": \"txt-adapter\", \"text\": \"Just a transcript, with no segments.\"}",
@@ -2620,7 +2630,8 @@
     "record": "image_only.pdf",
     "format": "md",
     "schema_version": "0.5.0"
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: a record with no blocks exports to Markdown as 'No content extracted from this document.'"
   },
   "pdf-record|image_only.pdf|md|v=0.8.0": {
    "out": null,
@@ -2629,7 +2640,8 @@
     "record": "image_only.pdf",
     "format": "md",
     "schema_version": "0.8.0"
-   }
+   },
+   "documented_change": "oatschema-adapters 0.2.0: a record with no blocks exports to Markdown as 'No content extracted from this document.'"
   },
   "pdf-record|image_only.pdf|tsv|v=0.5.0": {
    "out": null,

@@ -25,6 +25,7 @@ from dorsal.file.validators.collection import (
 )
 from dorsal.common.validators import Pagination
 from dorsal.file.validators.common import SHA256Hash
+from dorsal.file.validators.numbers import NumberChanges
 
 
 class TagResult(BaseModel):
@@ -71,6 +72,11 @@ class FileIndexResponse(BaseModel):
     url_stats: UrlStats | None = None
     results: list[IndexResult]
     response: requests.Response | None = Field(default=None, exclude=True)
+    number_changes: list[NumberChanges] = Field(
+        default_factory=list,
+        exclude=True,
+        description="Values dropped from or converted in the pushed file's OATS annotations when they were made.",
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 

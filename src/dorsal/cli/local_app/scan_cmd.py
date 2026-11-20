@@ -28,6 +28,7 @@ from rich.cells import cell_len
 from rich.markup import escape
 from rich.text import Text
 
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
 from dorsal.common import constants
 from dorsal.common.cli import (
     exit_cli,
@@ -203,13 +204,20 @@ def scan_target(
             help="Follow symlinks to scan target content vs scanning the link itself.",
         ),
     ] = True,
+    on_bad_number: Annotated[
+        OnBadNumberOption,
+        typer.Option("--on-bad-number", help=ON_BAD_NUMBER_HELP),
+    ] = OnBadNumberOption.drop,
 ):
     """
     Scans a local file or directory, extracts metadata, and generates reports.
     """
+    from dorsal.cli.number_changes import silence_dropped_number_warnings
+
     console = get_rich_console()
     error_console = get_error_console()
     status_console = error_console if json_output else console
+    silence_dropped_number_warnings()
     palette = ctx.obj.get("palette", get_palette())
     icons = ctx.obj.get("icons", get_icons())
     borders = ctx.obj.get("borders", get_borders())
@@ -265,6 +273,7 @@ def scan_target(
             console=console,
             status_console=status_console,
             calculate_hashes=deep,
+            on_bad_number=on_bad_number.value,
         )
     else:
         _process_dir_scan(
@@ -289,6 +298,7 @@ def scan_target(
             console=console,
             status_console=status_console,
             calculate_hashes=deep,
+            on_bad_number=on_bad_number.value,
         )
 
 
@@ -308,6 +318,7 @@ def _process_file_scan(
     console,
     status_console,
     calculate_hashes,
+    on_bad_number="drop",
 ) -> None:
     from dorsal.cli.views.file import create_file_info_panel
     from dorsal.file.dorsal_file import LocalFile
@@ -320,6 +331,7 @@ def _process_file_scan(
                 overwrite_cache=overwrite_cache,
                 follow_symlinks=resolve_links,
                 calculate_hashes=calculate_hashes,
+                on_bad_number=on_bad_number,
             )
 
         record_dict: dict[str, Any] = local_file.to_dict(mode="json")
@@ -340,6 +352,9 @@ def _process_file_scan(
                 ),
             }
 
+        if local_file.number_changes:
+            record_dict["number_changes"] = [change.model_dump(mode="json") for change in local_file.number_changes]
+
         if json_output:
             print_json_output(record_dict, console)
         else:
@@ -354,6 +369,8 @@ def _process_file_scan(
             )
             console.print(panel)
 
+        _print_number_changes(local_file, palette, icons, borders)
+
         if save:
             final_path = _get_final_path(path, output_path, output_is_dir, ".json", is_dir=False)
             _save_report_to_disk(final_path, format_json_output(record_dict), "JSON", status_console, palette)
@@ -361,6 +378,13 @@ def _process_file_scan(
     except Exception as err:
         logger.exception(f"CLI 'scan' command failed while processing {path}.")
         exit_cli(code=EXIT_CODE_ERROR, message=f"An unexpected error occurred: {err}")
+
+
+def _print_number_changes(local_file, palette, icons, borders) -> None:
+    from dorsal.cli.number_changes import print_local_file_changes
+
+    ui_context: Any = {"palette": palette, "icons": icons, "borders": borders}
+    print_local_file_changes(get_error_console(), ui_context, [local_file], with_file_names=False)
 
 
 def _process_dir_scan(
@@ -385,6 +409,7 @@ def _process_dir_scan(
     console,
     status_console,
     calculate_hashes,
+    on_bad_number="drop",
 ) -> None:
     from dorsal.file.collection.local import LocalFileCollection
 
@@ -401,6 +426,7 @@ def _process_dir_scan(
             follow_symlinks=resolve_links,
             lazy=lazy,
             calculate_hashes=calculate_hashes,
+            on_bad_number=on_bad_number,
         )
     except Exception as e:
         logger.exception("Failed to initialize FileCollection.")
@@ -408,10 +434,16 @@ def _process_dir_scan(
 
     duration = time.perf_counter() - start_time
 
+    from dorsal.cli.number_changes import local_file_changes_json, print_local_file_changes
+
     scan_data: dict[str, Any] | None = None
     if json_output or save:
         scan_data = collection.to_dict(exclude={"embeddings", "text_chunks"})
         scan_data["scan_metadata"]["duration_seconds"] = duration
+        number_changes = local_file_changes_json(collection.files)
+        if number_changes:
+            scan_data["number_changes"] = number_changes
+    print_local_file_changes(get_error_console(), ui_context, collection.files)
 
     if json_output:
         print_json_output(scan_data, console)

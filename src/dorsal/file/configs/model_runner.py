@@ -34,6 +34,7 @@ from dorsal.common.validators import (
 from dorsal.file.annotation_models.mediainfo.config import MEDIAINFO_MEDIA_TYPES
 from dorsal.file.utils.size import parse_filesize
 from dorsal.file.validators.base import MediaTypePartString
+from dorsal.file.validators.numbers import ConvertedValue, DroppedValue
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,18 @@ class RunModelResult(BaseModel):
     error: str | None = Field(
         default=None,
         description="A descriptive error message if the model failed, crashed, or if a dependency was not met.",
+    )
+    dropped: list[DroppedValue] = Field(
+        default_factory=list,
+        description="Bad numbers removed from OATS records before they were stamped. Empty if none were.",
+    )
+    converted: list[ConvertedValue] = Field(
+        default_factory=list,
+        description="Values rewritten without changing what they mean, such as `-0.0` to `0.0`. Empty if none were.",
+    )
+    rejected: str | None = Field(
+        default=None,
+        description="Why an OATS record was rejected for a bad number, if it was. The reason is also in `error`.",
     )
 
     @property
@@ -120,7 +133,7 @@ class MediaTypeDependencyConfig(DependencyConfig):
 
     @field_serializer("include", "exclude")
     def serialize_sets_to_list(self, v: set[str] | None, _info) -> list[str] | None:
-        return list(v) if v is not None else None
+        return sorted(v) if v is not None else None
 
 
 class FileExtensionDependencyConfig(DependencyConfig):
@@ -140,7 +153,7 @@ class FileExtensionDependencyConfig(DependencyConfig):
 
     @field_serializer("extensions")
     def serialize_extensions_to_list(self, v: set[str], _info) -> list[str]:
-        return list(v)
+        return sorted(v)
 
 
 class FileSizeDependencyConfig(DependencyConfig):

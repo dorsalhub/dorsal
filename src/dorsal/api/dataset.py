@@ -287,6 +287,9 @@ def validate_dataset_records(
         and record-by-record validation.
     Returns a summary of the validation results.
 
+    Numbers in OATS records are validated but not passed through `oatschema.check_numbers`; for that, use the
+    `check_numbers()` method of the validator `make_schema_validator` returns.
+
     Args:
         dataset_id: Identifier of the dataset. Used to fetch the schema if
                     `schema_dict` is None, and for logging/error context.

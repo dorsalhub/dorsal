@@ -51,7 +51,7 @@ class _DocumentModel(AnnotationModel):
 def _run(mocker, record: dict):
     mocker.patch.object(_DocumentModel, "output", record)
     validator = get_open_schema_validator("document-extraction", OPEN_VALIDATION_SCHEMAS_VER)
-    checked = mocker.spy(OpenSchemaValidator, "first_error")
+    checked = mocker.spy(OpenSchemaValidator, "check_numbers")
     results = ModelRunner().run_single_model(
         annotation_model=_DocumentModel,
         validation_model=validator,
@@ -59,7 +59,7 @@ def _run(mocker, record: dict):
         schema_id="document-extraction",
         schema_version=OPEN_VALIDATION_SCHEMAS_VER,
     )
-    sizes = [len(call.args[1]["blocks"]) for call in checked.call_args_list]
+    sizes = [len(record["blocks"]) for call in checked.call_args_list for record in call.args[1]]
     return results, sizes
 
 

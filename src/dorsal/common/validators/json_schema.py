@@ -243,6 +243,12 @@ def get_json_schema_validator(schema: dict, strict: bool = True) -> JsonSchemaVa
     return JsonSchemaValidator(schema, strict=strict)
 
 
+def validation_error_message(message: str, path: list[str | int], keyword: str | None) -> str:
+    """Return a bounded one-line description of a validation error at `path`."""
+    path_str = " -> ".join(shorten_text(str(part), 100) for part in path) if path else "root"
+    return shorten_text(f"Validation failed at '{path_str}' ({keyword or 'schema'}): {message}", ERROR_MESSAGE_LIMIT)
+
+
 def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchemaValidator) -> dict:
     """Validates records using a pre-configured jsonschema-rs validator."""
     validator_name = getattr(validator, "__name__", "JsonSchemaValidator")
@@ -302,10 +308,7 @@ def json_schema_validate_records(records: list[dict] | Any, validator: JsonSchem
             continue
 
         message, path, keyword = error
-        path_str = " -> ".join(shorten_text(str(part), 100) for part in path) if path else "root"
-        public_error = shorten_text(
-            f"Validation failed at '{path_str}' ({keyword or 'schema'}): {message}", ERROR_MESSAGE_LIMIT
-        )
+        public_error = validation_error_message(message, path, keyword)
 
         error_details_list.append(
             {

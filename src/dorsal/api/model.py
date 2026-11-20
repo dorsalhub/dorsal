@@ -32,6 +32,7 @@ from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, resolve_pi
 from dorsal.file.file_annotator import FILE_ANNOTATOR
 from dorsal.file.model_runner import ModelRunner, run_model
 from dorsal.file.validators.file_record import Annotation, AnnotationGroup
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, OnBadNumber
 from dorsal.registry.installer import install_model_target
 from dorsal.registry.resolution import resolve_target, is_package_installed
 from dorsal.registry.validators import is_registry_id, is_valid_local_path
@@ -232,8 +233,13 @@ def run_or_install_model(
     options: dict[str, Any] | None = None,
     ignore_linter_errors: bool = False,
     progress_callback: Callable[[float, float, str], None] | None = None,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
 ) -> list[RunModelResult]:
+    """
+    Run an installed model, or install it first, on one file, as `run_model` does.
 
+    `on_bad_number` is "drop" (default) or "raise", for bad numbers in OATS records.
+    """
     logger.info(f"Requesting run for model target '{target}' on file '{file_path}'")
 
     res = prepare_model_target(target)
@@ -280,6 +286,7 @@ def run_or_install_model(
         options=pipeline_step.options,
         ignore_linter_errors=pipeline_step.ignore_linter_errors,
         progress_callback=progress_callback,
+        on_bad_number=on_bad_number,
     )
 
 

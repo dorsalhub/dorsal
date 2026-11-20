@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import ANY, patch, MagicMock
 import os
 from pathlib import Path
 import requests
@@ -90,7 +90,7 @@ class MockAnnotationsModel(BaseModel):
 
 @pytest.fixture(autouse=True)
 def skip_schema_version_check_on_mock_records(mocker):
-    mocker.patch("dorsal.file.integrity.check_record_schema_versions")
+    mocker.patch("dorsal.file.integrity.check_record_schema_versions", side_effect=lambda records, **_: list(records))
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +127,7 @@ def mock_dorsal_client_for_reader(mocker):
 def mock_model_runner_for_reader(mocker):
     """Mocks ModelRunner used directly by MetadataReader"""
     mock = mocker.MagicMock(spec=ModelRunner)
+    mock.number_changes = {}
 
     mock_file_record = MagicMock(spec=FileRecordStrict)
     mock_file_record.hash = "default_mock_hash_from_runner"
@@ -211,7 +212,7 @@ class TestMetadataReaderInit:
 
         reader = MetadataReader()
         assert not reader._ignore_duplicates
-        mock_mr_constructor.assert_called_once_with(pipeline_config="default")
+        mock_mr_constructor.assert_called_once_with(pipeline_config="default", on_bad_number="drop")
         mock_get_client.assert_not_called()
         assert reader._client_instance is None
 
@@ -236,7 +237,7 @@ class TestMetadataReaderInit:
         model_config = {"custom": "config"}
 
         reader_lazy = MetadataReader(api_key=api_key, model_config=model_config)
-        mock_mr_constructor.assert_called_once_with(pipeline_config=model_config)
+        mock_mr_constructor.assert_called_once_with(pipeline_config=model_config, on_bad_number="drop")
 
         client_from_key = reader_lazy._client
 
@@ -844,7 +845,7 @@ class TestMetadataReaderOversizedHandling:
         summary = reader.upload_records([mock_record], include_oversized=True)
 
         mock_file_class.assert_called_once()
-        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False, record=ANY)
 
         assert summary["success"] == 1
         assert summary["processed"] == 1
@@ -915,7 +916,7 @@ class TestMetadataReaderSmartBatching:
         summary = reader.upload_records([mock_record], include_oversized=True)
 
         mock_file_class.assert_called_once()
-        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False)
+        mock_transient_instance._push_heavy.assert_called_once_with(public=False, strict=False, record=ANY)
 
         assert summary["success"] == 1
         assert summary["processed"] == 1
@@ -1033,6 +1034,9 @@ class TestMetadataReaderGetOrCreateRecord:
         mock_cached_record.modified_time = os.path.getmtime(file_path)
         mock_cached_record.hash_sha256 = "hash123"
         mock_cached_record.record_json = "{}"
+        mock_cached_record.rules = reader._model_runner.cache_rules
+        mock_cached_record.on_bad_number = "drop"
+        mock_cached_record.parsed_number_changes.return_value = []
 
         reader._cache.get_record.return_value = mock_cached_record
         mock_record_instance = MagicMock()
@@ -1072,6 +1076,9 @@ class TestMetadataReaderGetOrCreateRecord:
         mock_cached_record.modified_time = os.path.getmtime(file_path)
         mock_cached_record.hash_sha256 = None
         mock_cached_record.record_json = "{}"
+        mock_cached_record.rules = reader._model_runner.cache_rules
+        mock_cached_record.on_bad_number = "drop"
+        mock_cached_record.parsed_number_changes.return_value = []
 
         reader._cache.get_record.return_value = mock_cached_record
 

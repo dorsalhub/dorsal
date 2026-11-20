@@ -903,3 +903,67 @@ def test_upsert_hash_patches_all_json_keys_correctly(temp_index: DorsalIndex, ma
     assert file_base_rec.get("similarity_hash") == "tlsh_val"
     assert file_base_rec.get("all_hash_ids", {}).get("DORSAL") == "dorsal_val"
     assert file_base_rec.get("all_hash_ids", {}).get("BLAKE3") == "blake3_val"
+
+
+def test_upsert_and_get_record_keeps_number_changes(temp_index: DorsalIndex, make_mock_record):
+    from dorsal.file.validators.numbers import DroppedValue, NumberChanges
+
+    changes = [
+        NumberChanges(
+            schema_id="open/generic",
+            schema_version="0.8.0",
+            source_id="acme/model",
+            dropped=[DroppedValue(path=["data", "x"], value="inf", reason="not a finite number")],
+        ),
+        NumberChanges(schema_id="open/llm-output", source_id="acme/llm", rejected="… is outside ±9007199254740991"),
+    ]
+    temp_index.upsert_record(
+        path="/fake/a.pdf",
+        modified_time=1.0,
+        record=make_mock_record("/fake/a.pdf"),
+        number_changes=changes,
+        on_bad_number="drop",
+    )
+    temp_index.upsert_record(path="/fake/b.pdf", modified_time=1.0, record=make_mock_record("/fake/b.pdf"))
+
+    fetched = temp_index.get_record(path="/fake/a.pdf")
+    assert fetched is not None
+    assert fetched.on_bad_number == "drop"
+    assert fetched.parsed_number_changes() == changes
+    clean = temp_index.get_record(path="/fake/b.pdf")
+    assert clean is not None
+    assert (clean.on_bad_number, clean.parsed_number_changes()) == (None, [])
+
+
+def test_an_index_from_an_older_dorsal_gains_the_number_change_columns(tmp_path: Path, make_mock_record, mocker):
+    mocker.patch("dorsal.file.index.dorsal_index.make_local_record_id", return_value="mock_local_id")
+    db_path = tmp_path / "old.db"
+    old = DorsalIndex(db_path=db_path, use_compression=False)
+    old.upsert_record(path="/fake/a.pdf", modified_time=1.0, record=make_mock_record("/fake/a.pdf"))
+    old.close()
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE cached_files DROP COLUMN number_changes")
+    conn.execute("ALTER TABLE cached_files DROP COLUMN on_bad_number")
+    conn.commit()
+    conn.close()
+
+    index = DorsalIndex(db_path=db_path, use_compression=False)
+    fetched = index.get_record(path="/fake/a.pdf")
+
+    assert fetched is not None
+    assert fetched.parsed_number_changes() == []
+    columns = {row[1] for row in index._ensure_connection().execute("PRAGMA table_info(cached_files)")}
+    assert {"number_changes", "on_bad_number"} <= columns
+    index.close()
+
+
+def test_unreadable_cached_number_changes_are_ignored(temp_index: DorsalIndex, make_mock_record):
+    temp_index.upsert_record(path="/fake/a.pdf", modified_time=1.0, record=make_mock_record("/fake/a.pdf"))
+    temp_index._ensure_connection().execute(
+        "UPDATE cached_files SET number_changes = 'not json' WHERE abspath = '/fake/a.pdf'"
+    )
+
+    fetched = temp_index.get_record(path="/fake/a.pdf")
+
+    assert fetched is not None
+    assert fetched.parsed_number_changes() == []

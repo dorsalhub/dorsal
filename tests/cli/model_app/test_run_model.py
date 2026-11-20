@@ -111,6 +111,7 @@ def test_run_model_basic_success(mock_rich_console, mock_run_deps, tmp_path, mon
         options={},
         ignore_linter_errors=False,
         progress_callback=ANY,
+        on_bad_number="drop",
     )
 
     mock_run_deps["create_panel"].assert_called_once()
@@ -775,3 +776,77 @@ def test_run_model_outer_typer_exit(mock_run_deps, mocker, tmp_path, monkeypatch
 
     result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file)])
     assert result.exit_code == 9000
+
+
+def _result_with_changes() -> RunModelResult:
+    from dorsal.file.validators.numbers import ConvertedValue, DroppedValue
+
+    return RunModelResult(
+        name="MockModel",
+        source=AnnotationModelSource(type="Model", id="mock/model", version="1.0.0"),
+        records=[{"data": {"good": 1, "x": 0.0}}],
+        schema_id="open/generic",
+        schema_version="0.8.0",
+        dropped=[DroppedValue(path=["data", "bad"], value="nan", reason="not a finite number")],
+        converted=[ConvertedValue(path=["data", "x"], before="-0.0", after="0.0")],
+    )
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_run_model_reports_dropped_and_converted_values(
+    mock_rich_console, mock_run_deps, rendered, tmp_path, monkeypatch, json_flag
+):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
+    mock_run_deps["run_logic"].return_value = [_result_with_changes()]
+
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--no-save", *json_flag])
+
+    assert result.exit_code == 0, result.output
+    report = rendered(mock_run_deps["error_console"])
+    assert "test.pdf" in report
+    assert "dropped nan at /data/bad (not a finite number)" in report
+    assert "converted -0.0 to 0.0 at /data/x" in report
+    if json_flag:
+        data = json.loads(mock_rich_console.print.call_args.args[0])
+        [res] = data["results"]
+        assert res["dropped"] == [
+            {"record": 0, "path": ["data", "bad"], "value": "nan", "reason": "not a finite number"}
+        ]
+        assert res["converted"] == [{"record": 0, "path": ["data", "x"], "before": "-0.0", "after": "0.0"}]
+
+
+def test_run_model_clean_run_reports_nothing(mock_rich_console, mock_run_deps, rendered, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
+
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--no-save", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert "dropped" not in rendered(mock_run_deps["error_console"])
+    [res] = json.loads(mock_rich_console.print.call_args.args[0])["results"]
+    assert res["dropped"] == [] and res["converted"] == []
+
+
+def test_run_model_passes_strict_mode(mock_run_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
+
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--no-save", "--on-bad-number", "raise"])
+
+    assert result.exit_code == 0, result.output
+    assert mock_run_deps["run_logic"].call_args.kwargs["on_bad_number"] == "raise"
+
+
+def test_run_model_refuses_an_unknown_on_bad_number(mock_run_deps, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_file = pathlib.Path("test.pdf")
+    test_file.touch()
+
+    result = runner.invoke(cli_app, ["run", "dorsal/scanner", str(test_file), "--on-bad-number", "round"])
+
+    assert result.exit_code != 0
+    mock_run_deps["run_logic"].assert_not_called()

@@ -32,6 +32,7 @@ def mock_local_file():
         lf.hash = "a" * 64
         lf.validation_hash = "b" * 64
         lf._model_runner = MagicMock()
+        lf.number_changes = []
 
         lf.model = MagicMock(spec=FileRecordStrict)
         lf.model.annotations = SimpleNamespace()

@@ -340,7 +340,11 @@ def _record_fits_strategy(schema_id: str, strategy: ShardingStrategy, record: di
 
 def reassemble_record(group: AnnotationGroup) -> tuple[str, dict[str, Any]]:
     """
-    Reassembles a sharded AnnotationGroup into a single atomic record.
+    Reassembles a sharded AnnotationGroup into a single atomic record, joining its shards in `group.index` order.
+
+    For a record that was also split into parts, reassemble each part's group, then join the parts' lists in
+    `source.execution_part` order.
+
     Returns: (schema_id, record_dict)
     """
     from dorsal.file.validators.file_record import ShardedAnnotation

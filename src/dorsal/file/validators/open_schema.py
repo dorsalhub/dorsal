@@ -15,10 +15,19 @@
 import logging
 import os
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from dorsal.common.constants import ENV_DORSAL_OPEN_VALIDATION_SCHEMAS_DIR, OPEN_VALIDATION_SCHEMAS_VER
 from dorsal.common.validators.json_schema import JsonSchemaValidator, bound_validation_error
+from dorsal.file.validators.numbers import (
+    ON_BAD_NUMBER_DEFAULT,
+    CheckedRecords,
+    ConvertedValue,
+    DroppedValue,
+    OnBadNumber,
+    check_open_schema_numbers,
+    number_rejection_reason,
+)
 from dorsal.file.schemas import (
     OPEN_SCHEMA_NAME_MAP,
     OpenSchemaName,
@@ -111,6 +120,32 @@ class OpenSchemaValidator(JsonSchemaValidator):
             return err.message, list(err.path), err.keyword
         return None
 
+    @property
+    def checks_numbers(self) -> bool:
+        """True if `check_numbers` uses `oatschema`, False if `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` overrides the schema."""
+        return self.oats_validator is not None
+
+    def check_numbers(
+        self, records: list[Any], *, on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT
+    ) -> CheckedRecords:
+        """
+        Return copies of `records` whose numbers are safe to store, validated at this schema version.
+
+        Bad optional numbers (NaN, ±infinity, beyond ±9007199254740991, or outside the field's bounds) are dropped,
+        or rejected with `on_bad_number="raise"`; lossless conversions, such as `-0.0` to `0.0`, are made. Both are
+        listed on the result. Nothing is rounded. When `DORSAL_OPEN_VALIDATION_SCHEMAS_DIR` overrides the schema,
+        records are only validated against it.
+
+        Raises:
+            oatschema.ValidationError: A record is rejected, or isn't valid.
+            TypeError: A record is not JSON data.
+        """
+        if self.oats_validator is None:
+            for record in records:
+                self.validate(record)
+            return CheckedRecords([*records], [], [])
+        return check_open_schema_numbers(records, self.schema_name, self.schema_version, on_bad_number=on_bad_number)
+
 
 def verified_open_schema_version(schema_id: str | None, schema_version: str | None, records: Any) -> str | None:
     """
@@ -167,6 +202,77 @@ def stamped_schema_version(
             return validated_version
         return verified_open_schema_version(schema_id, validated_version or requested, records)
     return verified_open_schema_version(schema_id, requested, records)
+
+
+class StampedRecords(NamedTuple):
+    """The version records may carry, and the records to keep, with what checking their numbers changed."""
+
+    version: str | None
+    records: list[Any]
+    dropped: list[DroppedValue]
+    converted: list[ConvertedValue]
+    rejection: str | None = None
+    number_rejection: str | None = None
+
+
+def stamp_checked_records(
+    schema_id: str | None,
+    requested: str | None,
+    validator: Any,
+    validated_version: str | None,
+    records: list[Any],
+    *,
+    on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
+    already_checked: bool = False,
+) -> StampedRecords:
+    """
+    Return the version records may carry after `validator` accepted them, and the records to keep.
+
+    An OATS record is stamped only after `oatschema.check_numbers` accepts it at that version, and the record it
+    returns is kept. Pass `already_checked=True` when a built-in OATS validator's `check_numbers` produced the
+    records. Records that fail the check keep their content and get no version, and `rejection` says why.
+    """
+    if open_schema_name(schema_id) is None or (already_checked and isinstance(validator, OpenSchemaValidator)):
+        return StampedRecords(
+            stamped_schema_version(schema_id, requested, validator, validated_version, records), records, [], []
+        )
+
+    version = requested
+    if isinstance(validator, OpenSchemaValidator):
+        version = validated_version
+    elif isinstance(validator, JsonSchemaValidator):
+        version = validated_version or requested
+    schema_name = open_schema_name(schema_id)
+    if version is None or schema_name is None:
+        return StampedRecords(None, records, [], [])
+
+    try:
+        checker = get_open_schema_validator(schema_name, version=version)
+    except RuntimeError as err:
+        logger.warning("Not recording schema version '%s' for '%s': %s", version, schema_name, err)
+        return StampedRecords(None, records, [], [])
+    if checker.schema_version != version:
+        logger.warning(
+            "Not recording schema version '%s' for '%s': the schema loaded declares '%s'.",
+            version,
+            schema_name,
+            checker.schema_version,
+        )
+        return StampedRecords(None, records, [], [])
+
+    import oatschema
+
+    try:
+        checked = checker.check_numbers(records, on_bad_number=on_bad_number)
+    except (oatschema.ValidationError, TypeError) as err:
+        logger.warning(
+            "Not recording schema version '%s' for '%s': the record does not pass its checks: %s",
+            version,
+            schema_name,
+            err,
+        )
+        return StampedRecords(None, records, [], [], str(err), number_rejection_reason(err))
+    return StampedRecords(version, checked.records, checked.dropped, checked.converted)
 
 
 @lru_cache(maxsize=None)

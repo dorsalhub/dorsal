@@ -200,7 +200,9 @@ def test_open_schema_errors_are_bounded(record, override_dir, caplog, monkeypatc
     from dorsal.file.validators.open_schema import OpenSchemaValidator
 
     if override_dir:
-        (tmp_path / "generic.json").write_text(oatschema.get_schema("generic", mode="json"), encoding="utf-8")
+        (tmp_path / "generic.json").write_text(
+            oatschema.get_schema("generic", OPEN_VALIDATION_SCHEMAS_VER, mode="json"), encoding="utf-8"
+        )
         monkeypatch.setenv("DORSAL_OPEN_VALIDATION_SCHEMAS_DIR", str(tmp_path))
         _load_schema_from_package.cache_clear()
     validator = OpenSchemaValidator("generic")

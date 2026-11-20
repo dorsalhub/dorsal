@@ -83,6 +83,7 @@ def mock_file_deps(mocker):
     mock_instance.file_path = "/fake/test.txt"
     mock_instance.date_created = datetime.datetime(2025, 1, 1)
     mock_instance.date_modified = datetime.datetime(2025, 1, 2)
+    mock_instance.number_changes = []
 
     return {
         "local_file_class": mock_local_file_class,
@@ -720,3 +721,62 @@ def test_summary_panel_has_no_trailing_blank_line():
     assert lines[0] == "Directory scan summary"
     assert lines[-1] == "  Media types           0"
     assert lines[1] == "  Total files           1"
+
+
+def _number_changes():
+    from dorsal.file.validators.numbers import DroppedValue, NumberChanges
+
+    return [
+        NumberChanges(
+            schema_id="open/llm-output",
+            schema_version="0.8.0",
+            source_id="acme/model",
+            dropped=[DroppedValue(path=["score"], value="7.0", reason="outside the bounds of this field")],
+        )
+    ]
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_scan_file_reports_number_changes(mock_rich_console, mock_error_console, mock_file_deps, tmp_path, json_flag):
+    target = tmp_path / "test.txt"
+    target.touch()
+    mock_file_deps["local_file_class"].return_value.number_changes = _number_changes()
+
+    result = runner.invoke(app, ["local", "scan", str(target), *json_flag])
+
+    assert result.exit_code == 0, result.output
+    report = _printed_text(mock_error_console)
+    assert "open/llm-output from acme/model" in report
+    assert "dropped 7.0 at /score (outside the bounds of this field)" in report
+    if json_flag:
+        data = json.loads(mock_rich_console.print.call_args_list[0].args[0])
+        [change] = data["number_changes"]
+        assert change["dropped"][0]["path"] == ["score"]
+
+
+def test_scan_file_clean_run_has_no_number_changes(mock_rich_console, mock_error_console, mock_file_deps, tmp_path):
+    target = tmp_path / "test.txt"
+    target.touch()
+
+    result = runner.invoke(app, ["local", "scan", str(target), "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert "number_changes" not in json.loads(mock_rich_console.print.call_args_list[0].args[0])
+    assert "dropped" not in _printed_text(mock_error_console)
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_scan_dir_reports_number_changes(mock_rich_console, mock_error_console, mock_dir_deps, tmp_path, json_flag):
+    changed = MagicMock(file_path="/fake/file1.txt", number_changes=_number_changes())
+    clean = MagicMock(file_path="/fake/file2.txt", number_changes=[])
+    mock_dir_deps["collection_instance"].files = [changed, clean]
+
+    result = runner.invoke(app, ["local", "scan", str(tmp_path), *json_flag])
+
+    assert result.exit_code == 0, result.output
+    report = _printed_text(mock_error_console)
+    assert "/fake/file1.txt: open/llm-output from acme/model" in report
+    assert "/fake/file2.txt" not in report
+    if json_flag:
+        data = json.loads(mock_rich_console.print.call_args_list[0].args[0])
+        assert list(data["number_changes"]) == ["/fake/file1.txt"]

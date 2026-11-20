@@ -67,6 +67,7 @@ from dorsal.file.schemas import (
 )
 from dorsal.file.utils.hashes import hash_string_validator, make_local_record_id
 from dorsal.file.utils.size import human_filesize
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, NumberChanges, OnBadNumber, check_on_bad_number
 from dorsal.file.validators.open_schema import get_open_schema_validator
 from dorsal.file.validators.file_record import CORE_MODEL_ANNOTATION_WRAPPERS
 
@@ -605,6 +606,11 @@ class DorsalFile(_DorsalFile):
 
         Returns:
             A list of FileAnnotationStub objects (for custom schemas) or Core Models.
+
+        A record that was split into parts comes back as one annotation per part, with
+        `source.execution_part` and `source.execution_total_parts` set. Downloading a part that was sharded for
+        upload reassembles its shards in `group.index` order. To rebuild the original record, download every part
+        and join their lists (such as `blocks`) in `execution_part` order.
         """
         schema_id = resolve_schema_id(schema_id)
 
@@ -1297,6 +1303,9 @@ class LocalFile(_DorsalFile):
         follow_symlinks: bool = True,
         _file_record: FileRecord | FileRecordStrict | None = None,
         calculate_hashes: bool = True,
+        *,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
+        _number_changes: list[NumberChanges] | None = None,
     ):
         """
         Args:
@@ -1305,11 +1314,16 @@ class LocalFile(_DorsalFile):
                     If None, a globally shared DorsalClient instance will be used by `push()`.
                     Ignored if `offline` is True.
             model_runner_pipeline: Optional configuration for the ModelRunner instance.
-            use_cache: Whether to use the local cache to speed up processing. Defaults to True.
+            use_cache: Whether to use the local cache to speed up processing. A cached record is used only if it was
+                made under the current rules and pipeline (`ModelRunner.cache_rules`). Defaults to True.
             overwrite_cache: Whether to run the full pipeline *and* overwrite the cache result. Defaults to False
             offline: If True, puts the instance in Offline Mode. Blocks network calls from `LocalFile`.
             follow_symlinks: If True (default), resolves symbolic links to their target content.
                               If False, uses the path as-is (potentially resulting in link metadata).
+            on_bad_number: What to do with a bad number (NaN, ±infinity, beyond ±9007199254740991, or outside its
+                           field's bounds) in an OATS record made by the pipeline or the `add_*` methods: "drop"
+                           (default) removes a bad optional value, "raise" rejects the record. What was dropped
+                           or converted is listed in `number_changes`.
 
         Raises:
             FileNotFoundError: If the file_path does not exist or is not a file.
@@ -1333,11 +1347,15 @@ class LocalFile(_DorsalFile):
         self._use_cache = use_cache
         self._overwrite_cache = overwrite_cache
         self._follow_symlinks = follow_symlinks
+        self.on_bad_number: OnBadNumber = check_on_bad_number(on_bad_number)
+        self.number_changes: list[NumberChanges] = list(_number_changes or [])
 
         if _file_record is None:
             from dorsal.file.metadata_reader import MetadataReader
 
-            self._metadata_reader = MetadataReader(client=self._client, model_config=model_runner_pipeline)
+            self._metadata_reader = MetadataReader(
+                client=self._client, model_config=model_runner_pipeline, on_bad_number=self.on_bad_number
+            )
             logger.debug("LocalFile init: Generating record for local file at '%s'.", file_path)
             file_record_model = self._generate_record(
                 follow_symlinks=follow_symlinks, calculate_hashes=calculate_hashes
@@ -1364,7 +1382,9 @@ class LocalFile(_DorsalFile):
         else:
             self.date_created = datetime.datetime.fromtimestamp(stat_result.st_ctime).astimezone()
 
+        metadata_reader = self._metadata_reader
         super().__init__(file_record=file_record_model)
+        self._metadata_reader = metadata_reader
         logger.debug(
             "LocalFile for path '%s' (hash: %s) initialized successfully.",
             file_path,
@@ -1393,13 +1413,15 @@ class LocalFile(_DorsalFile):
                 logger.debug("Failed to resolve symlink for file %s, %s", self.file_path, err)
                 pass
 
-        return self._metadata_reader._get_or_create_record(
+        record = self._metadata_reader._get_or_create_record(
             file_path=target_path,
             skip_cache=not self._use_cache,
             overwrite_cache=self._overwrite_cache,
             follow_symlinks=follow_symlinks,
             calculate_hashes=calculate_hashes,
         )
+        self.number_changes = list(self._metadata_reader._model_runner.number_changes.pop(target_path, []))
+        return record
 
     def upgrade_file_record(self) -> None:
         """Upgrades a shallow FileRecord to a deep FileRecordStrict by calculating hashes."""
@@ -1413,7 +1435,9 @@ class LocalFile(_DorsalFile):
         if self._metadata_reader is None:
             from dorsal.file.metadata_reader import MetadataReader
 
-            self._metadata_reader = MetadataReader(client=self._client, offline=self.offline)
+            self._metadata_reader = MetadataReader(
+                client=self._client, offline=self.offline, on_bad_number=self.on_bad_number
+            )
 
         self.model = self._generate_record(follow_symlinks=self._follow_symlinks, calculate_hashes=True)
         self._populate()
@@ -1711,7 +1735,12 @@ class LocalFile(_DorsalFile):
         return validation_result
 
     def _push_heavy(
-        self, public: bool = False, api_key: str | None = None, strict: bool = False
+        self,
+        public: bool = False,
+        api_key: str | None = None,
+        strict: bool = False,
+        *,
+        record: FileRecordStrict | None = None,
     ) -> "FileIndexResponse":
         """
         When file record exceeds the 15MiB limit (due to large annotations), this method pushes it in two phases:
@@ -1721,14 +1750,10 @@ class LocalFile(_DorsalFile):
         2. Pushes the large annotations via `add_file_annotation`
 
         """
-        from dorsal.common.exceptions import PartialIndexingError
         from dorsal.file.validators.file_record import FileRecordStrict
 
         assert self._client is not None, "DorsalClient must be initialized before pushing."
         assert self.hash is not None, "File hash must be computed before pushing."
-
-        client = self._client
-        file_hash = self.hash
 
         logger.info("Payload exceeds 14 MiB threshold.")
 
@@ -1740,29 +1765,34 @@ class LocalFile(_DorsalFile):
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
 
-        lite_record = self.model.model_copy(deep=True)
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
 
-        extracted_annotations = {}
+        if record is None:
+            [record] = check_record_schema_versions(
+                [self.model], hash_to_path_map={self.model.hash: str(self.file_path)}
+            )
+        with sending_checked(record):
+            return self._push_heavy_checked(record, public=public, api_key=api_key, strict=strict)
 
-        if lite_record.annotations is not None:
+    def _push_heavy_checked(
+        self, record: FileRecordStrict, *, public: bool, api_key: str | None, strict: bool
+    ) -> FileIndexResponse:
+        from dorsal.common.exceptions import PartialIndexingError
 
-            def extract(dataset_id, item_or_list):
-                if item_or_list is None:
-                    return None
+        client = cast(DorsalClient, self._client)
+        file_hash = record.hash
+        lite_record = record.model_copy(deep=True)
 
-                if dataset_id not in extracted_annotations:
-                    extracted_annotations[dataset_id] = []
+        extracted_annotations: dict[str, list[Any]] = {}
+        for dataset_id, item_or_list in (getattr(record.annotations, "__pydantic_extra__", None) or {}).items():
+            if item_or_list is not None:
+                extracted_annotations.setdefault(dataset_id, []).extend(
+                    item_or_list if isinstance(item_or_list, list) else [item_or_list]
+                )
 
-                items = item_or_list if isinstance(item_or_list, list) else [item_or_list]
-                extracted_annotations[dataset_id].extend(items)
-
-                return None
-
-            extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
-            if extra is not None:
-                for field, val in list(extra.items()):
-                    extract(field, val)
-                    del extra[field]
+        lite_extra = getattr(lite_record.annotations, "__pydantic_extra__", None)
+        if lite_extra is not None:
+            lite_extra.clear()
 
         try:
             if public:
@@ -1843,12 +1873,15 @@ class LocalFile(_DorsalFile):
         else:
             logger.info("Successfully pushed HEAVY file record for '%s' to DorsalHub.", self.file_path)
 
+        response.number_changes = list(self.number_changes)
         return response
 
     def push(self, public: bool = False, api_key: str | None = None, strict: bool = False) -> FileIndexResponse:
         """Indexes file's metadata (annotations and tags) to DorsalHub.
 
-        If no record exists for this hash, a new record is created.
+        If no record exists for this hash, a new record is created. A record split into parts is pushed as one
+        annotation per part (`source.execution_part`), and a part too large to upload whole is sharded into a group
+        (`group.index`); see `get_annotations` for rebuilding it.
 
         Args:
             public (bool, optional):
@@ -1862,17 +1895,20 @@ class LocalFile(_DorsalFile):
 
         Returns:
             FileIndexResponse: A response object from the API detailing the
-                result of the indexing operation.
+                result of the indexing operation. Its `number_changes` lists what was dropped from or converted in
+                the file's OATS annotations when they were made.
 
         Raises:
             ValueError: If `public=True` but the file's media type is prohibited.
             UnversionedAnnotationError: If an OATS annotation has no exact `schema_version`.
                 Nothing is uploaded.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its `schema_version`. Every OATS
+                annotation is checked on every push. Nothing is uploaded.
             DorsalClientError: If the push operation fails due to API error,
                 network issue, or authentication failure.
             PartialIndexingError: If strict=True and the response contains partial errors.
         """
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
         from dorsal.file.validators.file_record import FileRecordStrict
 
         if self.offline:
@@ -1886,7 +1922,7 @@ class LocalFile(_DorsalFile):
             logger.error(error_msg)
             raise DorsalClientError(message=error_msg)
 
-        check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
+        [record] = check_record_schema_versions([self.model], hash_to_path_map={self.model.hash: str(self.file_path)})
 
         if public:
             if not is_permitted_public_media_type(self.media_type):
@@ -1901,12 +1937,12 @@ class LocalFile(_DorsalFile):
         if self._client is None:
             self._client = get_shared_dorsal_client(api_key=api_key)
 
-        record_bytes = self.model.model_dump_json(exclude_none=True).encode("utf-8")
+        record_bytes = record.model_dump_json(exclude_none=True).encode("utf-8")
 
         safe_threshold = constants.API_MAX_RECORD_SIZE_BYTES - constants.API_RECORD_HEADROOM_BYTES
 
         if len(record_bytes) > safe_threshold:
-            return self._push_heavy(public=public, api_key=api_key, strict=strict)
+            return self._push_heavy(public=public, api_key=api_key, strict=strict, record=record)
 
         client = self._client
 
@@ -1918,10 +1954,12 @@ class LocalFile(_DorsalFile):
         )
 
         try:
-            if public:
-                response = client.index_public_file_records(file_records=[self.model], api_key=api_key)
-            else:
-                response = client.index_private_file_records(file_records=[self.model], api_key=api_key)
+            with sending_checked(record):
+                if public:
+                    response = client.index_public_file_records(file_records=[record], api_key=api_key)
+                else:
+                    response = client.index_private_file_records(file_records=[record], api_key=api_key)
+            response.number_changes = list(self.number_changes)
 
             if response.error > 0:
                 error_msg = (
@@ -1973,6 +2011,13 @@ class LocalFile(_DorsalFile):
                 err,
             )
             raise
+
+    def _forget_number_changes(self, schema_id: str, source_id: str | None = None) -> None:
+        self.number_changes = [
+            change
+            for change in self.number_changes
+            if change.schema_id != schema_id or (source_id is not None and change.source_id != source_id)
+        ]
 
     def _set_annotation_attribute(
         self,
@@ -2026,6 +2071,7 @@ class LocalFile(_DorsalFile):
 
                 new_list = [ann for ann in current_list if ann.source.id != new_source_id]
                 new_list.extend(new_items)
+                self._forget_number_changes(schema_id, new_source_id)
                 setattr(self.model.annotations, annotation_id, new_list)
                 logger.debug(
                     "Overwrote existing annotation(s) in list for key '%s' (Source ID: %s).",
@@ -2162,6 +2208,7 @@ class LocalFile(_DorsalFile):
         ignore_linter_errors: bool = False,
         overwrite: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> None:
         from dorsal.file.file_annotator import FILE_ANNOTATOR
         from dorsal.file.validators.file_record import FileRecordStrict
@@ -2181,7 +2228,7 @@ class LocalFile(_DorsalFile):
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise ValueError(f"Invalid Schema ID: {schema_id}")
 
-        annotations = FILE_ANNOTATOR.make_manual_annotation(
+        annotations, changes = FILE_ANNOTATOR.make_checked_manual_annotation(
             annotation=annotation,
             schema_id=schema_id,
             schema_version=schema_version,
@@ -2190,9 +2237,11 @@ class LocalFile(_DorsalFile):
             private=None,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number or self.on_bad_number,
         )
 
         self._set_annotation_attribute(schema_id=schema_id, annotation=annotations, overwrite=overwrite)
+        self.number_changes.extend(changes)
         return None
 
     def _add_annotation(
@@ -2206,6 +2255,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         overwrite: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
         ignore_linter_errors: bool = False,
     ) -> "LocalFile":
         """Add or update an annotation with manually provided data.
@@ -2230,6 +2280,8 @@ class LocalFile(_DorsalFile):
             api_key: An optional API key for fetching remote schemas.
             overwrite: If True, overwrite an existing annotation for the same dataset.
             force: If True, skips ALL validation checks (unsafe).
+            on_bad_number: "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
             ignore_linter_errors: If True, bypasses data quality linter checks.
 
         Returns:
@@ -2303,6 +2355,7 @@ class LocalFile(_DorsalFile):
                 overwrite=overwrite,
                 ignore_linter_errors=ignore_linter_errors,
                 force=force,
+                on_bad_number=on_bad_number,
             )
             logger.debug("Exiting _add_annotation, successful for dataset '%s'.", schema_id)
             return self
@@ -2329,6 +2382,10 @@ class LocalFile(_DorsalFile):
 
         Returns:
             A list of annotation objects (Core models or generic Annotations).
+
+        A record that was split into parts is one annotation per part, with `source.execution_part` and
+        `source.execution_total_parts` set, and a sharded part is returned reassembled in `group.index` order. To
+        rebuild the original record, join the parts' lists (such as `blocks`) in `execution_part` order.
         """
         schema_id = resolve_schema_id(schema_id)
         from dorsal.file.validators.file_record import AnnotationXL, AnnotationGroup, GenericFileAnnotation
@@ -2442,6 +2499,7 @@ class LocalFile(_DorsalFile):
                     if annotation_id in annotations.model_fields_set:
                         annotations.model_fields_set.remove(annotation_id)
 
+                    self._forget_number_changes(schema_id)
                     logger.info("Removed all local annotations for '%s' (key: '%s').", schema_id, annotation_id)
                     self._populate()
                 except Exception as e:
@@ -2460,6 +2518,7 @@ class LocalFile(_DorsalFile):
                     return self.remove_annotation(schema_id)
 
                 setattr(self.model.annotations, annotation_id, new_list)
+                self._forget_number_changes(schema_id, source_id)
                 self._populate()
                 logger.debug(
                     "Removed %d annotation(s) with source_id '%s' from '%s'.",
@@ -2481,6 +2540,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds an annotation for any schema to the file.
@@ -2499,6 +2559,8 @@ class LocalFile(_DorsalFile):
             api_key: API key for fetching a remote schema.
             ignore_linter_errors: Skip linter checks.
             force: Add the annotation without validation.
+            on_bad_number: "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2519,6 +2581,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_classification(
@@ -2534,6 +2597,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> LocalFile:
         """
         Adds a 'classification' annotation to the file.
@@ -2550,6 +2614,8 @@ class LocalFile(_DorsalFile):
             api_key: API key for validation.
             ignore_linter_errors: Skip linter checks.
             force: Force add without validation.
+            on_bad_number: "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         example:
             >>> # Only labels
@@ -2590,6 +2656,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_embedding(
@@ -2604,6 +2671,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds an 'embedding' annotation to the file.
@@ -2623,6 +2691,8 @@ class LocalFile(_DorsalFile):
                 Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
+            on_bad_number (str, optional): "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2650,6 +2720,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_llm_output(
@@ -2669,6 +2740,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds an 'llm-output' annotation to the file.
@@ -2698,6 +2770,8 @@ class LocalFile(_DorsalFile):
                 Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
+            on_bad_number (str, optional): "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2733,6 +2807,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_location(
@@ -2750,6 +2825,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds a 'geolocation' annotation for a simple Point.
@@ -2774,6 +2850,8 @@ class LocalFile(_DorsalFile):
                 Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
+            on_bad_number (str, optional): "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2808,6 +2886,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_transcription(
@@ -2822,6 +2901,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds a simple 'audio-transcription' annotation to the file.
@@ -2847,6 +2927,8 @@ class LocalFile(_DorsalFile):
                 Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
+            on_bad_number (str, optional): "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2879,6 +2961,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_regression(
@@ -2902,6 +2985,7 @@ class LocalFile(_DorsalFile):
         api_key: str | None = None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber | None = None,
     ) -> "LocalFile":
         """
         Adds a 'regression' annotation for a single point estimate.
@@ -2931,6 +3015,8 @@ class LocalFile(_DorsalFile):
                 Defaults to OPEN_VALIDATION_SCHEMAS_VER.
             overwrite (bool): Whether to overwrite an existing annotation.
             api_key (str, optional): API key for validation.
+            on_bad_number (str, optional): "drop" or "raise", for a bad number in the record. Defaults to the
+                LocalFile's `on_bad_number`. What is dropped or converted is added to `number_changes`.
 
         Returns:
             The LocalFile instance, for method chaining.
@@ -2990,6 +3076,7 @@ class LocalFile(_DorsalFile):
             api_key=api_key,
             ignore_linter_errors=ignore_linter_errors,
             force=force,
+            on_bad_number=on_bad_number,
         )
 
     def add_url(

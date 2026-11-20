@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, IO
 
 from dorsal.common.exceptions import DorsalError
 from dorsal.file.schemas import open_schema_name, resolve_schema_id
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, OnBadNumber, check_on_bad_number
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
@@ -59,6 +60,14 @@ def _with_schema_version(schema_id: str, schema_version: str | None, options: di
     from dorsal.common.constants import OPEN_VALIDATION_SCHEMAS_VER
 
     return {**options, "schema_version": schema_version or OPEN_VALIDATION_SCHEMAS_VER}
+
+
+def _with_on_bad_number(schema_id: str, on_bad_number: OnBadNumber | None, options: dict[str, Any]) -> dict[str, Any]:
+    if on_bad_number is not None:
+        return {**options, "on_bad_number": check_on_bad_number(on_bad_number)}
+    if open_schema_name(schema_id) is None:
+        return options
+    return {**options, "on_bad_number": ON_BAD_NUMBER_DEFAULT}
 
 
 def get_format_extension(schema_id: str, target_format: str) -> str:
@@ -162,13 +171,17 @@ def parse_file(
     source_format: str,
     *,
     schema_version: str | None = None,
+    on_bad_number: OnBadNumber | None = None,
     **options: Any,
 ) -> dict[str, Any]:
     """
     Parse content in `source_format` into a `schema_id` record.
 
     OATS records are validated at `schema_version` (default: OPEN_VALIDATION_SCHEMAS_VER) unless `validate=False`
-    is passed. Other keyword arguments are the format's options; an unknown option raises.
+    is passed, and their numbers are checked with `oatschema.check_numbers` at that version. With
+    `on_bad_number="drop"` (the default) a bad optional number is removed; with `"raise"` the parse fails. The
+    record returned is a dict whose `dropped` and `converted` attributes list what was removed or rewritten.
+    Other keyword arguments are the format's options; an unknown option raises.
 
     Raises:
         DorsalError: The format is not supported, an option is invalid, or parsing or validation fails.
@@ -178,7 +191,9 @@ def parse_file(
 
     try:
         adapter = _get_adapter(schema_id, source_format)
-        parse_options = _with_schema_version(schema_id, schema_version, options)
+        parse_options = _with_on_bad_number(
+            schema_id, on_bad_number, _with_schema_version(schema_id, schema_version, options)
+        )
         if isinstance(content, (str, bytes)):
             return adapter.parse(content, **parse_options)
         return adapter.parse_file(content, **parse_options)
@@ -195,6 +210,7 @@ def parse_file_from_path(
     source_format: str | None = None,
     *,
     schema_version: str | None = None,
+    on_bad_number: OnBadNumber | None = None,
     **options: Any,
 ) -> dict[str, Any]:
     """
@@ -226,6 +242,7 @@ def parse_file_from_path(
                 schema_id=schema_id,
                 source_format=resolved_format,
                 schema_version=schema_version,
+                on_bad_number=on_bad_number,
                 **options,
             )
     except DorsalError:

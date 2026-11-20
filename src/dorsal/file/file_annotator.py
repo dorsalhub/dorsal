@@ -51,6 +51,16 @@ from dorsal.file.configs.model_runner import ModelRunnerPipelineStep, RunModelRe
 from dorsal.file.linters import apply_linter
 from dorsal.file.sharding import build_annotation_or_annotationgroup, process_record_for_sharding
 from dorsal.file.schemas import open_schema_name, resolve_schema_id, schema_version_of
+from dorsal.file.validators.numbers import (
+    ON_BAD_NUMBER_DEFAULT,
+    CheckedRecords,
+    ConvertedValue,
+    DroppedValue,
+    NumberChanges,
+    OnBadNumber,
+    check_on_bad_number,
+    log_number_changes,
+)
 from dorsal.file.validators.file_record import (
     Annotation,
     AnnotationGroup,
@@ -87,6 +97,7 @@ class FileAnnotator:
         options: dict | None,
         ignore_linter_errors: bool = False,
         progress_callback: Callable[[float, float, str], None] | None = None,
+        schema_version: str | None = None,
     ) -> list[RunModelResult]:
         """
         Executes a single model via the ModelRunner.
@@ -119,6 +130,7 @@ class FileAnnotator:
                 validation_model=validation_model,
                 file_path=file_path,
                 schema_id=schema_id,
+                schema_version=schema_version,
                 options=options,
                 ignore_linter_errors=ignore_linter_errors,
                 progress_callback=progress_callback,
@@ -144,12 +156,10 @@ class FileAnnotator:
         validated_version: str | None,
         records: Any,
     ) -> str | None:
-        """Return the version an OATS record may carry after `validator` accepted it."""
-        from dorsal.file.validators.open_schema import stamped_schema_version
-
+        """Return the version the runner stamped on an OATS record, after checking its numbers at that version."""
         if not records:
             return None
-        return stamped_schema_version(schema_id, requested, validator, validated_version, records)
+        return validated_version
 
     def _make_annotation(
         self,
@@ -183,13 +193,14 @@ class FileAnnotator:
             if not is_valid_dataset_id_or_schema_id(schema_id):
                 raise AnnotationConfigurationError(f"Target dataset '{schema_id}' is not a valid dataset ID.")
 
-        return build_annotation_or_annotationgroup(
+        annotation = build_annotation_or_annotationgroup(
             schema_id=schema_id,
             record_data=validated_annotation,
             source=source,
             schema_version=schema_version,
             private=private,
         )
+        return annotation
 
     def annotate_file_using_pipeline_step(
         self,
@@ -250,6 +261,7 @@ class FileAnnotator:
             validation_model=validator,
             file_path=file_path,
             schema_id=effective_schema_id,
+            schema_version=schema_version or pipeline_step_obj.schema_version,
             options=pipeline_step_obj.options,
             ignore_linter_errors=pipeline_step_obj.ignore_linter_errors,
             progress_callback=progress_callback,
@@ -340,6 +352,7 @@ class FileAnnotator:
             validation_model=validation_model,
             file_path=file_path,
             schema_id=schema_id,
+            schema_version=schema_version,
             options=options,
             ignore_linter_errors=ignore_linter_errors,
             progress_callback=progress_callback,
@@ -464,6 +477,35 @@ class FileAnnotator:
             logger.debug("Schema validation failed for manual annotation.")
             raise err
 
+    def _check_manual_record(
+        self,
+        annotation: BaseModel | dict[str, Any],
+        validator: Type[BaseModel] | JsonSchemaValidator | None,
+        on_bad_number: OnBadNumber,
+    ) -> CheckedRecords:
+        from dorsal.file.validators.open_schema import OpenSchemaValidator
+
+        if not isinstance(validator, OpenSchemaValidator):
+            return CheckedRecords([self.validate_manual_annotation(annotation=annotation, validator=validator)], [], [])
+
+        import oatschema
+
+        from dorsal.common.validators.json_schema import validation_error_message
+
+        record = (
+            annotation.model_dump(by_alias=True, exclude_none=True) if isinstance(annotation, BaseModel) else annotation
+        )
+        try:
+            return validator.check_numbers([record], on_bad_number=on_bad_number)
+        except oatschema.ValidationError as err:
+            message = validation_error_message(err.message, list(err.path), err.keyword)
+            raise AnnotationValidationError(
+                f"Schema validation failed: {message}",
+                validation_errors=[{"path": list(err.path), "validator": err.keyword, "error_message": message}],
+            ) from None
+        except TypeError as err:
+            raise AnnotationValidationError(f"Schema validation failed: {err}") from None
+
     def make_manual_annotation(
         self,
         *,
@@ -475,6 +517,7 @@ class FileAnnotator:
         private: bool | None,
         ignore_linter_errors: bool = False,
         force: bool = False,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
     ) -> list[Annotation | AnnotationGroup]:
         """
         Creates a fully-formed `Annotation` object from a manual payload.
@@ -488,6 +531,7 @@ class FileAnnotator:
             private: Visibility status of the annotation.
             ignore_linter_errors: If True, bypass data quality checks.
             force: If True, bypass all validation.
+            on_bad_number: "drop" (default) or "raise", for bad numbers in an OATS record.
 
         Returns:
             A constructed and validated `Annotation` object.
@@ -497,6 +541,40 @@ class FileAnnotator:
             AnnotationValidationError: If the payload fails validation.
             DataQualityError: If the payload fails post-validation data quality linting.
         """
+        annotations, _ = self.make_checked_manual_annotation(
+            annotation=annotation,
+            schema_id=schema_id,
+            schema_version=schema_version,
+            source_id=source_id,
+            validator=validator,
+            private=private,
+            ignore_linter_errors=ignore_linter_errors,
+            force=force,
+            on_bad_number=on_bad_number,
+        )
+        return annotations
+
+    def make_checked_manual_annotation(
+        self,
+        *,
+        annotation: BaseModel | dict[str, Any] | Sequence[BaseModel | dict[str, Any]],
+        schema_id: str,
+        schema_version: str | None = None,
+        source_id: str | None,
+        validator: Type[BaseModel] | JsonSchemaValidator | None = None,
+        private: bool | None,
+        ignore_linter_errors: bool = False,
+        force: bool = False,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
+    ) -> tuple[list[Annotation | AnnotationGroup], list[NumberChanges]]:
+        """Make annotations as `make_manual_annotation` does, and return what was dropped or converted in them."""
+        from dorsal.file.validators.open_schema import (
+            OpenSchemaValidator,
+            stamp_checked_records,
+            stamped_schema_version,
+        )
+
+        on_bad_number = check_on_bad_number(on_bad_number)
         schema_id = resolve_schema_id(schema_id)
         logger.debug("Creating manual annotation(s) for validation schema '%s'.", schema_id)
 
@@ -507,8 +585,11 @@ class FileAnnotator:
 
         annotations_to_process = annotation if isinstance(annotation, list) else [annotation]
         results = []
+        changes: list[NumberChanges] = []
 
         for ann in annotations_to_process:
+            dropped: list[DroppedValue] = []
+            converted: list[ConvertedValue] = []
             if force:
                 logger.debug("`force=True`: skipping all validation checks.")
                 if is_pydantic_model_instance(ann):
@@ -517,10 +598,9 @@ class FileAnnotator:
                     validated_annotations = [cast(dict[str, Any], ann)]
             else:
                 try:
-                    valid_ann = self.validate_manual_annotation(
-                        annotation=cast("BaseModel | dict[str, Any]", ann), validator=validator
+                    validated_annotations, dropped, converted = self._check_manual_record(
+                        cast("BaseModel | dict[str, Any]", ann), validator, on_bad_number
                     )
-                    validated_annotations = [valid_ann]
                 except (AnnotationValidationError, ValidationError, PydanticValidationError) as original_err:
                     from dorsal.file.chunking import chunk_record
 
@@ -543,9 +623,12 @@ class FileAnnotator:
                         )
                         validated_annotations = []
                         try:
-                            for chunk in chunks:
-                                validated_annotations.append(
-                                    self.validate_manual_annotation(annotation=chunk, validator=validator)
+                            for index, chunk in enumerate(chunks):
+                                checked = self._check_manual_record(chunk, validator, on_bad_number)
+                                validated_annotations.extend(checked.records)
+                                dropped.extend(item.model_copy(update={"record": index}) for item in checked.dropped)
+                                converted.extend(
+                                    item.model_copy(update={"record": index}) for item in checked.converted
                                 )
                             logger.info("Rescue successful. Manual annotation was safely chunked and validated.")
                         except (AnnotationValidationError, ValidationError, PydanticValidationError) as err:
@@ -556,18 +639,46 @@ class FileAnnotator:
 
             stamped_version = schema_version
             if open_schema_name(schema_id) is not None:
-                from dorsal.file.validators.open_schema import stamped_schema_version
-
                 validated_version = (
                     schema_version_of(validator.schema) if isinstance(validator, JsonSchemaValidator) else None
                 )
-                stamped_version = stamped_schema_version(
-                    schema_id,
-                    schema_version,
-                    None if force else validator,
-                    None if force else validated_version,
-                    validated_annotations,
-                )
+                if force:
+                    stamped_version = stamped_schema_version(
+                        schema_id, schema_version, None, None, validated_annotations
+                    )
+                else:
+                    stamped = stamp_checked_records(
+                        schema_id,
+                        schema_version,
+                        validator,
+                        validated_version,
+                        validated_annotations,
+                        on_bad_number=on_bad_number,
+                        already_checked=isinstance(validator, OpenSchemaValidator),
+                    )
+                    if stamped.rejection and (on_bad_number == "raise" or stamped.number_rejection):
+                        raise AnnotationValidationError(f"Schema validation failed: {stamped.rejection}")
+                    stamped_version = stamped.version
+                    validated_annotations = stamped.records
+                    dropped.extend(stamped.dropped)
+                    converted.extend(stamped.converted)
+                    for idx in range(len(validated_annotations)):
+                        part_dropped = [d.model_copy(update={"record": 0}) for d in dropped if d.record == idx]
+                        part_converted = [c.model_copy(update={"record": 0}) for c in converted if c.record == idx]
+                        if part_dropped or part_converted:
+                            changes.append(
+                                NumberChanges(
+                                    schema_id=schema_id,
+                                    schema_version=stamped_version,
+                                    source_id=source_id,
+                                    part=idx + 1 if len(validated_annotations) > 1 else None,
+                                    dropped=part_dropped,
+                                    converted=part_converted,
+                                )
+                            )
+                            log_number_changes(
+                                logger, f"a manual '{schema_id}' annotation", part_dropped, part_converted
+                            )
 
             for idx, valid_rec in enumerate(validated_annotations):
                 if not force:
@@ -590,7 +701,7 @@ class FileAnnotator:
                 )
                 results.append(annotation_item)
 
-        return results
+        return results, changes
 
 
 FILE_ANNOTATOR = FileAnnotator()

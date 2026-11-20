@@ -44,6 +44,7 @@ from dorsal.common.constants import API_MAX_BATCH_SIZE
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.metadata_reader import MetadataReader
 from dorsal.file.permissions import is_permitted_public_media_type
+from dorsal.file.validators.numbers import ON_BAD_NUMBER_DEFAULT, OnBadNumber
 from dorsal.session import get_shared_dorsal_client
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ class LocalFileCollection(_BaseFileCollection):
         follow_symlinks: bool = True,
         lazy: bool = False,
         calculate_hashes: bool = True,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
     ):
         """
         Initializes the LocalFileCollection.
@@ -120,6 +122,9 @@ class LocalFileCollection(_BaseFileCollection):
                 metadata. Defaults to True.
             lazy (bool): If True, processes files via an iterator.
             calculate_hashes (bool): If True, computes deep hashes during the scan.
+            on_bad_number (str): For a scanned directory, "drop" (default) removes a bad optional number from an
+                OATS record the pipeline makes, listing it in the file's `number_changes`; "raise" rejects the
+                record instead.
         """
         self.offline = offline or is_offline_mode()
         self._client = client
@@ -138,7 +143,11 @@ class LocalFileCollection(_BaseFileCollection):
         elif isinstance(source, str):
             path = source
             self.reader = MetadataReader(
-                client=self._client, model_config=model_runner_pipeline, file_class=file_class, offline=self.offline
+                client=self._client,
+                model_config=model_runner_pipeline,
+                file_class=file_class,
+                offline=self.offline,
+                on_bad_number=on_bad_number,
             )
             scan_files, self.warnings = self.reader.scan_directory(
                 dir_path=source,

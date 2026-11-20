@@ -47,6 +47,13 @@ from dorsal.common.exceptions import (
 from dorsal.file.dorsal_file import LocalFile
 from dorsal.file.index import DorsalIndex
 from dorsal.file.model_runner import ModelRunner
+from dorsal.file.validators.numbers import (
+    ON_BAD_NUMBER_DEFAULT,
+    NumberChanges,
+    OnBadNumber,
+    check_on_bad_number,
+    log_number_changes,
+)
 from dorsal.file.utils.files import get_file_paths
 from dorsal.session import get_shared_dorsal_client, get_shared_index
 
@@ -109,6 +116,8 @@ class MetadataReader:
         base_url: str = constants.BASE_URL,
         file_class: Type[LocalFile] = LocalFile,
         offline: bool = False,
+        *,
+        on_bad_number: OnBadNumber = ON_BAD_NUMBER_DEFAULT,
     ):
         """
         Args:
@@ -121,10 +130,13 @@ class MetadataReader:
                                If False (default), a DuplicateFileError will be raised.
             base_url: The base URL for the Dorsal API. Defaults to the common BASE_URL.
             file_class: Currently only `LocalFile` supported.
+            on_bad_number: "drop" (default) or "raise", for bad numbers in OATS records the pipeline makes.
         """
         self.offline = offline or is_offline_mode()
         self._ignore_duplicates = ignore_duplicates
-        self._model_runner = ModelRunner(pipeline_config=model_config)
+        self.on_bad_number: OnBadNumber = check_on_bad_number(on_bad_number)
+        self._model_runner = ModelRunner(pipeline_config=model_config, on_bad_number=on_bad_number)
+        self.last_number_changes: dict[str, list[NumberChanges]] = {}
 
         if self.offline:
             if client is not None:
@@ -203,6 +215,13 @@ class MetadataReader:
                 original_exception=e,
             ) from e
 
+    def _cached_mode_differs(self, cached_mode: str | None, cached_changes: list[NumberChanges]) -> bool:
+        if cached_mode not in ("drop", "raise"):
+            return True
+        if self.on_bad_number == "raise":
+            return cached_mode != "raise" and any(change.dropped for change in cached_changes)
+        return cached_mode == "raise" and any(change.rejected for change in cached_changes)
+
     def _get_or_create_record(
         self,
         file_path: str,
@@ -242,12 +261,21 @@ class MetadataReader:
                     # Cache Miss if we need hashes but the cached record doesn't have them
                     if calculate_hashes and not cached_record.hash_sha256:
                         logger.debug("Cache miss: Found shallow record, but deep scan requested for: %s", abspath)
+                    elif cached_record.rules != self._model_runner.cache_rules:
+                        logger.debug("Cache miss: cached record was made under other rules: %s", abspath)
                     else:
-                        logger.debug("Cache hit for file: %s", abspath)
-                        RecordClass = FileRecordStrict if cached_record.hash_sha256 else FileRecord
-                        record = RecordClass.model_validate_json(cached_record.record_json)
-                        record.source = "cache"
-                        return record
+                        cached_changes = cached_record.parsed_number_changes()
+                        if self._cached_mode_differs(cached_record.on_bad_number, cached_changes):
+                            logger.debug("Cache miss: cached record was made with another `on_bad_number`: %s", abspath)
+                        else:
+                            logger.debug("Cache hit for file: %s", abspath)
+                            RecordClass = FileRecordStrict if cached_record.hash_sha256 else FileRecord
+                            record = RecordClass.model_validate_json(cached_record.record_json)
+                            record.source = "cache"
+                            self._model_runner.number_changes.pop(file_path, None)
+                            if cached_changes:
+                                self._model_runner.number_changes[file_path] = cached_changes
+                            return record
 
             except FileNotFoundError:
                 logger.error("File not found during cache check: %s", file_path)
@@ -267,7 +295,14 @@ class MetadataReader:
             if not skip_cache or overwrite_cache:
                 abspath = os.path.abspath(file_path)
                 modified_time = os.path.getmtime(abspath)
-                self._cache.upsert_record(path=abspath, modified_time=modified_time, record=file_record)
+                self._cache.upsert_record(
+                    path=abspath,
+                    modified_time=modified_time,
+                    record=file_record,
+                    number_changes=self._model_runner.number_changes.get(file_path, []),
+                    on_bad_number=self.on_bad_number,
+                    rules=self._model_runner.cache_rules,
+                )
 
             return file_record
 
@@ -367,6 +402,7 @@ class MetadataReader:
 
         file_hash_to_path_map: dict[str, str] = {}
         records_to_index_list: list[FileRecord | FileRecordStrict] = []
+        self.last_number_changes = {}
         processed_files_summary_local: dict[str, str] = {}
 
         should_display = should_show_progress(show_progress, console)
@@ -435,6 +471,9 @@ class MetadataReader:
                         follow_symlinks=follow_symlinks,
                         calculate_hashes=calculate_hashes,
                     )
+                    changes = self._model_runner.number_changes.pop(processing_path, None)
+                    if changes:
+                        self.last_number_changes[file_path] = changes
                     if calculate_hashes and (not hasattr(file_record, "hash") or not file_record.hash):
                         logger.error(
                             "Skipping file %s: processed record is missing a hash.",
@@ -540,6 +579,7 @@ class MetadataReader:
 
         Raises:
             UnversionedAnnotationError: If an OATS annotation on any record has no exact `schema_version`.
+            RejectedAnnotationError: If an OATS annotation fails `check_numbers` at its version.
                 Nothing is uploaded, whatever `fail_fast` is.
             ExceedsApiLimitError: If `include_oversized` is False and records exceed the size limit.
             BatchIndexingError: If `fail_fast` is True and an HTTP request fails.
@@ -548,7 +588,7 @@ class MetadataReader:
         from dorsal.common.exceptions import ExceedsApiLimitError, BatchIndexingError
         from dorsal.client.validators import FileIndexResponse
         from dorsal.common.environment import is_jupyter_environment
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
         from rich.progress import (
             Progress,
             SpinnerColumn,
@@ -574,7 +614,7 @@ class MetadataReader:
         if not records:
             return summary
 
-        check_record_schema_versions(records, hash_to_path_map=hash_to_path_map)
+        records = check_record_schema_versions(records, hash_to_path_map=hash_to_path_map)
 
         standard_records_with_sizes = []
         oversized_records = []
@@ -661,7 +701,7 @@ class MetadataReader:
             )
             task_id = rich_progress.add_task("Initializing...", total=total_tasks)
 
-        with rich_progress if rich_progress else open(os.devnull, "w"):
+        with sending_checked(*records), rich_progress if rich_progress else open(os.devnull, "w"):
             for i, batch in enumerate(iterator):
                 batch_size = len(batch)
                 batch_num = i + 1
@@ -755,7 +795,7 @@ class MetadataReader:
                     )
 
                     try:
-                        api_response = transient_file._push_heavy(public=public, strict=False)
+                        api_response = transient_file._push_heavy(public=public, strict=False, record=heavy_rec)
 
                         summary["success"] += 1
                         summary["processed"] += 1
@@ -885,7 +925,8 @@ class MetadataReader:
 
         Returns:
             dict: A summary dictionary detailing the results.
-                  Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors'.
+                  Keys: 'total_records', 'processed', 'success', 'failed', 'batches', 'errors', and
+                  'number_changes' (by file path: values dropped from or converted in OATS records) if any were.
 
         Raises:
             FileNotFoundError: If `dir_path` does not exist.
@@ -927,7 +968,7 @@ class MetadataReader:
                 "errors": [],
             }
 
-        return self.upload_records(
+        summary = self.upload_records(
             records=cast(list["FileRecordStrict"], records_to_index_list),
             public=public,
             fail_fast=fail_fast,
@@ -936,6 +977,12 @@ class MetadataReader:
             console=console,
             palette=palette,
         )
+        if self.last_number_changes:
+            summary["number_changes"] = {
+                path: [change.model_dump(mode="json") for change in changes]
+                for path, changes in self.last_number_changes.items()
+            }
+        return summary
 
     def index_file(
         self, file_path: str, *, public: bool = False, skip_cache: bool = False, overwrite_cache: bool = False
@@ -968,7 +1015,8 @@ class MetadataReader:
 
         Returns:
             FileIndexResponse: A response object from the API detailing the
-                result of the indexing operation.
+                result of the indexing operation. Its `number_changes` lists what was dropped from or converted in
+                the file's OATS annotations when they were made.
 
         Raises:
             DorsalError: If there's an error processing the file locally or an API error
@@ -976,7 +1024,7 @@ class MetadataReader:
             FileNotFoundError: If the file_path does not exist.
             IOError: If the file cannot be read by ModelRunner.
         """
-        from dorsal.file.integrity import check_record_schema_versions
+        from dorsal.file.integrity import check_record_schema_versions, sending_checked
 
         if self.offline:
             raise DorsalError("Cannot index file: MetadataReader is in OFFLINE mode.")
@@ -984,18 +1032,29 @@ class MetadataReader:
         file_record = self._get_or_create_record(
             file_path=file_path, skip_cache=skip_cache, overwrite_cache=overwrite_cache, calculate_hashes=True
         )
+        number_changes = self._model_runner.number_changes.pop(file_path, None) or []
+        for change in number_changes:
+            log_number_changes(
+                logger,
+                f"'{change.schema_id}' from '{change.source_id}' for '{file_path}'",
+                change.dropped,
+                change.converted,
+                level=logging.WARNING,
+            )
 
-        check_record_schema_versions(
+        [record_to_send] = check_record_schema_versions(
             [cast("FileRecordStrict", file_record)], hash_to_path_map={str(file_record.hash): file_path}
         )
 
         logger.debug("Indexing file '%s' (hash: %s) to DorsalHub...", file_path, file_record.hash)
 
         api_response: FileIndexResponse
-        if public:
-            api_response = self._client.index_public_file_records(file_records=[cast("FileRecordStrict", file_record)])
-        else:
-            api_response = self._client.index_private_file_records(file_records=[cast("FileRecordStrict", file_record)])
+        with sending_checked(record_to_send):
+            if public:
+                api_response = self._client.index_public_file_records(file_records=[record_to_send])
+            else:
+                api_response = self._client.index_private_file_records(file_records=[record_to_send])
+        api_response.number_changes = list(number_changes)
 
         log_status_msg = "processed by API"
         if api_response.results:
@@ -1228,7 +1287,10 @@ class MetadataReader:
                         client=self._client_instance,
                         offline=self.offline,
                         _file_record=record,
+                        on_bad_number=self.on_bad_number,
+                        _number_changes=self._model_runner.number_changes.pop(processing_path, None),
                     )
+                    local_file_obj._metadata_reader = self
 
                     local_files.append(local_file_obj)
                 except Exception as e:
@@ -1303,6 +1365,7 @@ class MetadataReader:
                 offline=self.offline,
                 follow_symlinks=follow_symlinks,
                 calculate_hashes=calculate_hashes,
+                on_bad_number=self.on_bad_number,
             )
         except FileNotFoundError:
             logger.error("File not found for reading: %s", file_path)

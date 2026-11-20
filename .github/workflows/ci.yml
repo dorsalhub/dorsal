@@ -115,8 +115,32 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: dorsalhub/dorsal
 
+  lowest-versions:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmediainfo0v5
+      - name: Install the lowest versions the pins allow
+        run: |
+          uv venv --python 3.11 .venv-lowest
+          uv pip install --python .venv-lowest --resolution lowest-direct -e ".[all]" --group dev
+      - name: Run tests
+        run: .venv-lowest/bin/python -m pytest
+
   ci-success:
-    needs: [lint, build-and-test]
+    needs: [lint, build-and-test, lowest-versions]
     runs-on: ubuntu-latest
     if: always()
     timeout-minutes: 5

@@ -15,7 +15,9 @@
 import logging
 import typer
 import pathlib
-from typing import Annotated
+from typing import Annotated, Any
+
+from dorsal.cli.number_changes import ON_BAD_NUMBER_HELP, OnBadNumberOption
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,10 @@ def build_search_index(
             help="Start processing immediately with an indeterminate progress bar.",
         ),
     ] = False,
+    on_bad_number: Annotated[
+        OnBadNumberOption,
+        typer.Option("--on-bad-number", help=ON_BAD_NUMBER_HELP),
+    ] = OnBadNumberOption.drop,
 ):
     """
     Scans a directory and populates the search index with full metadata records.
@@ -81,6 +87,11 @@ def build_search_index(
     This command ensures that subsequent operations (like 'scan' or 'duplicates')
     on the same directory will be significantly faster by pre-populating the search index.
     """
+    from dorsal.cli.number_changes import (
+        local_file_changes_json,
+        print_local_file_changes,
+        silence_dropped_number_warnings,
+    )
     from dorsal.common.cli import (
         get_rich_console,
         exit_cli,
@@ -91,6 +102,7 @@ def build_search_index(
     from dorsal.file.collection.local import LocalFileCollection
 
     console = get_rich_console()
+    silence_dropped_number_warnings()
 
     ui_context = ctx.obj
     palette = ui_context["palette"]
@@ -115,6 +127,7 @@ def build_search_index(
                     follow_symlinks=resolve_links,
                     lazy=lazy,
                     calculate_hashes=deep,
+                    on_bad_number=on_bad_number.value,
                 )
         else:
             collection = LocalFileCollection(
@@ -126,6 +139,7 @@ def build_search_index(
                 follow_symlinks=resolve_links,
                 lazy=lazy,
                 calculate_hashes=deep,
+                on_bad_number=on_bad_number.value,
             )
 
         collection_info = collection.info()
@@ -139,13 +153,18 @@ def build_search_index(
             elif source_stat.get("source") == "disk":
                 files_from_disk = source_stat.get("count", 0)
 
+        print_local_file_changes(get_error_console(), ui_context, collection.files)
+
         if json_output:
-            result = {
+            result: dict[str, Any] = {
                 "success": True,
                 "total_files_processed": len(collection),
                 "loaded_from_index": files_from_index,
                 "newly_added_to_index": files_from_disk,
             }
+            number_changes = local_file_changes_json(collection.files)
+            if number_changes:
+                result["number_changes"] = number_changes
             print_json_output(result, console)
             exit_cli()
 
